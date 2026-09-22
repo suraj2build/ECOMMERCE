@@ -13,6 +13,18 @@ commerce requirements, since India is the initial target market
   repository **does not** assert a settled legal position. These items
   need verification with a qualified tax/legal professional before any
   implementation decision is made. Nothing in this document should be
+
+**Status update (2026-09-22):** This domain now has a dedicated owning
+spec, `specs/32-india-tax-invoicing.md`, created during the Product
+Owner's Blueprint V2 decision session. The gap analysis below is
+preserved as the original audit record (it is what justified creating
+that spec); every `TAX-001`–`TAX-005` item referenced here remains
+`UNDER_REVIEW` in `blueprint/DECISION_REGISTER.md` pending the same
+professional verification described above — none have been resolved
+by that session, since none are business-preference questions. Where
+this document still says a capability is "missing" or has "no owning
+spec," read that as describing the state *before* 2026-09-22, not the
+current state.
   read as legal advice or as a confirmed regulatory requirement.
 
 None of the items below currently have an owning spec unless noted —
@@ -59,7 +71,7 @@ that produced it.
 
 | Item | Classification | Notes | Decision ID |
 |---|---|---|---|
-| Invoice generation trigger point in order lifecycle | BUSINESS REQUIREMENT (once legal format is verified) | Currently no spec owns this — see `DEPENDENCY_MAP.md` recommendation for a dedicated tax/invoicing workstream | `TAX-004` |
+| Invoice generation trigger point in order lifecycle | BUSINESS REQUIREMENT (once legal format is verified) | DECIDED at the engineering-architecture level (invoice generated at order confirmation, versioned/configurable template) — now owned by `specs/32-india-tax-invoicing.md` and `specs/14-order-management.md`; legal format specifics remain `UNDER_REVIEW` | `TAX-004` |
 | Invoice numbering sequence requirements | **COMPLIANCE/LEGAL — VERIFY** | | `TAX-004` |
 
 ## Credit notes
@@ -101,14 +113,14 @@ that produced it.
 | Item | Classification | Notes | Decision ID |
 |---|---|---|---|
 | Indian address field set (house/flat, locality, landmark, city, state, PIN) | TECHNICAL | Common pattern, low ambiguity once confirmed | `IND-003` |
-| PIN-code-to-city/state auto-complete | TECHNICAL | Nice-to-have UX; not yet scoped | `IND-003` |
+| PIN-code-to-city/state auto-complete | TECHNICAL | **DECIDED (2026-09-22)** — included where feasible (engineering default) | `IND-003` |
 
 ## Indian mobile numbers & OTP authentication
 
 | Item | Classification | Notes | Decision ID |
 |---|---|---|---|
-| Mobile number as primary identity field | BUSINESS REQUIREMENT | Strongly recommended for India market but not yet decided | `AUTH-001` |
-| OTP delivery provider/mechanism | TECHNICAL | Not yet scoped — no SMS/OTP provider decision exists anywhere in `/specs` | `AUTH-001` |
+| Mobile number as primary identity field | BUSINESS REQUIREMENT | **DECIDED (2026-09-22)** — mobile OTP is the primary customer authentication method | `AUTH-001` |
+| OTP delivery provider/mechanism | TECHNICAL | Provider selection remains deferred operational configuration (not blocking) | `AUTH-001` |
 
 ## Payment rails: UPI, cards, net banking, wallets
 
@@ -140,15 +152,25 @@ that produced it.
 
 ## Summary
 
-This gap analysis surfaces **an entire missing domain** (India
-tax/GST/invoicing — see `TAX-*` decisions) that has no owning spec in
-`/specs` today, plus a cluster of India-market-specific commerce
-details (COD reconciliation, PIN serviceability, address structure,
-mobile/OTP identity) that are referenced only glancingly in existing
-specs. See `DEPENDENCY_MAP.md` §4 for the recommendation to the
-Product Owner about inserting a dedicated tax/invoicing workstream
-into `BUILD_PLAN.md`.
+**Historical finding (pre-2026-09-22):** This gap analysis originally
+surfaced an entire missing domain (India tax/GST/invoicing) with no
+owning spec in `/specs`, plus a cluster of India-market-specific
+commerce details (COD reconciliation, PIN serviceability, address
+structure, mobile/OTP identity) referenced only glancingly in existing
+specs. That finding drove two outcomes, both now complete:
+
+1. `specs/32-india-tax-invoicing.md` was created to own the GST/HSN/
+   MRP/invoicing/credit-note domain (engineering architecture
+   approved; compliance content `UNDER_REVIEW`).
+2. COD, PIN serviceability, address structure, and mobile/OTP identity
+   were resolved as business/technical decisions and are now
+   normatively specified in `specs/13-payment.md`, `specs/12-checkout.md`,
+   and `specs/01-auth-rbac.md` respectively — see
+   `blueprint/DECISION_REGISTER.md` `IND-001` through `IND-005`.
 
 **No compliance/legal question in this document has been treated as
-settled.** Every such item is explicitly marked for verification with
-a qualified professional before it informs implementation.
+settled.** Every `TAX-*` item is still explicitly marked for
+verification with a qualified professional before it informs
+production-level implementation — see `specs/32-india-tax-invoicing.md`
+and `blueprint/DECISION_REGISTER.md` for their current `UNDER_REVIEW`
+status.

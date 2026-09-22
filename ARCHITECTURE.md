@@ -6,7 +6,10 @@ caveat below).
 This document describes the **approved architectural baseline** for
 the platform. It governs *how* the system will be built once
 implementation is authorized. It does **not** authorize the start of
-implementation — see `BUILD_PLAN.md` for current status (BLOCKED).
+implementation — see `BUILD_PLAN.md` for current per-milestone status
+and `blueprint/READINESS.md` for why decision/milestone readiness is
+not the same thing as implementation authorization (which, as of this
+update, has not been given).
 
 > Business-domain behavior (order rules, inventory rules, loyalty
 > rules, etc.) is **not** covered here — see `/specs`. This document
@@ -119,6 +122,9 @@ logic. See ADR-0011.
 
 ## 10. What this document does not do
 
-This document does **not** authorize implementation. See
-`BUILD_PLAN.md` — the build plan is currently **BLOCKED** pending
-Product Blueprint V2 and specification approval.
+This document does **not** authorize implementation. Product Blueprint
+V2 and specification approval are now complete (see
+`blueprint/DECISION_REGISTER.md`) and most milestones in
+`BUILD_PLAN.md` are `READY_FOR_IMPLEMENTATION` — but implementation
+itself still requires a separate, explicit human **START BUILD**
+authorization, which has not been given. See `CLAUDE.md` §0.

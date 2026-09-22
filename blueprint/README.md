@@ -1,48 +1,68 @@
 # Product Blueprint V2 — Decision System
 
-**Status:** This is a decision-support framework, not an approved
-specification. It exists to help the Product Owner (working with
-ChatGPT as Product Architect, per `AGENTS.md`) make the remaining
-business decisions before development begins. **Nothing in
-`/blueprint` authorizes implementation** — see `BUILD_PLAN.md`, which
-remains BLOCKED.
+**Status update (2026-09-22): DECISIONS RESOLVED.** This directory was
+originally a decision-support framework for an unresolved 112-item
+register. The Product Owner's Blueprint V2 decision session has since
+resolved 105 of those 112 decisions (7 remain `UNDER_REVIEW`, routed to
+external compliance/legal verification — 0 remain genuinely `OPEN`).
+**This still does not by itself authorize implementation** — see
+`BUILD_PLAN.md`, which now shows most milestones
+`READY_FOR_IMPLEMENTATION` but still requires a separate, explicit
+human **START BUILD** authorization before any code is written (see
+`blueprint/READINESS.md` for the full hierarchy of readiness states —
+decision readiness is not the same thing as implementation
+authorization).
 
 ## How to use this directory
 
-1. Start with `OPEN_QUESTIONS.md` — the consolidated, prioritized
-   questionnaire (39 P0, 49 P1, 24 P2 decisions).
-2. For full context on any question, look up its ID in
-   `DECISION_REGISTER.md`.
-3. For domain-specific deep dives, see the specialized documents
-   listed below.
-4. As decisions are made, update `DECISION_REGISTER.md` (status,
-   final decision, date) and propagate into the affected `/specs`
-   files, per `CLAUDE.md` §3–4.
-5. Re-check `READINESS.md` as decisions land — it shows which domains
-   move from `NOT_READY` toward `READY_FOR_APPROVAL`.
+1. **For current decision status**, go directly to
+   `DECISION_REGISTER.md` — every decision's resolution (or
+   `UNDER_REVIEW` status) is recorded there.
+2. **For current readiness**, see `READINESS.md` — the authoritative,
+   up-to-date per-milestone scorecard and the six-layer readiness
+   hierarchy (decision status → spec status → milestone readiness →
+   implementation authorization → compliance verification → production
+   readiness).
+3. `OPEN_QUESTIONS.md` is preserved as the **original, historical**
+   questionnaire this register was built from — it is no longer an
+   active task list; read its 2026-09-22 status banner before treating
+   anything in it as unresolved.
+4. For domain-specific deep dives (gap analyses, integrity models,
+   role/journey design material), see the specialized documents below
+   — each now carries its own 2026-09-22 status update where its
+   original content was superseded by a decision.
 
 ## Files in this directory
 
-| File | Purpose |
-|---|---|
-| `README.md` | This file — index, audit findings, how to use the blueprint |
-| `DECISION_REGISTER.md` | Master register of all 112 open decisions, with stable IDs |
-| `OPEN_QUESTIONS.md` | Prioritized, human-facing questionnaire built from the register |
-| `DEPENDENCY_MAP.md` | Cross-domain dependency analysis; recommendations for `BUILD_PLAN.md` (not applied automatically) |
-| `END_TO_END_FLOWS.md` | Full cross-domain flow map: primary flow + 9 exception/post-purchase flows |
-| `INDIA_COMMERCE_GAPS.md` | India-market-specific gap analysis (GST, HSN, MRP, COD, etc.), classified by BUSINESS/TECHNICAL/COMPLIANCE-LEGAL |
-| `FASHION_DOMAIN_GAPS.md` | Fashion-domain-specific gap analysis against existing product/catalog/PDP specs |
-| `INVENTORY_INTEGRITY.md` | Conceptual inventory ledger model and the decisions needed to make it reliable |
-| `ORDER_PAYMENT_INTEGRITY.md` | Why order state and payment state are separate state machines, and what that requires |
-| `CUSTOMER_360.md` | Conceptual Customer 360 data model and privacy implications |
-| `OPERATING_ROLES.md` | Candidate admin/operations personas and the RBAC decisions needed to finalize them |
-| `CUSTOMER_JOURNEYS.md` | Storefront customer journeys: happy paths, empty states, failures, mobile considerations |
-| `NON_FUNCTIONAL_REQUIREMENTS.md` | Structured NFR checklist; every target marked `TARGET_REQUIRED` pending approval |
-| `READINESS.md` | Per-domain readiness scorecard; overall platform remains NOT APPROVED FOR IMPLEMENTATION |
+| File | Purpose | Current status |
+|---|---|---|
+| `README.md` | This file — index, original audit findings, how to use the blueprint | Audit findings section is historical (labeled) |
+| `DECISION_REGISTER.md` | Master register of all 112 decisions, with stable IDs | **Authoritative — 105 DECIDED, 7 UNDER_REVIEW, 0 OPEN** |
+| `OPEN_QUESTIONS.md` | The original, historical Product Owner questionnaire | Answered — historical record only |
+| `DEPENDENCY_MAP.md` | Cross-domain dependency analysis | Recommendations **adopted** into `BUILD_PLAN.md` |
+| `END_TO_END_FLOWS.md` | Full cross-domain flow map: primary flow + 9 exception/post-purchase flows | Updated — see `acceptance/e2e-commerce-flows.md` for the current, testable version |
+| `INDIA_COMMERCE_GAPS.md` | India-market-specific gap analysis, classified by BUSINESS/TECHNICAL/COMPLIANCE-LEGAL | Domain now owned by `specs/32-india-tax-invoicing.md`; compliance items remain `UNDER_REVIEW` |
+| `FASHION_DOMAIN_GAPS.md` | Fashion-domain-specific gap analysis | All originally-identified gaps now `DECIDED` |
+| `INVENTORY_INTEGRITY.md` | Conceptual inventory ledger model | All decisions it identified now `DECIDED` — see `specs/06-inventory.md` |
+| `ORDER_PAYMENT_INTEGRITY.md` | Why order state and payment state are separate state machines | Shape now `DECIDED` — see `specs/13-payment.md`, `specs/14-order-management.md` |
+| `CUSTOMER_360.md` | Conceptual Customer 360 data model and privacy implications | Mostly `DECIDED`; `CUST-001` retention policy remains `UNDER_REVIEW` |
+| `OPERATING_ROLES.md` | Admin/operations personas and RBAC | **Adopted** as the approved `ADM-001` role list |
+| `CUSTOMER_JOURNEYS.md` | Storefront customer journeys | Referenced decisions now `DECIDED` |
+| `NON_FUNCTIONAL_REQUIREMENTS.md` | Structured NFR checklist | `NFR-001`–`006` now `DECIDED` (initial targets); some sub-items remain `TARGET_REQUIRED` |
+| `READINESS.md` | Per-domain/per-milestone readiness scorecard | **Authoritative — rewritten 2026-09-22** |
 
 ---
 
-## Documentation Audit Findings
+## Documentation Audit Findings (HISTORICAL — as of the original audit, before 2026-09-22)
+
+**Everything in this section describes the state of the repository
+*before* the Product Owner's 2026-09-22 decision session.** It is
+preserved verbatim as the audit record that justified creating
+`specs/31`–`34` and the 112-item decision register. Where a finding
+below says something is "missing," "unresolved," or "open," that was
+true when this audit was performed — **it is very likely resolved
+now**; check `blueprint/DECISION_REGISTER.md` and `blueprint/READINESS.md`
+for current status before acting on anything in this section.
 
 Performed against the existing foundation (`PRODUCT.md`,
 `ARCHITECTURE.md`, `BUILD_PLAN.md`, `CLAUDE.md`, `AGENTS.md`,
@@ -79,7 +99,11 @@ threads that could drift apart:
   specs, but must be decided together — see `DECISION_REGISTER.md`
   note).
 
-### Missing domains (no owning spec at all)
+### Missing domains (no owning spec at all) — RESOLVED, see note above
+
+Both domains below now have owning specs (`specs/31`, `specs/32`,
+created 2026-09-22); this subsection is kept for historical context
+only.
 
 - **India Tax / GST / Invoicing.** This is the most significant gap
   found. `specs/12-checkout.md` mentions "tax calculation approach —
@@ -229,9 +253,18 @@ have to rediscover them from nothing.
 ## Relationship to `/specs`
 
 This blueprint **does not replace** `/specs` — it is a working layer
-on top of it. `/specs` files have been lightly updated (see commit
-diff) to reference the decision IDs that resolve their
-`DECISION_REQUIRED` blocks, where doing so was useful. No `DRAFT`
-spec was changed to `APPROVED`, no existing approved architectural
-content was rewritten, and no `DECISION_REQUIRED` item was resolved by
-this exercise — per the explicit constraints of this task.
+on top of it. As originally created (before 2026-09-22), `/specs`
+files were only lightly updated to reference decision IDs, and no
+`DRAFT` spec was changed to `APPROVED` — that was correct for that
+stage, since no decisions had been made yet.
+
+**This changed on 2026-09-22.** Following the Product Owner's decision
+session, `/specs` files were updated with normative (MUST/MUST NOT/
+SHOULD/MAY) requirement text reflecting each resolved decision, and
+most specs advanced to `APPROVED` — see each spec's own status line,
+`specs/00-platform-overview.md`'s index table, and
+`blueprint/READINESS.md` for current status. No spec was marked
+`APPROVED` where a genuine compliance/legal dependency within its own
+scope remains unresolved (`specs/21-customer-profile.md`,
+`specs/30-audit-compliance.md`, `specs/32-india-tax-invoicing.md`
+remain below `APPROVED` for exactly that reason).

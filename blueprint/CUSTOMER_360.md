@@ -1,5 +1,12 @@
 # Customer 360 Blueprint
 
+**Status update (2026-09-22):** Most of this document's originally
+open items were explicitly resolved by the Product Owner's instruction
+§12, which lists "recently viewed" and "saved/preferred sizes ('My
+Sizes')" as **required** customer features. See
+`specs/21-customer-profile.md` "Approved requirements" for the
+resulting normative text.
+
 **Purpose:** Conceptual requirements for the unified customer view,
 expanding `specs/21-customer-profile.md`. Identifies privacy/security
 implications without inventing legal conclusions — see
@@ -11,27 +18,23 @@ depends on.
 | Domain | Source | Notes |
 |---|---|---|
 | Identity | `specs/01-auth-rbac.md` | Mobile/email, verified status |
-| Addresses | `specs/21-customer-profile.md` | Address book, India-specific structure (`IND-003`) |
+| Addresses | `specs/21-customer-profile.md` | Address book, India-specific structure (`IND-003` — **DECIDED**) |
 | Orders | `specs/14-order-management.md` | Full order history and current status |
 | Returns | `specs/18-returns.md` | Return history and status |
 | Exchanges | `specs/20-exchanges.md` | Exchange history and status |
 | Refunds | `specs/19-refunds.md` | Refund history, method, status |
 | Wishlist | `specs/11-wishlist-cart.md` | Saved items |
-| Recently viewed | *(not currently modeled anywhere — gap)* | Common ecommerce feature; not in any spec today |
-| Size preferences | *(not currently modeled anywhere — gap)* | Could derive from order history or be explicitly captured; relates to `PROD-004` size chart work |
-| Style preferences | *(not currently modeled anywhere — gap)* | Relates to `SRCH-002` personalization scope |
-| Loyalty | `specs/22-loyalty.md` | Balance and transaction history, contingent on `LOY-001` |
+| Recently viewed | **DECIDED — required** | Explicit customer feature per Product Owner §12; now in `specs/21-customer-profile.md`. |
+| Saved/preferred sizes ("My Sizes") | **DECIDED — required** | Explicit customer feature per Product Owner §12; now in `specs/21-customer-profile.md`. |
+| Style preferences (personalized) | **DECIDED — deferred** | `SRCH-002`: personalization is `FUTURE_CONSIDERATION`, not launch scope. |
+| Loyalty | `specs/22-loyalty.md` | Balance and transaction history — `LOY-001` **DECIDED** (points + tiers, program exists) |
 | Coupons | `specs/23-promotions.md` | Available/used coupons for this customer |
-| Communication preferences | `specs/21-customer-profile.md`, `specs/24-marketing.md` | Marketing opt-in/out (`CUST-002`) |
+| Communication preferences | `specs/21-customer-profile.md`, `specs/24-marketing.md` | Marketing opt-in/out — `CUST-002` **DECIDED** (granular per-channel/per-message-type) |
 | Marketing consent | `specs/24-marketing.md` | Legal consent record, not just a UI toggle — see privacy note below |
-| Customer service history | *(not currently modeled anywhere — gap)* | No spec currently owns a CS interaction log; relevant to `ADM-001` Customer Service role |
+| Customer service history | *(still not modeled anywhere — genuine remaining gap)* | Not named in the Product Owner's §12 required-features list; no spec currently owns a CS interaction log. Non-blocking — recommend the Product Owner confirm scope if/when Customer Service tooling (`specs/28-admin.md`) is built out further. |
 
-**Two gaps surfaced by this exercise** ("recently viewed," "customer
-service history," "size/style preferences") are not present in any
-current spec. They are not assigned decision IDs yet — recommend the
-Product Owner confirm launch scope before adding them to the register,
-since some (recently viewed) are low-cost UX additions while others
-(CS history) imply a support-tooling scope decision tied to `ADM-001`.
+**One gap remains** ("customer service history") — everything else
+this section originally flagged is now `DECIDED`.
 
 ## 2. Privacy/security implications (flagged, not resolved)
 
@@ -40,25 +43,28 @@ since some (recently viewed) are low-cost UX additions while others
   at once. This makes RBAC scoping (`ADM-001`) for whoever can access
   this view especially important — see `SECURITY.md` §4.
 - **Marketing consent is a legal record, not just a preference
-  toggle**: however `CUST-002` is decided, the *history* of consent
-  changes (when did the customer opt in/out, and how) likely needs to
-  be retained distinctly from the current-state toggle, for
-  accountability purposes. This is a **COMPLIANCE/LEGAL QUESTION
-  REQUIRING VERIFICATION** — see `AUD-002`.
-- **Data minimization in the CS-facing view**: an internal Customer
-  360 view (`CUST-003`) used by support staff may not need to expose
-  every field a customer sees in their own self-service profile (e.g.,
-  full payment details) — the two views should be scoped separately,
-  not treated as the same screen with different permissions bolted on.
-- **Retention and deletion**: see `CUST-001` — this document doesn't
-  add new information beyond flagging that "Customer 360" makes the
-  retention/deletion question more consequential, since it's the
-  screen that would need to reflect a deletion having happened
-  correctly (no orphaned references left visible).
+  toggle**: the granular per-channel opt-in model is now `DECIDED`
+  (`CUST-002`); the *history* of consent changes (when did the
+  customer opt in/out, and how) likely still needs to be retained
+  distinctly from the current-state toggle, for accountability
+  purposes. This remains a **COMPLIANCE/LEGAL QUESTION REQUIRING
+  VERIFICATION** — see `AUD-002`, still `UNDER_REVIEW`.
+- **Data minimization in the CS-facing view**: **DECIDED** (`CUST-003`)
+  — a distinct, data-minimized internal Customer 360 view exists in
+  `specs/28-admin.md`, separate from the customer's own self-service
+  profile.
+- **Retention and deletion**: `CUST-001` remains `UNDER_REVIEW` —
+  a genuine data-protection compliance question, not resolved by this
+  session's business decisions. "Customer 360" makes this question more
+  consequential (the screen must correctly reflect a deletion once the
+  policy is confirmed), but does not itself block building the profile
+  features above.
 
-## 3. Open decisions
+## 3. Decision status (updated 2026-09-22)
 
-`CUST-001`, `CUST-002`, `CUST-003`, `AUD-002`, `LOY-001` (gates
-loyalty section), `SRCH-002` (gates style-preference personalization).
+**Resolved (`DECIDED`):** `CUST-002`, `CUST-003`, `LOY-001`, `SRCH-002`.
 
-See `DECISION_REGISTER.md` for full detail on each.
+**Still `UNDER_REVIEW`** (compliance verification, not a Product Owner
+business question): `CUST-001`, `AUD-002`.
+
+See `blueprint/DECISION_REGISTER.md` for full detail on each.

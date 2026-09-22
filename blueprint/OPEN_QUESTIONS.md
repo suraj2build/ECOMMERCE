@@ -1,17 +1,28 @@
 # Open Questions — Product Owner Questionnaire
 
-**Purpose:** This is the consolidated questionnaire for the human
-Product Owner (working with ChatGPT as Product Architect, per
-`AGENTS.md`) to work through in producing **Product Blueprint V2**.
-It is derived from `DECISION_REGISTER.md` — every question here has a
-matching decision ID there with full context (dependencies, trade-offs,
-affected specs). Answer here in summary; record the full decision back
-in the register and the affected spec(s).
+**Status update (2026-09-22): ANSWERED.** This questionnaire was
+worked through in full during the Product Owner's Blueprint V2
+decision session. **105 of the 112 decisions below are now `DECIDED`;
+7 are routed to external compliance/legal verification
+(`UNDER_REVIEW`); 0 remain genuinely `OPEN`.** This document is
+preserved as the original questionnaire — it is no longer an active
+task list. **For current, authoritative decision status, use
+`blueprint/DECISION_REGISTER.md`, not this document** — the summary
+counts below (39 P0 / 49 P1 / 24 P2 "open") describe the state
+*before* 2026-09-22, not the current state.
 
-**112 total open decisions: 39 P0, 49 P1, 24 P2.** This document gives
-full treatment to the 39 P0 questions (the ones blocking any
-implementation start), then lists P1 and P2 as a lighter checklist —
-see the register for their full context when you get to them.
+**Purpose (historical):** This was the consolidated questionnaire for
+the human Product Owner (working with ChatGPT as Product Architect,
+per `AGENTS.md`) to work through in producing **Product Blueprint V2**.
+It was derived from `DECISION_REGISTER.md` — every question here has a
+matching decision ID there, which now also shows the final resolution.
+
+**112 total decisions were registered: 39 P0, 49 P1, 24 P2 (all
+originally open).** This document gave full treatment to the 39 P0
+questions, then listed P1 and P2 as a lighter checklist — the content
+below is retained verbatim as the original questions asked; it does
+not reflect that they have since been answered except where a later
+edit says so.
 
 ## Priority definitions
 
@@ -321,14 +332,17 @@ matrix), NFR-006 (rate limiting targets).
 
 ## What happens after this questionnaire is answered
 
-1. Update each decision's `Status`, `Final decision`, and `Decision
-   date` in `DECISION_REGISTER.md`.
-2. Update the corresponding spec(s) in `/specs` — move affected
-   sections from their `DECISION_REQUIRED` blocks into approved
-   content, and advance the spec's status per `CLAUDE.md` §3 (a spec
-   can only move to `APPROVED` once all its `DECISION_REQUIRED` items
-   relevant to the milestone at hand are resolved — see `READINESS.md`).
-3. Re-run the readiness assessment in `READINESS.md` for the affected
-   domains.
-4. Only then does `BUILD_PLAN.md` unblock for that milestone — and
-   only with explicit human authorization, per `CLAUDE.md` §0.
+**Completed 2026-09-22** — all four steps below were carried out:
+
+1. ~~Update each decision's `Status`, `Final decision`, and `Decision
+   date` in `DECISION_REGISTER.md`.~~ Done.
+2. ~~Update the corresponding spec(s) in `/specs`...~~ Done — all 31
+   original specs plus 4 new ones (`31`–`34`) updated with normative
+   requirements; most reached `APPROVED`.
+3. ~~Re-run the readiness assessment in `READINESS.md`...~~ Done — see
+   `blueprint/READINESS.md`, rewritten to reflect current state.
+4. `BUILD_PLAN.md` now shows most milestones `READY_FOR_IMPLEMENTATION`
+   at the decision level. **Explicit human START BUILD authorization
+   is still required and has not been given** — per `CLAUDE.md` §0,
+   decision readiness and implementation authorization remain two
+   separate gates.

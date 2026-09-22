@@ -1,10 +1,20 @@
 # Operating Roles (Admin / Operations Personas)
 
-**Status:** These are **candidate** roles surfaced by analyzing the
-full domain list in `PRODUCT.md` and `/specs` — **none are approved**.
-`ADM-001` in `DECISION_REGISTER.md` is the decision that finalizes the
-actual role list and permission matrix; this document exists to give
-that decision concrete starting material.
+**Status (updated 2026-09-22): ADOPTED.** These roles were originally
+**candidates** surfaced by analyzing the domain list in `PRODUCT.md`
+and `/specs`. The Product Owner explicitly delegated finalizing the
+RBAC model to the Principal Engineering Agent (§25 of the 2026-09-22
+decision session: "Finalize a sensible RBAC model based on these
+operating responsibilities"). Acting on that delegation, this
+candidate list — **Super Admin, Business Admin, Buying, Merchandising,
+Catalog, Warehouse Manager, Warehouse Operator, Customer Service,
+Marketing, Finance, Analytics** — was adopted as-is, as **eleven
+distinct roles** (Merchandising and Catalog kept separate, not merged
+— see the note under each role below). This is recorded as `ADM-001`
+`DECIDED` in `blueprint/DECISION_REGISTER.md` and normatively required
+in `specs/01-auth-rbac.md` and `specs/28-admin.md`. It remains a
+documented default, not a frozen commitment — the Product Owner may
+revise it at any time.
 
 For each candidate role: responsibilities, likely screens, likely
 permissions, high-risk actions, and approval requirements (where a
@@ -58,24 +68,28 @@ confirmation, per the pattern in `SECURITY.md`).
   (`CAT-002`).
 - **Likely screens:** `specs/07-catalog-merchandising.md` screens.
 - **Likely permissions:** Read/write catalog and pricing data; cannot
-  edit core product-master attributes (that's Catalog Manager, below)
-  unless the two roles are merged — open question for the Product
-  Owner.
+  edit core product-master attributes (that's the Catalog role, below)
+  — **DECIDED (2026-09-22): Merchandising and Catalog are kept as two
+  separate roles**, matching the Product Owner's adopted role list
+  verbatim.
 - **High-risk actions:** Price changes at scale (`PROD-006` bulk
   operations); publishing a product before enrichment is complete
   (`PROD-003`).
-- **Approval requirements:** Bulk price changes may warrant a
-  Business Admin approval step — not yet decided.
+- **Approval requirements:** Bulk price changes above a configurable
+  value threshold require Business Admin approval (engineering
+  default, consistent with the general approval-threshold pattern in
+  `specs/28-admin.md` `ADM-001`).
 
-## Catalog Manager
+## Catalog
 
 - **Responsibilities:** Product master data quality, attribute
   taxonomy stewardship (`PROD-001`), enrichment workflow ownership.
 - **Likely screens:** `specs/02-product-master.md` screens.
-- **Likely permissions:** Full read/write on product master; may
-  overlap significantly with Merchandiser — **the Product Owner should
-  confirm whether Merchandiser and Catalog Manager are one role or two**
-  distinct ones, since the domains (`02` vs. `07`) are closely coupled.
+- **Likely permissions:** Full read/write on product master. **DECIDED
+  (2026-09-22): kept as a role distinct from Merchandising** — the
+  Product Owner's adopted role list names both separately (§25), so
+  this document's original merge question is resolved in favor of two
+  roles, not one.
 - **High-risk actions:** Modifying the attribute taxonomy itself
   (adding/removing attributes affects every product).
 - **Approval requirements:** Taxonomy changes may warrant review given
@@ -93,9 +107,10 @@ confirmation, per the pattern in `SECURITY.md`).
   chooses multi-location).
 - **High-risk actions:** Manual inventory adjustments (`ADM-003`);
   QC-fail disposition decisions (`INV-006`).
-- **Approval requirements:** Manual adjustments above a threshold
-  should likely require a second approval or a mandatory justification
-  field — exact rule is part of `ADM-003`.
+- **Approval requirements:** **DECIDED** (`ADM-003`) — manual
+  adjustments require a mandatory justification field and Warehouse
+  Manager (or above) role; Finance co-approval is required above a
+  configurable value threshold.
 
 ## Warehouse Operator
 
@@ -121,8 +136,9 @@ confirmation, per the pattern in `SECURITY.md`).
 - **High-risk actions:** Issuing a manual refund or goodwill credit
   outside standard policy.
 - **Approval requirements:** Out-of-policy actions (e.g., a refund
-  outside the standard window) should likely require escalation —
-  exact threshold not yet decided.
+  outside the standard window) require escalation; the exact threshold
+  is a configurable business parameter (engineering default, non-
+  blocking), consistent with `REF-003`'s partial-refund handling.
 
 ## Marketing
 
@@ -134,8 +150,9 @@ confirmation, per the pattern in `SECURITY.md`).
   campaigns and promotions.
 - **High-risk actions:** Launching a promotion with significant margin
   impact; sending a campaign to the full customer base.
-- **Approval requirements:** Large-scale campaigns/promotions likely
-  warrant Business Admin sign-off — not yet decided.
+- **Approval requirements:** Large-scale campaigns/promotions require
+  Business Admin sign-off above a configurable reach/spend threshold
+  (engineering default, non-blocking).
 
 ## Finance
 
@@ -164,17 +181,27 @@ confirmation, per the pattern in `SECURITY.md`).
 
 ---
 
-## Decisions needed to finalize RBAC
+## RBAC decisions — resolved 2026-09-22
 
-1. **`ADM-001`** — Confirm which of the above roles actually exist in
-   the organization (some may be merged, e.g., Merchandiser + Catalog
-   Manager), and define the exact permission matrix per role.
-2. **`AUTH-002`** — Which roles require mandatory MFA.
-3. **`ADM-003`** — The specific approval workflow for manual inventory
-   adjustments (Warehouse Manager's highest-risk action).
-4. A decision on **approval thresholds generally** — several roles
-   above reference "above a threshold" without that threshold being
-   defined anywhere (PO value, refund value, promotion scale). This
-   cuts across `PO-001`, `ADM-003`, and Finance's refund-approval
-   scope — recommend the Product Owner set these as a single
-   consistent policy rather than domain-by-domain.
+1. **`ADM-001`** — **DECIDED.** All eleven roles listed above are
+   adopted; Merchandising and Catalog are kept distinct (not merged).
+   Full permission matrix lives in `specs/28-admin.md`.
+2. **`AUTH-002`** — **DECIDED.** MFA is mandatory for every role with
+   elevated/approval authority (Super Admin, Business Admin, Finance,
+   and any role granted approval permissions); available but optional
+   for execution-only roles (e.g., Warehouse Operator).
+3. **`ADM-003`** — **DECIDED.** Manual inventory adjustments require
+   Warehouse Manager (or above) role, a mandatory justification field,
+   and Finance co-approval above a configurable value threshold.
+4. **Approval thresholds generally** — **DECIDED as a pattern**: every
+   domain-specific "above a threshold" reference above (PO value,
+   refund value, promotion scale, bulk price changes, campaign
+   reach/spend) is implemented as a **configurable business
+   parameter**, not hard-coded per domain. The Product Owner sets the
+   actual threshold values operationally; the engineering pattern
+   (configurable, Finance/Business-Admin-gated above the threshold) is
+   consistent across all of them, per this recommendation.
+
+No RBAC decision required for this document remains open. See
+`blueprint/DECISION_REGISTER.md` `ADM-001`–`003`, `AUTH-002` for full
+resolution text.

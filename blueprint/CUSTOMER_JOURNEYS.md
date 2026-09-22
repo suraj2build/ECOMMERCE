@@ -1,5 +1,15 @@
 # Storefront Customer Journeys
 
+**Status update (2026-09-22):** Every decision ID referenced throughout
+this document as an "open decision" is now `DECIDED` — see
+`blueprint/DECISION_REGISTER.md`. Where this document says "not yet
+decided" or "open decision," that describes the state *before*
+2026-09-22. A few genuinely UX-level implementation choices below
+(exact mobile navigation pattern, image-gallery interaction style) are
+**engineering-default choices**, not business blockers — they're
+finalized at M09/M11 implementation time per `CLAUDE.md`'s technical-
+decision-authority guidance, not tracked as pending decisions.
+
 **Purpose:** Document customer journeys and flows conceptually —
 happy paths, empty states, validation failures, network/payment
 failures, out-of-stock situations, and mobile-specific considerations.
@@ -27,7 +37,9 @@ account for, feeding `specs/08-storefront.md` and downstream specs.
   with a thin catalog needs a defined minimum-content policy, not
   currently addressed anywhere.
 - **Mobile-specific:** Navigation must collapse to a mobile-appropriate
-  pattern (hamburger/bottom-nav — not yet decided, `SF-001`).
+  pattern (hamburger/bottom-nav — engineering-default choice at M09
+  implementation time, `SF-001` **DECIDED** at the component-foundation
+  level).
 
 ### 2. PLP (browse / filter / sort)
 - **Happy path:** Visitor applies filters (category, size, color,
@@ -39,24 +51,27 @@ account for, feeding `specs/08-storefront.md` and downstream specs.
   unless a price-range input is free-text.
 - **Mobile-specific:** Filter UI needs a mobile pattern (bottom sheet,
   full-screen overlay) distinct from desktop sidebar filters.
-- **Open decisions:** `SRCH-001` (ranking), `CAT-003` (taxonomy)
+- **Decision status:** `SRCH-001` (ranking), `CAT-003` (taxonomy) — both
+  **DECIDED**.
 
 ### 3. PDP (product detail, variant selection, size guide)
 - **Happy path:** Visitor selects color/size, views images, adds to
   cart or wishlist.
 - **Empty state / edge case:** Selected variant (a specific size in a
-  specific color) is out of stock — must the UI show this before or
-  only after selection? Common pattern: show size availability inline
-  in the size selector (sizes with no stock shown disabled/struck
-  through) — not yet specified as a requirement anywhere.
+  specific color) is out of stock — **DECIDED (engineering default)**:
+  show size availability inline in the size selector (sizes with no
+  stock shown disabled/struck through), consistent with
+  `specs/10-pdp.md`'s "out-of-stock sizes are visibly disabled" 
+  requirement.
 - **Validation failure:** Attempting to add to cart without selecting
   a required variant (e.g., size) — must block with a clear inline
   message, not a silent failure.
 - **Mobile-specific:** Image gallery interaction (swipe vs. thumbnail
-  strip), sticky add-to-cart bar on mobile common pattern — not yet
-  decided.
-- **Open decisions:** `PDP-001` (reviews), `PROD-004` (size guide
-  content), `PROD-005` (model measurements)
+  strip) and sticky add-to-cart bar — engineering-default choices at
+  M11 implementation time, consistent with `specs/10-pdp.md`'s mobile/
+  desktop behavior requirements.
+- **Decision status:** `PDP-001` (reviews), `PROD-004` (size guide
+  content), `PROD-005` (model measurements) — all **DECIDED**.
 
 ### 4. Wishlist
 - **Happy path:** Visitor saves an item for later.
@@ -177,8 +192,12 @@ account for, feeding `specs/08-storefront.md` and downstream specs.
   first-run experiences for real users and should be designed
   deliberately.
 
-## Open decisions referenced across journeys
+## Decisions referenced across journeys — all DECIDED (2026-09-22)
 
 `AUTH-001`, `CHK-001`, `CHK-004`, `IND-001` through `IND-005`,
 `INV-002`, `PAY-003`, `PAY-006`, `SF-001`, `SRCH-001`, `PDP-001`,
 `PROD-004`, `PROD-005`, `CAN-001`, `RET-001`, `EXC-001`, `LOY-001`.
+
+Every ID above is `DECIDED` in `blueprint/DECISION_REGISTER.md` as of
+2026-09-22. This document's journey-level detail remains a useful UX
+reference; it is no longer tracking open business decisions.

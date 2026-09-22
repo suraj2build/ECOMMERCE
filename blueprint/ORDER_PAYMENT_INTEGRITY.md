@@ -158,5 +158,14 @@ When the Product Owner (with ChatGPT) works through `ORD-001` and
    payment-state transitions (cancellation → refund-initiated), never
    the reverse.
 
-This blueprint recommends this shape but does not decide it — see
-`ORD-001` and `PAY-002` in `DECISION_REGISTER.md`.
+**Status update (2026-09-22): this shape is now decided.** The Product
+Owner's Blueprint V2 decision session resolved both `ORD-001` (order
+state machine business shape) and `PAY-002` (payment state machine,
+explicitly kept separate from order state) — see
+`blueprint/DECISION_REGISTER.md` for the full resolution text, and
+`specs/13-payment.md` / `specs/14-order-management.md` for the
+resulting normative requirements. The four requirements above (payment
+state enum, order state enum, the mapping table, and explicit
+triggers) are the concrete engineering design implied by that decision
+— the exact state-enum naming remains an implementation-time
+engineering detail, not a further open business question.

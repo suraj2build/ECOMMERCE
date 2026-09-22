@@ -1,128 +1,124 @@
 # Fashion Domain Gap Analysis
 
+**Status update (2026-09-22):** Every gap this document originally
+identified has been resolved by the Product Owner's Blueprint V2
+decision session — most explicitly, since §5 of that session's
+instruction directly addressed size charts, product media, product
+lifecycle, and bulk operations in detail. This document is preserved
+as the original audit record; every row below now shows its resolution
+status alongside the original finding. See `specs/02-product-master.md`
+"Approved requirements" for the resulting normative (MUST/SHOULD)
+text.
+
 **Purpose:** Audit whether existing specs (primarily
 `specs/02-product-master.md`, `specs/07-catalog-merchandising.md`, and
 `specs/10-pdp.md`) sufficiently address the fashion-specific concepts
 that make this platform different from a generic commerce build.
-Classification: **COVERED** (spec already addresses this, even if the
-exact rules are still `DECISION_REQUIRED`) · **PARTIAL** (spec
-mentions it but incompletely) · **GAP** (not addressed anywhere in
-`/specs`).
+Original classification: **COVERED** · **PARTIAL** · **GAP**. Current
+resolution status is now shown alongside each.
 
 ## Core hierarchy
 
-| Concept | Status | Notes |
+| Concept | Original status | Current status |
 |---|---|---|
-| STYLE → COLOR → SIZE → SKU | **COVERED** | Fixed as an architectural constraint (`ARCHITECTURE.md` §4, ADR-derived); `specs/02-product-master.md` scopes it. |
+| STYLE → COLOR → SIZE → SKU | **COVERED** | **DECIDED** — fixed architectural constraint, unchanged. |
 
 ## Attribute taxonomy
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| Category hierarchy | **PARTIAL** | Attribute exists but governance (`PROD-001`) and the relationship to catalog browsing category (`CAT-003`) are open. | `PROD-001`, `CAT-003` |
-| Brand | **COVERED** | Listed as an attribute in `specs/02-product-master.md`; no open gap beyond taxonomy governance. | `PROD-001` |
-| Season | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Collection | **COVERED** | Listed as an attribute; relationship to `CAT-004` merchandising badges not addressed. | `PROD-001`, `CAT-004` |
-| Gender/department | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Fabric | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Fit | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Pattern | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Occasion | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Sleeve | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Neck | **COVERED** | Listed as an attribute. | `PROD-001` |
-| Wash care | **COVERED** | Listed as an attribute; legal *display* requirement on PDP is a separate open compliance question — see `INDIA_COMMERCE_GAPS.md`. | `PROD-001` |
-| Country of origin | **PARTIAL** | Listed as an attribute; legal declaration requirement unverified. | `PROD-001`, `TAX-003` |
+| Category hierarchy | PARTIAL | **DECIDED** — hybrid governance model adopted; browsing/attribute category unified as one taxonomy | `PROD-001`, `CAT-003` |
+| Brand | COVERED | **DECIDED** — first-class entity, every style references one | `PROD-001`, `ORG-001` |
+| Season | COVERED | **DECIDED** — required field | `PROD-001` |
+| Collection | COVERED | **DECIDED** — required field; badge-rule relationship (`CAT-004`) also decided (rule-driven + manual override) | `PROD-001`, `CAT-004` |
+| Gender/department, Fabric, Fit, Pattern, Occasion, Sleeve, Neck | COVERED | **DECIDED** — all listed attributes, governance resolved | `PROD-001` |
+| Wash care | COVERED | **DECIDED** as an attribute; legal *display* requirement remains `UNDER_REVIEW` | `PROD-001`; display question tracked in `specs/32-india-tax-invoicing.md` |
+| Country of origin | PARTIAL | **DECIDED** as an attribute; legal declaration requirement remains `UNDER_REVIEW` (`TAX-003`) | `PROD-001`, `TAX-003` |
 
-All of the above are listed as attributes in `specs/02-product-master.md`
-but the *taxonomy governance mechanism* (`PROD-001`) and *per-category
-required/optional rules* (`PROD-002`) remain open — so while the
-concepts are named, the system is not yet fully specified.
+Taxonomy governance (`PROD-001`) and per-category required/optional
+rules (`PROD-002`) are both **DECIDED** — see `specs/02-product-master.md`.
 
 ## Size & fit
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| Size chart | **GAP** | Not explicitly modeled in `specs/02-product-master.md` beyond the general attribute list; no dedicated size-chart entity. | `PROD-004` |
-| Size-chart versioning | **GAP** | Not addressed at all — important for consistent post-hoc return-reason analysis (a past order should show the chart in effect at purchase time). | `PROD-004` |
-| Model measurements | **GAP** | Not mentioned anywhere. | `PROD-005` |
-| Model-worn size | **GAP** | Not mentioned anywhere. | `PROD-005` |
+| Size chart | GAP | **DECIDED** — required; supports different charts by category/gender/brand | `PROD-004` |
+| Size-chart versioning | GAP | **DECIDED** — required, effective-dated | `PROD-004` |
+| Model measurements | GAP | **DECIDED** — included as an optional (non-mandatory) enrichment field | `PROD-005` |
+| Model-worn size | GAP | **DECIDED** — same as above | `PROD-005` |
 
 ## Product media
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| Product media (images) | **PARTIAL** | `specs/02-product-master.md` mentions "product enrichment (images, ...)" generically but does not define image count/requirements, ordering, or per-variant imagery rules. | *(no dedicated ID yet — recommend adding under `PROD-002` scope)* |
-| Image ordering | **GAP** | Not addressed. | *(recommend adding)* |
-| Video | **GAP** | Not mentioned anywhere in `/specs`. | *(recommend adding)* |
-| Swatches | **GAP** | Color swatch representation not mentioned. | *(recommend adding)* |
-| Variant imagery (does each color get its own image set?) | **GAP** | Not addressed — a common fashion-ecommerce requirement (color variant selection should update the image gallery). | *(recommend adding, relates to `specs/10-pdp.md`)* |
+| Product media (images) | PARTIAL | **DECIDED** — multiple images required | `PROD-001` (media requirements folded into the core spec, not a separate decision) |
+| Image ordering | GAP | **DECIDED** — required | same |
+| Video | GAP | **DECIDED** — video capability required | same |
+| Swatches | GAP | **DECIDED** — swatches required | same |
+| Variant imagery | GAP | **DECIDED** — colour/variant-specific imagery required | same |
+| Alt text / SEO metadata per asset | *(not previously listed)* | **DECIDED** — required per asset | same |
 
-**Recommendation:** These five media-related gaps should likely be
-consolidated into a new decision (e.g., `PROD-007` — Product media
-requirements: count, ordering, video, swatches, variant imagery) once
-the Product Owner confirms scope. Not added to the register yet
-because scope (which of these are launch-required vs. deferred) is
-itself undecided — adding a decision ID prematurely risked implying a
-specific answer.
+The originally-recommended new decision ID (`PROD-007`) was not
+needed: the Product Owner's instruction (§5) resolved all of these
+directly and specifically, so they were folded into
+`specs/02-product-master.md`'s approved requirements rather than
+registered as a separate pending decision.
 
 ## SEO content
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| SEO content (meta, structured data) | **COVERED** at the architecture level | `specs/26-seo.md` exists and is scoped; exact structured-data mapping from the attribute model is open. | `SEO-001` |
+| SEO content (meta, structured data) | COVERED at architecture level | **DECIDED** — URL structure/canonicalization engineering convention set | `SEO-001` |
 
 ## Merchandising tags/badges
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| New arrival, bestseller, markdown, sale badges | **PARTIAL** | `specs/07-catalog-merchandising.md` mentions "merchandising collections" generically; the specific badge concepts and their rule ownership are a distinct open question. | `CAT-004` |
+| New arrival, bestseller, markdown, sale badges | PARTIAL | **DECIDED** — rule-driven where computable, manual override available | `CAT-004` |
 
 ## Product lifecycle
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| Draft / ready for enrichment / ready for QA / published / unpublished / archived | **PARTIAL** | `specs/02-product-master.md` asks "what lifecycle states exist" generically but does not enumerate this specific state set — this document proposes it as a starting point. | `PROD-003` |
-| Product completeness / content QA gate | **GAP** | Not addressed — no explicit "is this product ready to publish" completeness check is defined anywhere. | `PROD-002`, `PROD-003` |
+| Draft / ready for enrichment / ready for QA / published / unpublished / archived | PARTIAL | **DECIDED** — this exact six-state model adopted | `PROD-003` |
+| Product completeness / content QA gate | GAP | **DECIDED** — `published` requires passing `ready_for_qa` AND explicit Merchandiser action | `PROD-002`, `PROD-003`, `CAT-002` |
 
 ## Bulk operations
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| Bulk product operations | **GAP** | Not mentioned anywhere in `/specs`. | `PROD-006` |
-| Bulk price changes | **GAP** | Not mentioned anywhere. | `PROD-006` |
-| Bulk publishing | **GAP** | Not mentioned anywhere. | `PROD-006` |
+| Bulk product operations, bulk price changes, bulk publishing/unpublishing | GAP | **DECIDED** — all required (explicit, §5) | `PROD-006` |
 
 ## Fashion-specific returns/exchanges
 
-| Concept | Status | Notes | Decision ID |
+| Concept | Original status | Current status | Decision ID |
 |---|---|---|---|
-| Returns due to size/fit | **PARTIAL** | `specs/18-returns.md` covers general return eligibility but does not name size/fit as a distinct, high-frequency reason category requiring specific handling (e.g., faster exchange path). | `RET-001`, `RET-002` |
-| Exchange for a different size | **PARTIAL** | `specs/20-exchanges.md` covers exchange generically; size-specific exchange (the most common fashion exchange case) is not called out distinctly. | `EXC-001` |
-| Exchange for a different colour | **PARTIAL** | Same as above. | `EXC-001` |
-| Replacement SKU reservation during exchange | **GAP** | Not addressed — when a customer requests an exchange, does the replacement SKU get reserved immediately (before the original item is even received back), risking a stockout on the replacement by the time the original arrives? This is a real inventory-integrity question specific to exchanges. | *(no dedicated ID — recommend adding, e.g. `EXC-004`, once `EXC-001` is decided, since the answer depends on the exchange data model chosen)* |
+| Returns due to size/fit | PARTIAL | **DECIDED** — standard return flow covers this; no distinct fast-path decided (uses standard `RET-001`/`RET-002` rules) | `RET-001`, `RET-002` |
+| Exchange for a different size | PARTIAL | **DECIDED** — explicitly required | `EXC-001`, `EXC-002` |
+| Exchange for a different colour | PARTIAL | **DECIDED** — explicitly required, alongside size exchange | `EXC-001`, `EXC-002` |
+| Replacement SKU reservation during exchange | GAP | **DECIDED** — reserved at exchange-request time, using the same short-lived reservation mechanics as checkout (`INV-002`) | `EXC-002` (the gap's proposed `EXC-004` was not needed — folded into `EXC-002`'s resolution) |
 
 ---
 
-## Summary
+## Summary (updated 2026-09-22)
 
-The **core fashion attribute taxonomy is named** in `specs/02-product-master.md`
-(all of department/gender/division/category/subcategory/collection/
-season/brand/fabric/fit/pattern/occasion/sleeve/neck/wash-care/
-country-of-origin are present), so this is not a case of the platform
-ignoring fashion-specific needs. The real gaps are:
+Every gap this analysis originally surfaced is now resolved:
 
-1. **Size chart and size-chart versioning** — entirely unmodeled
-   (`PROD-004`).
+1. **Size chart and size-chart versioning** — `DECIDED`, required with
+   category/gender/brand variation and versioning (`PROD-004`).
 2. **Product media requirements** (image ordering, video, swatches,
-   variant imagery) — entirely unmodeled, no decision ID assigned
-   pending Product Owner scoping.
-3. **Product lifecycle/QA gate** — named as a question but not given a
-   concrete proposed state set until this document (`PROD-003`).
-4. **Bulk operations** — entirely unmodeled (`PROD-006`).
-5. **Replacement SKU reservation timing during exchange** — a genuine
-   inventory-integrity risk specific to the exchange flow, not
-   currently named anywhere (see recommendation above).
+   variant imagery, alt text, SEO metadata) — `DECIDED`, all required,
+   folded directly into `specs/02-product-master.md`.
+3. **Product lifecycle/QA gate** — `DECIDED`, the six-state model this
+   document proposed was adopted as-is (`PROD-003`).
+4. **Bulk operations** — `DECIDED`, all required (`PROD-006`).
+5. **Replacement SKU reservation timing during exchange** — `DECIDED`,
+   resolved as part of `EXC-002`.
 
-None of these gaps block the documentation-foundation stage — they are
-exactly the kind of finding this Product Blueprint V2 exercise exists
-to surface before implementation begins.
+No fashion-domain gap remains open. The only related items still
+`UNDER_REVIEW` are the India-compliance-specific display/declaration
+questions (wash care labeling, country-of-origin declaration) tracked
+in `specs/32-india-tax-invoicing.md` and
+`blueprint/INDIA_COMMERCE_GAPS.md` — these were never fashion-domain
+gaps in the sense this document addresses; they are legal-verification
+items.

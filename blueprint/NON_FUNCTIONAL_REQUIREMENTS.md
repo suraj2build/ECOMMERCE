@@ -1,44 +1,49 @@
 # Non-Functional Requirements (NFR)
 
-**Status:** DRAFT — structural checklist only. Every numeric target
-below is marked `TARGET_REQUIRED` because no target has been approved.
-Do not treat any number that may appear in surrounding prose elsewhere
-in this repository as an NFR target unless it appears here with a
-value and a `Status: DECIDED` marker.
+**Status update (2026-09-22):** `NFR-001` through `NFR-006` are now
+`DECIDED` as initial engineering-default targets (informed by the
+Product Owner's given operating scale: 10,000–50,000 SKUs,
+1,000–10,000 orders/day) — see `blueprint/DECISION_REGISTER.md`. Every
+target below marked **DECIDED** is now real and testable (see
+`acceptance/m09-storefront-foundation.md` and others); every target
+still marked `TARGET_REQUIRED` remains genuinely unset — it was not
+covered by `NFR-001`–`006` and is not yet a blocking gap (per
+`CLAUDE.md` §4, do not invent these; they're revisable after M32 load
+testing regardless of whether initially decided or left open).
 
 This document expands `NFR-001`–`NFR-006` in `DECISION_REGISTER.md`
 into the full structured checklist referenced by `TESTING.md` and
 `acceptance/README.md`.
 
-## Performance
+## Performance — `NFR-001` DECIDED (initial targets, revisable at M32)
 
-- Storefront page-load (PDP, PLP, homepage) — Core Web Vitals (LCP,
-  INP, CLS): `TARGET_REQUIRED`
-- Checkout API p95/p99 latency: `TARGET_REQUIRED`
-- Search query response time: `TARGET_REQUIRED`
-- Admin screen load time: `TARGET_REQUIRED`
-- Mobile network condition assumptions (target for 3G/4G performance,
-  relevant given a mobile-first, India-market audience):
-  `TARGET_REQUIRED`
+- Storefront page-load: PDP LCP < 2.5s on a representative 4G mobile
+  profile. **DECIDED.**
+- Checkout/payment API p95 latency: < 500ms. **DECIDED.**
+- Search query response time: < 300ms. **DECIDED.**
+- Admin screen load time: `TARGET_REQUIRED` (not covered by the initial
+  decision; not launch-blocking).
+- INP/CLS Core Web Vitals thresholds beyond LCP: `TARGET_REQUIRED`.
 
-*(NFR-001)*
+## Availability — `NFR-002` DECIDED (initial targets)
 
-## Availability
-
-- Storefront uptime SLO: `TARGET_REQUIRED`
-- Admin/internal tooling uptime SLO (may reasonably differ from
-  storefront): `TARGET_REQUIRED`
-- Planned maintenance window policy: `TARGET_REQUIRED`
-
-*(NFR-002)*
+- Storefront uptime SLO: 99.9%. **DECIDED.**
+- Admin/internal tooling uptime SLO: 99.5% (deliberately more
+  maintenance-window-tolerant than storefront). **DECIDED.**
+- Planned maintenance window policy: `TARGET_REQUIRED` (operational
+  detail, not launch-blocking).
 
 ## Scalability
 
-- Expected peak concurrent users at launch and at a defined future
-  horizon (e.g., 6/12 months): `TARGET_REQUIRED`
-- Expected peak order volume (e.g., sale-event traffic): `TARGET_REQUIRED`
-- Catalog size assumptions (SKU count) the architecture must comfortably
-  support: `TARGET_REQUIRED`
+- Catalog size the architecture must comfortably support: **10,000–50,000
+  SKUs. DECIDED** (explicit Product Owner operating-scale statement,
+  §2 of the 2026-09-22 session).
+- Order volume the architecture must comfortably support without
+  fundamental redesign: **1,000–10,000 orders/day. DECIDED** (same
+  source).
+- Expected peak concurrent users, and the growth horizon (6/12 months)
+  beyond the scale above: `TARGET_REQUIRED` — not given, not
+  launch-blocking; informs M32 load-test design.
 
 ## Security
 
@@ -47,11 +52,12 @@ into the full structured checklist referenced by `TESTING.md` and
 - Dependency vulnerability scanning cadence (M29 Security Hardening):
   `TARGET_REQUIRED`
 
-## Accessibility
+## Accessibility — `NFR-004` DECIDED
 
-- Target WCAG conformance level (A / AA / AAA): `TARGET_REQUIRED`
-  *(NFR-004)*
-- Scope: storefront only, or storefront + admin: `TARGET_REQUIRED`
+- Target WCAG conformance level: **2.1 AA. DECIDED**, storefront scope.
+- Admin accessibility scope: `TARGET_REQUIRED` (not explicitly covered
+  by the decision; recommend the same AA target when M29 Admin is
+  built, but not yet formally decided).
 
 ## SEO
 
@@ -72,30 +78,30 @@ into the full structured checklist referenced by `TESTING.md` and
   latency between an event occurring and it being queryable in the
   audit trail: `TARGET_REQUIRED`
 
-## Backup / Restore / Disaster Recovery
+## Backup / Restore / Disaster Recovery — `NFR-003` DECIDED (initial targets)
 
-- Backup frequency: `TARGET_REQUIRED`
-- Recovery Time Objective (RTO): `TARGET_REQUIRED`
-- Recovery Point Objective (RPO): `TARGET_REQUIRED`
-- Disaster recovery test cadence: `TARGET_REQUIRED`
-
-*(NFR-003)*
+- Backup frequency: daily. **DECIDED.**
+- Recovery Point Objective (RPO): ≤ 24 hours. **DECIDED.**
+- Recovery Time Objective (RTO): ≤ 4 hours. **DECIDED.**
+- Disaster recovery test cadence: `TARGET_REQUIRED` (operational
+  detail, not launch-blocking).
 
 ## Data retention & privacy
 
-- See `CUST-001`, `AUD-001`, `AUD-002` in `DECISION_REGISTER.md` —
-  retention periods per data category are unresolved and, per
-  `AUD-002`, may have regulatory implications requiring legal
-  verification before being treated as settled.
+- `AUD-001` (audit logging mechanism and access control) is
+  **DECIDED** — see `specs/30-audit-compliance.md`.
+- `CUST-001` (customer data retention/deletion policy) and `AUD-002`
+  (applicable regulatory requirements) remain **UNDER_REVIEW** —
+  genuine compliance/legal verification items, not yet resolved and
+  not to be treated as settled. See `blueprint/DECISION_REGISTER.md`.
 
-## Rate limiting / API reliability
+## Rate limiting / API reliability — `NFR-006` DECIDED (framework only)
 
-- Public storefront API rate limits: `TARGET_REQUIRED`
-- Admin API rate limits: `TARGET_REQUIRED`
-- Error budget for critical write paths (checkout, payment,
-  inventory): `TARGET_REQUIRED`
-
-*(NFR-006)*
+- **DECIDED:** standard per-IP/per-session rate limits apply to public
+  storefront APIs, particularly OTP request/verify and checkout/
+  payment endpoints (see `specs/01-auth-rbac.md`, `specs/13-payment.md`).
+- Exact numeric limits and error-budget figures: `TARGET_REQUIRED` —
+  tuned during M32 load testing, not invented here.
 
 ## Background jobs
 
@@ -121,9 +127,10 @@ into the full structured checklist referenced by `TESTING.md` and
   performance targets should be defined explicitly rather than
   inherited generically from desktop targets: `TARGET_REQUIRED`
 
-## Browser support
+## Browser support — `NFR-005` DECIDED
 
-- Supported browser/OS matrix: `TARGET_REQUIRED` *(NFR-005)*
+- Supported browser/OS matrix: **last 2 versions of Chrome, Safari,
+  Firefox, Edge; current iOS Safari and Android Chrome. DECIDED.**
 
 ---
 

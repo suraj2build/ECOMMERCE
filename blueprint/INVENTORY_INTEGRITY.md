@@ -7,9 +7,12 @@ document itself finalizing any accounting or state-transition rule
 that hasn't been approved. This expands ADR-0012 and
 `specs/06-inventory.md` into an operational picture.
 
-**This document does not decide anything.** Every rule below is either
+**This document does not itself decide anything — it records and
+explains decisions made elsewhere.** Every rule below is either
 already architecturally fixed (ADR-0012 — ledger, not mutable counter)
-or explicitly marked open with its decision ID.
+or resolved via `blueprint/DECISION_REGISTER.md`, referenced by its
+decision ID (see §4 for the full resolution status, updated
+2026-09-22).
 
 ## 1. The derived states (minimum set, per `ARCHITECTURE.md` §5)
 
@@ -73,20 +76,26 @@ must hold once implemented (these are testable, and belong in
    write a ledger transaction — there is no code path that changes
    "how much stock exists" without going through the ledger.**
 
-## 4. Open decisions blocking a reliable inventory ledger
+## 4. Decisions that made this ledger reliable — RESOLVED (2026-09-22)
 
-| Decision | What it blocks |
-|---|---|
-| `INV-001` | The transaction type list itself — nothing can be built without this |
-| `INV-002` | Whether "available" even has a stable meaning before checkout |
-| `INV-003` | Whether oversell/pre-order needs a distinct state (affects the AVAILABLE formula) |
-| `INV-004` / `ORG-002` | Whether every transaction needs a location dimension |
-| `INV-005` | Whether AVAILABLE excludes a safety-stock buffer |
-| `INV-006` | Return/RTO/QC-fail disposition — determines whether DAMAGED stock ever re-enters ON HAND |
-| `GRN-001` | QC pass/fail criteria — the gate that produces `receipt` vs. `damaged` |
-| `ADM-003` | Who can post a manual `adjustment` and under what authorization |
-| `EXC-001` | Whether exchange produces two linked transactions or is modeled some other way |
+Every decision in the table below was `OPEN` when this document was
+first written and is now `DECIDED` — see
+`blueprint/DECISION_REGISTER.md` for each one's full resolution text.
 
-Until these are resolved, `specs/06-inventory.md` cannot move past
-`DRAFT`, and M06 in `BUILD_PLAN.md` remains blocked regardless of the
-overall documentation stage being complete.
+| Decision | What it resolved | Status |
+|---|---|---|
+| `INV-001` | The transaction type list itself | **DECIDED** — starting set adopted (§2 above) |
+| `INV-002` | Whether "available" has a stable meaning before checkout | **DECIDED** — reservation only at checkout/payment-initiation, never add-to-cart |
+| `INV-003` | Whether oversell/pre-order needs a distinct state | **DECIDED** — overselling MUST be prevented; no general oversell/pre-order in V1 |
+| `INV-004` / `ORG-002` | Whether every transaction needs a location dimension | **DECIDED** — yes, location-aware from day one (`specs/31-organization-locations.md`) |
+| `INV-005` | Whether AVAILABLE excludes a safety-stock buffer | **DECIDED** — configurable buffer supported |
+| `INV-006` | Return/RTO/QC-fail disposition | **DECIDED** — never auto-re-enters ON_HAND without QC |
+| `GRN-001` | QC pass/fail criteria | **DECIDED** — QC required; checklist content configurable |
+| `ADM-003` | Manual `adjustment` authorization | **DECIDED** — Warehouse Manager+, justification required, Finance co-approval above threshold |
+| `EXC-001` | Exchange transaction model | **DECIDED** — first-class Exchange entity, two explicit ledger transactions |
+
+`specs/06-inventory.md` is now `APPROVED`, and **M06 Inventory** is
+`READY_FOR_IMPLEMENTATION` in `BUILD_PLAN.md` — see
+`blueprint/READINESS.md` for the current, authoritative per-milestone
+readiness classification (implementation itself still requires
+separate, explicit human authorization).

@@ -6,16 +6,34 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-This repository is currently in the **documentation/specification
-foundation stage**. As of the most recent update to this file:
+**Status as of 2026-09-22:** The Product Owner's Blueprint V2 decision
+session is complete. 105 of 112 registered business decisions are
+`DECIDED`, 7 remain `UNDER_REVIEW` (routed to external tax/legal
+compliance verification, not further Product Owner questions), and 0
+remain genuinely `OPEN`. Most specs in `/specs` are now `APPROVED`, and
+most milestones in `BUILD_PLAN.md` are classified
+`READY_FOR_IMPLEMENTATION` at the decision level — see
+`blueprint/READINESS.md` for the authoritative, current scorecard.
 
-- **The Build Plan is BLOCKED.** See `BUILD_PLAN.md`.
+**This does NOT mean implementation is authorized.** Decision/spec/
+milestone readiness (`blueprint/READINESS.md` Layers 1–3) is a
+separate thing from implementation authorization (Layer 4):
+
 - **No application code, frameworks, or database migrations exist,**
-  and none should be added until the block is explicitly lifted by the
-  human project owner (not by an AI agent's own judgment).
-- Do **not** interpret "the docs are done" as authorization to start
-  implementation. Authorization must be explicit and human-given,
-  referencing **Product Blueprint V2**.
+  and none should be added until the human project owner gives
+  explicit **START BUILD** authorization — this has **not** been
+  given as of this update, regardless of how many milestones show
+  `READY_FOR_IMPLEMENTATION`.
+- Do **not** interpret "the decisions are resolved" or "the docs are
+  done" as authorization to start implementation. Authorization must
+  be explicit and human-given (the literal phrase **START BUILD**),
+  not inferred from documentation completeness.
+- A small number of items remain `UNDER_REVIEW` for genuine
+  compliance/legal reasons (India GST/tax specifics in
+  `specs/32-india-tax-invoicing.md`; data-retention policy in
+  `specs/21-customer-profile.md` and `specs/30-audit-compliance.md`).
+  These require a qualified professional's verification, not an
+  engineering agent's judgment — never resolve them yourself.
 
 If you are unsure whether implementation is authorized, **stop and
 ask** rather than proceeding.
@@ -41,10 +59,15 @@ You are the **Principal Engineering Agent** for this project (see
 2. `PRODUCT.md`
 3. `ARCHITECTURE.md`
 4. `docs/decisions/` (ADRs) — especially any with status `APPROVED`
-5. `BUILD_PLAN.md` — check current milestone and block status
-6. The specific `specs/NN-*.md` file relevant to the task at hand
-7. `TESTING.md` and `acceptance/README.md` — Definition of Done
-8. `SECURITY.md` — safety boundaries on what you may do autonomously
+5. `blueprint/DECISION_REGISTER.md` — authoritative business-decision
+   status (105 DECIDED / 7 UNDER_REVIEW / 0 OPEN as of 2026-09-22)
+6. `blueprint/READINESS.md` — current per-milestone readiness and the
+   decision-readiness-vs-implementation-authorization hierarchy
+7. `BUILD_PLAN.md` — milestone sequence and current status
+8. The specific `specs/NN-*.md` file relevant to the task at hand
+9. `TESTING.md` and `acceptance/README.md` (plus the relevant
+   `acceptance/mNN-*.md`) — Definition of Done
+10. `SECURITY.md` — safety boundaries on what you may do autonomously
 
 ## 3. Document status system
 
@@ -105,7 +128,8 @@ READ APPROVED SPEC
 
 This loop is **documented but not active**. Do not start executing it
 until the human project owner explicitly authorizes implementation
-start (post Product Blueprint V2).
+start with **START BUILD** — Product Blueprint V2 itself is already
+complete (see §0); that alone is not the authorization.
 
 ## 6. Safety boundaries
 

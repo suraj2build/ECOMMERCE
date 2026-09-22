@@ -42,7 +42,14 @@ reverse logistics, quality inspection, and disposition.
 
 ## Remaining open items
 
-None.
+None for the operational rules above. **Consumer-facing disclosure of
+the return/cancellation policy** (a common Indian e-commerce consumer-
+protection expectation) remains a **COMPLIANCE/LEGAL QUESTION
+REQUIRING VERIFICATION** — see `blueprint/INDIA_COMMERCE_GAPS.md` and
+`specs/32-india-tax-invoicing.md`. It does not block building the
+return workflow itself; it governs what policy text/disclosure must be
+shown to the customer, which should be finalized alongside the other
+compliance-verification items before production launch.
 
 ## Acceptance criteria
 

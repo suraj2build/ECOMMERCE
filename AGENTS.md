@@ -14,8 +14,13 @@ Claude-specific operating instructions.
 - Final authority on all product and business decisions.
 - Approves specs (`DRAFT` -> `APPROVED`), ADRs, and milestone
   authorization.
-- Sole authority to lift the current block on `BUILD_PLAN.md` and
-  authorize implementation start, via **Product Blueprint V2**.
+- Sole authority to authorize implementation start (**START BUILD**).
+  Product Blueprint V2 (see `blueprint/DECISION_REGISTER.md`) is
+  complete as of 2026-09-22 and most `BUILD_PLAN.md` milestones are
+  `READY_FOR_IMPLEMENTATION` at the decision level, but that alone
+  does not authorize implementation — see `CLAUDE.md` §0 and
+  `blueprint/READINESS.md` for the distinction between decision
+  readiness and implementation authorization.
 - Sole authority for any production/high-risk action (see
   `SECURITY.md`).
 
