@@ -107,6 +107,22 @@ export class AuthService {
     return { accessToken };
   }
 
+  /**
+   * Certification-pass finding: CustomerRefreshToken.revokedAt was
+   * checked on every refresh but never written anywhere - a customer had
+   * no way to revoke a leaked/stolen refresh token short of waiting out
+   * its full TTL (JWT_REFRESH_TTL_SECONDS, 30 days by default). Mirrors
+   * the staff-side session revocation already implemented in
+   * StaffSessionStore.revoke().
+   */
+  async revokeCustomerRefreshToken(refreshToken: string): Promise<void> {
+    const tokenHash = hashRefreshToken(refreshToken);
+    await this.prisma.customerRefreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   // ---- Staff: password + conditional MFA (AUTH-002) ----
 
   async staffLogin(

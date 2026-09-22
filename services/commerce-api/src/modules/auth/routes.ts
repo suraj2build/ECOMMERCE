@@ -48,6 +48,12 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(result);
   });
 
+  fastify.post('/auth/customer/logout', async (request, reply) => {
+    const { refreshToken } = refreshSchema.parse(request.body);
+    await authService.revokeCustomerRefreshToken(refreshToken);
+    reply.status(204).send();
+  });
+
   // --- Staff: password + conditional MFA ---
   fastify.post('/auth/staff/login', async (request, reply) => {
     const { email, password, mfaCode } = staffLoginSchema.parse(request.body);
