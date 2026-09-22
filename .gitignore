@@ -41,3 +41,4 @@ Thumbs.db
 
 # Local data volumes (docker-compose bind mounts, if any)
 infra/.data/
+dump.rdb

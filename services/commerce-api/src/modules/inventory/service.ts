@@ -137,7 +137,18 @@ export class InventoryService {
         const existing = await tx.inventoryTransaction.findUnique({
           where: { idempotencyKey: params.idempotencyKey },
         });
-        if (existing) return existing;
+        if (existing) {
+          if (
+            existing.skuId !== params.skuId ||
+            existing.locationId !== params.locationId ||
+            existing.quantity !== params.quantity
+          ) {
+            throw new ConflictError(
+              `Idempotency key '${params.idempotencyKey}' was already used for a different receipt request`,
+            );
+          }
+          return existing;
+        }
       }
 
       await this.ensureBalanceRow(tx, params.skuId, params.locationId);
@@ -178,7 +189,18 @@ export class InventoryService {
         const existing = await tx.inventoryTransaction.findUnique({
           where: { idempotencyKey: params.idempotencyKey },
         });
-        if (existing) return existing;
+        if (existing) {
+          if (
+            existing.skuId !== params.skuId ||
+            existing.locationId !== params.locationId ||
+            existing.quantity !== params.quantity
+          ) {
+            throw new ConflictError(
+              `Idempotency key '${params.idempotencyKey}' was already used for a different damaged-stock request`,
+            );
+          }
+          return existing;
+        }
       }
 
       await this.ensureBalanceRow(tx, params.skuId, params.locationId);
@@ -218,7 +240,22 @@ export class InventoryService {
       const existing = await tx.inventoryReservation.findUnique({
         where: { idempotencyKey: params.idempotencyKey },
       });
-      if (existing) return existing; // idempotent replay - safe no-op
+      if (existing) {
+        // A true retry of the same logical request is a safe no-op.
+        // Reusing the same key for a *different* request (different
+        // SKU/location/quantity) is a client bug, not a retry - never
+        // silently return stale data for a different logical operation.
+        if (
+          existing.skuId !== params.skuId ||
+          existing.locationId !== params.locationId ||
+          existing.quantity !== params.quantity
+        ) {
+          throw new ConflictError(
+            `Idempotency key '${params.idempotencyKey}' was already used for a different reservation request`,
+          );
+        }
+        return existing;
+      }
 
       await this.ensureBalanceRow(tx, params.skuId, params.locationId);
       const balance = await this.lockBalance(tx, params.skuId, params.locationId);
