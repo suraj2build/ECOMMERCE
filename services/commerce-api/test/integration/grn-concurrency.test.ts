@@ -145,4 +145,46 @@ describe('GRN concurrency - PO line receipt roll-up (GRN concurrency)', () => {
     const line = await testPrisma.purchaseOrderLine.findUniqueOrThrow({ where: { id: poLineId } });
     expect(line.receivedQty).toBe(100);
   });
+
+  /**
+   * Certification-pass addition (independent re-verification, 2026-09-22):
+   * three-way (not just two-way) concurrent GRNs against the same PO line,
+   * summing to exactly the ordered quantity - the harder case for the
+   * advisory-lock-ordered row lock in applyGrnReceipt() to get right.
+   */
+  it('correctly rolls up three concurrent GRNs against the same PO line summing to the full order', async () => {
+    const grn = new GrnService(app);
+
+    const results = await Promise.all([
+      grn.createGoodsReceipt(
+        { poId, locationId, lines: [{ poLineId, skuId, receivedQty: 25, acceptedQty: 25, damagedQty: 0, rejectedQty: 0 }] },
+        actorStaffId,
+      ),
+      grn.createGoodsReceipt(
+        { poId, locationId, lines: [{ poLineId, skuId, receivedQty: 35, acceptedQty: 33, damagedQty: 2, rejectedQty: 0 }] },
+        actorStaffId,
+      ),
+      grn.createGoodsReceipt(
+        { poId, locationId, lines: [{ poLineId, skuId, receivedQty: 40, acceptedQty: 38, damagedQty: 0, rejectedQty: 2 }] },
+        actorStaffId,
+      ),
+    ]);
+
+    const ids = new Set(results.map((r) => r.id));
+    expect(ids.size).toBe(3); // three distinct GRN rows, none clobbered
+
+    const line = await testPrisma.purchaseOrderLine.findUniqueOrThrow({ where: { id: poLineId } });
+    expect(line.receivedQty).toBe(100); // 25 + 35 + 40, no lost update
+
+    const po = await testPrisma.purchaseOrder.findUniqueOrThrow({ where: { id: poId } });
+    expect(po.status).toBe('FULLY_RECEIVED');
+
+    const inventory = new InventoryService(app);
+    const balance = await inventory.getBalance(skuId, locationId);
+    expect(balance.onHand).toBe(96); // 25 + 33 + 38 accepted
+    expect(balance.damaged).toBe(4); // 2 + 2 damaged/rejected
+
+    const reconciliation = await inventory.reconcileBalance(skuId, locationId);
+    expect(reconciliation.matches).toBe(true);
+  });
 });

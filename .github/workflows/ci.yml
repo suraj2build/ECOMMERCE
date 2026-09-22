@@ -3,7 +3,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'claude/**'
 
 env:
   DATABASE_URL: postgresql://fcp_app:fcp_dev_password@localhost:5432/fcp_test

@@ -150,4 +150,82 @@ describe('Inventory concurrency - overselling prevention (INV-003)', () => {
     const balance = await inventory.getBalance(skuId, locationId);
     expect(balance.reserved).toBe(5); // not 10 - the retry was a safe no-op
   });
+
+  /**
+   * Certification-pass addition (independent re-verification, 2026-09-22):
+   * mixes concurrent reserve() and releaseReservation() against the same
+   * row - proves the row lock serializes writers correctly regardless of
+   * operation type, not just same-typed contention, and that the balance
+   * never goes negative or drifts from the ledger under mixed traffic.
+   */
+  it('never corrupts the balance under mixed concurrent reserve + release traffic', async () => {
+    const inventory = new InventoryService(app);
+    await inventory.postReceipt({
+      skuId,
+      locationId,
+      quantity: 30,
+      referenceType: 'TEST',
+      referenceId: 'seed-receipt-mixed',
+    });
+
+    // Pre-create 10 reservations of 2 units each (20 reserved of 30 on hand).
+    const preReservations = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        inventory.reserve({ skuId, locationId, quantity: 2, idempotencyKey: `mixed-pre-${i}` }),
+      ),
+    );
+
+    // Concurrently: release all 10 existing reservations AND fire 20 new
+    // reservation attempts of 3 units each (60 requested) against a
+    // balance that is changing underneath them.
+    const releases = preReservations.map((r) => inventory.releaseReservation(r.id));
+    const newReserves = Array.from({ length: 20 }, (_, i) =>
+      inventory
+        .reserve({ skuId, locationId, quantity: 3, idempotencyKey: `mixed-new-${i}` })
+        .then(() => true)
+        .catch(() => false),
+    );
+
+    await Promise.all([...releases, ...newReserves]);
+
+    const balance = await inventory.getBalance(skuId, locationId);
+    expect(balance.onHand).toBe(30);
+    expect(balance.reserved).toBeGreaterThanOrEqual(0);
+    expect(balance.reserved).toBeLessThanOrEqual(balance.onHand); // never oversold, never negative
+    expect(balance.available).toBe(balance.onHand - balance.reserved);
+
+    const reconciliation = await inventory.reconcileBalance(skuId, locationId);
+    expect(reconciliation.matches).toBe(true);
+  });
+
+  /** Higher-contention variant: 100 concurrent 1-unit reservation attempts against 15 on hand. */
+  it('holds the oversell invariant under 100-way concurrency', async () => {
+    const inventory = new InventoryService(app);
+    await inventory.postReceipt({
+      skuId,
+      locationId,
+      quantity: 15,
+      referenceType: 'TEST',
+      referenceId: 'seed-receipt-100way',
+    });
+
+    const attempts = Array.from({ length: 100 }, (_, i) =>
+      inventory
+        .reserve({ skuId, locationId, quantity: 1, idempotencyKey: `hundred-${i}` })
+        .then(() => true)
+        .catch(() => false),
+    );
+
+    const results = await Promise.all(attempts);
+    const succeededCount = results.filter(Boolean).length;
+
+    expect(succeededCount).toBe(15);
+
+    const balance = await inventory.getBalance(skuId, locationId);
+    expect(balance.reserved).toBe(15);
+    expect(balance.available).toBe(0);
+
+    const reconciliation = await inventory.reconcileBalance(skuId, locationId);
+    expect(reconciliation.matches).toBe(true);
+  });
 });
