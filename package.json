@@ -12,6 +12,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run db:generate --workspace=packages/db && npm run build --workspace=packages/db",
     "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run build --workspace=packages/db && npm run build --workspace=services/commerce-api",
     "dev:api": "npm run dev --workspace=services/commerce-api",
     "dev:storefront": "npm run dev --workspace=apps/storefront",
