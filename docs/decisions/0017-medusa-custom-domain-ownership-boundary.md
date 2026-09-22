@@ -57,8 +57,8 @@ not) implement itself:
 
 | Domain | Owner | Notes |
 |---|---|---|
-| Product (Style/Colour/Size/SKU) | **Custom (this repo)** | Medusa's Product module is not used to store or mutate product data. |
-| Inventory (on hand/reserved/available/damaged/in-transit) | **Custom (this repo)** | Medusa's default Inventory module is not enabled. Medusa's cart/checkout inventory checks call this repository's `InventoryService.reserve()`/`getBalance()` at decision time (M06, ADR-0012). |
+| Product (Style/Colour/Size/SKU) | **Custom (this repo)** | Medusa's Product module is not used to store or mutate product data. This explicitly includes the **SKU identifier** (specs/02): Medusa never mints, mutates, or holds an authoritative record for a SKU code — it only ever references the SKU id issued by this repository. |
+| Inventory (on hand/reserved/available/damaged/in-transit) | **Custom (this repo)** | Medusa's default Inventory module is not enabled. Medusa's cart/checkout inventory checks call this repository's `InventoryService.reserve()`/`getBalance()` at decision time (M06, ADR-0012). This explicitly includes the **Reservation** record itself (specs/06 ledger): no reservation is ever created, extended, or released by Medusa — only by this repository's row-locked ledger, which Medusa calls synchronously and holds no copy of. |
 | Pricing (MRP/selling/markdown) | **Custom (this repo)** | Medusa's Pricing module is not the price source of truth. A checkout line item's unit price is supplied explicitly from `CatalogService.getActivePrice()` at cart-build/checkout time, not computed by Medusa's price-list engine. |
 | Supplier / Purchase Orders / GRN / QC | **Custom (this repo)** | No Medusa equivalent; not applicable to Medusa's scope. |
 | Staff Auth / RBAC / Audit | **Custom (this repo)** | Medusa's Admin User/Auth module is not used for staff identity; this repository's permission-key RBAC (M01) remains the only staff authorization system. |
@@ -95,15 +95,45 @@ not) implement itself:
   later milestone" work the Phase 1 instruction said not to build
   early).
 
+## Read models and adapters vs. sources of truth
+
+The table above names an authoritative *owner* per domain, but several
+Medusa-side entities are not themselves stores of record — they are
+**read models or point-in-time adapters** over data this repository
+owns. Naming the owner is not sufficient on its own; this section
+makes the derived/cached side explicit so it is never mistaken for a
+second authoritative copy:
+
+| Medusa-side entity | Nature | Authoritative source it must always defer to |
+|---|---|---|
+| Cart line item (SKU reference, display price, product title/image) | **Read model / display cache**, captured at add-to-cart time | This repository's `CatalogService.getActivePrice()` and `InventoryService.getBalance()`. A cart's cached price/availability is for display only and goes stale the moment either changes; it is **never** read as authoritative at payment time. |
+| Order line-item price | **One-time historical snapshot**, not a read model | Copied once from `CatalogService.getActivePrice()` at order-creation and frozen forever after (CAT-001). Unlike the cart cache, it is intentionally never re-synced — that immutability *is* the requirement. |
+| Storefront customer session/login token | **Adapter**, resolves to an external identity | This repository's `Customer` record (specs/01), keyed by mobile number/customer id. Medusa holds no profile fields of its own that compete with the `Customer` table. |
+
+The distinction matters operationally: a stale **read model** (the
+cart) is a correctness bug to guard against with re-validation, while
+a stale **snapshot** (the order price) is not a bug at all — recomputing
+it would be the bug. Treating the two the same, or letting either one
+silently become writable/authoritative, is exactly the "second source
+of truth" failure mode this ADR exists to prevent.
+
 ## Consequences
 
+- **Checkout must re-validate the cart's cached price and inventory
+  availability against this repository's live `CatalogService`/
+  `InventoryService` immediately before payment capture** — not only
+  at add-to-cart time. A cart held open across a markdown change or a
+  stock-out is a stale read model, not a price/availability guarantee;
+  Medusa's checkout workflow must re-fetch, not trust its own cache.
 - **M09 (Storefront Foundation) must begin with a spike**, not
   straight implementation: validate that Medusa v2's Cart/Checkout
   workflows can (a) accept a cart line item with an externally-supplied
   SKU reference and unit price without a matching Medusa Product/Price
-  record, and (b) call an external inventory-availability hook (this
+  record, (b) call an external inventory-availability hook (this
   repository's `InventoryService.reserve()`) instead of its own
-  Inventory module at checkout time. If either is not cleanly
+  Inventory module at checkout time, and (c) re-invoke that same
+  price/inventory lookup at payment-capture time rather than trusting
+  the cart's cached values from (a). If any of the three is not cleanly
   supported by Medusa v2's current module/workflow API, that is a
   **DECISION_REQUIRED** architectural escalation before M09 continues
   — not something to silently work around with a sync/cache layer that
