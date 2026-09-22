@@ -159,12 +159,19 @@ export class ProductService {
     const style = await this.getStyle(styleId);
     const created: { skuId: string; colourId: string; sizeId: string }[] = [];
 
+    // Certification-pass finding: this previously issued one findUnique
+    // per (colour, size) combination - O(colours * sizes) queries for a
+    // single request. One findMany + an in-memory Set replaces all of
+    // them with a single round trip.
+    const existingSkus = await this.prisma.sku.findMany({
+      where: { styleId, colourId: { in: style.colours.map((c) => c.id) }, sizeId: { in: sizeIds } },
+      select: { colourId: true, sizeId: true },
+    });
+    const existingKeys = new Set(existingSkus.map((s) => `${s.colourId}:${s.sizeId}`));
+
     for (const colour of style.colours) {
       for (const sizeId of sizeIds) {
-        const existing = await this.prisma.sku.findUnique({
-          where: { styleId_colourId_sizeId: { styleId, colourId: colour.id, sizeId } },
-        });
-        if (existing) continue;
+        if (existingKeys.has(`${colour.id}:${sizeId}`)) continue;
         const skuCode = `${style.styleCode}-${colour.colourCode}-${sizeId.slice(0, 4)}`.toUpperCase();
         const sku = await this.createSku({ styleId, colourId: colour.id, sizeId, skuCode }, actorStaffId);
         created.push({ skuId: sku.id, colourId: colour.id, sizeId });
