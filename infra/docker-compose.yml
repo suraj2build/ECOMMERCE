@@ -58,6 +58,16 @@ services:
       - meilisearch-data:/meili_data
 
   minio:
+    # Certification-pass finding (2026-09-22): `minio/minio` on Docker Hub
+    # returned "pull access denied - repository does not exist or may
+    # require docker login" when this was actually exercised - MinIO Inc.
+    # restricted anonymous Docker Hub pulls of this image in 2024. Not
+    # re-verified against a fix here (this sandbox's egress policy also
+    # blocks quay.io and Docker Hub's CDN, so no registry pull could be
+    # tested at all - see the Phase 1 certification report). Before
+    # relying on this in a real environment, confirm the image still
+    # resolves anonymously, or switch to `quay.io/minio/minio:latest` /
+    # a pinned RELEASE tag, or authenticate via `docker login`.
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"

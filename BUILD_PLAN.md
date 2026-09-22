@@ -60,7 +60,7 @@ to the original 32, for a revised total of **34 milestones (M00–M33)**
 | M06 | Inventory | `06` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
 | M07 | Catalog / Merchandising / Pricing | `07` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
 | M08 | **Tax & Invoicing Foundation** (NEW) | `32` | **BLOCKED** — compliance verification pending (`TAX-001`–`005`) |
-| M09 | Storefront Foundation | `08` | READY_FOR_IMPLEMENTATION |
+| M09 | Storefront Foundation | `08` | READY_FOR_IMPLEMENTATION — must begin with the Medusa v2 integration spike required by `docs/decisions/0017-medusa-custom-domain-ownership-boundary.md` before other M09 work |
 | M10 | Search / Discovery | `09` | READY_FOR_IMPLEMENTATION |
 | M11 | PDP | `10` | READY_FOR_IMPLEMENTATION |
 | M12 | Wishlist / Cart | `11` | READY_FOR_IMPLEMENTATION |
