@@ -33,6 +33,10 @@ PRODUCT MASTER -> CHANNEL PUBLISHING -> WEBSITE / GOOGLE / META / future marketp
   availability per channel) — not yet defined.
 - Marketplace integrations (future) — none currently approved.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on: `CHAN-001`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

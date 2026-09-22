@@ -44,6 +44,16 @@ stock movements and derived stock states across the platform.
 - How damaged/return-pending stock re-enters sellable inventory (if
   ever) — depends on `05-grn.md` and `18-returns.md` resolution.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`INV-001` through `INV-007`, `ORG-002` (decide together with
+`INV-004`), `ADM-003`, `RET-002`. See
+`blueprint/INVENTORY_INTEGRITY.md` for the full conceptual ledger
+model (candidate transaction types, derived states, and reliability
+requirements) that expands this spec's open questions into a working
+draft for Product Owner review — it does not finalize the schema.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first. Given the

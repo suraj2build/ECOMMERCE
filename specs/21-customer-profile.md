@@ -34,6 +34,14 @@ across orders, loyalty, and support interactions.
   the customer's own self-service profile? Scope for `28-admin.md`
   overlap not yet clarified.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`CUST-001` through `CUST-003`, `IND-003`. See
+`blueprint/CUSTOMER_360.md` for the full conceptual data model,
+including two gaps surfaced during the audit ("recently viewed" and
+"customer service history") not currently modeled here.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

@@ -37,6 +37,10 @@ discoverability is maintained as the catalog changes.
 - International SEO (hreflang etc.) — depends on the
   internationalization open question in `08-storefront.md`.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on: `SEO-001`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

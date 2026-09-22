@@ -33,6 +33,11 @@ architectural decision is needed, record it as a new ADR.
 - Supplier-facing portal/access — is this required, or is supplier
   data internal-only initially?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`SUP-001`, `SUP-002`, `PO-001`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

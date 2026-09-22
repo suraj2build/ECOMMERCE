@@ -34,6 +34,14 @@ the same or a different item in place of a return-for-refund).
   difference)?
 - Exchange eligibility window — same as return window or different?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`EXC-001` through `EXC-003`. See also
+`blueprint/FASHION_DOMAIN_GAPS.md` for the replacement-SKU-reservation
+timing question surfaced during the audit (not yet assigned a
+decision ID — recommend adding once `EXC-001` is decided).
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

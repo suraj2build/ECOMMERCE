@@ -34,6 +34,10 @@ ADR-0013.
 - Data retention for analytics/event data — not yet defined (may have
   compliance implications, see `30-audit-compliance.md`).
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on: `ANL-001`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

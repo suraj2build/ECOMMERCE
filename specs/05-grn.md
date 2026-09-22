@@ -36,6 +36,14 @@ inspection and exception handling, before it becomes available stock.
   quarantined/returned to supplier?
 - Barcode/scanning requirements for GRN — in scope for initial build?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`GRN-001`, `GRN-002`, `GRN-003`, `PO-002`, `TAX-005`. See also
+`blueprint/END_TO_END_FLOWS.md` flow 2 (Receipt → GRN → QC) and
+`blueprint/INVENTORY_INTEGRITY.md` for how GRN outcomes map to ledger
+transactions.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

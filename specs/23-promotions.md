@@ -33,6 +33,12 @@ out-of-stock items, pending confirmation).
 - Budget/usage caps per promotion (e.g., max redemptions) — not yet
   defined.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`PROMO-001`, `PROMO-002`, `TAX-006`, `LOY-005` (loyalty + promotion
+stacking, consolidated from this spec and `specs/22-loyalty.md`).
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

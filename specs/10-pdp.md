@@ -34,6 +34,13 @@ availability, pricing, and the path to cart/wishlist.
 - Out-of-stock / back-in-stock notification behavior — depends on
   `29-notifications.md` and inventory rules.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`PDP-001`, `PDP-002`, `PROD-004`, `PROD-005`. See also
+`blueprint/FASHION_DOMAIN_GAPS.md` for the size-chart and
+product-media gaps this page depends on.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

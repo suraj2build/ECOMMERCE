@@ -35,6 +35,13 @@ PDP is `10-pdp.md`, search/PLP is `09-search-discovery.md`, cart is
 - Performance budgets / Core Web Vitals targets — not yet defined.
 - Browser support matrix — not yet defined.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`SF-001`, `SF-002`, `NFR-004`, `NFR-005`. See also
+`blueprint/CUSTOMER_JOURNEYS.md` for the mobile-first journey
+considerations this spec must account for.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

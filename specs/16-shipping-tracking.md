@@ -33,6 +33,11 @@ proposed as a new ADR when this spec is designed in detail.
 - Failed delivery / redelivery attempt policy — business-owned, not
   yet defined (feeds RTO handling in `14-order-management.md`).
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`SHIP-001` through `SHIP-004`, `ORD-003`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

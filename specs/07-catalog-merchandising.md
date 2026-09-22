@@ -36,6 +36,13 @@ collections, and publishing status — for the website channel (and, per
   product master "category" attribute — single taxonomy or two
   separate ones? Not yet decided.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`CAT-001` through `CAT-004`, `TAX-001`, `TAX-002`, `PROD-002`,
+`PROD-003`. See also `blueprint/INDIA_COMMERCE_GAPS.md` for the
+MRP/tax-inclusive pricing question underlying `CAT-001`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

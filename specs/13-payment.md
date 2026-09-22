@@ -36,6 +36,15 @@ Razorpay and COD integrations.
   raw card data (`SECURITY.md` §4), needs explicit confirmation once
   Razorpay integration is designed.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`PAY-001` through `PAY-006`, `IND-001`, `IND-004`. See
+`blueprint/ORDER_PAYMENT_INTEGRITY.md` for the critical clarification
+that payment state and order state are separate state machines, plus
+the idempotency and webhook-handling requirements this spec must
+satisfy.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first. Given financial

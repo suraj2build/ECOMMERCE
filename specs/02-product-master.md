@@ -46,6 +46,14 @@ inventory.
 - Country-of-origin / compliance attribute requirements for the target
   market(s) — not yet specified.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`PROD-001` through `PROD-006`, `ORG-001`, `CAT-003`, `TAX-003`. See
+also `blueprint/FASHION_DOMAIN_GAPS.md` for the fashion-domain gap
+analysis that identified several of these (size chart, product media,
+bulk operations, lifecycle states) as currently unmodeled.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

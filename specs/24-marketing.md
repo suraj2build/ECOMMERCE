@@ -32,6 +32,12 @@ principles (`SECURITY.md` §4).
 - Consent/compliance requirements for the target market(s) — not yet
   specified.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`MKT-001`, `CUST-002` (marketing preference granularity, consolidated
+from this spec and `specs/21-customer-profile.md`).
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

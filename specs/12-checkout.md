@@ -37,6 +37,14 @@ creation.
 - Tax calculation approach — not yet decided (jurisdiction rules
   unresolved, see `PRODUCT.md` §4).
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`CHK-001` through `CHK-004`, `TAX-001` through `TAX-003`, `IND-002`,
+`IND-003`, `IND-005`. See also `blueprint/INDIA_COMMERCE_GAPS.md` for
+the India-specific requirements (PIN-code serviceability, address
+structure, GST) this spec currently only glancingly addresses.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

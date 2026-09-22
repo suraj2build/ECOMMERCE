@@ -37,6 +37,13 @@ methods.
 - Refund reason capture and its relationship to return reason
   (`18-returns.md`)?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`REF-001` through `REF-004`, `TAX-005`, `PAY-001`. See
+`blueprint/ORDER_PAYMENT_INTEGRITY.md` for reconciliation requirements
+this spec must satisfy.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first. Given financial

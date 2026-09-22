@@ -33,6 +33,11 @@ staff/processes.
   into inventory (creates a ledger adjustment + triggers order
   exception in `14-order-management.md`)?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`WH-001`, `WH-002`, `ORG-002` (decide together with `INV-004`).
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

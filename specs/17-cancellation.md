@@ -35,6 +35,11 @@ loyalty.
 - Cancellation reason capture — required or optional, and does it feed
   analytics/procurement decisions?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`CAN-001` through `CAN-003`, `ORD-001`, `ORD-002`, `TAX-005`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

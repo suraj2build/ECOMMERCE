@@ -33,6 +33,11 @@ reserves stock) must be resolved consistently with `06-inventory.md`.
 - Wishlist sharing (e.g., shareable wishlist link) — in scope or
   future?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`CART-001`, `CART-002`, `CART-003`, `INV-002`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

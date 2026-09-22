@@ -60,3 +60,16 @@ Every spec above starts `DRAFT` unless noted otherwise. See
 **No spec in this index may be implemented until it reaches
 `APPROVED`**, and even then only within an unblocked milestone per
 `BUILD_PLAN.md`.
+
+## Blueprint references
+
+`/blueprint` contains the Product Blueprint V2 decision system built
+on top of this index — see `blueprint/README.md` for the full
+documentation audit and `blueprint/DECISION_REGISTER.md` for all 112
+open decisions. Two domains that audit surfaced have **no dedicated
+spec above**: the organization/business-entity model (`ORG-001`,
+`ORG-002` — see `blueprint/DEPENDENCY_MAP.md`) and India Tax/GST/
+Invoicing (`TAX-001` through `TAX-006` — see
+`blueprint/INDIA_COMMERCE_GAPS.md`). Decisions for both are currently
+recorded against this file until/unless the Product Owner authorizes
+dedicated spec files for them.

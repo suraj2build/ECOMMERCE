@@ -33,6 +33,11 @@ Page (PLP) browsing/filtering/faceting behavior.
 - Out-of-stock handling in search results/PLP (hide, show with
   "out of stock" label, or deprioritize)?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`SRCH-001`, `SRCH-002`, `CAT-002`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

@@ -38,6 +38,12 @@ disposition (restock, damage, dispose).
   distinct flow? Not yet decided — affects both specs' data models.
 - Self-service vs. assisted return initiation — not yet decided.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`RET-001` through `RET-004`, `EXC-001` (the exchange-vs-return data
+model question, now consolidated as a single decision), `INV-006`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

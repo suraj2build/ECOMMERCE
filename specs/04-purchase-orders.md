@@ -34,6 +34,12 @@ to arrive.
   taxes/duties) — not yet defined, affects `specs/07-catalog-merchandising.md`
   pricing inputs.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`PO-001`, `PO-002`, `PO-003`, `SUP-001`. See also
+`blueprint/END_TO_END_FLOWS.md` flow 1 (Supplier → PO → Approval).
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

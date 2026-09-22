@@ -42,6 +42,13 @@ across the storefront and internal/admin surfaces.
   roles beyond Medusa's admin users? Needs evaluation once
   implementation starts.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`AUTH-001`, `AUTH-002`, `AUTH-003`, `ADM-001`. See also
+`blueprint/OPERATING_ROLES.md` for candidate role definitions feeding
+`ADM-001`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first. See

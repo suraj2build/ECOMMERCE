@@ -37,6 +37,15 @@ platform configuration.
 - Manual inventory adjustment workflow (who can adjust stock manually,
   and what justification/audit is required)?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`ADM-001` through `ADM-003`. See `blueprint/OPERATING_ROLES.md` for
+the full candidate persona list (Super Admin, Business Admin, Buyer,
+Merchandiser, Catalog Manager, Warehouse Manager, Warehouse Operator,
+Customer Service, Marketing, Finance, Analyst) feeding `ADM-001` —
+none of these roles are approved yet.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

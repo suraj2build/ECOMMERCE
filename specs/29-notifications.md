@@ -39,6 +39,10 @@ what happened.
   return, refund, exchange, loyalty) — not yet defined; depends on
   each domain's own spec reaching `APPROVED` first.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on: `NOTIF-001`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.

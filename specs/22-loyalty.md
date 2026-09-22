@@ -38,6 +38,12 @@ loyalty value, backed by an auditable ledger.
 - Loyalty program launch timing relative to other milestones — is this
   needed for initial launch or a post-launch addition?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`LOY-001` through `LOY-005`. `LOY-001` itself asks whether a loyalty
+program exists at launch at all — see `blueprint/READINESS.md`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first. This is one of the

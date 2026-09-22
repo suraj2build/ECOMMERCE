@@ -38,6 +38,15 @@ events (cancellation, return, refund, exchange).
 - Order exception handling (e.g., undeliverable address, failed
   delivery attempts) — not yet defined.
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`ORD-001` through `ORD-006`, `PAY-002`, `TAX-004`. `ORD-001` (the
+complete order state machine) is flagged in `blueprint/READINESS.md`
+as the single largest blocker cluster on the platform — see
+`blueprint/END_TO_END_FLOWS.md` and `blueprint/ORDER_PAYMENT_INTEGRITY.md`
+before attempting to resolve it.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first. This spec is a

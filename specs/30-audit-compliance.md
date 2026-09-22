@@ -39,6 +39,12 @@ financial, operational, and legal accountability.
 - Who has access to audit logs, and what admin RBAC role governs that
   (`01-auth-rbac.md`, `28-admin.md`)?
 
+## Blueprint references
+
+See `blueprint/DECISION_REGISTER.md` for full context on:
+`AUD-001`, `AUD-002`. `AUD-002` requires legal input before it can be
+treated as decided — see `blueprint/INDIA_COMMERCE_GAPS.md`.
+
 ## Acceptance criteria
 
 Not yet defined — requires `APPROVED` status first.
