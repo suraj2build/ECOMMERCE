@@ -38,12 +38,28 @@ export class InventoryService {
     return this.fastify.prisma;
   }
 
-  /** Ensures a balance row exists for (skuId, locationId) without resetting an existing one. */
+  /**
+   * Ensures a balance row exists for (skuId, locationId) without
+   * resetting an existing one. Validates both referenced ids first -
+   * certification-pass finding: without this, an unknown skuId/
+   * locationId surfaced as a raw foreign-key constraint violation from
+   * the upsert (an opaque 500), instead of a clean 404.
+   */
   private async ensureBalanceRow(
     tx: Prisma.TransactionClient,
     skuId: string,
     locationId: string,
   ): Promise<void> {
+    const existing = await tx.inventoryBalance.findUnique({ where: { skuId_locationId: { skuId, locationId } } });
+    if (existing) return;
+
+    const [sku, location] = await Promise.all([
+      tx.sku.findUnique({ where: { id: skuId }, select: { id: true } }),
+      tx.location.findUnique({ where: { id: locationId }, select: { id: true } }),
+    ]);
+    if (!sku) throw new NotFoundError('Sku', skuId);
+    if (!location) throw new NotFoundError('Location', locationId);
+
     await tx.inventoryBalance.upsert({
       where: { skuId_locationId: { skuId, locationId } },
       update: {},
