@@ -5,6 +5,14 @@
 // See ARCHITECTURE.md, ADR-0012 (inventory ledger), ADR-0016 (Medusa
 // sequencing), and blueprint/DECISION_REGISTER.md for the decisions
 // this schema implements.
+//
+// NOTE: migration 20260922171222_add_integrity_constraints also adds a
+// set of CHECK constraints (non-negative/positive quantities and money,
+// InventoryBalance.reserved <= onHand, GRN quantity-balance, Price
+// sellingPrice <= mrp) that are NOT representable in this DSL and so have
+// no corresponding attribute here. Read that migration file before
+// assuming the schema below is the complete set of database-level
+// invariants.
 
 generator client {
   provider = "prisma-client-js"
@@ -213,7 +221,10 @@ model AuditLog {
   reference    String?
   createdAt    DateTime       @default(now())
 
-  actorStaff StaffUser? @relation(fields: [actorStaffId], references: [id])
+  // Explicitly Restrict, not Prisma's implicit SetNull default for a
+  // nullable FK: the audit trail must never silently lose who
+  // performed an action because that staff row was later deleted.
+  actorStaff StaffUser? @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
 
   @@index([entityType, entityId])
   @@index([action])
@@ -280,7 +291,7 @@ model Style {
 
   brand    Brand    @relation(fields: [brandId], references: [id])
   category Category @relation(fields: [categoryId], references: [id])
-  publishedBy StaffUser? @relation("StylePublishedBy", fields: [publishedByStaffId], references: [id])
+  publishedBy StaffUser? @relation("StylePublishedBy", fields: [publishedByStaffId], references: [id], onDelete: Restrict)
 
   colours       Colour[]
   skus          Sku[]
@@ -348,6 +359,7 @@ model SizeChartEntry {
 
   sizeChart SizeChart @relation(fields: [sizeChartId], references: [id], onDelete: Cascade)
 
+  @@unique([sizeChartId, sizeLabel])
   @@map("size_chart_entries")
 }
 
@@ -484,8 +496,8 @@ model PurchaseOrder {
 
   supplier    Supplier   @relation(fields: [supplierId], references: [id])
   location    Location   @relation(fields: [locationId], references: [id])
-  submittedBy StaffUser? @relation("POSubmittedBy", fields: [submittedByStaffId], references: [id])
-  approvedBy  StaffUser? @relation("POApprovedBy", fields: [approvedByStaffId], references: [id])
+  submittedBy StaffUser? @relation("POSubmittedBy", fields: [submittedByStaffId], references: [id], onDelete: Restrict)
+  approvedBy  StaffUser? @relation("POApprovedBy", fields: [approvedByStaffId], references: [id], onDelete: Restrict)
 
   lines         PurchaseOrderLine[]
   approvals     PurchaseOrderApproval[]
@@ -590,6 +602,12 @@ model GoodsReceiptLine {
   poLine PurchaseOrderLine @relation(fields: [poLineId], references: [id])
   sku    Sku               @relation(fields: [skuId], references: [id])
 
+  // A PO line can only be represented once per GRN (its qcResult already
+  // supports a PARTIAL split of accepted/damaged/rejected within one
+  // line) - certification-pass finding: without this, two lines for the
+  // same poLineId in one request silently lost one update in
+  // ProcurementService.applyGrnReceipt's receivedQty accumulation.
+  @@unique([grnId, poLineId])
   @@index([grnId])
   @@map("goods_receipt_lines")
 }
@@ -635,8 +653,8 @@ model InventoryTransaction {
 
   sku      Sku       @relation(fields: [skuId], references: [id])
   location Location  @relation(fields: [locationId], references: [id])
-  actorStaff StaffUser? @relation("InventoryAdjustmentActor", fields: [actorStaffId], references: [id])
-  coApproverStaff StaffUser? @relation("InventoryAdjustmentCoApprover", fields: [coApproverStaffId], references: [id])
+  actorStaff StaffUser? @relation("InventoryAdjustmentActor", fields: [actorStaffId], references: [id], onDelete: Restrict)
+  coApproverStaff StaffUser? @relation("InventoryAdjustmentCoApprover", fields: [coApproverStaffId], references: [id], onDelete: Restrict)
 
   @@index([skuId, locationId])
   @@index([type])
@@ -729,8 +747,16 @@ model Price {
   effectiveTo   DateTime?
   createdAt     DateTime  @default(now())
 
-  style  Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  colour Colour? @relation(fields: [colourId], references: [id], onDelete: Cascade)
+  // Certification-pass finding: pricing history is financially/
+  // analytically relevant (feeds specs/27-analytics-reporting.md) and
+  // must not silently vanish - or silently change meaning - if a
+  // Style/Colour row is ever deleted. Explicitly Restrict rather than
+  // Cascade (loses history) or Prisma's implicit default for a
+  // nullable FK, SetNull (would turn a colour-specific price into what
+  // looks like a style-wide price the moment its colour is deleted -
+  // worse than either alternative).
+  style  Style   @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  colour Colour? @relation(fields: [colourId], references: [id], onDelete: Restrict)
 
   @@index([styleId, effectiveFrom, effectiveTo])
   @@map("prices")

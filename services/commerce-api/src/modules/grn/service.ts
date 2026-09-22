@@ -54,6 +54,16 @@ export class GrnService {
   async createGoodsReceipt(input: CreateGrnInput, actorStaffId: string) {
     if (input.lines.length === 0) throw new ValidationError('GRN must have at least one line');
 
+    const poLineIds = input.lines.map((l) => l.poLineId);
+    if (new Set(poLineIds).size !== poLineIds.length) {
+      // A PO line's outcome can already be split via qcResult PARTIAL
+      // within a single line - certification-pass finding: without this
+      // check, a request repeating a poLineId lost one update in
+      // ProcurementService.applyGrnReceipt and was only ever caught by
+      // the database's unique constraint, surfacing as an opaque 500.
+      throw new ValidationError('A GRN request cannot include the same purchase order line more than once');
+    }
+
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id: input.poId }, include: { lines: true } });
     if (!po) throw new NotFoundError('PurchaseOrder', input.poId);
     if (!['APPROVED', 'PARTIALLY_RECEIVED'].includes(po.status)) {

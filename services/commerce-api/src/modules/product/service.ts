@@ -104,6 +104,17 @@ export class ProductService {
     input: { styleId: string; colourId: string; sizeId: string; skuCode: string; barcode?: string; sizeChartId?: string },
     actorStaffId: string,
   ) {
+    // Cross-style contamination guard: a colour is only ever valid for
+    // the style it was created under - the FK on Sku.colourId alone
+    // cannot express that a colour "belongs to" a specific style, so
+    // this must be checked explicitly (certification-pass finding;
+    // generateSkuMatrix's own caller is already safe by construction,
+    // but createSku is a public method any future caller could misuse).
+    const colour = await this.prisma.colour.findUnique({ where: { id: input.colourId } });
+    if (!colour || colour.styleId !== input.styleId) {
+      throw new ValidationError(`Colour '${input.colourId}' does not belong to style '${input.styleId}'`);
+    }
+
     const existing = await this.prisma.sku.findUnique({
       where: {
         styleId_colourId_sizeId: {
@@ -164,6 +175,16 @@ export class ProductService {
     actorStaffId: string,
   ) {
     await this.getStyle(input.styleId);
+    if (input.colourId) {
+      // Certification-pass finding: media/colour association must not
+      // cross product boundaries - this route accepts colourId directly
+      // from the request, so without this check any colour id from any
+      // style could be attached to this style's media.
+      const colour = await this.prisma.colour.findUnique({ where: { id: input.colourId } });
+      if (!colour || colour.styleId !== input.styleId) {
+        throw new ValidationError(`Colour '${input.colourId}' does not belong to style '${input.styleId}'`);
+      }
+    }
     const media = await this.prisma.productMedia.create({
       data: { ...input, type: input.type ?? 'IMAGE' },
     });
@@ -185,6 +206,12 @@ export class ProductService {
     brandId?: string;
     entries: { sizeLabel: string; measurements: Record<string, unknown> }[];
   }) {
+    if (input.entries.length === 0) throw new ValidationError('Size chart must have at least one entry');
+    const labels = input.entries.map((e) => e.sizeLabel);
+    if (new Set(labels).size !== labels.length) {
+      throw new ValidationError('Size chart cannot have duplicate size labels');
+    }
+
     return this.prisma.sizeChart.create({
       data: {
         name: input.name,
