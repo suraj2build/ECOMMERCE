@@ -1,6 +1,6 @@
 # 02. Product Master
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PROD-001`–`006`, `ORG-001`, `CAT-003`)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — was APPROVED, decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PROD-001`–`006`, `ORG-001`, `CAT-003`)
 
 ## Purpose
 

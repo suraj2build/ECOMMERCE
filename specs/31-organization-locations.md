@@ -1,8 +1,9 @@
 # 31. Organization & Locations
 
-**Status:** APPROVED (foundational data model — decided 2026-09-22 by
-Product Owner instruction; see `blueprint/DECISION_REGISTER.md`
-`ORG-001`, `ORG-002`/`INV-004`)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — was APPROVED,
+foundational data model, decided 2026-09-22 by Product Owner
+instruction; see `blueprint/DECISION_REGISTER.md` `ORG-001`,
+`ORG-002`/`INV-004`)
 
 ## Purpose
 

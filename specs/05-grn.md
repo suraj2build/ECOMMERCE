@@ -1,6 +1,6 @@
 # 05. Goods Receipt (GRN)
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `GRN-001`–`003`)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — was APPROVED, decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `GRN-001`–`003`)
 
 ## Purpose
 

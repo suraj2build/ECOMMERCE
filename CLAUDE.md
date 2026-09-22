@@ -6,37 +6,50 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-22:** The Product Owner's Blueprint V2 decision
-session is complete. 105 of 112 registered business decisions are
-`DECIDED`, 7 remain `UNDER_REVIEW` (routed to external tax/legal
-compliance verification, not further Product Owner questions), and 0
-remain genuinely `OPEN`. Most specs in `/specs` are now `APPROVED`, and
-most milestones in `BUILD_PLAN.md` are classified
-`READY_FOR_IMPLEMENTATION` at the decision level — see
-`blueprint/READINESS.md` for the authoritative, current scorecard.
+**Status as of 2026-09-22 (updated same day, Phase 1 build):** The
+Product Owner's Blueprint V2 decision session completed earlier on
+2026-09-22 (105/112 decisions `DECIDED`, 7 `UNDER_REVIEW`, 0 `OPEN`).
+Later the same day, the human project owner gave explicit
+**"START BUILD — PHASE 1"** authorization, scoped specifically to
+milestones **M00 through M07** (Project Foundation through Catalog/
+Merchandising/Pricing), with an explicit instruction to stop at a
+Phase 1 review gate afterward rather than self-authorizing further
+milestones.
 
-**This does NOT mean implementation is authorized.** Decision/spec/
-milestone readiness (`blueprint/READINESS.md` Layers 1–3) is a
+**M00–M07 have now been implemented** under that authorization: a real
+npm-workspaces monorepo, a Prisma/PostgreSQL schema with applied,
+reproducible migrations, a Fastify-based `commerce-api` service
+implementing all seven milestones' domain logic (including the
+ledger-based, concurrency-safe inventory model and its mandatory
+oversell-prevention test), and a passing automated test suite (unit +
+integration, run against real PostgreSQL/Redis, not mocks). See
+`BUILD_PLAN.md` §3 for the milestone-by-milestone status and the most
+recent Phase 1 completion report for full detail (test results,
+commit history, deviations, and confirmed scope boundary).
+
+**This authorization does NOT extend beyond M07.** Decision/spec/
+milestone readiness (`blueprint/READINESS.md` Layers 1–3) remains a
 separate thing from implementation authorization (Layer 4):
 
-- **No application code, frameworks, or database migrations exist,**
-  and none should be added until the human project owner gives
-  explicit **START BUILD** authorization — this has **not** been
-  given as of this update, regardless of how many milestones show
-  `READY_FOR_IMPLEMENTATION`.
-- Do **not** interpret "the decisions are resolved" or "the docs are
-  done" as authorization to start implementation. Authorization must
-  be explicit and human-given (the literal phrase **START BUILD**),
-  not inferred from documentation completeness.
+- **M08 and every later milestone remain unauthorized.** No
+  application code for M08+ should be added until the human project
+  owner gives a new, separate, explicit **START BUILD** authorization
+  for that phase — the Phase 1 authorization does not carry forward
+  automatically, regardless of how cleanly M00–M07 landed.
+- Do **not** interpret "Phase 1 shipped cleanly" or "the docs are
+  done" as authorization for the next phase. Authorization must be
+  explicit and human-given for each phase, not inferred from a prior
+  phase's completeness.
 - A small number of items remain `UNDER_REVIEW` for genuine
   compliance/legal reasons (India GST/tax specifics in
   `specs/32-india-tax-invoicing.md`; data-retention policy in
   `specs/21-customer-profile.md` and `specs/30-audit-compliance.md`).
   These require a qualified professional's verification, not an
-  engineering agent's judgment — never resolve them yourself.
+  engineering agent's judgment — never resolve them yourself. M08
+  (which depends on the tax items) was correctly left unimplemented.
 
-If you are unsure whether implementation is authorized, **stop and
-ask** rather than proceeding.
+If you are unsure whether implementation is authorized for a given
+milestone, **stop and ask** rather than proceeding.
 
 ## 1. Your role
 

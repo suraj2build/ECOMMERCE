@@ -51,14 +51,14 @@ to the original 32, for a revised total of **34 milestones (M00–M33)**
 
 | Milestone | Name | Owning spec(s) | Readiness |
 |---|---|---|---|
-| M00 | Project Foundation (+ Organization & Location Foundation) | `00`, `31` | **READY_FOR_IMPLEMENTATION** |
-| M01 | Authentication / RBAC | `01` | **READY_FOR_IMPLEMENTATION** |
-| M02 | Product Master (+ optional AI enrichment sub-scope) | `02`, `34` | READY_FOR_IMPLEMENTATION |
-| M03 | Suppliers | `03` | READY_FOR_IMPLEMENTATION |
-| M04 | Procurement / Purchase Orders | `04` | READY_FOR_IMPLEMENTATION |
-| M05 | GRN / QC | `05` | READY_FOR_IMPLEMENTATION |
-| M06 | Inventory | `06` | READY_FOR_IMPLEMENTATION |
-| M07 | Catalog / Merchandising / Pricing | `07` | READY_FOR_IMPLEMENTATION |
+| M00 | Project Foundation (+ Organization & Location Foundation) | `00`, `31` | **IMPLEMENTED** (Phase 1 build, 2026-09-22) |
+| M01 | Authentication / RBAC | `01` | **IMPLEMENTED** (Phase 1 build, 2026-09-22) |
+| M02 | Product Master (+ optional AI enrichment sub-scope) | `02`, `34` | IMPLEMENTED (Phase 1 build, 2026-09-22; AI enrichment sub-scope not built — deferred, not requested) |
+| M03 | Suppliers | `03` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
+| M04 | Procurement / Purchase Orders | `04` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
+| M05 | GRN / QC | `05` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
+| M06 | Inventory | `06` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
+| M07 | Catalog / Merchandising / Pricing | `07` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
 | M08 | **Tax & Invoicing Foundation** (NEW) | `32` | **BLOCKED** — compliance verification pending (`TAX-001`–`005`) |
 | M09 | Storefront Foundation | `08` | READY_FOR_IMPLEMENTATION |
 | M10 | Search / Discovery | `09` | READY_FOR_IMPLEMENTATION |
@@ -114,9 +114,18 @@ is authorized to start. Two separate gates must both be satisfied:
 
 1. **Decision readiness** (this document, per-milestone, now largely
    satisfied).
-2. **Explicit human authorization** ("**START BUILD**") — not yet
-   given. See `CLAUDE.md` §0 and §41 of the 2026-09-22 Product Owner
-   instruction: "DO NOT begin M00 implementation in this task."
+2. **Explicit human authorization** ("**START BUILD**") — given
+   2026-09-22 for **Phase 1 (M00–M07) only**, via an explicit
+   "START BUILD — PHASE 1" instruction scoped to those milestones and
+   requiring a stop at a Phase 1 review gate before any further
+   milestone. M00–M07 are now `IMPLEMENTED` (real code, real migrations
+   against a live PostgreSQL instance, a real Redis-backed session
+   store, and a passing automated test suite — unit, integration, the
+   mandatory inventory-oversell concurrency test, and a full end-to-end
+   proof — not scaffolding). **M08 and beyond remain unauthorized** and
+   were not implemented. Continuing past M07 requires a new, separate,
+   explicit authorization from the human project owner — this document
+   being updated is not that authorization.
 
 **`BLOCKED` milestones (M08, M32, M33)** have a stated, specific
 reason — either genuine external compliance verification (M08) or

@@ -1,6 +1,6 @@
 # 03. Suppliers
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SUP-001`, `SUP-002`, `PO-001`)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — was APPROVED, decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SUP-001`, `SUP-002`, `PO-001`)
 
 ## Purpose
 

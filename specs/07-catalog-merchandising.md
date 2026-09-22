@@ -1,6 +1,6 @@
 # 07. Catalog / Merchandising / Pricing
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CAT-001`–`004`)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — was APPROVED, decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CAT-001`–`004`)
 
 ## Purpose
 

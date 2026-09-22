@@ -1,6 +1,6 @@
 # 01. Authentication / RBAC
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `AUTH-001`–`003`, `ADM-001`)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — was APPROVED, decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `AUTH-001`–`003`, `ADM-001`)
 
 ## Purpose
 

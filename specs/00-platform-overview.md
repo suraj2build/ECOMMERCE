@@ -1,8 +1,10 @@
 # 00. Platform Overview
 
-**Status:** APPROVED (scope/overview only — restates decisions already
-approved in `PRODUCT.md` and `ARCHITECTURE.md`; does not itself approve
-any domain's business rules beyond what each spec below records)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — M00-M07 foundation
+implemented and tested, see BUILD_PLAN.md; was APPROVED — scope/overview
+only, restates decisions already approved in `PRODUCT.md` and
+`ARCHITECTURE.md`, does not itself approve any domain's business rules
+beyond what each spec below records)
 
 ## Purpose
 

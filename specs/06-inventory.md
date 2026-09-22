@@ -1,6 +1,6 @@
 # 06. Inventory
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `INV-001`–`007`)
+**Status:** IMPLEMENTED (Phase 1 build, 2026-09-22 — was APPROVED, decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `INV-001`–`007`)
 
 ## Purpose
 
