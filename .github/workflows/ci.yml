@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  DATABASE_URL: postgresql://fcp_app:fcp_dev_password@localhost:5432/fcp_test
+  REDIS_URL: redis://localhost:6379
+  JWT_ACCESS_SECRET: ci-only-secret-ci-only-secret-not-for-prod
+  NODE_ENV: test
+  LOG_LEVEL: fatal
+
+jobs:
+  lint-typecheck-build-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fcp_app
+          POSTGRES_PASSWORD: fcp_dev_password
+          POSTGRES_DB: fcp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fcp_app -d fcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Migration-from-clean-database check (CLAUDE.md §16, acceptance/
+      # m00-project-foundation.md): applies the full migration history to
+      # a brand-new database, proving it's deterministic and reproducible.
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Apply migrations to a clean database
+        run: npm run db:migrate:deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm run test --workspace=services/commerce-api
+
+      - name: Seed test-relevant reference data
+        run: npm run db:seed
+        env:
+          SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
+          SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
+
+      - name: Integration tests (real Postgres + Redis)
+        run: npm run test:integration --workspace=services/commerce-api
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # API-level smoke check via Playwright (see playwright.config.ts -
+      # full browser UI E2E has no target yet; no storefront app exists
+      # in the M00-M07 Phase 1 scope).
+      - name: E2E smoke (start API, run Playwright)
+        run: |
+          npm run dev:api &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4000/health && break
+            sleep 1
+          done
+          npm run test:e2e
+        env:
+          PORT: '4000'

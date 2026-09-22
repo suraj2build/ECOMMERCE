@@ -1,0 +1,788 @@
+// Fashion Commerce Platform - Prisma schema
+// Covers Phase 1 (M00-M07): Foundation, Auth/RBAC, Product Master,
+// Suppliers, Purchase Orders, GRN/QC, Inventory, Catalog/Pricing.
+//
+// See ARCHITECTURE.md, ADR-0012 (inventory ledger), ADR-0016 (Medusa
+// sequencing), and blueprint/DECISION_REGISTER.md for the decisions
+// this schema implements.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// M00: Organization & Locations (specs/31-organization-locations.md)
+// ---------------------------------------------------------------------------
+
+model Brand {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  styles Style[]
+
+  @@map("brands")
+}
+
+enum LocationType {
+  WAREHOUSE
+  STORE // reserved for FUTURE_CONSIDERATION (physical stores) - not used in Phase 1
+}
+
+model Location {
+  id        String       @id @default(uuid())
+  code      String       @unique
+  name      String
+  type      LocationType @default(WAREHOUSE)
+  isActive  Boolean      @default(true)
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  pinCode      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchaseOrders    PurchaseOrder[]
+  goodsReceipts     GoodsReceipt[]
+  inventoryBalances InventoryBalance[]
+  inventoryTxns     InventoryTransaction[]
+  transfersFrom     InventoryTransfer[]    @relation("TransferFrom")
+  transfersTo       InventoryTransfer[]    @relation("TransferTo")
+
+  @@map("locations")
+}
+
+// ---------------------------------------------------------------------------
+// M01: Authentication & RBAC (specs/01-auth-rbac.md)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id              String    @id @default(uuid())
+  mobile          String    @unique
+  email           String?
+  fullName        String?
+  mobileVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  refreshTokens CustomerRefreshToken[]
+
+  @@map("customers")
+}
+
+model OtpCode {
+  id         String    @id @default(uuid())
+  mobile     String
+  codeHash   String
+  purpose    String    @default("LOGIN")
+  attempts   Int       @default(0)
+  maxAttempts Int      @default(5)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([mobile, consumedAt])
+  @@map("otp_codes")
+}
+
+model CustomerRefreshToken {
+  id         String    @id @default(uuid())
+  customerId String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_refresh_tokens")
+}
+
+model StaffUser {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  isActive     Boolean   @default(true)
+  mfaEnabled   Boolean   @default(false)
+  mfaSecret    String? // TOTP secret, encrypted at rest by application layer
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  roles               StaffUserRole[]
+  sessions            StaffSession[]
+  submittedPOs        PurchaseOrder[]        @relation("POSubmittedBy")
+  approvedPOs         PurchaseOrder[]        @relation("POApprovedBy")
+  poApprovalEvents    PurchaseOrderApproval[]
+  receivedGRNs        GoodsReceipt[]         @relation("GRNReceivedBy")
+  inventoryAdjustments InventoryTransaction[] @relation("InventoryAdjustmentActor")
+  coApprovedAdjustments InventoryTransaction[] @relation("InventoryAdjustmentCoApprover")
+  publishedStyles      Style[]               @relation("StylePublishedBy")
+  auditLogEntries      AuditLog[]
+
+  @@map("staff_users")
+}
+
+model StaffSession {
+  id         String    @id @default(uuid())
+  staffUserId String
+  tokenHash  String    @unique
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_sessions")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. SUPER_ADMIN, BUYING, MERCHANDISING...
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  permissions RolePermission[]
+  staffUsers  StaffUserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. "po:approve", "inventory:adjust"
+  description String?
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model StaffUserRole {
+  staffUserId String
+  roleId      String
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([staffUserId, roleId])
+  @@map("staff_user_roles")
+}
+
+enum AuditActorType {
+  STAFF
+  CUSTOMER
+  SYSTEM
+}
+
+model AuditLog {
+  id           String         @id @default(uuid())
+  actorType    AuditActorType
+  actorStaffId String?
+  action       String // e.g. "po.approve", "inventory.adjust", "style.publish"
+  entityType   String
+  entityId     String
+  oldValue     Json?
+  newValue     Json?
+  reference    String?
+  createdAt    DateTime       @default(now())
+
+  actorStaff StaffUser? @relation(fields: [actorStaffId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// M02: Product Master (specs/02-product-master.md)
+// ---------------------------------------------------------------------------
+
+enum StyleLifecycleState {
+  DRAFT
+  READY_FOR_ENRICHMENT
+  READY_FOR_QA
+  PUBLISHED
+  UNPUBLISHED
+  ARCHIVED
+}
+
+model Category {
+  id       String     @id @default(uuid())
+  name     String
+  slug     String     @unique
+  parentId String?
+  isActive Boolean    @default(true)
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  styles   Style[]
+
+  @@map("categories")
+}
+
+model Style {
+  id             String              @id @default(uuid())
+  styleCode      String              @unique
+  name           String
+  brandId        String
+  categoryId     String
+  department     String? // e.g. Men, Women
+  gender         String?
+  division       String?
+  subcategory    String?
+  season         String // required (PROD-001)
+  collection     String // required (PROD-001)
+  fabric         String?
+  fit            String?
+  pattern        String?
+  occasion       String?
+  sleeve         String?
+  neck           String?
+  washCare       String?
+  countryOfOrigin String?
+  hsnCode        String? // nullable pending TAX-003 verification
+  customAttributes Json?             // extensible attribute bag (PROD-001)
+
+  lifecycleState StyleLifecycleState @default(DRAFT)
+  qaPassedAt     DateTime?           // automated completeness gate (PROD-002/003)
+  publishedAt    DateTime?
+  publishedByStaffId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand    Brand    @relation(fields: [brandId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+  publishedBy StaffUser? @relation("StylePublishedBy", fields: [publishedByStaffId], references: [id])
+
+  colours       Colour[]
+  skus          Sku[]
+  media         ProductMedia[]
+  prices        Price[]
+  collections   CollectionStyle[]
+  badges        MerchandiseBadge[]
+  supplierSkus  SupplierSku[]
+
+  @@index([lifecycleState])
+  @@index([brandId])
+  @@index([categoryId])
+  @@map("styles")
+}
+
+model Colour {
+  id         String  @id @default(uuid())
+  styleId    String
+  name       String
+  colourCode String
+  hexSwatch  String?
+
+  style Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  skus  Sku[]
+  media ProductMedia[]
+  prices Price[]
+
+  @@unique([styleId, colourCode])
+  @@map("colours")
+}
+
+model Size {
+  id        String @id @default(uuid())
+  label     String @unique
+  sortOrder Int    @default(0)
+
+  skus Sku[]
+
+  @@map("sizes")
+}
+
+model SizeChart {
+  id            String   @id @default(uuid())
+  name          String
+  category      String? // scoping dimensions (PROD-004)
+  gender        String?
+  brandId       String?
+  version       Int      @default(1)
+  effectiveFrom DateTime @default(now())
+  effectiveTo   DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  entries SizeChartEntry[]
+  skus    Sku[]
+
+  @@map("size_charts")
+}
+
+model SizeChartEntry {
+  id          String @id @default(uuid())
+  sizeChartId String
+  sizeLabel   String
+  measurements Json
+
+  sizeChart SizeChart @relation(fields: [sizeChartId], references: [id], onDelete: Cascade)
+
+  @@map("size_chart_entries")
+}
+
+model Sku {
+  id          String   @id @default(uuid())
+  skuCode     String   @unique
+  barcode     String?  @unique
+  styleId     String
+  colourId    String
+  sizeId      String
+  sizeChartId String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  style     Style      @relation(fields: [styleId], references: [id])
+  colour    Colour     @relation(fields: [colourId], references: [id])
+  size      Size       @relation(fields: [sizeId], references: [id])
+  sizeChart SizeChart? @relation(fields: [sizeChartId], references: [id])
+
+  supplierSkus       SupplierSku[]
+  purchaseOrderLines PurchaseOrderLine[]
+  goodsReceiptLines  GoodsReceiptLine[]
+  inventoryBalances  InventoryBalance[]
+  inventoryTxns      InventoryTransaction[]
+  reservations       InventoryReservation[]
+  transfers          InventoryTransfer[]
+
+  @@unique([styleId, colourId, sizeId])
+  @@index([styleId])
+  @@map("skus")
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model ProductMedia {
+  id        String    @id @default(uuid())
+  styleId   String
+  colourId  String? // null = applies to all colours; set = variant-specific imagery
+  url       String
+  type      MediaType @default(IMAGE)
+  sortOrder Int       @default(0)
+  altText   String?
+  isSwatch  Boolean   @default(false)
+  seoMetadata Json?
+  createdAt DateTime  @default(now())
+
+  style  Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  colour Colour? @relation(fields: [colourId], references: [id], onDelete: Cascade)
+
+  @@index([styleId])
+  @@map("product_media")
+}
+
+// ---------------------------------------------------------------------------
+// M03: Suppliers (specs/03-suppliers-procurement.md)
+// ---------------------------------------------------------------------------
+
+enum SupplierType {
+  FINISHED_GOODS
+  MANUFACTURING
+}
+
+model Supplier {
+  id            String       @id @default(uuid())
+  code          String       @unique
+  name          String
+  type          SupplierType
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  paymentTerms  String?
+  leadTimeDays  Int?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  supplierSkus   SupplierSku[]
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model SupplierSku {
+  id         String   @id @default(uuid())
+  supplierId String
+  skuId      String
+  styleId    String
+  cost       Decimal  @db.Decimal(12, 2)
+  currency   String   @default("INR")
+  isPreferred Boolean @default(false)
+  createdAt  DateTime @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  sku      Sku      @relation(fields: [skuId], references: [id])
+  style    Style    @relation(fields: [styleId], references: [id])
+
+  @@unique([supplierId, skuId])
+  @@map("supplier_skus")
+}
+
+// ---------------------------------------------------------------------------
+// M04: Purchase Orders (specs/04-purchase-orders.md)
+// ---------------------------------------------------------------------------
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id            String              @id @default(uuid())
+  poNumber      String              @unique
+  supplierId    String
+  locationId    String
+  status        PurchaseOrderStatus @default(DRAFT)
+  submittedByStaffId String?
+  approvedByStaffId  String?
+  approvalThresholdApplied Decimal? @db.Decimal(12, 2)
+  totalCost     Decimal             @default(0) @db.Decimal(14, 2)
+  currency      String              @default("INR")
+  expectedDate  DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  supplier    Supplier   @relation(fields: [supplierId], references: [id])
+  location    Location   @relation(fields: [locationId], references: [id])
+  submittedBy StaffUser? @relation("POSubmittedBy", fields: [submittedByStaffId], references: [id])
+  approvedBy  StaffUser? @relation("POApprovedBy", fields: [approvedByStaffId], references: [id])
+
+  lines         PurchaseOrderLine[]
+  approvals     PurchaseOrderApproval[]
+  goodsReceipts GoodsReceipt[]
+
+  @@index([status])
+  @@index([supplierId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id          String  @id @default(uuid())
+  poId        String
+  skuId       String
+  orderedQty  Int
+  unitCost    Decimal @db.Decimal(12, 2)
+  receivedQty Int     @default(0)
+
+  po  PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  sku Sku           @relation(fields: [skuId], references: [id])
+
+  goodsReceiptLines GoodsReceiptLine[]
+
+  @@index([poId])
+  @@map("purchase_order_lines")
+}
+
+enum POApprovalAction {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model PurchaseOrderApproval {
+  id        String            @id @default(uuid())
+  poId      String
+  staffId   String
+  action    POApprovalAction
+  comment   String?
+  createdAt DateTime          @default(now())
+
+  po    PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  staff StaffUser     @relation(fields: [staffId], references: [id])
+
+  @@index([poId])
+  @@map("purchase_order_approvals")
+}
+
+// ---------------------------------------------------------------------------
+// M05: GRN / QC (specs/05-grn.md)
+// ---------------------------------------------------------------------------
+
+enum GoodsReceiptStatus {
+  OPEN
+  CLOSED
+}
+
+model GoodsReceipt {
+  id             String             @id @default(uuid())
+  grnNumber      String             @unique
+  poId           String
+  locationId     String
+  receivedByStaffId String
+  status         GoodsReceiptStatus @default(OPEN)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  po         PurchaseOrder @relation(fields: [poId], references: [id])
+  location   Location      @relation(fields: [locationId], references: [id])
+  receivedBy StaffUser     @relation("GRNReceivedBy", fields: [receivedByStaffId], references: [id])
+
+  lines GoodsReceiptLine[]
+
+  @@index([poId])
+  @@map("goods_receipts")
+}
+
+enum QcResult {
+  PASS
+  FAIL
+  PARTIAL
+}
+
+model GoodsReceiptLine {
+  id          String   @id @default(uuid())
+  grnId       String
+  poLineId    String
+  skuId       String
+  expectedQty Int
+  receivedQty Int
+  acceptedQty Int      @default(0)
+  shortQty    Int      @default(0)
+  excessQty   Int      @default(0)
+  damagedQty  Int      @default(0)
+  rejectedQty Int      @default(0)
+  qcResult    QcResult
+  qcNotes     String?
+  createdAt   DateTime @default(now())
+
+  grn    GoodsReceipt      @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  poLine PurchaseOrderLine @relation(fields: [poLineId], references: [id])
+  sku    Sku               @relation(fields: [skuId], references: [id])
+
+  @@index([grnId])
+  @@map("goods_receipt_lines")
+}
+
+// ---------------------------------------------------------------------------
+// M06: Inventory Ledger (specs/06-inventory.md, ADR-0012) - CRITICAL DOMAIN
+// ---------------------------------------------------------------------------
+
+enum InventoryTxnType {
+  RECEIPT
+  QC_FAIL
+  RESERVATION
+  RESERVATION_RELEASE
+  ALLOCATION
+  SALE
+  CANCELLATION
+  RETURN_RECEIVED
+  RETURN_QC_PASS
+  RETURN_QC_FAIL
+  EXCHANGE_RELEASE
+  EXCHANGE_RESERVE
+  RTO
+  ADJUSTMENT
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+// Append-only ledger - the source of truth. Never mutated after insert.
+model InventoryTransaction {
+  id             String           @id @default(uuid())
+  skuId          String
+  locationId     String
+  type           InventoryTxnType
+  quantity       Int // always positive; `type` determines directional effect
+  referenceType  String? // e.g. "GRN", "PO", "MANUAL", "TRANSFER", "RESERVATION"
+  referenceId    String?
+  reason         String?
+  idempotencyKey String?          @unique
+  actorType      AuditActorType   @default(SYSTEM)
+  actorStaffId   String?
+  coApproverStaffId String?
+  createdAt      DateTime         @default(now())
+
+  sku      Sku       @relation(fields: [skuId], references: [id])
+  location Location  @relation(fields: [locationId], references: [id])
+  actorStaff StaffUser? @relation("InventoryAdjustmentActor", fields: [actorStaffId], references: [id])
+  coApproverStaff StaffUser? @relation("InventoryAdjustmentCoApprover", fields: [coApproverStaffId], references: [id])
+
+  @@index([skuId, locationId])
+  @@index([type])
+  @@index([referenceType, referenceId])
+  @@map("inventory_transactions")
+}
+
+// Derived, transactionally-maintained cache. Must always equal the replay
+// of InventoryTransaction for (skuId, locationId) - see reconciliation test.
+model InventoryBalance {
+  skuId         String
+  locationId    String
+  onHand        Int      @default(0)
+  reserved      Int      @default(0)
+  damaged       Int      @default(0)
+  returnPending Int      @default(0)
+  inTransit     Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  sku      Sku      @relation(fields: [skuId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@id([skuId, locationId])
+  @@map("inventory_balances")
+}
+
+enum ReservationStatus {
+  ACTIVE
+  CONVERTED
+  RELEASED
+  EXPIRED
+}
+
+model InventoryReservation {
+  id             String            @id @default(uuid())
+  skuId          String
+  locationId     String
+  quantity       Int
+  status         ReservationStatus @default(ACTIVE)
+  expiresAt      DateTime
+  referenceType  String? // e.g. "CHECKOUT_SESSION", "COD_ORDER" (future)
+  referenceId    String?
+  idempotencyKey String            @unique
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  sku Sku @relation(fields: [skuId], references: [id])
+
+  @@index([skuId, locationId, status])
+  @@index([status, expiresAt])
+  @@map("inventory_reservations")
+}
+
+enum TransferStatus {
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+}
+
+model InventoryTransfer {
+  id             String         @id @default(uuid())
+  skuId          String
+  fromLocationId String
+  toLocationId   String
+  quantity       Int
+  status         TransferStatus @default(IN_TRANSIT)
+  createdAt      DateTime       @default(now())
+  completedAt    DateTime?
+
+  sku          Sku      @relation(fields: [skuId], references: [id])
+  fromLocation Location @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation   Location @relation("TransferTo", fields: [toLocationId], references: [id])
+
+  @@map("inventory_transfers")
+}
+
+// ---------------------------------------------------------------------------
+// M07: Catalog / Merchandising / Pricing (specs/07-catalog-merchandising.md)
+// ---------------------------------------------------------------------------
+
+model Price {
+  id            String    @id @default(uuid())
+  styleId       String
+  colourId      String? // null = applies to all colours of the style
+  mrp           Decimal   @db.Decimal(12, 2)
+  sellingPrice  Decimal   @db.Decimal(12, 2)
+  currency      String    @default("INR")
+  isMarkdown    Boolean   @default(false)
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  createdAt     DateTime  @default(now())
+
+  style  Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  colour Colour? @relation(fields: [colourId], references: [id], onDelete: Cascade)
+
+  @@index([styleId, effectiveFrom, effectiveTo])
+  @@map("prices")
+}
+
+model Collection {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  styles CollectionStyle[]
+
+  @@map("collections")
+}
+
+model CollectionStyle {
+  collectionId String
+  styleId      String
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  style      Style      @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, styleId])
+  @@map("collection_styles")
+}
+
+enum BadgeType {
+  NEW_ARRIVAL
+  BESTSELLER
+  SALE
+  MARKDOWN
+}
+
+enum BadgeSource {
+  RULE
+  MANUAL
+}
+
+model MerchandiseBadge {
+  id        String      @id @default(uuid())
+  styleId   String
+  badgeType BadgeType
+  source    BadgeSource @default(RULE)
+  startsAt  DateTime    @default(now())
+  endsAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@index([styleId])
+  @@map("merchandise_badges")
+}

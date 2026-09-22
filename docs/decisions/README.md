@@ -23,6 +23,7 @@ itself.
 | [0013](0013-loyalty-ledger-principle.md) | Loyalty as an auditable transaction/ledger | Accepted |
 | [0014](0014-remote-first-development.md) | Remote-first development via Claude Code Web | Accepted |
 | [0015](0015-human-approval-for-production-actions.md) | Human approval required for production/destructive operations | Accepted |
+| [0016](0016-medusa-v2-integration-sequencing.md) | Medusa v2 integration deferred to storefront/commerce milestones | Accepted |
 
 New ADRs should be added sequentially and listed here. See
 `CONTRIBUTING.md` §5 for the process.

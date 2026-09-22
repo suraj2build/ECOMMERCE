@@ -1,0 +1,40 @@
+{
+  "name": "fashion-commerce-platform",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Fashion Commerce Operating System - modular monolith monorepo",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run build --workspace=packages/db && npm run build --workspace=services/commerce-api",
+    "dev:api": "npm run dev --workspace=services/commerce-api",
+    "dev:storefront": "npm run dev --workspace=apps/storefront",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspace=services/commerce-api",
+    "test:integration": "npm run test:integration --workspace=services/commerce-api",
+    "test:e2e": "playwright test",
+    "db:generate": "npm run db:generate --workspace=packages/db",
+    "db:migrate": "npm run db:migrate --workspace=packages/db",
+    "db:migrate:deploy": "npm run db:migrate:deploy --workspace=packages/db",
+    "db:seed": "npm run db:seed --workspace=packages/db",
+    "db:reset": "npm run db:reset --workspace=packages/db"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.2"
+  }
+}

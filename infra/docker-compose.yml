@@ -1,0 +1,103 @@
+# Local development stack (M00, DEPLOYMENT.md §1). Brings up every
+# infrastructure dependency plus the commerce-api service from a fresh
+# clone using only documented commands:
+#
+#   cp .env.example .env   # then fill in real local values if desired
+#   docker compose -f infra/docker-compose.yml up -d
+#   npm install
+#   npm run db:generate && npm run db:migrate:deploy && npm run db:seed
+#   npm run dev:api
+#
+# Medusa v2 and the Next.js storefront are NOT included here: per
+# ADR-0016, Medusa integration is deferred to the Storefront/Cart/
+# Checkout milestones (M09+), and no storefront app exists yet in the
+# M00-M07 Phase 1 scope. This file will grow to include them when those
+# milestones start, per DEPLOYMENT.md's target topology.
+name: fcp
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fcp_app
+      POSTGRES_PASSWORD: fcp_dev_password
+      POSTGRES_DB: fcp_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U fcp_app -d fcp_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    restart: unless-stopped
+    environment:
+      MEILI_NO_ANALYTICS: 'true'
+      MEILI_ENV: development
+    ports:
+      - '7700:7700'
+    volumes:
+      - meilisearch-data:/meili_data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  commerce-api:
+    build:
+      context: ..
+      dockerfile: infra/commerce-api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://fcp_app:fcp_dev_password@postgres:5432/fcp_dev
+      REDIS_URL: redis://redis:6379
+      MEILISEARCH_HOST: http://meilisearch:7700
+      S3_ENDPOINT: http://minio:9000
+      JWT_ACCESS_SECRET: dev-only-change-me-dev-only-change-me
+      PORT: '4000'
+    ports:
+      - '4000:4000'
+
+volumes:
+  postgres-data:
+  redis-data:
+  meilisearch-data:
+  minio-data:
