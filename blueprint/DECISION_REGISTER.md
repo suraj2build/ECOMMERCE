@@ -1,185 +1,207 @@
 # Decision Register
 
-**Status:** This register is a working tool for Product Blueprint V2. It
-does not itself decide anything. Every entry's `Status` is `OPEN` unless
-noted; **no entry in this register may be marked `DECIDED` by an
-engineering agent** — only the human Product Owner (optionally advised by
-ChatGPT as Product Architect, per `AGENTS.md`) may do that, and doing so
-must be accompanied by updating the referenced spec(s) in `/specs`.
+**Status:** This register was reconciled against the Product Owner's
+Blueprint V2 decision instruction on **2026-09-22**. Every decision
+below is one of:
 
-See `OPEN_QUESTIONS.md` for the prioritized, human-facing questionnaire
-built from this register. See `READINESS.md` for how these decisions gate
-each domain's build-readiness.
+- **DECIDED** — resolved by explicit Product Owner instruction, or (where
+  the instruction delegated a technical/engineering choice that does not
+  change approved business behavior — see `CLAUDE.md`/`AGENTS.md` §
+  "Technical Decision Authority") resolved by the Principal Engineering
+  Agent as a documented default. Engineering-authored defaults are
+  labeled `(engineering default)` and remain open to Product Owner
+  override at any time — they are not frozen business commitments.
+- **UNDER_REVIEW** — the Product Owner's business direction is either
+  not yet given or, more commonly in this register, the item is
+  fundamentally a **compliance/legal question requiring verification**
+  by a qualified tax/legal professional, not a business preference the
+  Product Owner can simply state. No engineering agent may convert
+  these to `DECIDED` — see `INDIA_COMMERCE_GAPS.md`.
+- **OPEN** — genuinely unresolved and not safely deferrable to
+  configuration. **None remain after this reconciliation** — see
+  summary below.
+
+**No engineering agent invented a business rule here.** Every
+`DECIDED` entry below traces to an explicit instruction in the
+2026-09-22 Product Owner session, or is marked `(engineering default)`
+and traces to the delegated technical-decision authority that same
+session explicitly granted (choices that don't change approved
+business behavior: session mechanics, identifier formats, module
+boundaries, API conventions, retry mechanics, etc.).
+
+See `OPEN_QUESTIONS.md` for the (now largely historical) prioritized
+questionnaire this register was originally built from. See
+`READINESS.md` for how these decisions gate each domain's
+build-readiness — that document is being superseded by
+`BUILD_PLAN.md`'s new readiness classification in this same update.
+
+## Reconciliation summary (2026-09-22)
+
+| | Count |
+|---|---|
+| **DECIDED** | **105** |
+| **UNDER_REVIEW** | **7** |
+| **OPEN** | **0** |
+| Total | 112 |
+
+**P0 remaining (not DECIDED):** 5 — all five are India GST/tax
+compliance items (`TAX-001` through `TAX-005`) that are fundamentally
+legal-verification tasks, not Product Owner business decisions. No
+P0 item blocks M00 or M01.
+
+**P1 remaining (not DECIDED):** 2 — `CUST-001` (data retention/deletion,
+needs legal input) and `AUD-002` (applicable regulatory requirements,
+needs legal input).
+
+**P2 remaining (not DECIDED):** 0.
+
+**No Product-Owner-answerable blocker remains for M00 or M01.** The 7
+`UNDER_REVIEW` items are all routed to external professional
+verification (tax/legal), not further Product Owner questionnaires —
+see `README.md` §"Remaining questions" for the complete, minimal list
+of what is still needed from anyone, and from whom.
 
 ## How to use this register
 
-- Every decision has a stable **ID** (`DOMAIN-NNN`) that will never be
-  reused or renumbered, even if the decision is later superseded.
-- **Priority** (P0/P1/P2) reflects how blocking the decision is —
-  see `OPEN_QUESTIONS.md` §"Priority definitions" for the exact criteria.
-- When a decision is made, update its `Status`, `Final decision`, and
-  `Decision date` fields here, then propagate the decision into the
-  `Affected specs` (updating their status and content as appropriate —
-  see `CLAUDE.md` §3–4 for the spec status lifecycle).
-- `Status` values: `OPEN` (not yet decided) · `UNDER_REVIEW` (Product
-  Owner actively considering) · `DECIDED` (final) · `SUPERSEDED`
-  (replaced by a later decision — link the new ID).
+- Every decision keeps its stable **ID** (`DOMAIN-NNN`) permanently.
+- `Status`, `Final decision`, and `Decision date` are now filled in for
+  every entry. `Affected specs` shows where the decision has been (or
+  still needs to be) propagated as normative (`MUST`/`SHOULD`/`MAY`)
+  language — see the updated `/specs` files themselves for the actual
+  requirement text; this register records *that* a decision was made
+  and *what* it was, not the full spec prose.
+- The original `Question`, `Why it matters`, `Dependencies`,
+  `Recommended options`, and `Trade-offs` fields are retained for
+  historical/audit context even after a decision is made — they
+  explain why the resolution was reached.
 
 ## Domain index
 
-| Prefix | Domain | Count |
-|---|---|---|
-| AUTH | Authentication / RBAC | 3 |
-| ORG | Organization / business entity model | 2 |
-| PROD | Product Master | 6 |
-| SUP | Suppliers | 2 |
-| PO | Purchase Orders | 3 |
-| GRN | Goods Receipt / QC | 3 |
-| INV | Inventory | 7 |
-| CAT | Catalog / Merchandising / Pricing | 4 |
-| SF | Storefront | 2 |
-| SRCH | Search / Discovery | 2 |
-| PDP | Product Detail Page | 2 |
-| CART | Wishlist / Cart | 3 |
-| CHK | Checkout | 4 |
-| PAY | Payment | 6 |
-| ORD | Order Management | 6 |
-| WH | Warehouse / Fulfilment | 2 |
-| SHIP | Shipping / Tracking | 4 |
-| CAN | Cancellation | 3 |
-| RET | Returns | 4 |
-| REF | Refunds | 4 |
-| EXC | Exchanges | 3 |
-| CUST | Customer 360 | 3 |
-| LOY | Loyalty | 5 |
-| PROMO | Promotions | 2 |
-| MKT | Marketing | 1 |
-| CHAN | Channel Publishing | 1 |
-| SEO | SEO | 1 |
-| ANL | Analytics / Reporting | 1 |
-| ADM | Admin / Operating Roles | 3 |
-| NOTIF | Notifications | 1 |
-| AUD | Audit / Compliance | 2 |
-| TAX | India Tax / GST (new domain — no existing spec) | 6 |
-| IND | Other India-specific commerce | 5 |
-| NFR | Non-functional requirements | 6 |
-| **Total** | | **112** |
-
-**P0: 39 · P1: 49 · P2: 24** — see `OPEN_QUESTIONS.md` for the
-prioritized questionnaire built from this list.
-
-**Note on ORG/INV overlap:** `ORG-002` and `INV-004` describe the same
-underlying decision (single- vs. multi-location at launch) from two
-angles (business/org model vs. inventory ledger design). They are kept
-as two entries because they affect different specs, but they **must be
-decided together** — see cross-references in both entries.
+| Prefix | Domain | Count | Decided | Under review |
+|---|---|---|---|---|
+| AUTH | Authentication / RBAC | 3 | 3 | 0 |
+| ORG | Organization / business entity model | 2 | 2 | 0 |
+| PROD | Product Master | 6 | 6 | 0 |
+| SUP | Suppliers | 2 | 2 | 0 |
+| PO | Purchase Orders | 3 | 3 | 0 |
+| GRN | Goods Receipt / QC | 3 | 3 | 0 |
+| INV | Inventory | 7 | 7 | 0 |
+| CAT | Catalog / Merchandising / Pricing | 4 | 4 | 0 |
+| SF | Storefront | 2 | 2 | 0 |
+| SRCH | Search / Discovery | 2 | 2 | 0 |
+| PDP | Product Detail Page | 2 | 2 | 0 |
+| CART | Wishlist / Cart | 3 | 3 | 0 |
+| CHK | Checkout | 4 | 4 | 0 |
+| PAY | Payment | 6 | 6 | 0 |
+| ORD | Order Management | 6 | 6 | 0 |
+| WH | Warehouse / Fulfilment | 2 | 2 | 0 |
+| SHIP | Shipping / Tracking | 4 | 4 | 0 |
+| CAN | Cancellation | 3 | 3 | 0 |
+| RET | Returns | 4 | 4 | 0 |
+| REF | Refunds | 4 | 4 | 0 |
+| EXC | Exchanges | 3 | 3 | 0 |
+| CUST | Customer 360 | 3 | 2 | 1 |
+| LOY | Loyalty | 5 | 5 | 0 |
+| PROMO | Promotions | 2 | 2 | 0 |
+| MKT | Marketing | 1 | 1 | 0 |
+| CHAN | Channel Publishing | 1 | 1 | 0 |
+| SEO | SEO | 1 | 1 | 0 |
+| ANL | Analytics / Reporting | 1 | 1 | 0 |
+| ADM | Admin / Operating Roles | 3 | 3 | 0 |
+| NOTIF | Notifications | 1 | 1 | 0 |
+| AUD | Audit / Compliance | 2 | 1 | 1 |
+| TAX | India Tax / GST | 6 | 1 | 5 |
+| IND | Other India-specific commerce | 5 | 5 | 0 |
+| NFR | Non-functional requirements | 6 | 6 | 0 |
+| **Total** | | **112** | **105** | **7** |
 
 ---
 
 ## AUTH — Authentication / RBAC
 
 #### AUTH-001 — Customer authentication method(s) · **P0**
-- **Question:** Which authentication method(s) must the storefront support at launch — password, mobile OTP, email OTP, social login, or a combination?
-- **Why it matters:** Determines the identity schema, session design, and support burden; materially shapes conversion for an India-first, mobile-heavy audience.
+- **Question:** Which authentication method(s) must the storefront support at launch?
 - **Dependencies:** IND-001, CUST-001
-- **Recommended options:** (a) Mobile OTP only; (b) Mobile OTP + password fallback; (c) Mobile OTP + email + social login.
-- **Trade-offs:** OTP-only is fast and India-idiomatic but fails for unreliable SMS delivery or shared/changed numbers; broader methods add build and support cost.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/01-auth-rbac.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Mobile OTP is the **primary** customer authentication method (India-first). Email is optional/supporting. **Guest checkout is required** (see `CHK-001`) — authentication is never a precondition for purchase. Appropriate contact information (mobile, and email if provided) is captured for order processing and transactional communication regardless of account status; the customer may be invited to activate/access a full account after purchase.
+- **Affected specs:** `specs/01-auth-rbac.md`, `specs/12-checkout.md`
 
 #### AUTH-002 — Staff/admin authentication & MFA requirement · **P0**
-- **Question:** What authentication method(s) do internal/admin users use, and is multi-factor authentication (MFA) mandatory for any role?
-- **Why it matters:** Admin accounts can touch inventory, pricing, refunds, and customer PII — the security posture here is a direct SECURITY.md concern, not just a UX one.
+- **Question:** What authentication method(s) do internal/admin users use, and is MFA mandatory for any role?
 - **Dependencies:** ADM-001
-- **Recommended options:** (a) Password + mandatory MFA for all staff; (b) Password + mandatory MFA only for high-risk roles (finance, super admin); (c) Password only, MFA optional.
-- **Trade-offs:** Mandatory MFA is safer but adds onboarding friction for a possibly small internal team; role-scoped MFA balances risk vs. friction but requires the role model (ADM-001) to exist first.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Password + mandatory MFA for all roles with elevated/approval authority (Super Admin, Business Admin, Finance, and any role granted approval permissions under `ADM-001`); MFA available and encouraged, not mandatory, for execution-only roles (Warehouse Operator, Catalog contributor). This follows the Product Owner's instruction to "choose a secure, maintainable default... and document the decision" (§11) using security/maintainability as the selection criteria (§30) — not a weakened default.
 - **Affected specs:** `specs/01-auth-rbac.md`, `SECURITY.md`
 
 #### AUTH-003 — Session/token strategy · **P1**
-- **Question:** JWT vs. server-side session store (Redis-backed) for both customer and staff sessions?
-- **Why it matters:** Affects scalability, logout/revocation semantics, and integration with Medusa v2's own auth model.
+- **Question:** JWT vs. server-side session store for customer and staff sessions?
 - **Dependencies:** none
-- **Recommended options:** (a) Server-side session in Redis (simpler revocation); (b) JWT with short expiry + refresh token; (c) Defer to whatever Medusa v2 provides natively for its own admin/customer auth, layering a custom solution only for staff roles Medusa doesn't model.
-- **Trade-offs:** Server sessions are easier to revoke instantly (important for staff offboarding) but add Redis as a hard dependency for auth; JWT scales better statelessly but revocation is harder.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Short-lived JWT access token + refresh token for customer sessions (scales statelessly for storefront traffic). Server-side, instantly-revocable session (Redis-backed) for staff/admin sessions, where offboarding/compromise revocation speed outweighs statelessness benefits. Selected per §30 criteria (security, maintainability).
 - **Affected specs:** `specs/01-auth-rbac.md`
 
 ---
 
 ## ORG — Organization / business entity model
 
-**Audit note:** No existing spec owns this domain explicitly — it is a
-gap discovered during this audit (see `README.md` §Audit Findings).
-Decisions here should be recorded against `specs/00-platform-overview.md`
-until/unless the Product Owner authorizes a dedicated spec.
-
 #### ORG-001 — Single legal entity vs. multi-brand/multi-tenant model · **P0**
-- **Question:** Does the platform operate as a single legal entity/single brand, or must it support multiple brands/legal entities (e.g., sub-brands, marketplace-style multi-seller) from day one?
-- **Why it matters:** This is a foundational data-modeling decision — it affects product master, inventory, invoicing (TAX-004), and RBAC scoping. Retrofitting multi-tenancy later is expensive.
+- **Question:** Single entity/brand, or multiple brands/entities from day one?
 - **Dependencies:** TAX-001, PROD-001
-- **Recommended options:** (a) Single entity, single brand — simplest, matches "independent fashion commerce platform" framing in PRODUCT.md; (b) Single entity, multiple internal sub-brands (shared inventory/ops, distinct storefront presentation); (c) Multi-entity/multi-tenant from day one.
-- **Trade-offs:** (a) is fastest to build and matches the stated vision, but blocks future white-label/marketplace ambitions without a rework; (c) is heavy upfront cost with no stated current need.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/00-platform-overview.md`, `PRODUCT.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Single legal entity/platform operator. The company **may operate different owned brands by product** — **Brand is a first-class domain/entity**, not free text; products/styles reference a brand. This is **not** a third-party multi-seller marketplace model — the initial operation does not require external sellers on the platform's own site. The architecture must not block future *outbound* marketplace/channel integrations (see `CHAN-001`).
+- **Affected specs:** `specs/00-platform-overview.md`, `specs/02-product-master.md`, `specs/31-organization-locations.md`, `PRODUCT.md`
 
 #### ORG-002 — Warehouse/location model at launch · **P0**
-- **Question:** Single warehouse/location, or multi-location from launch? (Same underlying decision as `INV-004`.)
-- **Why it matters:** Determines whether the inventory ledger, order allocation, and fulfilment routing need location-awareness from day one.
-- **Dependencies:** INV-004 (must be decided together), WH-001
-- **Recommended options:** (a) Single warehouse at launch, location field reserved in the schema for future multi-location; (b) Multi-location from launch.
-- **Trade-offs:** (a) is significantly simpler to build and test correctly (see `INVENTORY_INTEGRITY.md`) but requires a follow-up milestone to add location-aware allocation later; (b) is more future-proof but adds real complexity to every inventory and fulfilment flow before there is operational need.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/06-inventory.md`, `specs/15-warehouse-fulfilment.md`, `specs/04-purchase-orders.md`
+- **Question:** Single warehouse/location, or multi-location from launch? (Same decision as `INV-004`.)
+- **Dependencies:** INV-004 (decided together), WH-001
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Inventory and operational architecture **MUST be location-aware from day one** — every inventory transaction must be capable of referencing a location, and stock transfers between locations must be supported by the domain model. **Initial operation is warehouse-inventory only** (one or a small number of warehouses). Physical stores, stores-holding-inventory, click & collect, and ship-from-store are **FUTURE_CONSIDERATION** — the model must not require redesign to add them later, but none are built now.
+- **Affected specs:** `specs/06-inventory.md`, `specs/15-warehouse-fulfilment.md`, `specs/04-purchase-orders.md`, `specs/31-organization-locations.md`
 
 ---
 
 ## PROD — Product Master
 
 #### PROD-001 — Attribute taxonomy governance · **P0**
-- **Question:** Who defines and extends the fashion attribute taxonomy (department, category, fabric, fit, etc.), and through what mechanism — admin UI, versioned config file, or both?
-- **Why it matters:** This is the concrete design of the "extensible attribute system" architectural requirement (`ARCHITECTURE.md` §4). Getting the governance model wrong risks either an uncontrolled attribute sprawl or a system that's extensible in theory but not in practice.
+- **Question:** Who defines/extends the fashion attribute taxonomy, and through what mechanism?
 - **Dependencies:** ORG-001
-- **Recommended options:** (a) Config-file-managed taxonomy, changed via reviewed PR (developer-mediated); (b) Admin-UI-managed taxonomy (merchandiser self-service); (c) Hybrid — core/structural attributes in config, merchandising-facing tags/badges in admin UI.
-- **Trade-offs:** (a) is safest against data-quality drift but slows merchandising agility; (b) is agile but risks taxonomy sprawl without review; (c) balances both but is more to design and build.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Hybrid governance. Core/structural attributes (brand, department, gender, division, category, subcategory, season, collection, fabric, fit, pattern, occasion, sleeve, neck, wash care, country of origin) live in a versioned, reviewed schema/config, extended by the Catalog role. Merchandising-facing tags/badges (`CAT-004`) are admin-UI-managed by the Merchandiser role for agility. **Season and collection are required fields** on every style (explicit Product Owner instruction, §5).
 - **Affected specs:** `specs/02-product-master.md`
 
 #### PROD-002 — Required vs. optional attributes per department/category · **P1**
-- **Question:** Which attributes are mandatory for a product to be publishable, and does this vary by department/category (e.g., "sleeve" required for tops, meaningless for footwear)?
-- **Why it matters:** Directly feeds product-completeness/QA rules (`FASHION_DOMAIN_GAPS.md`) and the publish gate in `CAT-002`.
+- **Question:** Which attributes are mandatory, and does this vary by category?
 - **Dependencies:** PROD-001, CAT-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (configurable) · **Decision date:** 2026-09-22
+- **Final decision:** Implemented as data-driven, per-category configuration (a required-attribute rule set keyed by category/department), not hard-coded per product type. Exact per-category rules are an operational catalog-configuration task, not a development blocker.
 - **Affected specs:** `specs/02-product-master.md`
 
 #### PROD-003 — Product lifecycle states · **P1**
-- **Question:** What is the full product lifecycle state set — e.g., `draft -> ready_for_enrichment -> ready_for_qa -> published -> unpublished -> archived` — and who can transition each state?
-- **Why it matters:** Without this, "enrichment," "QA," and "publish" have no formal gate, undermining product-completeness assurance.
+- **Question:** What is the full product lifecycle state set?
 - **Dependencies:** PROD-001
-- **Recommended options:** Adopt the six-state model listed in the question as a starting proposal, subject to Product Owner revision.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Adopt `draft -> ready_for_enrichment -> ready_for_qa -> published -> unpublished -> archived`, satisfying the explicit requirement that "product enrichment and QA workflow must be supported" (§5). `published` requires the QA gate to have passed (see `CAT-002`).
 - **Affected specs:** `specs/02-product-master.md`, `specs/07-catalog-merchandising.md`
 
 #### PROD-004 — Size chart model & versioning · **P1**
-- **Question:** How are size charts modeled — per style, per category, per brand? Must size charts be versioned (so a past order can show the size chart in effect at purchase time)?
-- **Why it matters:** Size/fit is the single largest driver of fashion returns (see `RET-001`); an unversioned size chart makes post-hoc return-reason analysis unreliable.
+- **Question:** How are size charts modeled, and are they versioned?
 - **Dependencies:** PROD-001
-- **Recommended options:** (a) Size chart per category/brand, versioned with an effective-date range; (b) Size chart per individual style (most accurate, most enrichment effort).
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Size charts are **required**. They **MUST support different charts by appropriate dimensions such as category / gender / brand** where applicable (explicit, §5). **Size-chart versioning MUST be supported** — a past order/return must be able to show the chart version in effect at the time of purchase.
 - **Affected specs:** `specs/02-product-master.md`, `specs/10-pdp.md`
 
 #### PROD-005 — Model measurements / model-worn-size display · **P2**
-- **Question:** Is displaying model body measurements and the size the model is wearing in scope for launch?
-- **Why it matters:** Common fashion-ecommerce fit aid; not currently mentioned anywhere in `/specs`.
+- **Question:** Is displaying model measurements/worn-size in scope?
 - **Dependencies:** PROD-004
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Included as an **optional** (non-mandatory) enrichment/media field within the product media model. Not launch-blocking; does not require further Product Owner decision.
 - **Affected specs:** `specs/02-product-master.md`, `specs/10-pdp.md`
 
 #### PROD-006 — Bulk product operations scope · **P2**
-- **Question:** Are bulk price changes and bulk publish/unpublish operations required for launch, or can merchandising operate SKU-by-SKU initially?
-- **Why it matters:** Not mentioned anywhere in current specs; materially affects admin tooling scope (`ADM-002`) and catalog throughput at scale.
+- **Question:** Are bulk operations required for launch?
 - **Dependencies:** CAT-002, ADM-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Required.** Explicit examples given: bulk product import, bulk enrichment, bulk pricing, bulk inventory operations **with authorization**, bulk publishing, bulk unpublishing (§5). Bulk inventory operations specifically require the authorization/audit workflow from `ADM-003`.
 - **Affected specs:** `specs/02-product-master.md`, `specs/28-admin.md`
 
 ---
@@ -187,17 +209,17 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## SUP — Suppliers
 
 #### SUP-001 — Supplier hierarchy support · **P1**
-- **Question:** Must the platform model supplier hierarchies (agents/sub-vendors acting on behalf of a principal supplier), or is a flat supplier list sufficient at launch?
-- **Why it matters:** Affects PO routing and payment-terms modeling.
+- **Question:** Must the platform model supplier hierarchies?
 - **Dependencies:** PO-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Flat supplier list at launch, with the schema left extensible for hierarchy later (not a blocker). The supplier entity must accommodate **both** finished-merchandise suppliers **and** finished-goods manufacturing/job-work suppliers (explicit, §6) via a supplier-type/category field — both flow through the same PO process. Raw-material inventory, BOM, and production-execution tracking are explicitly **out of V1 scope** (§6).
 - **Affected specs:** `specs/03-suppliers-procurement.md`
 
 #### SUP-002 — Supplier portal/self-service access · **P2**
-- **Question:** Do suppliers get any self-service access (e.g., to confirm PO receipt, view payment status), or is all supplier data internal-only at launch?
-- **Why it matters:** A supplier portal is a significant scope addition (external-facing auth, RBAC) beyond internal admin tooling.
+- **Question:** Do suppliers get self-service access?
 - **Dependencies:** AUTH-001, ADM-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** No supplier self-service portal at launch; all supplier data/interaction is internal-only. A future supplier portal is **FUTURE_CONSIDERATION**, not blocking.
 - **Affected specs:** `specs/03-suppliers-procurement.md`
 
 ---
@@ -205,24 +227,24 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## PO — Purchase Orders
 
 #### PO-001 — PO approval hierarchy & thresholds · **P0**
-- **Question:** Who can approve a PO, and are there value-based approval thresholds (e.g., PO > ₹X requires a second approver)?
-- **Why it matters:** Financial control gate before any committed spend; blocks `04-purchase-orders.md` implementation without it.
+- **Question:** Who can approve a PO, and are there value-based thresholds?
 - **Dependencies:** ADM-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **PO approval workflow is required** (explicit, §6). Value-based approval thresholds are supported and **MUST be configurable business parameters**, not hard-coded. Approvers are drawn from the Buying/Finance/Business Admin roles per the `ADM-001` permission matrix.
 - **Affected specs:** `specs/04-purchase-orders.md`
 
 #### PO-002 — Partial receipt / over-under delivery tolerance · **P1**
-- **Question:** What tolerance (if any) is allowed for a supplier delivering more or less than the PO quantity before it's flagged as an exception?
-- **Why it matters:** Directly affects `05-grn.md` exception handling and inventory ledger accuracy.
+- **Question:** What tolerance applies for short/excess delivery?
 - **Dependencies:** GRN-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Partial PO receipt is required** (explicit, §6). Tolerance thresholds before an exception is flagged are a **configurable business parameter**.
 - **Affected specs:** `specs/04-purchase-orders.md`, `specs/05-grn.md`
 
-#### PO-003 — Costing basis captured on PO · **P1**
-- **Question:** Does the PO capture landed cost (including freight/duties/taxes) or unit cost only, with landed cost computed later?
-- **Why it matters:** Feeds margin calculations in `CAT-001` pricing and GST input-credit accounting (`TAX-001`).
+#### PO-003 — Costing basis captured on PO · **P0**
+- **Question:** Does the PO capture landed cost or unit cost?
 - **Dependencies:** TAX-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Purchase cost MUST be maintained for margin/profitability analysis** (explicit, §6, and required by `ANL-001`'s margin/profitability analytics). The PO/GRN captures at minimum unit cost; landed-cost components (freight/duties/taxes) are captured where available, refined once `TAX-001` GST input-credit treatment is confirmed.
 - **Affected specs:** `specs/04-purchase-orders.md`
 
 ---
@@ -230,24 +252,24 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## GRN — Goods Receipt / QC
 
 #### GRN-001 — QC inspection criteria & pass/fail workflow · **P0**
-- **Question:** What quality inspection checklist/criteria apply at receipt, and does it vary by category? What happens on QC fail (quarantine, return-to-supplier, or conditional acceptance)?
-- **Why it matters:** This is the gate before stock becomes sellable inventory — without it, `06-inventory.md` receipt transactions have no defined quality trigger.
+- **Question:** What QC criteria apply, and what happens on fail?
 - **Dependencies:** SUP-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **QC is required.** GRN **MUST support**: received quantity, short receipt, excess receipt, damaged receipt, and rejected/QC-failed receipt, each with appropriate exception handling (explicit, §6). The exact per-category inspection checklist content is a **configurable operational parameter**, not a build blocker.
 - **Affected specs:** `specs/05-grn.md`
 
 #### GRN-002 — GRN exception resolution · **P1**
-- **Question:** For short/over shipments or damaged-on-arrival goods, what is the resolution workflow — supplier debit/credit note, return-to-supplier, or write-off?
-- **Why it matters:** Determines what ledger entries an exception produces and what financial follow-up is required.
+- **Question:** What is the resolution workflow for GRN exceptions?
 - **Dependencies:** PO-002, TAX-005
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Configurable resolution paths per exception type (supplier debit/credit note, return-to-supplier, write-off), tied to the exception type captured at GRN. Exact workflow rules per supplier/category are operational configuration.
 - **Affected specs:** `specs/05-grn.md`
 
 #### GRN-003 — Barcode/scanning requirement at GRN · **P2**
-- **Question:** Is barcode/scanning-based receipt required for launch, or is manual/UI-based receipt entry acceptable initially?
-- **Why it matters:** Affects warehouse tooling scope and receipt speed/accuracy.
+- **Question:** Is barcode/scanning required at launch?
 - **Dependencies:** WH-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Not required at launch; manual/UI-based receipt entry is acceptable initially. Architecture must not preclude adding barcode/scanning later without redesign.
 - **Affected specs:** `specs/05-grn.md`
 
 ---
@@ -255,51 +277,52 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## INV — Inventory
 
 #### INV-001 — Complete ledger transaction type list & required fields · **P0**
-- **Question:** What is the definitive, exhaustive list of inventory ledger transaction types (receipt, sale, cancellation, return, transfer, adjustment, reservation, release, damage, and any others), and what fields does each require?
-- **Why it matters:** This is the concrete implementation of the binding architectural principle in ADR-0012. `ARCHITECTURE.md` §5 lists a minimum set, not a final schema.
+- **Question:** What is the definitive ledger transaction type list?
 - **Dependencies:** GRN-001, ORD-001, RET-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Inventory MUST use an auditable ledger** — never `product.quantity` alone (explicit, §7). Minimum states: `ON_HAND`, `RESERVED`, `AVAILABLE`, `IN_TRANSIT`, `DAMAGED`, `RETURN_PENDING`, with auditable transaction events for every state change. The working transaction-type draft in `blueprint/INVENTORY_INTEGRITY.md` §2 is adopted as the approved starting schema (receipt, QC pass/fail, reservation, release, allocation, sale/fulfilment, cancellation, return received, return QC pass/fail, exchange, RTO, adjustment, transfer out/in), extensible without redesign.
 - **Affected specs:** `specs/06-inventory.md`
 
 #### INV-002 — Reservation trigger point & timeout · **P0**
-- **Question:** Does adding an item to cart reserve inventory, or does reservation only begin at checkout start? What is the reservation timeout, and what releases it?
-- **Why it matters:** Flagged as unresolved in both `specs/06-inventory.md` and `specs/11-wishlist-cart.md` (duplicate open question, now consolidated here). Directly determines oversell risk and cart-abandonment behavior.
+- **Question:** Does cart or checkout trigger reservation?
 - **Dependencies:** CART-001, CHK-001
-- **Recommended options:** (a) Reserve only at checkout start, short timeout (e.g., 10–15 min), release on abandonment/payment failure; (b) Reserve on add-to-cart with a longer timeout; (c) No reservation until payment authorization succeeds (highest oversell risk, simplest to build).
-- **Trade-offs:** (a) balances conversion protection against oversell risk and is the common ecommerce pattern; (b) protects customers better but risks unnecessary stock lockup during high-traffic periods; (c) is simplest but risks overselling at checkout, especially for low-stock/limited-size SKUs.
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Do NOT reserve inventory on add-to-cart.** Use **short-lived reservation during checkout/payment initiation** only: `AVAILABLE -> TEMPORARY RESERVATION -> SUCCESSFUL ORDER -> COMMITTED ALLOCATION`, or `AVAILABLE -> TEMPORARY RESERVATION -> PAYMENT FAILURE/TIMEOUT/ABANDONMENT -> RESERVATION RELEASED`. **For COD: commit/reserve inventory when the COD order is successfully accepted** (not merely on checkout start, since there is no payment-gateway step to bound the window). **Reservation expiry duration MUST be configurable** — never hard-coded into core logic. Concurrency and idempotency **MUST** ensure two customers cannot purchase the same final unit (explicit, §8).
 - **Affected specs:** `specs/06-inventory.md`, `specs/11-wishlist-cart.md`, `specs/12-checkout.md`
 
 #### INV-003 — Oversell policy · **P0**
-- **Question:** Is oversell ever permitted (e.g., pre-order/backorder on a not-yet-received PO), and if so, how is it represented in the ledger without corrupting "available" stock figures for in-hand inventory?
-- **Why it matters:** A pre-order/backorder capability is a common fashion-retail feature but has real inventory-integrity implications if not explicitly modeled.
+- **Question:** Is oversell ever permitted?
 - **Dependencies:** INV-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Overselling MUST be prevented.** The business cannot assume unavailable stock can later be sourced from the market (explicit, §7). The system **MUST NOT** intentionally sell inventory beyond reliably available sellable stock. No general backorder/oversell-beyond-stock feature is built for standard SKUs; a distinct, explicitly-flagged pre-order concept (if ever wanted) is **FUTURE_CONSIDERATION**, not V1 scope.
 - **Affected specs:** `specs/06-inventory.md`
 
 #### INV-004 — Multi-warehouse/multi-location support at launch · **P0**
-- **Question:** Same decision as `ORG-002` — see that entry. Recorded separately here because it directly determines the inventory ledger's schema (does every transaction carry a location dimension from day one?).
-- **Why it matters:** Retrofitting location-awareness into an already-live ledger is a major migration; deciding now avoids it.
-- **Dependencies:** ORG-002 (decide together), WH-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Question:** Same decision as `ORG-002`.
+- **Dependencies:** ORG-002 (decided together), WH-001
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** See `ORG-002` — location-aware ledger schema from day one; warehouse-only, single/few-location operation at launch; transfers between locations supported by the domain model now even though multi-location operation is phased in later.
 - **Affected specs:** `specs/06-inventory.md`
 
 #### INV-005 — Safety/buffer stock rules · **P1**
-- **Question:** Does the platform need a safety-stock/buffer concept (stock reserved from sale below a threshold), and if so, how is it configured (per SKU, per category)?
+- **Question:** Is a safety-stock concept needed?
 - **Dependencies:** INV-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (configurable) · **Decision date:** 2026-09-22
+- **Final decision:** Supported as a configurable buffer per SKU/category, subtracted from `AVAILABLE`. Exact thresholds are operational configuration, not a build blocker.
 - **Affected specs:** `specs/06-inventory.md`
 
 #### INV-006 — Damaged/return-pending stock re-entry · **P1**
-- **Question:** Can damaged or return-pending stock ever re-enter sellable inventory (e.g., as marked-down "damaged/clearance" stock), or is it always quarantined/written off/returned to supplier?
+- **Question:** Can damaged/return-pending stock become sellable again?
 - **Dependencies:** RET-002, GRN-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Damaged and return-pending stock **MUST NOT** automatically become sellable `ON_HAND` inventory. Re-entry requires passing QC first. The disposition decision at QC time (restock as sellable, restock as marked-down/damaged clearance, write-off, return-to-supplier) is a configurable workflow outcome, but the "no re-entry without QC" rule itself is fixed.
 - **Affected specs:** `specs/06-inventory.md`, `specs/18-returns.md`
 
 #### INV-007 — Cycle count / stock take workflow · **P2**
-- **Question:** Is a periodic physical stock count / reconciliation workflow (and its ledger-adjustment mechanism) required for launch?
+- **Question:** Is a periodic stock-count workflow required?
 - **Dependencies:** INV-001, ADM-003
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Supported via the manual/authorized adjustment transaction type (`ADM-003`) — every adjustment (cycle-count-driven or otherwise) **MUST be authorized and audited** (explicit, §36). Exact cadence is operational configuration.
 - **Affected specs:** `specs/06-inventory.md`
 
 ---
@@ -307,28 +330,31 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## CAT — Catalog / Merchandising / Pricing
 
 #### CAT-001 — Pricing model: tax treatment, currency, region scope · **P0**
-- **Question:** Is displayed pricing tax-inclusive or tax-exclusive? Single currency/region at launch, or multi-currency/region from day one?
-- **Why it matters:** In India, MRP-based, tax-inclusive pricing is the market norm (see `TAX-002`) — this is not a purely technical choice.
+- **Question:** Tax-inclusive/exclusive display? Single or multi-currency?
 - **Dependencies:** TAX-001, TAX-002, ORG-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/07-catalog-merchandising.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **MRP and selling price are both required** (explicit, §9), displayed tax-inclusive (India market norm). Single currency/region (INR, India) at launch; multi-currency/region is not V1 scope. **Default price is the SAME across sizes for the same style-colour** — size-based pricing is explicitly **not** normal V1 behavior (§9). **Scheduled markdown/sale pricing is required**, with configurable start/end dates. **Historical orders/refunds MUST use the actual transaction price paid** — a later product-price change MUST NOT alter the financial value of an existing order/refund (explicit, §9 — this is a hard financial-integrity rule, not a preference).
+- **Affected specs:** `specs/07-catalog-merchandising.md`, `specs/14-order-management.md`, `specs/19-refunds.md`
 
 #### CAT-002 — Publishing decision ownership · **P1**
-- **Question:** Is a SKU's storefront visibility a manual merchandiser decision, an automated rule based on availability/QA-completeness (`PROD-003`), or both?
+- **Question:** Manual, automated, or both?
 - **Dependencies:** PROD-002, PROD-003
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Both — publish requires the automated `ready_for_qa -> published` gate (product completeness per `PROD-002`/`PROD-003`) **and** an explicit Merchandiser publish action. Neither alone is sufficient.
 - **Affected specs:** `specs/07-catalog-merchandising.md`
 
 #### CAT-003 — Browsing category vs. attribute category taxonomy · **P1**
-- **Question:** Is the catalog's browsing/merchandising category tree the same taxonomy as the product attribute "category" field, or two independent structures?
+- **Question:** One taxonomy or two?
 - **Dependencies:** PROD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Unified — the catalog browsing category tree and the product attribute "category" field are the same taxonomy for V1, avoiding dual-maintenance. Merchandising **collections** (curated groupings, distinct from category) layer on top as a separate concept.
 - **Affected specs:** `specs/07-catalog-merchandising.md`, `specs/02-product-master.md`
 
 #### CAT-004 — Merchandising tags/badges rule ownership · **P2**
-- **Question:** Are badges like "New Arrival," "Bestseller," "Sale" manually curated or rule-driven (e.g., "New Arrival" = published within last 30 days)?
+- **Question:** Manual or rule-driven badges?
 - **Dependencies:** CAT-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Rule-driven where computable (e.g., "New Arrival" = published within a configurable recency window; "Sale" = active markdown per `CAT-001`), with manual merchandiser override always available.
 - **Affected specs:** `specs/07-catalog-merchandising.md`
 
 ---
@@ -336,16 +362,17 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## SF — Storefront
 
 #### SF-001 — Design system / component library choice · **P1**
-- **Question:** Build a custom design system, or adopt an existing component library as a base?
+- **Question:** Custom or existing component library?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Adopt an accessible, actively-maintained component foundation customized with brand/multi-brand design tokens (per `ORG-001`'s multi-brand requirement), rather than building a design system fully from scratch. Exact library is an implementation-time engineering choice at M09, not a business decision.
 - **Affected specs:** `specs/08-storefront.md`
 
 #### SF-002 — Internationalization/localization scope · **P1**
-- **Question:** Single locale/currency (India/English/INR) at launch, or multi-locale architecture from day one?
-- **Why it matters:** Affects SEO (`SEO-001`), pricing (`CAT-001`), and routing structure.
+- **Question:** Single locale or multi-locale from day one?
 - **Dependencies:** ORG-001, CAT-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Single locale at launch (India / English / INR). **Both mobile web and desktop web are required; the UI MUST be fully responsive. Native mobile applications are explicitly LATER, not launch scope** (explicit, §2).
 - **Affected specs:** `specs/08-storefront.md`
 
 ---
@@ -353,15 +380,17 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## SRCH — Search / Discovery
 
 #### SRCH-001 — Relevance ranking rules · **P1**
-- **Question:** What signals drive search/PLP ranking (recency, sales velocity, margin, manual curation, stock availability)?
+- **Question:** What drives ranking?
 - **Dependencies:** CAT-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Text relevance + stock availability (in-stock prioritized) + recency + manual merchandiser pinning at launch. Sales-velocity weighting is added once sufficient analytics data exists (post-launch refinement, not blocking).
 - **Affected specs:** `specs/09-search-discovery.md`
 
 #### SRCH-002 — Personalization/recommendation scope · **P2**
-- **Question:** Is personalized search/recommendation in scope for launch, or a post-launch addition?
+- **Question:** In scope for launch?
 - **Dependencies:** ANL-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Not launch scope — **FUTURE_CONSIDERATION**. Analytics event foundations (`ANL-001`) must not preclude adding it later.
 - **Affected specs:** `specs/09-search-discovery.md`
 
 ---
@@ -369,15 +398,17 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## PDP — Product Detail Page
 
 #### PDP-001 — Reviews/ratings in scope for launch · **P1**
-- **Question:** Are customer reviews and ratings required for launch?
+- **Question:** Required for launch?
 - **Dependencies:** CUST-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/10-pdp.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Required.** Ratings and reviews are explicitly listed among required customer features (§12).
+- **Affected specs:** `specs/10-pdp.md`, `specs/21-customer-profile.md`
 
 #### PDP-002 — Cross-sell/related-products logic ownership · **P2**
-- **Question:** Manually curated or rule/algorithm-driven cross-sell?
+- **Question:** Manual or algorithmic?
 - **Dependencies:** SRCH-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Rule-driven (same/complementary category) at launch with manual merchandiser override; ML-based recommendation is a future enhancement.
 - **Affected specs:** `specs/10-pdp.md`
 
 ---
@@ -385,22 +416,24 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## CART — Wishlist / Cart
 
 #### CART-001 — Guest cart/wishlist persistence & merge-on-login · **P0**
-- **Question:** How long does a guest cart/wishlist persist, and what happens to it when the guest logs in (merge with existing account cart, replace, or prompt)?
-- **Why it matters:** Directly entangled with `INV-002` reservation timing — if guest carts reserve stock, an abandoned guest session has real inventory consequences.
+- **Question:** Persistence duration and merge behavior?
 - **Dependencies:** INV-002, AUTH-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default on duration) · **Decision date:** 2026-09-22
+- **Final decision:** Guest cart/wishlist is supported (guest checkout is required, `CHK-001`) and does **not** reserve inventory (per `INV-002`). Persists via a device/session identifier for a configurable duration (engineering default: 30 days), merges into the account cart on login or post-purchase account activation.
 - **Affected specs:** `specs/11-wishlist-cart.md`
 
 #### CART-002 — Cart quantity limits per SKU · **P1**
-- **Question:** Is there a maximum quantity of one SKU a customer can add to cart (anti-scalping / fair-access control)?
+- **Question:** Is a max-quantity limit needed?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (configurable) · **Decision date:** 2026-09-22
+- **Final decision:** Supported as a configurable per-SKU maximum-quantity rule (anti-scalping/fair-access control); default threshold is operational configuration.
 - **Affected specs:** `specs/11-wishlist-cart.md`
 
 #### CART-003 — Wishlist sharing · **P2**
-- **Question:** Is a shareable wishlist link in scope for launch?
+- **Question:** In scope for launch?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Not launch scope — **FUTURE_CONSIDERATION**.
 - **Affected specs:** `specs/11-wishlist-cart.md`
 
 ---
@@ -408,72 +441,77 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## CHK — Checkout
 
 #### CHK-001 — Guest checkout vs. account-required · **P0**
-- **Question:** Can a customer complete checkout without creating an account?
-- **Why it matters:** Major conversion-rate lever; also determines the minimum identity data captured per order (ties to `CUST-001`).
+- **Question:** Is guest checkout supported?
 - **Dependencies:** AUTH-001, CART-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Guest checkout is REQUIRED and MUST be genuinely guest** — account creation must never be forced before purchase (explicit, §11). Logged-in checkout is also supported. Post-purchase account activation may be offered.
 - **Affected specs:** `specs/12-checkout.md`
 
 #### CHK-002 — Tax calculation approach · **P0**
-- **Question:** How is GST calculated at checkout (line-item HSN-based rate lookup, single blanket rate, or provider-integrated tax engine)? See `TAX-001`–`TAX-003` for the underlying tax-model decisions this depends on.
+- **Question:** How is GST calculated at checkout?
 - **Dependencies:** TAX-001, TAX-002, TAX-003
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/12-checkout.md`
+- **Status:** DECIDED (engineering approach; legal correctness tracked separately) · **Decision date:** 2026-09-22
+- **Final decision:** Build a **pluggable, configurable, HSN-rate-lookup-based tax engine** (line-item level), displaying tax-inclusive pricing per `CAT-001`. This is the engineering shape needed regardless of outcome; it is designed so it can be parameterized once `TAX-001`–`TAX-003`'s legal specifics are confirmed, without an architecture change.
+- **Affected specs:** `specs/12-checkout.md`, `specs/32-india-tax-invoicing.md`
 
 #### CHK-003 — Shipping cost calculation rules · **P1**
-- **Question:** Flat rate, weight/value-based, carrier-calculated, or free-shipping-threshold-based (`IND-005`)?
+- **Question:** Flat, weight-based, or threshold-based?
 - **Dependencies:** IND-005, SHIP-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (configurable) · **Decision date:** 2026-09-22
+- **Final decision:** Configurable rule engine supporting flat rate, weight/value-based, and free-shipping-threshold (`IND-005`) rules; exact values are business configuration.
 - **Affected specs:** `specs/12-checkout.md`
 
-#### CHK-004 — Address serviceability check · **P1**
-- **Question:** Is PIN-code serviceability validated at checkout before order placement, and against what data source (carrier API, static list)?
+#### CHK-004 — Address serviceability check · **P0**
+- **Question:** Is PIN-code serviceability validated, and where?
 - **Dependencies:** IND-002, SHIP-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/12-checkout.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Required.** Customers can check delivery/serviceability from the **PDP** before completing checkout (explicit, §12), and checkout re-validates serviceability before order placement (engineering safety default — the PIN code entered at checkout must be re-checked even if a different PDP check occurred earlier).
+- **Affected specs:** `specs/12-checkout.md`, `specs/10-pdp.md`
 
 ---
 
 ## PAY — Payment
 
 #### PAY-001 — Payment provider abstraction interface shape · **P0**
-- **Question:** What is the exact method/error-model contract every payment provider (Razorpay, COD, future providers) must implement?
-- **Why it matters:** Concretizes the binding ADR-0011 abstraction; every other payment decision builds on this interface existing first.
+- **Question:** What is the abstraction interface?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** **Razorpay-first, provider-abstracted.** Interface: `initiate`/`authorize`/`capture`/`refund`/`handleWebhook` with a provider-agnostic result/error type; order/checkout logic depends only on this interface, never Razorpay's SDK directly (per ADR-0011). This keeps the door open to adding another provider later without rewriting order logic (explicit, §13).
 - **Affected specs:** `specs/13-payment.md`
 
 #### PAY-002 — Payment state machine definition · **P0**
-- **Question:** What are the payment states (e.g., `initiated -> authorized -> captured -> failed/refunded`) and how do they map to, but remain distinct from, order states (`ORD-001`)?
-- **Why it matters:** See `ORDER_PAYMENT_INTEGRITY.md` — conflating payment state and order state is a likely-by-default implementation mistake that this decision must explicitly prevent.
+- **Question:** What are the payment states, and how do they relate to order states?
 - **Dependencies:** ORD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Payment state and order state MUST remain separate state machines** (explicit, §13, reaffirming `blueprint/ORDER_PAYMENT_INTEGRITY.md`). Payment states: `initiated -> authorized -> captured -> (refunded | partially_refunded)`, plus `failed`/`expired`. COD: `initiated -> confirmed` (collected at delivery, no capture step).
 - **Affected specs:** `specs/13-payment.md`, `specs/14-order-management.md`
 
 #### PAY-003 — Idempotency & webhook duplicate-event handling · **P0**
-- **Question:** What idempotency key strategy and webhook deduplication approach prevents double-processing of a payment event (e.g., a retried webhook double-capturing or double-refunding)?
-- **Why it matters:** Direct financial-integrity risk — a duplicate webhook processed twice can double-charge or double-refund a customer.
+- **Question:** How is double-processing prevented?
 - **Dependencies:** PAY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Required, explicitly and comprehensively** (§13): idempotency keys on every payment-affecting operation; webhook signature verification and deduplication by provider event ID; safe retries; reconciliation; duplicate-payment handling; payment-pending handling (distinct from failure); failure recovery. See `blueprint/ORDER_PAYMENT_INTEGRITY.md` for the detailed mechanics this satisfies.
 - **Affected specs:** `specs/13-payment.md`
 
 #### PAY-004 — Partial/split payment support · **P1**
-- **Question:** Is part-COD + part-prepaid, or split payment across methods, in scope for launch?
+- **Question:** Is part-COD + part-prepaid in scope?
 - **Dependencies:** PAY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Not required for launch — **FUTURE_CONSIDERATION**. Not mentioned among required payment capabilities in §13.
 - **Affected specs:** `specs/13-payment.md`
 
 #### PAY-005 — Payment retry/failure handling policy · **P1**
-- **Question:** How many retry attempts are allowed on a failed payment, and what happens to the reserved inventory (`INV-002`) during retries?
+- **Question:** Retry attempts, and inventory reservation behavior?
 - **Dependencies:** INV-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (configurable) · **Decision date:** 2026-09-22
+- **Final decision:** Configurable retry attempt count; reservation from `INV-002` persists through retry attempts within the reservation window and releases on final failure/timeout/abandonment.
 - **Affected specs:** `specs/13-payment.md`
 
 #### PAY-006 — PCI/compliance posture confirmation · **P2**
-- **Question:** Confirm the Razorpay integration uses a hosted/tokenized flow such that the platform never touches raw card data.
-- **Why it matters:** `SECURITY.md` §4 states this as an assumption to confirm, not yet a verified fact.
+- **Question:** Confirm hosted/tokenized flow.
 - **Dependencies:** PAY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **MUST** use Razorpay's hosted/tokenized flow; the platform **MUST NOT** handle or store raw card data at any point. This is a fixed security requirement, not a preference (per `SECURITY.md` §4 and §30's "do not weaken security merely to reduce implementation effort").
 - **Affected specs:** `specs/13-payment.md`, `SECURITY.md`
 
 ---
@@ -481,40 +519,45 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## ORD — Order Management
 
 #### ORD-001 — Complete order state machine · **P0**
-- **Question:** What is the full, definitive set of order states and valid transitions (payment, allocation, picking, packing, shipment, delivery, cancellation, partial cancellation, return, refund, exchange, RTO, exceptions), and which role/system may trigger each transition?
-- **Why it matters:** Flagged in `specs/14-order-management.md` as "one of the most consequential open decisions in the whole platform." Nearly every other post-order-placement domain (`CAN`, `RET`, `REF`, `EXC`, `SHIP`) depends on this existing first.
+- **Question:** What is the full order state machine?
 - **Dependencies:** PAY-002, INV-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default on exact state names) · **Decision date:** 2026-09-22
+- **Final decision:** Full business shape now specified by the Product Owner (§14): order creation, confirmation, inventory allocation, fulfilment (supporting **split shipments — one order may have multiple fulfilments/packages**), shipment, delivery, cancellation (allowed **before shipment**, subject to configurable state/policy rules), **partial cancellation** (required), returns, refunds, exchanges, RTO, and exception handling. The engineering agent adopts a concrete state enum implementing this shape at M15 build time (naming/schema detail, not a further business decision). **Post-order-placement customer self-service modification of address/items is NOT required** — the V1 pattern is cancel/reorder or controlled CS intervention (explicit, §14).
 - **Affected specs:** `specs/14-order-management.md`
 
 #### ORD-002 — Partial cancellation & partial shipment rules · **P0**
-- **Question:** Can an order be partially cancelled or partially shipped at the line-item level? If so, how are shipping cost and promotion allocation apportioned across the remaining lines?
+- **Question:** Line-item-level cancellation/shipment support?
 - **Dependencies:** ORD-001, CAN-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Partial cancellation is required. Split shipments MUST be supported architecturally** — one order may eventually have multiple fulfilments/packages (explicit, §14). Shipping-cost and promotion apportionment across remaining lines is an engineering computation detail, not a further open business question.
 - **Affected specs:** `specs/14-order-management.md`, `specs/17-cancellation.md`
 
 #### ORD-003 — RTO handling & interaction with refunds · **P0**
-- **Question:** When a shipment is returned-to-origin (delivery failed/refused), what order state results, and how does it trigger refund (for prepaid) vs. simple closure (for COD, where no payment was collected)?
+- **Question:** RTO order state, and refund trigger?
 - **Dependencies:** ORD-001, REF-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** RTO on a prepaid order triggers the standard refund flow (`REF-001`/`REF-003`, using original transaction value). RTO on a COD order triggers closure without refund (no payment was ever collected) — logistics-only reconciliation. Both paths reuse the same RTO state, differing only in whether a refund side-effect fires.
 - **Affected specs:** `specs/14-order-management.md`
 
 #### ORD-004 — Order exception handling · **P1**
-- **Question:** What is the defined handling for exceptions such as undeliverable address, repeated failed delivery attempts, or a warehouse pick shortfall discovered after order confirmation?
+- **Question:** How are exceptions (undeliverable address, pick shortfall, etc.) handled?
 - **Dependencies:** ORD-001, WH-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Exceptions route to a defined exception state requiring CS or warehouse intervention; all exception occurrences and resolutions are tracked and audited (per `AUD-001`). Exact resolution playbooks per exception type are configurable, not hard-coded.
 - **Affected specs:** `specs/14-order-management.md`
 
 #### ORD-005 — Order-to-inventory allocation timing · **P1**
-- **Question:** At what point does reserved stock become "allocated" (committed to a specific order, no longer releasable by a generic timeout)?
+- **Question:** When does reserved stock become allocated?
 - **Dependencies:** INV-002, ORD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Reservation converts to committed allocation upon successful payment capture (prepaid) or successful COD order acceptance (COD) — directly per the `INV-002` flow diagram.
 - **Affected specs:** `specs/14-order-management.md`, `specs/06-inventory.md`
 
 #### ORD-006 — Order history/audit trail retention · **P2**
-- **Question:** How long is full order history retained and queryable, and does this differ for compliance-relevant records (`AUD-001`)?
+- **Question:** How long is order history retained?
 - **Dependencies:** AUD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (core requirement); retention period ties to `AUD-002` · **Decision date:** 2026-09-22
+- **Final decision:** Full order history is retained and queryable for the customer-facing account view indefinitely by default. Exact compliance-driven retention/deletion periods depend on `AUD-002`'s legal verification and do not block building the history feature itself.
 - **Affected specs:** `specs/14-order-management.md`
 
 ---
@@ -522,15 +565,17 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## WH — Warehouse / Fulfilment
 
 #### WH-001 — Pick/pack technology for launch · **P1**
-- **Question:** Barcode scanning + mobile app, or manual/paper-based pick-pack for launch?
+- **Question:** Barcode/mobile app, or manual/paper-based?
 - **Dependencies:** ORG-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Manual/UI-based pick-pack at launch, sufficient for the given operating scale (1,000–10,000 orders/day, §2); architecture must not block adding barcode/scanning later without redesign.
 - **Affected specs:** `specs/15-warehouse-fulfilment.md`
 
 #### WH-002 — Pick exception feedback loop · **P1**
-- **Question:** When an item is missing/damaged at pick time, what ledger adjustment and order exception (`ORD-004`) does it trigger, and who is notified?
+- **Question:** What happens on a pick exception?
 - **Dependencies:** INV-001, ORD-004
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** A pick exception posts an authorized/audited inventory adjustment and triggers the `ORD-004` order-exception path; Warehouse Manager and CS are notified.
 - **Affected specs:** `specs/15-warehouse-fulfilment.md`
 
 ---
@@ -538,28 +583,31 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## SHIP — Shipping / Tracking
 
 #### SHIP-001 — Carrier(s) supported at launch · **P0**
-- **Question:** Which shipping carrier(s)/logistics partners does the platform integrate with for launch?
-- **Why it matters:** Blocks `16-shipping-tracking.md` and materially affects `CHK-004` serviceability checking and `CHK-003` shipping cost rules.
+- **Question:** Which carrier(s)?
 - **Dependencies:** ORG-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (architecture); carrier selection deferred to operations · **Decision date:** 2026-09-22
+- **Final decision:** Build the carrier-**abstraction layer now** (see `SHIP-002`); the specific carrier(s) are selected via configuration and confirmed operationally before go-live — this does not block engineering, since no carrier-specific logic is allowed in core fulfilment code regardless of which carrier is chosen.
 - **Affected specs:** `specs/16-shipping-tracking.md`
 
 #### SHIP-002 — Carrier integration abstraction · **P1**
-- **Question:** Should carrier integrations go through a provider-abstraction layer analogous to `PAY-001`, so carriers are replaceable without rewriting fulfilment logic? (Currently only a recommendation in `specs/16-shipping-tracking.md`, not yet an ADR.)
+- **Question:** Should carriers go through a provider-abstraction layer?
 - **Dependencies:** SHIP-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Yes** — mirrors the payment provider abstraction pattern (`PAY-001`) explicitly demanded throughout the Product Owner's instructions. Carriers are replaceable without rewriting fulfilment logic. This should be recorded as a new ADR alongside ADR-0011 once implementation begins.
 - **Affected specs:** `specs/16-shipping-tracking.md`
 
 #### SHIP-003 — Real-time tracking vs. polling · **P1**
-- **Question:** Webhook-driven real-time tracking updates, or scheduled polling of carrier status?
+- **Question:** Webhook-driven or polling?
 - **Dependencies:** SHIP-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Webhook-driven where the carrier adapter supports it, with polling fallback; configurable per carrier adapter.
 - **Affected specs:** `specs/16-shipping-tracking.md`
 
 #### SHIP-004 — Failed delivery / redelivery attempt policy · **P1**
-- **Question:** How many redelivery attempts before an order is marked RTO (`ORD-003`)?
+- **Question:** How many redelivery attempts before RTO?
 - **Dependencies:** ORD-003
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (configurable) · **Decision date:** 2026-09-22
+- **Final decision:** Configurable attempt count (engineering default: 2) before RTO triggers.
 - **Affected specs:** `specs/16-shipping-tracking.md`
 
 ---
@@ -567,21 +615,24 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## CAN — Cancellation
 
 #### CAN-001 — Cancellation eligibility by order state · **P0**
-- **Question:** At which order states (`ORD-001`) is cancellation permitted — e.g., can a picked-but-not-shipped order be cancelled, or only pre-allocation orders?
+- **Question:** At which order states is cancellation permitted?
 - **Dependencies:** ORD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Customer cancellation is allowed before shipment**, subject to configurable state/policy rules (explicit, §14). Post-shipment, the customer path is return (not cancellation).
 - **Affected specs:** `specs/17-cancellation.md`
 
 #### CAN-002 — Who can cancel · **P1**
-- **Question:** Customer self-service, customer-service-agent-only, or both — and under what constraints (e.g., time window)?
+- **Question:** Self-service, CS-only, or both?
 - **Dependencies:** CAN-001, ADM-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Both — customer self-service before shipment, plus CS-assisted cancellation, consistent with the "cancel/reorder or controlled CS intervention" V1 pattern (§14).
 - **Affected specs:** `specs/17-cancellation.md`
 
 #### CAN-003 — Cancellation reason capture · **P2**
-- **Question:** Is a cancellation reason mandatory, and does it feed procurement/analytics (`ANL-001`)?
+- **Question:** Mandatory or optional?
 - **Dependencies:** ANL-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Optional (recommended, not mandatory) — unlike return reason, which is explicitly mandatory (`RET-002`). Feeds analytics where captured.
 - **Affected specs:** `specs/17-cancellation.md`
 
 ---
@@ -589,28 +640,31 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## RET — Returns
 
 #### RET-001 — Return window length & category exclusions · **P0**
-- **Question:** How many days after delivery can a return be initiated, and which categories (if any — e.g., innerwear) are excluded or restricted?
-- **Why it matters:** Core commercial policy with legal/consumer-protection dimensions (see `INDIA_COMMERCE_GAPS.md`).
+- **Question:** Return window, and category exclusions?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Default return window: 7 days after product delivery.** **MUST be configurable by category/product** — not one global hard-coded policy. Some categories/items can be **non-returnable** (example given: innerwear) (explicit, §16).
 - **Affected specs:** `specs/18-returns.md`
 
 #### RET-002 — Return condition inspection criteria · **P0**
-- **Question:** What condition must a returned item meet to be accepted (tags attached, unworn, original packaging), and who inspects it — automated rules, warehouse QC, or both?
-- **Dependencies:** GRN-001 (analogous inspection model)
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Question:** What condition/inspection is required?
+- **Dependencies:** GRN-001
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Return reason selection is mandatory** (explicit, §16). Return workflow **MUST support warehouse return receipt and QC**; refund eligibility normally follows successful return/QC per configured policy — no refund fires before the QC gate. Exact per-category condition checklist is operational configuration.
 - **Affected specs:** `specs/18-returns.md`
 
 #### RET-003 — Self-service vs. assisted return initiation · **P1**
-- **Question:** Can a customer initiate a return entirely self-service through their account, or must a customer-service agent be involved?
+- **Question:** Self-service or CS-assisted?
 - **Dependencies:** CUST-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Self-service initiation available to the customer through their account, with CS-assisted also available, consistent with the platform's general self-service-first posture.
 - **Affected specs:** `specs/18-returns.md`
 
 #### RET-004 — Reverse logistics model · **P1**
-- **Question:** Courier pickup from customer address, customer drop-off, or both? Which carrier (`SHIP-001`) handles reverse pickups?
+- **Question:** Pickup, drop-off, or both?
 - **Dependencies:** SHIP-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Carrier pickup from the customer address (via the `SHIP-001`/`SHIP-002` carrier abstraction) as the default; customer drop-off supported as a configurable alternative where available.
 - **Affected specs:** `specs/18-returns.md`
 
 ---
@@ -618,28 +672,31 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## REF — Refunds
 
 #### REF-001 — COD refund mechanism · **P0**
-- **Question:** For a COD order (no original electronic payment to reverse), how is the refund issued — bank transfer, UPI, store credit, or customer's choice?
-- **Why it matters:** Flagged explicitly in `ARCHITECTURE.md` §9 as needing a first-class answer, not an afterthought.
+- **Question:** How is a COD order refunded?
 - **Dependencies:** REF-002, PAY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Prepaid orders: refund to the original payment method where supported/appropriate. COD orders: refund as STORE CREDIT** (explicit, §17). No further decision needed.
 - **Affected specs:** `specs/19-refunds.md`
 
 #### REF-002 — Store credit / wallet as a platform concept · **P0**
-- **Question:** Does the platform have a store-credit/wallet concept at all? If yes, it needs its own ledger (per the ADR-0012/0013 pattern) — this decision gates a nontrivial scope addition.
+- **Question:** Does store credit exist as a platform concept?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/19-refunds.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Yes.** Store credit is a **separate financial/customer-balance concept**, distinct from the loyalty-points ledger (explicit, §19). Maintained as its own auditable ledger. **Does NOT expire** under the currently approved business rule. May be used together with loyalty and coupons/promotions, subject to configurable eligibility/stacking rules.
+- **Affected specs:** `specs/19-refunds.md`, `specs/22-loyalty.md`, `specs/33-store-credit-gift-cards.md`
 
 #### REF-003 — Refund timelines & partial refund rules · **P1**
-- **Question:** What refund SLA is communicated to customers, and are restocking fees or partial refunds (e.g., for used/damaged returns) permitted?
+- **Question:** SLA, and partial refunds?
 - **Dependencies:** RET-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Partial refunds MUST be supported** (explicit, §17). **Refund calculation MUST use the original transaction values, not current catalog prices** (explicit, §17, reinforcing `CAT-001`). Refund operations **MUST be auditable and idempotent** (explicit, §17). SLA timelines communicated to customers are configurable, not blocking.
 - **Affected specs:** `specs/19-refunds.md`
 
 #### REF-004 — Refund reason capture vs. return reason · **P2**
-- **Question:** Is refund reason a separate captured field from return reason, or always inherited from it?
+- **Question:** Separate field or inherited?
 - **Dependencies:** RET-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Inherited from return reason by default for return-triggered refunds; separately captured for non-return-triggered refunds (e.g., cancellation, goodwill).
 - **Affected specs:** `specs/19-refunds.md`
 
 ---
@@ -647,21 +704,24 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## EXC — Exchanges
 
 #### EXC-001 — Exchange data model · **P0**
-- **Question:** Is an exchange modeled as a linked pair (return + new order), or as a single first-class "exchange" entity? (Flagged identically in both `specs/18-returns.md` and `specs/20-exchanges.md` — consolidated here as one decision.)
+- **Question:** Linked return+order, or a first-class entity?
 - **Dependencies:** ORD-001, RET-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** **First-class Exchange entity**, not merely a linked return+new-order pair — required to cleanly preserve financial and inventory auditability across replacement-SKU reservation, price-difference payment, and price-difference store-credit issuance in a single coherent operation, all explicitly required by §18.
 - **Affected specs:** `specs/18-returns.md`, `specs/20-exchanges.md`
 
 #### EXC-002 — Price difference handling on exchange · **P1**
-- **Question:** If the replacement item has a different price, does the customer pay the difference or receive a refund of it, and through what mechanism (`PAY-001`)?
+- **Question:** Who bears the price difference, and how?
 - **Dependencies:** EXC-001, PAY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **If the replacement costs MORE, the customer pays the difference through an online payment flow/link/checkout. If it costs LESS, the difference becomes STORE CREDIT** (explicit, §18). **Size exchange and colour exchange are both supported. Replacement SKU availability MUST be checked and appropriately reserved** (explicit, §18) — this resolves the replacement-SKU-reservation-timing gap flagged in `blueprint/FASHION_DOMAIN_GAPS.md`: reservation happens at exchange request time, using the same short-lived reservation mechanics as `INV-002`.
 - **Affected specs:** `specs/20-exchanges.md`
 
 #### EXC-003 — Exchange eligibility window · **P2**
-- **Question:** Same window as returns (`RET-001`), or a distinct (possibly shorter/longer) window?
+- **Question:** Same window as returns, or distinct?
 - **Dependencies:** RET-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Same window as returns (`RET-001`), configured together for consistency and simplicity.
 - **Affected specs:** `specs/20-exchanges.md`
 
 ---
@@ -669,22 +729,24 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## CUST — Customer 360
 
 #### CUST-001 — Data retention & deletion policy · **P1**
-- **Question:** What is the retention period for customer PII, and how are account-deletion requests handled?
-- **Why it matters:** Likely has regulatory implications depending on applicable data-protection law — see `AUD-002`; do not treat as settled without legal input.
+- **Question:** Retention period, and account-deletion handling?
 - **Dependencies:** AUD-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/21-customer-profile.md`
+- **Status:** **UNDER_REVIEW** · **Decision date:** —
+- **Final decision:** Not resolved by Product Owner business instruction — this is fundamentally a data-protection **compliance/legal question requiring verification** (§28 explicitly lists "data/privacy" among items not to be settled by invented legal conclusions). Remains routed to legal verification, tracked jointly with `AUD-002`. Does not block M00/M01.
+- **Affected specs:** `specs/21-customer-profile.md`, `specs/30-audit-compliance.md`
 
 #### CUST-002 — Marketing preference center granularity · **P1**
-- **Question:** Is opt-in/opt-out granular per channel (email/SMS/push) and per message type, or a single global marketing toggle? (Flagged identically in both `specs/21-customer-profile.md` and `specs/24-marketing.md` — consolidated here.)
+- **Question:** Granular per-channel or one global toggle?
 - **Dependencies:** MKT-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Granular, per-channel (SMS/WhatsApp/Email/Push — matching the required notification-channel architecture, `NOTIF-001`) and per-message-type, not a single global toggle.
 - **Affected specs:** `specs/21-customer-profile.md`, `specs/24-marketing.md`
 
 #### CUST-003 — Internal Customer 360 view vs. self-service profile scope split · **P2**
-- **Question:** Is there a distinct internal admin "Customer 360" view (support/ops-facing) beyond the customer's own self-service profile, and where is that scoped — this spec or `28-admin.md`?
+- **Question:** Distinct internal view, or the same screen?
 - **Dependencies:** ADM-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Distinct: a data-minimized, CS-facing Customer 360 view lives in Admin (`28-admin.md`), separate from the customer's own self-service profile (`21-customer-profile.md`) — per the data-minimization principle in `blueprint/CUSTOMER_360.md` §2.
 - **Affected specs:** `specs/21-customer-profile.md`, `specs/28-admin.md`
 
 ---
@@ -692,33 +754,38 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## LOY — Loyalty
 
 #### LOY-001 — Loyalty program model & launch scope · **P0**
-- **Question:** Does a loyalty program exist at launch at all, and if so is it a points system, cashback/credit system, or tiered-benefits system? `PRODUCT.md` §2.C explicitly leaves this unfrozen.
+- **Question:** Does a program exist, and in what shape?
 - **Dependencies:** ORG-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Loyalty IS required. Model: POINTS + TIERS** (explicit, §20). The broader benefit ecosystem (cashback, coupons, promotional/onboarding coupons) is also supported but **kept conceptually separate**, never collapsed into one data structure: `LOYALTY POINTS`, `TIER/STATUS`, `STORE CREDIT/CASHBACK VALUE`, and `PROMOTIONS/COUPONS` are four distinct concepts.
 - **Affected specs:** `specs/22-loyalty.md`
 
 #### LOY-002 — Earn rate rules · **P0**
-- **Question:** How are points/credit earned (e.g., per ₹ spent), and on what basis (order value, per-line, pre- or post-discount)?
+- **Question:** How are points earned?
 - **Dependencies:** LOY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (rate configurable) · **Decision date:** 2026-09-22
+- **Final decision:** **Points are earned based on qualifying purchase value** (explicit, §20). The exact earning rate is an intentionally **configurable business parameter — no fixed commercial percentage is invented here** (explicit instruction, §20).
 - **Affected specs:** `specs/22-loyalty.md`
 
 #### LOY-003 — Redemption mechanics & minimum redemption · **P0**
-- **Question:** How do points/credit convert to a discount, and is there a minimum redemption threshold or maximum redemption cap per order?
+- **Question:** How do points convert to discount?
 - **Dependencies:** LOY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (mechanics configurable) · **Decision date:** 2026-09-22
+- **Final decision:** **Points may be redeemed on future purchases** (explicit, §20). Exact conversion rate, minimum redemption, and maximum redemption cap per order are configurable business parameters, not invented here.
 - **Affected specs:** `specs/22-loyalty.md`
 
 #### LOY-004 — Expiry policy · **P1**
-- **Question:** Do earned points/credit expire, and after what period?
+- **Question:** Do points expire?
 - **Dependencies:** LOY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Points expire. The expiry period MUST be configurable** (explicit, §20). This explicitly **contrasts with store credit, which does NOT expire** (`REF-002`) — the two ledgers have different expiry semantics by design.
 - **Affected specs:** `specs/22-loyalty.md`
 
 #### LOY-005 — Loyalty + promotion stacking · **P1**
-- **Question:** Can loyalty redemption be combined with a promotional discount (`PROMO-002`) on the same order? (Flagged identically in both `specs/22-loyalty.md` and `specs/23-promotions.md` — consolidated here.)
+- **Question:** Can loyalty redemption combine with promotions?
 - **Dependencies:** LOY-003, PROMO-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Store credit may be used together with loyalty and coupon/promotions, subject to promotion/loyalty eligibility and stacking rules** (explicit, §19). Stacking compatibility **MUST be rule-driven/configurable**, mirroring `PROMO-002`.
 - **Affected specs:** `specs/22-loyalty.md`, `specs/23-promotions.md`
 
 ---
@@ -726,15 +793,17 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## PROMO — Promotions
 
 #### PROMO-001 — Supported promotion types for launch · **P1**
-- **Question:** Which promotion types (percentage off, fixed amount, BOGO, free shipping, etc.) are required for launch?
+- **Question:** Which promotion types are required?
 - **Dependencies:** CAT-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Support BOTH coupon-code promotions AND automatic promotions** (explicit, §10). Required types: promotional coupons, campaign coupons, onboarding coupons, cashback-related benefits, and other **configurable** coupon types — the type system itself must be extensible, not a fixed enum.
 - **Affected specs:** `specs/23-promotions.md`
 
 #### PROMO-002 — Stacking/precedence rules · **P1**
-- **Question:** Can multiple coupons/promotions apply to one order, and in what precedence order?
+- **Question:** Can multiple promotions apply?
 - **Dependencies:** PROMO-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **One coupon may coexist with explicitly compatible automatic promotions** (explicit, §10). Compatibility/stacking **MUST be rule-driven/configurable** — do not hard-code every promotion combination.
 - **Affected specs:** `specs/23-promotions.md`
 
 ---
@@ -742,9 +811,10 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## MKT — Marketing
 
 #### MKT-001 — Marketing channels & build-vs-integrate for launch · **P2**
-- **Question:** Which channels (email/SMS/push) launch first, and is marketing automation built natively or via a third-party ESP integration?
+- **Question:** Which channels, and native or third-party?
 - **Dependencies:** CUST-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (architecture); provider selection deferred · **Decision date:** 2026-09-22
+- **Final decision:** Architecture supports SMS, WhatsApp, Email, and Push via a provider abstraction (explicit, §15, shared with `NOTIF-001`). Actual provider/channel activation at launch is configurable, deferred to operational decision — not a build blocker.
 - **Affected specs:** `specs/24-marketing.md`
 
 ---
@@ -752,9 +822,10 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## CHAN — Channel Publishing
 
 #### CHAN-001 — Which channels launch first · **P2**
-- **Question:** Google Shopping/Merchant Center, Meta/Instagram, both, or neither at launch? `PRODUCT.md` §2.E explicitly states no integrations are approved yet.
+- **Question:** Which marketplace/social channels launch first?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **None launch now.** Build the **adapter/contract publishing architecture** (core catalog must not embed marketplace-specific fields; use channel-specific mappings) so future integrations to Meta, Instagram, Facebook, Google Merchant, Amazon, Flipkart, Myntra, and Ajio are possible without redesign (explicit, §3, §24). **Actual marketplace integrations are explicitly deferred — not built without separate milestone authorization** (explicit, §3: "DO NOT build these marketplace integrations now unless their milestone is explicitly authorized").
 - **Affected specs:** `specs/25-social-channel-publishing.md`
 
 ---
@@ -762,9 +833,10 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## SEO — SEO
 
 #### SEO-001 — URL structure/canonicalization strategy · **P2**
-- **Question:** What is the canonical URL structure for PDP/PLP pages, and how are discontinued-product redirects handled?
+- **Question:** URL structure and redirect handling?
 - **Dependencies:** SF-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Standard SEO-friendly structure (`/category/product-slug`), canonical URLs, 301 redirects for discontinued/unpublished products. Finalized as an engineering convention at M27 implementation time.
 - **Affected specs:** `specs/26-seo.md`
 
 ---
@@ -772,9 +844,10 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## ANL — Analytics / Reporting
 
 #### ANL-001 — Build vs. integrate analytics/BI & launch KPI list · **P2**
-- **Question:** Native reporting vs. third-party BI tool, and which KPIs are required at launch vs. deferred?
+- **Question:** Native or third-party BI? Which KPIs?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** Required analytics are now explicit and extensive (§27): sales, orders, returns, refunds, inventory, customer metrics, margin, profitability; fashion-specific (style/colour/size performance, stock ageing, sell-through, availability, return reasons, size-related returns); procurement (supplier fill rate, short/excess/damaged receipts, lead time, purchase vs. sales, supplier performance). Build-vs-integrate: build native event/data foundations first (so these are producible reliably), evaluate a BI/dashboard layer for presentation later — an engineering default, not blocking.
 - **Affected specs:** `specs/27-analytics-reporting.md`
 
 ---
@@ -782,22 +855,24 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## ADM — Admin / Operating Roles
 
 #### ADM-001 — Final RBAC role list & permission matrix · **P0**
-- **Question:** What is the complete list of internal roles (see `OPERATING_ROLES.md` for candidate personas) and their permission matrix?
-- **Why it matters:** Gates nearly every domain's admin surface and `AUTH-002`.
+- **Question:** What is the complete role list and permission matrix?
 - **Dependencies:** AUTH-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering-authored per explicit Product Owner delegation) · **Decision date:** 2026-09-22
+- **Final decision:** The Product Owner explicitly delegated this ("Finalize a sensible RBAC model based on these operating responsibilities," §25). Adopted role set: **Super Admin, Business Admin, Buying, Merchandising, Catalog, Warehouse Manager, Warehouse Operator, Customer Service, Marketing, Finance, Analytics** — see `blueprint/OPERATING_ROLES.md` and `specs/28-admin.md` for the full permission matrix and sensitive-action approval gates (large/exceptional discounts, manual inventory adjustments, exceptional refunds, high-risk financial actions, role/permission changes all require elevated authorization, per §25/§26).
 - **Affected specs:** `specs/01-auth-rbac.md`, `specs/28-admin.md`
 
 #### ADM-002 — Separate admin app vs. shared app with role-gated routes · **P1**
-- **Question:** Is the admin experience a fully separate application from the storefront, or a shared codebase with access-controlled routes?
+- **Question:** Separate app or shared codebase?
 - **Dependencies:** SF-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** One admin application (separate from the customer storefront app) with role-gated routes internally — not a fully separate deployment/tech stack per role.
 - **Affected specs:** `specs/28-admin.md`
 
 #### ADM-003 — Manual inventory adjustment authorization workflow · **P1**
-- **Question:** Who can manually adjust stock counts, and what justification/approval/audit trail is required (ties to `INV-007`, `AUD-001`)?
+- **Question:** Who can adjust stock, and what's required?
 - **Dependencies:** INV-007, AUD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Manual inventory adjustments require appropriate authorization** (explicit, §26/§36) — restricted to Warehouse Manager and above (Finance co-approval for high-value adjustments), mandatory justification field, fully audited (who/what/when/old-value/new-value/reference).
 - **Affected specs:** `specs/28-admin.md`, `specs/06-inventory.md`
 
 ---
@@ -805,9 +880,10 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## NOTIF — Notifications
 
 #### NOTIF-001 — Notification channels & build-vs-integrate for launch · **P2**
-- **Question:** Email only, or email + SMS + push at launch? Native or third-party transactional messaging provider?
+- **Question:** Which channels, native or integrated?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Architecture MUST support SMS, WhatsApp, Email, and Push** via provider abstraction — order logic must not couple directly to one messaging provider (explicit, §15). Actual providers/configuration are selected later, deferred to operational decision.
 - **Affected specs:** `specs/29-notifications.md`
 
 ---
@@ -815,141 +891,143 @@ until/unless the Product Owner authorizes a dedicated spec.
 ## AUD — Audit / Compliance
 
 #### AUD-001 — Audit log access control & retention period · **P1**
-- **Question:** Who can access audit logs (which RBAC role, `ADM-001`), and what retention period applies per data category?
+- **Question:** Who can access audit logs, and for how long?
 - **Dependencies:** ADM-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Full auditability is required** for inventory, pricing, orders, refunds, store credit, loyalty, promotions, permissions, and product publishing (explicit, §26) — recording who/what/when/old value/new value/reference. Access restricted to Super Admin, Business Admin, and Finance by default (extendable per `ADM-001`'s matrix). Exact retention period ties to `AUD-002`'s legal verification.
 - **Affected specs:** `specs/30-audit-compliance.md`
 
 #### AUD-002 — Regulatory/compliance requirement identification · **P1**
-- **Question:** What data-protection, consumer-protection, and financial-record-retention regulations apply to this platform's target market? Requires legal input — see `INDIA_COMMERCE_GAPS.md`.
+- **Question:** What regulations apply?
 - **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** **UNDER_REVIEW** · **Decision date:** —
+- **Final decision:** Not resolved by Product Owner business instruction — explicitly flagged as requiring legal verification, not invented conclusions (§28). Routed to external legal review; does not block M00/M01.
 - **Affected specs:** `specs/30-audit-compliance.md`
 
 ---
 
 ## TAX — India Tax / GST
 
-**Audit note:** This entire domain is a **missing spec** — no file in
-`/specs` currently owns GST/tax/invoicing. Decisions here should be
-recorded against `specs/12-checkout.md` (which already flags "tax
-calculation approach" as open) until/unless the Product Owner authorizes
-a dedicated tax/compliance spec. See `INDIA_COMMERCE_GAPS.md`.
+**Now owned by `specs/32-india-tax-invoicing.md`** (created in this
+update — see §28 of the Product Owner instruction, which required this
+spec at minimum).
 
 #### TAX-001 — GST registration/multi-state model & computation approach · **P0**
-- **Question:** Is the business GST-registered in a single state or multiple states? How is CGST/SGST vs. IGST determined per order (based on shipping state vs. warehouse state)?
-- **Why it matters:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** — this is not a technical preference, it is a legal registration and tax-computation question that needs the Product Owner's finance/legal input, not an engineering assumption.
+- **Question:** GST registration model, CGST/SGST vs. IGST determination?
 - **Dependencies:** ORG-001, ORG-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/12-checkout.md`
+- **Status:** **UNDER_REVIEW** · **Decision date:** —
+- **Final decision:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** — not resolved by this instruction, and explicitly must not be resolved by invented legal conclusions (§28). The **engineering approach is decided** (see `CHK-002`): a configurable, parameterized tax-computation engine that can apply whatever registration model/rate logic is legally confirmed, without an architecture change. Does not block M00/M01; blocks the tax-computation-correctness portion of M13/M08.
+- **Affected specs:** `specs/32-india-tax-invoicing.md`
 
 #### TAX-002 — MRP vs. selling-price display & inclusive/exclusive presentation · **P0**
-- **Question:** Is pricing displayed as MRP-based and tax-inclusive (the common Indian retail norm), and how does this interact with discounts/promotions display?
-- **Why it matters:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** — MRP disclosure has Legal Metrology Act implications for pre-packaged goods in India that need verification, not assumption.
+- **Question:** MRP disclosure requirements?
 - **Dependencies:** CAT-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/07-catalog-merchandising.md`, `specs/02-product-master.md`
+- **Status:** **UNDER_REVIEW** · **Decision date:** —
+- **Final decision:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** (Legal Metrology Act implications). The **business display decision is made** (`CAT-001`: MRP + tax-inclusive display, matching stated market norm); the specific legal disclosure/labeling mechanics still need verification.
+- **Affected specs:** `specs/32-india-tax-invoicing.md`, `specs/02-product-master.md`
 
 #### TAX-003 — HSN code assignment · **P0**
-- **Question:** Is an HSN (Harmonized System of Nomenclature) code required per product/SKU, and at what level of the taxonomy is it assigned (category-level default vs. per-SKU override)?
-- **Why it matters:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** — required for GST invoicing/returns depending on business turnover thresholds; needs legal/finance verification of applicable thresholds.
+- **Question:** Is HSN required, and at what level?
 - **Dependencies:** PROD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/02-product-master.md`
+- **Status:** **UNDER_REVIEW** · **Decision date:** —
+- **Final decision:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** (turnover-threshold-dependent under Indian GST rules). **Engineering readiness decided:** an HSN field exists on the product/category schema now (nullable/configurable), so the verified rule can be applied without a schema change.
+- **Affected specs:** `specs/32-india-tax-invoicing.md`, `specs/02-product-master.md`
 
 #### TAX-004 — GST-compliant invoice generation · **P0**
-- **Question:** Does the platform generate a GST-compliant tax invoice per order (required fields, numbering sequence), and at what point in the order lifecycle (`ORD-001`)?
-- **Why it matters:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** — a genuinely missing capability in the current specs; likely a legal requirement for any registered Indian seller, but exact format rules need verification.
+- **Question:** Invoice format and generation trigger point?
 - **Dependencies:** TAX-001, ORD-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/14-order-management.md`
+- **Status:** **UNDER_REVIEW** · **Decision date:** —
+- **Final decision:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION.** **Engineering readiness decided:** invoicing capability is required and built with a versioned, configurable template and configurable numbering sequence at order confirmation, so the legally-verified format can be applied without a redesign once confirmed.
+- **Affected specs:** `specs/32-india-tax-invoicing.md`, `specs/14-order-management.md`
 
 #### TAX-005 — Credit note generation for returns/refunds/cancellations · **P0**
-- **Question:** Does a return/refund/cancellation generate a formal GST credit note, and how does it link to the original invoice (`TAX-004`)?
-- **Why it matters:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION** — a missing capability in current `19-refunds.md`/`17-cancellation.md` specs.
+- **Question:** Credit note requirements?
 - **Dependencies:** TAX-004, REF-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/19-refunds.md`, `specs/17-cancellation.md`
+- **Status:** **UNDER_REVIEW** · **Decision date:** —
+- **Final decision:** **COMPLIANCE/LEGAL QUESTION REQUIRING VERIFICATION**, same treatment as `TAX-004` applied to the reverse flow (return/refund/cancellation).
+- **Affected specs:** `specs/32-india-tax-invoicing.md`, `specs/19-refunds.md`, `specs/17-cancellation.md`
 
 #### TAX-006 — Discount presentation on invoice · **P1**
-- **Question:** Are promotional discounts applied pre-tax or post-tax on the invoice, and how is this reflected in the GST computation?
+- **Question:** Pre-tax or post-tax discount application?
 - **Dependencies:** TAX-004, PROMO-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/23-promotions.md`
+- **Status:** DECIDED (engineering default; subject to TAX-001 verification) · **Decision date:** 2026-09-22
+- **Final decision:** Pre-tax discount application by default (common practice), implemented as a configurable computation flag so it can be switched if legal verification under `TAX-001` indicates otherwise.
+- **Affected specs:** `specs/32-india-tax-invoicing.md`, `specs/23-promotions.md`
 
 ---
 
 ## IND — Other India-specific commerce
 
 #### IND-001 — COD availability rules & reconciliation process · **P0**
-- **Question:** Is COD available on all orders/PIN codes/order values, or restricted (e.g., max COD order value, excluded PIN codes)? What is the operational reconciliation process for cash collected by the delivery partner?
+- **Question:** COD restrictions, and reconciliation?
 - **Dependencies:** SHIP-001, REF-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/13-payment.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **COD is required** (explicit, §13). Availability rules (value cap, excluded PIN codes) are configurable business parameters. Reconciliation of cash collected by the delivery partner against platform records is a required operational process, built on the same ledger/audit discipline as everything else (`AUD-001`). Per `INV-002`, **COD orders commit/reserve inventory at successful order acceptance**, not at a later point.
+- **Affected specs:** `specs/13-payment.md`, `specs/32-india-tax-invoicing.md`
 
 #### IND-002 — PIN-code serviceability check · **P0**
-- **Question:** What data source determines whether a PIN code is serviceable (carrier API, static/periodically-updated list), and is this checked at PDP, cart, or checkout?
+- **Question:** Data source, and check point?
 - **Dependencies:** SHIP-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
-- **Affected specs:** `specs/12-checkout.md`
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Required** (explicit, §12) — see `CHK-004`. Data source: carrier API where available (via the `SHIP-002` abstraction), with a static/periodically-updated list as fallback (engineering default). Checked at PDP and re-validated at checkout.
+- **Affected specs:** `specs/12-checkout.md`, `specs/10-pdp.md`
 
 #### IND-003 — Indian address structure · **P1**
-- **Question:** What address fields/validation are required (house/flat, locality, landmark, city, state, PIN code) and is address auto-complete (PIN-code-to-city/state lookup) required?
+- **Question:** Address fields and auto-complete?
 - **Dependencies:** IND-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Standard Indian address field set (house/flat, locality, landmark, city, state, PIN code); PIN-to-city/state auto-complete included where feasible.
 - **Affected specs:** `specs/12-checkout.md`, `specs/21-customer-profile.md`
 
 #### IND-004 — UPI/net-banking/wallet support at launch · **P1**
-- **Question:** Beyond cards, which payment rails does the Razorpay integration expose at launch (UPI, net banking, wallets)?
+- **Question:** Which rails beyond cards?
 - **Dependencies:** PAY-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED · **Decision date:** 2026-09-22
+- **Final decision:** **Required payment capabilities include UPI, cards, net banking, and other appropriate Razorpay-supported rails where configured** (explicit, §13), in addition to COD.
 - **Affected specs:** `specs/13-payment.md`
 
 #### IND-005 — Free-shipping threshold & shipping charge policy · **P2**
-- **Question:** Is there a free-shipping order-value threshold, and what is the shipping charge below it?
+- **Question:** Is there a free-shipping threshold?
 - **Dependencies:** CHK-003
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (configurable) · **Decision date:** 2026-09-22
+- **Final decision:** Supported as a configurable business parameter; exact threshold and below-threshold charge are business configuration, not a build blocker.
 - **Affected specs:** `specs/12-checkout.md`
 
 ---
 
 ## NFR — Non-functional requirements
 
-See `NON_FUNCTIONAL_REQUIREMENTS.md` for the full structured NFR document
-this domain feeds.
+Initial engineering-default targets below (informed by the given
+operating scale: **10,000–50,000 SKUs, 1,000–10,000 orders/day
+supportable without fundamental redesign**, §2). All are revisable
+after real load testing at M32 — none block M00/M01.
 
 #### NFR-001 — Performance targets · **P1**
-- **Question:** What are the target page-load and API-latency figures (e.g., PDP LCP, checkout API p95)? Currently `TARGET_REQUIRED` everywhere.
-- **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Initial targets: PDP LCP < 2.5s on a representative 4G mobile profile; checkout/payment API p95 < 500ms; search response < 300ms. Revised after M32 load testing.
 - **Affected specs:** `TESTING.md`, `specs/08-storefront.md`
 
 #### NFR-002 — Availability/uptime target · **P1**
-- **Question:** What uptime SLA/SLO applies, and does it differ between storefront and admin?
-- **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Storefront target 99.9%; admin target 99.5% (tolerates more maintenance-window flexibility). Revisable.
 - **Affected specs:** `DEPLOYMENT.md`
 
 #### NFR-003 — Data retention & backup/restore/DR targets · **P1**
-- **Question:** What is the backup frequency, restore-time objective (RTO), and recovery-point objective (RPO)?
-- **Dependencies:** AUD-002
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Daily backups; RPO ≤ 24h; RTO ≤ 4h at current scale. Compliance-driven data-category-specific retention periods still depend on `AUD-002`.
 - **Affected specs:** `DEPLOYMENT.md`, `SECURITY.md`
 
 #### NFR-004 — Accessibility conformance level · **P2**
-- **Question:** Target WCAG conformance level (A/AA/AAA) for the storefront?
-- **Dependencies:** SF-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** WCAG 2.1 AA target for the storefront.
 - **Affected specs:** `specs/08-storefront.md`
 
 #### NFR-005 — Browser/device support matrix · **P2**
-- **Question:** Which browsers/OS versions/device classes are officially supported?
-- **Dependencies:** SF-001
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Last 2 versions of Chrome, Safari, Firefox, Edge; current iOS Safari and Android Chrome for mobile.
 - **Affected specs:** `specs/08-storefront.md`
 
 #### NFR-006 — Rate limiting / API reliability targets · **P2**
-- **Question:** What rate-limiting policy and API error-budget targets apply, particularly for public storefront APIs?
-- **Dependencies:** none
-- **Status:** OPEN · **Final decision:** — · **Decision date:** —
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
+- **Final decision:** Standard per-IP/per-session rate limits on public storefront APIs; exact figures tuned during M32 load testing.
 - **Affected specs:** `SECURITY.md`

@@ -1,51 +1,42 @@
 # 26. SEO
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SEO-001`)
 
 ## Purpose
 
-Define the SEO implementation for the storefront: what must be
-server-rendered/indexable, what structured data is emitted, and how
-discoverability is maintained as the catalog changes.
+Define the SEO implementation for the storefront.
 
 ## Scope
 
-- Server-rendered/indexable product content (PDP, PLP) — architectural
-  requirement, see `ARCHITECTURE.md` §8
-- Metadata (titles, descriptions, canonical URLs)
-- Sitemaps (product, category, and general sitemap generation/updates)
-- Breadcrumbs
-- Structured data: `Product` and `ProductGroup`/variant schema, `Offer`
-  data (availability, pricing, shipping, returns policy references),
-  image metadata
-- Other ecommerce SEO requirements (robots directives, redirect
-  handling for discontinued products, etc.)
+- Server-rendered/indexable product content (PDP, PLP)
+- Metadata, sitemaps, breadcrumbs
+- Structured data: `Product`/`ProductGroup`/`Offer`, image metadata
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- SEO is architectural, not an afterthought (`ARCHITECTURE.md` §8) —
-  must be designed into `08-storefront.md` and `10-pdp.md` from the
-  start, not retrofitted after those are built.
+- SEO is architectural — designed into `specs/08-storefront.md` and
+  `specs/10-pdp.md` from the start, not retrofitted.
+- URL structure: `/category/product-slug` pattern, canonical URLs, 301
+  redirects for discontinued/unpublished products (engineering
+  convention, finalized at implementation time).
+- Structured data MUST reflect the product attribute model
+  (`specs/02-product-master.md`), including price (tax-inclusive,
+  `specs/07-catalog-merchandising.md`), availability
+  (`specs/06-inventory.md`), and returns policy reference
+  (`specs/18-returns.md`).
+- Product media alt text and SEO metadata are captured per asset
+  (`specs/02-product-master.md`).
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Exact structured data schema mapping from the product attribute
-  model (`02-product-master.md`) — not yet designed.
-- URL structure/canonicalization strategy — not yet decided.
-- Redirect policy for discontinued/out-of-stock-permanently products —
-  not yet defined.
-- International SEO (hreflang etc.) — depends on the
-  internationalization open question in `08-storefront.md`.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on: `SEO-001`.
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m27-seo.md`.
 
 ## Dependencies
 
-Depends on: `08-storefront.md`, `10-pdp.md`, `09-search-discovery.md`,
-`02-product-master.md`, `07-catalog-merchandising.md`.
+Depends on: `specs/08-storefront.md`, `specs/10-pdp.md`,
+`specs/09-search-discovery.md`, `specs/02-product-master.md`,
+`specs/07-catalog-merchandising.md`.

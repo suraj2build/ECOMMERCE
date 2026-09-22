@@ -1,54 +1,54 @@
 # 18. Returns
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `RET-001`–`004`, `EXC-001`)
 
 ## Purpose
 
 Define the post-delivery return process: eligibility, initiation,
-pickup/drop-off logistics, quality inspection of returned goods, and
-disposition (restock, damage, dispose).
+reverse logistics, quality inspection, and disposition.
 
 ## Scope
 
-- Return eligibility rules (time window, category exclusions,
-  condition requirements)
-- Return initiation (customer self-service and/or customer service)
-- Reverse logistics (pickup/drop-off) — may depend on
-  `16-shipping-tracking.md` carrier integration
-- Quality inspection of returned goods on arrival (mirrors
-  `05-grn.md` inspection concept, but for returns)
-- Disposition: restock as sellable, restock as damaged/clearance, or
-  dispose — each must produce the correct inventory ledger entry
-  (ADR-0012)
-- Handoff to `19-refunds.md` once a return is accepted
+- Return eligibility rules
+- Return initiation
+- Reverse logistics
+- Quality inspection on arrival
+- Disposition: restock, damage, dispose
+- Handoff to refunds
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Every return disposition outcome must post the correct inventory
-  ledger entry — a return is not "done" from an inventory perspective
-  until the ledger reflects where the stock actually ended up
-  (ADR-0012).
+- **Default return window: 7 days after product delivery.** **MUST be
+  configurable by category/product** — not one global hard-coded
+  policy. Some categories/items **can be non-returnable** (example:
+  innerwear).
+- **Return reason selection is mandatory.**
+- Return workflow **MUST support warehouse return receipt and QC.**
+  Refund eligibility follows successful return/QC per configured
+  policy — no refund fires before the QC gate (see `specs/19-refunds.md`).
+- Self-service return initiation is available through the customer's
+  account, with Customer-Service-assisted initiation also available.
+- Reverse logistics defaults to carrier pickup from the customer
+  address (via `specs/16-shipping-tracking.md`'s carrier abstraction),
+  with customer drop-off as a configurable alternative where available.
+- Every return disposition outcome (restock sellable, restock as
+  marked-down/damaged, write-off, return-to-supplier) MUST post the
+  correct inventory ledger entry (`specs/06-inventory.md` `INV-006`) —
+  never automatic re-entry to sellable stock without QC.
+- **Exchange (`specs/20-exchanges.md`) is modeled as a first-class
+  Exchange entity**, not merely a linked return+new-order pair (see
+  `EXC-001`) — this resolves the previously duplicated open question
+  in this spec and `specs/20-exchanges.md`.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Return window length and category-specific exclusions (e.g.,
-  innerwear, altered items) — business-owned, not yet defined.
-- Return condition inspection criteria — not yet defined.
-- Is exchange (`20-exchanges.md`) a variant of return+reorder, or a
-  distinct flow? Not yet decided — affects both specs' data models.
-- Self-service vs. assisted return initiation — not yet decided.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`RET-001` through `RET-004`, `EXC-001` (the exchange-vs-return data
-model question, now consolidated as a single decision), `INV-006`.
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m19-returns.md`.
 
 ## Dependencies
 
-Depends on: `14-order-management.md`, `16-shipping-tracking.md`,
-`06-inventory.md`. Feeds: `19-refunds.md`, `20-exchanges.md`.
+Depends on: `specs/14-order-management.md`, `specs/16-shipping-tracking.md`,
+`specs/06-inventory.md`. Feeds: `specs/19-refunds.md`, `specs/20-exchanges.md`.

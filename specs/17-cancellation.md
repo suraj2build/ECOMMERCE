@@ -1,6 +1,6 @@
 # 17. Cancellation
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CAN-001`–`003`)
 
 ## Purpose
 
@@ -10,41 +10,40 @@ loyalty.
 
 ## Scope
 
-- Cancellation eligibility rules (time window, order status
-  restrictions)
+- Cancellation eligibility rules
 - Full vs. partial (line-item-level) cancellation
-- Effects: inventory release (ledger entry, ADR-0012), payment
-  reversal/refund trigger (`19-refunds.md`), loyalty reversal (ledger
-  entry, ADR-0013)
+- Effects: inventory release, payment reversal/refund trigger, loyalty
+  reversal
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Cancellation must release reserved/allocated inventory via a ledger
-  entry, never a direct stock-count edit (ADR-0012).
-- Any loyalty points earned on a cancelled order/line must be reversed
-  via a ledger entry, never a direct balance edit (ADR-0013).
+- **Customer cancellation is allowed before shipment**, subject to
+  configurable state/policy rules. Post-shipment, the customer path is
+  return, not cancellation.
+- **Partial cancellation MUST be supported** at the line-item level.
+- Cancellation MUST release reserved/allocated inventory via a ledger
+  entry (`specs/06-inventory.md`, ADR-0012), never a direct stock-count
+  edit.
+- Any loyalty points earned on a cancelled order/line MUST be reversed
+  via a ledger entry (`specs/22-loyalty.md`, ADR-0013).
+- Cancellation eligible at any state prior to shipment is available to
+  both the customer (self-service) and Customer Service (assisted).
+- Cancellation reason capture is **optional** (recommended, not
+  mandatory) — feeds analytics where provided.
+- A cancellation on a captured payment triggers the refund flow
+  (`specs/19-refunds.md`) and, where applicable, a GST credit note
+  (`specs/32-india-tax-invoicing.md` `TAX-005`).
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- At what order states is cancellation allowed (e.g., can a shipped
-  order be cancelled, or does it become a return instead)? Depends on
-  the order state machine in `14-order-management.md`, which is itself
-  undefined.
-- Who can cancel — customer self-service, customer service agent, or
-  both, and under what constraints?
-- Cancellation reason capture — required or optional, and does it feed
-  analytics/procurement decisions?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`CAN-001` through `CAN-003`, `ORD-001`, `ORD-002`, `TAX-005`.
+Credit-note format specifics remain `UNDER_REVIEW` in
+`specs/32-india-tax-invoicing.md`.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m18-cancellation.md`.
 
 ## Dependencies
 
-Depends on: `14-order-management.md`, `06-inventory.md`. Feeds:
-`19-refunds.md`, `22-loyalty.md`.
+Depends on: `specs/14-order-management.md`, `specs/06-inventory.md`.
+Feeds: `specs/19-refunds.md`, `specs/22-loyalty.md`.

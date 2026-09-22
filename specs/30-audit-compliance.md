@@ -1,56 +1,57 @@
 # 30. Audit / Compliance
 
-**Status:** DRAFT
+**Status:** UNDER_REVIEW (audit-logging requirements DECIDED
+2026-09-22; regulatory-requirement identification `AUD-002` remains
+`UNDER_REVIEW` pending legal input — see `blueprint/DECISION_REGISTER.md`)
 
-**Cross-cutting domain** — feeds and is fed by multiple milestones
-(inventory, orders, payments, loyalty, admin actions, customer data).
+**Cross-cutting domain.**
 
 ## Purpose
 
 Define platform-wide audit trail requirements and regulatory/
-compliance posture — what must be logged, retained, and reportable for
-financial, operational, and legal accountability.
+compliance posture.
 
 ## Scope
 
-- Audit logging for ledger-backed domains (inventory — ADR-0012;
-  loyalty — ADR-0013) and admin actions (`28-admin.md`)
-- Financial reconciliation support (orders, payments, refunds against
-  the inventory and loyalty ledgers)
-- Data retention and deletion policy (interacts with
-  `21-customer-profile.md` open question on account deletion)
-- Regulatory compliance requirements for the target market(s) — not
-  yet identified
+- Audit logging for ledger-backed domains and admin actions
+- Financial reconciliation support
+- Data retention and deletion policy
+- Regulatory compliance requirements
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- The inventory and loyalty ledger principles (ADR-0012, ADR-0013)
-  exist specifically to make this domain possible — audit/compliance
-  requirements should be satisfied by querying the ledgers, not by
-  building a parallel logging system that could drift from them.
+- **Full auditability is required** for: inventory, pricing, orders,
+  refunds, store credit, loyalty, promotions, permissions, and product
+  publishing (explicit, §26).
+- Every audited change MUST record: **who, what, when, old value, new
+  value, reference/context.**
+- Audit log access is restricted to Super Admin, Business Admin, and
+  Finance by default, extendable per `specs/01-auth-rbac.md`'s
+  permission matrix.
+- Audit logging MUST be satisfied by querying the inventory and
+  loyalty/store-credit ledgers (ADR-0012, ADR-0013), not a parallel
+  logging system that could drift from them.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items — UNDER_REVIEW
 
-- Target market's specific regulatory/compliance requirements (data
-  protection law, financial record retention requirements, consumer
-  protection rules for returns/refunds) — not yet identified; needs
-  product-owner/legal input.
-- Data retention periods per data category — not yet defined.
-- Who has access to audit logs, and what admin RBAC role governs that
-  (`01-auth-rbac.md`, `28-admin.md`)?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`AUD-001`, `AUD-002`. `AUD-002` requires legal input before it can be
-treated as decided — see `blueprint/INDIA_COMMERCE_GAPS.md`.
+- **`AUD-002` — Regulatory/compliance requirement identification.**
+  What data-protection, consumer-protection, and financial-record-
+  retention regulations apply to this platform's target market is
+  **explicitly not resolved here** — the Product Owner instruction
+  requires this be routed to legal verification, not invented (§28).
+  Tracked jointly with `specs/21-customer-profile.md` `CUST-001`. Does
+  not block M00/M01, or the audit-logging *mechanism* itself (which is
+  fully decided above) — it governs retention-period specifics layered
+  on top once confirmed.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m29-admin-cms.md` for the audit-logging mechanism's
+acceptance criteria (decided, testable now). Regulatory-retention-
+specific criteria are deferred pending `AUD-002`.
 
 ## Dependencies
 
-Depends on: `06-inventory.md`, `22-loyalty.md`, `28-admin.md`,
-`21-customer-profile.md`. This spec's requirements should also inform
-`SECURITY.md` as compliance requirements become concrete.
+Depends on: `specs/06-inventory.md`, `specs/22-loyalty.md`,
+`specs/33-store-credit-gift-cards.md`, `specs/28-admin.md`,
+`specs/21-customer-profile.md`.

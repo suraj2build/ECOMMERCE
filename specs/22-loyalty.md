@@ -1,6 +1,6 @@
 # 22. Loyalty
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `LOY-001`–`005`)
 
 ## Purpose
 
@@ -10,49 +10,48 @@ loyalty value, backed by an auditable ledger.
 ## Scope
 
 - Ledger transaction types: earn, redeem, reverse, expire, adjust
-  (ADR-0013)
-- Earn rules (e.g., points per order value) — business-owned, not yet
-  defined
-- Redemption rules (e.g., points-to-discount conversion, minimum
-  redemption) — not yet defined
-- Expiry policy — not yet defined
-- Reversal triggers (cancellation, return — see `17-cancellation.md`,
-  `18-returns.md`)
+- Earn/redemption/expiry rules
+- Interaction with store credit and promotions
 
-## Key architectural constraints (approved — binding, see ADR-0013)
+## Approved requirements (2026-09-22)
 
-- Loyalty **must** be modeled as an auditable transaction/ledger. A
-  mutable "points balance" field as sole source of truth is explicitly
-  disallowed.
-- Every operation affecting a customer's loyalty standing must write a
-  ledger entry.
+- **Loyalty IS required. Model: POINTS + TIERS.**
+- Loyalty is kept **conceptually and structurally separate** from
+  store credit/cashback value and from promotions/coupons — these are
+  **four distinct concepts** (loyalty points, tier/status, store
+  credit/cashback, promotions/coupons), never collapsed into one data
+  structure.
+- Loyalty **MUST** use an auditable ledger supporting: earn, redeem,
+  reverse, expire, and manual adjustment (per ADR-0013).
+- **Points are earned based on qualifying purchase value.** Exact
+  earning rate is a **configurable business parameter** — no fixed
+  commercial percentage is set by this spec.
+- **Points may be redeemed on future purchases.** Exact conversion
+  rate, minimum redemption, and per-order maximum cap are configurable
+  business parameters.
+- **Points expire; the expiry period MUST be configurable.** This
+  contrasts explicitly with store credit, which does **not** expire
+  (`specs/33-store-credit-gift-cards.md`).
+- Loyalty redemption MAY combine with store credit and coupon/
+  promotions on the same order, **subject to configurable eligibility/
+  stacking rules** (`specs/23-promotions.md` `PROMO-002`) — the
+  combination is rule-driven, not unconditional.
+- Any loyalty points earned on an order MUST be reversed via a ledger
+  entry if that order is later cancelled or returned
+  (`specs/17-cancellation.md`, `specs/18-returns.md`).
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- **The entire business rule set is undefined**: earn rate, redemption
-  mechanics, tiering (if any), expiry period, and whether loyalty is a
-  points system, cashback/credit system, or tiered-benefits system.
-  This is explicitly called out as not frozen in `PRODUCT.md` §2.C.
-- Does loyalty interact with promotions (`23-promotions.md`) — can
-  loyalty redemption stack with promotional discounts?
-- Loyalty program launch timing relative to other milestones — is this
-  needed for initial launch or a post-launch addition?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`LOY-001` through `LOY-005`. `LOY-001` itself asks whether a loyalty
-program exists at launch at all — see `blueprint/READINESS.md`.
+None. Exact earn/redemption/expiry *rates* remain intentionally
+configurable business parameters, not open decisions blocking build.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first. This is one of the
-domains explicitly flagged in the founding brief as having no frozen
-business rules; do not implement any earn/redeem logic until a
-concrete rule set is approved.
+See `acceptance/m23-loyalty.md`. See `acceptance/e2e-commerce-flows.md`
+FLOW 17 (earn/redeem/reverse/expire).
 
 ## Dependencies
 
-Depends on: `14-order-management.md`, `17-cancellation.md`,
-`18-returns.md`. Feeds: `21-customer-profile.md`,
-`27-analytics-reporting.md`.
+Depends on: `specs/14-order-management.md`, `specs/17-cancellation.md`,
+`specs/18-returns.md`. Feeds: `specs/21-customer-profile.md`,
+`specs/27-analytics-reporting.md`.

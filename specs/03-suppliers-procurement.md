@@ -1,6 +1,6 @@
 # 03. Suppliers
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SUP-001`, `SUP-002`, `PO-001`)
 
 ## Purpose
 
@@ -15,33 +15,34 @@ goods receipt (`05-grn.md`).
   styles/SKUs, at what cost)
 - Supplier onboarding/status lifecycle
 - Commercial terms relevant to procurement (payment terms, lead time)
+- Finished-goods suppliers AND manufacturing/job-work suppliers
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-None beyond the general platform baseline (`ARCHITECTURE.md`). This
-domain has no dedicated ADR yet — if a significant supplier-management
-architectural decision is needed, record it as a new ADR.
+- The supplier entity MUST accommodate **both** finished-merchandise
+  suppliers **and** finished-goods manufacturing/job-work suppliers,
+  distinguished by a supplier-type/category field. Both flow through
+  the same PO process (`specs/04-purchase-orders.md`).
+- Raw-material inventory, Bill of Materials (BOM), cutting/sewing
+  production planning, and WIP manufacturing execution are explicitly
+  **out of V1 scope** — a manufacturing supplier is procured from as a
+  source of *finished garments*, not tracked through a production
+  pipeline.
+- Supplier hierarchy (agents/sub-vendors) is **not required at
+  launch**: a flat supplier list is sufficient, with the schema left
+  extensible for hierarchy later without a redesign.
+- No supplier self-service portal at launch — all supplier data and
+  interaction is internal-only. A future supplier portal is
+  **FUTURE_CONSIDERATION**.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Is supplier management single-entity or does it need to support
-  supplier hierarchies (e.g., agents/sub-vendors)?
-- What supplier performance/quality tracking is required (ties into
-  `05-grn.md` quality/exceptions)?
-- Multi-currency / multi-region supplier terms — in scope for initial
-  build or future?
-- Supplier-facing portal/access — is this required, or is supplier
-  data internal-only initially?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`SUP-001`, `SUP-002`, `PO-001`.
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m03-suppliers.md`.
 
 ## Dependencies
 
-Feeds: `04-purchase-orders.md`, `05-grn.md`.
+Feeds: `specs/04-purchase-orders.md`, `specs/05-grn.md`.

@@ -1,53 +1,46 @@
 # 29. Notifications
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `NOTIF-001`)
 
-**Cross-cutting domain** — feeds and is fed by multiple milestones
-(order updates, shipment updates, return/refund status, etc.)
+**Cross-cutting domain.**
 
 ## Purpose
 
-Define transactional notifications sent to customers (and
-where relevant, staff) as a result of system events — order
-confirmation, shipment updates, delivery, cancellation, return/refund
-status, etc. Distinct from marketing communications
-(`24-marketing.md`).
+Define transactional notifications sent to customers (and staff where
+relevant) as a result of system events.
 
 ## Scope
 
-- Notification channels (email, SMS, push — exact set not yet decided)
-- Event-to-notification mapping (which system events trigger which
-  notification)
-- Templating and localization (if applicable)
-- Delivery reliability (retry, dead-lettering) and idempotency
-  (avoiding duplicate notifications for the same event)
+- Notification channels
+- Event-to-notification mapping
+- Delivery reliability and idempotency
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-None domain-specific yet. Notifications should be triggered from
-authoritative state changes (order status transitions, ledger-backed
-events) rather than being a second, inconsistent source of truth about
-what happened.
+- **Architecture MUST support SMS, WhatsApp, Email, and Push** via a
+  **provider abstraction** — order/business logic MUST NOT be coupled
+  directly to one messaging provider (explicit, §15).
+- Actual providers/configuration are selected later, deferred to
+  operational decision — not a build blocker.
+- Notifications MUST be triggered from authoritative state changes
+  (order status transitions, ledger-backed events), never a second,
+  inconsistent source of truth.
+- Duplicate-event handling (a retried trigger must not send the same
+  notification twice) follows the same idempotency discipline as
+  payment/refund operations.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Which channels are in scope for launch (email only, or email + SMS +
-  push)?
-- Build vs. integrate (transactional email/SMS provider) — not yet
-  decided.
-- Exact event -> notification mapping per domain (order, shipment,
-  return, refund, exchange, loyalty) — not yet defined; depends on
-  each domain's own spec reaching `APPROVED` first.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on: `NOTIF-001`.
+None. Provider selection is deferred operational configuration.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m29-admin-cms.md` (notifications are validated
+alongside admin/cross-cutting milestones — see also each triggering
+domain's own acceptance doc for its specific notification events).
 
 ## Dependencies
 
-Depends on: `14-order-management.md`, `16-shipping-tracking.md`,
-`17-cancellation.md` through `20-exchanges.md`, `22-loyalty.md`.
+Depends on: `specs/14-order-management.md`, `specs/16-shipping-tracking.md`,
+`specs/17-cancellation.md` through `specs/20-exchanges.md`,
+`specs/22-loyalty.md`.

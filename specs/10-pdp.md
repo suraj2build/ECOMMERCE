@@ -1,52 +1,51 @@
 # 10. Product Detail Page (PDP)
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PDP-001`, `PDP-002`, `PROD-004`, `PROD-005`, `IND-002`)
 
 ## Purpose
 
-Define the product detail page: how a single product (style, with its
-color/size variants) is presented to the customer, including
-availability, pricing, and the path to cart/wishlist.
+Define the product detail page: how a single product is presented,
+including availability, pricing, ratings/reviews, and the path to
+cart/wishlist.
 
 ## Scope
 
-- Variant selection (color/size) and its effect on displayed
-  price/availability/images
-- Availability display sourced from `06-inventory.md` derived state
-- Structured data / SEO requirements for this page (`26-seo.md`)
-- Cross-sell/related products (if in scope)
-- Reviews/ratings (if in scope — not yet decided)
+- Variant selection (color/size) and its effect on price/availability/
+  images
+- Availability display sourced from `specs/06-inventory.md`
+- PIN-code serviceability check
+- Ratings and reviews
+- Structured data / SEO requirements
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Must be server-rendered/indexable per the SEO architectural
-  requirement (`ARCHITECTURE.md` §8) — not a client-only rendered page.
+- **Ratings and reviews are required** customer-facing features.
+- **PIN-code serviceability MUST be checkable from the PDP** before the
+  customer proceeds to checkout, using the `specs/16-shipping-tracking.md`
+  carrier abstraction with a static-list fallback.
 - Must reflect real-time (or near-real-time) availability derived from
-  the inventory ledger, not a stale cache that could show in-stock
-  items that are actually sold out.
+  the inventory ledger (`specs/06-inventory.md`) — never a stale cache
+  that could show a sold-out item as available.
+- Must be server-rendered/indexable per the SEO architectural
+  requirement (`specs/26-seo.md`).
+- Size chart display MUST reflect the versioned chart applicable to
+  the product (`specs/02-product-master.md` `PROD-004`).
+- Model measurements/model-worn size MAY be shown where captured
+  (optional enrichment field).
+- Cross-sell is rule-driven (same/complementary category) with manual
+  merchandiser override; algorithmic recommendation is a future
+  enhancement.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Are customer reviews/ratings in scope for initial build?
-- Cross-sell/upsell/related-products logic — business-owned, not yet
-  defined.
-- Size-guide / fit-recommendation features — in scope or future?
-- Out-of-stock / back-in-stock notification behavior — depends on
-  `29-notifications.md` and inventory rules.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`PDP-001`, `PDP-002`, `PROD-004`, `PROD-005`. See also
-`blueprint/FASHION_DOMAIN_GAPS.md` for the size-chart and
-product-media gaps this page depends on.
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m11-pdp.md`.
 
 ## Dependencies
 
-Depends on: `02-product-master.md`, `07-catalog-merchandising.md`,
-`06-inventory.md`, `08-storefront.md`. Feeds: `11-wishlist-cart.md`,
-`26-seo.md`.
+Depends on: `specs/02-product-master.md`, `specs/07-catalog-merchandising.md`,
+`specs/06-inventory.md`, `specs/08-storefront.md`. Feeds:
+`specs/11-wishlist-cart.md`, `specs/26-seo.md`.

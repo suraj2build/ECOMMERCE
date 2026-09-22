@@ -1,6 +1,6 @@
 # 13. Payment
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PAY-001`–`006`, `IND-001`, `IND-004`)
 
 ## Purpose
 
@@ -9,50 +9,71 @@ Razorpay and COD integrations.
 
 ## Scope
 
-- Payment provider abstraction interface (methods every provider must
-  implement: authorize, capture, refund, webhook handling)
-- Razorpay integration (online gateway)
+- Payment provider abstraction interface
+- Razorpay integration
 - COD as a non-gateway payment method
-- Payment status lifecycle and its relationship to order status
-  (`14-order-management.md`)
+- Payment status lifecycle
 - Webhook/callback handling and idempotency
 
-## Key architectural constraints (approved — binding, see ADR-0011)
+## Approved requirements (2026-09-22)
 
-- All payment integrations go through the abstraction layer; no
-  order/checkout/refund code may reference a provider SDK directly.
-- COD is a first-class payment method, not a special case.
-- Adding a future provider must not require changes to order/checkout
-  logic.
+### Provider abstraction (binding — ADR-0011)
 
-## Open questions — DECISION_REQUIRED
+- **Razorpay-first, provider-abstracted.** Interface: `initiate` /
+  `authorize` / `capture` / `refund` / `handleWebhook`, with a
+  provider-agnostic result/error type. Order/checkout logic MUST
+  depend only on this interface, never Razorpay's SDK directly.
+- Required rails: **UPI, cards, net banking, and other appropriate
+  Razorpay-supported rails where configured**, plus **COD**.
+- The integration **MUST** use Razorpay's hosted/tokenized flow — the
+  platform **MUST NOT** handle or store raw card data at any point.
 
-- Exact abstraction interface shape (methods, error model) — not yet
-  designed.
-- Partial payment / split payment support (e.g., partial COD + partial
-  prepaid) — in scope or future?
-- Retry/failure handling policy for failed payment attempts?
-- PCI/compliance posture — assumption is provider-hosted flows avoid
-  raw card data (`SECURITY.md` §4), needs explicit confirmation once
-  Razorpay integration is designed.
+### State machine (binding)
 
-## Blueprint references
+- **Payment state and order state MUST remain separate state
+  machines** — see `blueprint/ORDER_PAYMENT_INTEGRITY.md`.
+- Payment states: `initiated -> authorized -> captured -> (refunded |
+  partially_refunded)`, plus `failed`/`expired`. COD: `initiated ->
+  confirmed` (payment collected at delivery, no capture step).
 
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`PAY-001` through `PAY-006`, `IND-001`, `IND-004`. See
-`blueprint/ORDER_PAYMENT_INTEGRITY.md` for the critical clarification
-that payment state and order state are separate state machines, plus
-the idempotency and webhook-handling requirements this spec must
-satisfy.
+### Financial integrity (binding)
+
+- Idempotency keys **MUST** be present on every payment-affecting
+  operation.
+- Webhook signature verification and deduplication by provider event
+  ID **MUST** occur before any state change.
+- Safe retries, reconciliation, duplicate-payment handling, payment-
+  pending handling (distinct from failure), and failure recovery are
+  all **required**, not best-effort.
+- COD **MUST NOT** pretend to be prepaid anywhere in the payment or
+  order logic — its distinct state shape (no capture step) must be
+  handled explicitly, not papered over.
+- Reservation from `specs/06-inventory.md` `INV-002` persists through
+  configurable retry attempts and releases on final failure/timeout/
+  abandonment.
+
+### COD-specific
+
+- COD availability rules (value cap, excluded PIN codes) are
+  configurable business parameters.
+- COD reconciliation (cash collected by delivery partner vs. platform
+  records) is a required operational process, built on the platform's
+  standard audit ledger discipline.
+- Per `INV-002`, **COD orders commit/reserve inventory at successful
+  order acceptance.**
+
+## Remaining open items
+
+None within this spec's own scope.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first. Given financial
-sensitivity, acceptance criteria must include idempotency and
-double-charge-prevention test scenarios before this spec can be
-considered ready for `APPROVED` status.
+See `acceptance/m14-payment.md`. Given financial sensitivity,
+acceptance criteria include idempotency, double-charge-prevention, and
+duplicate-webhook test scenarios — see `acceptance/e2e-commerce-flows.md`
+FLOWS 3–5.
 
 ## Dependencies
 
-Depends on: `12-checkout.md`. Feeds: `14-order-management.md`,
-`19-refunds.md`.
+Depends on: `specs/12-checkout.md`. Feeds: `specs/14-order-management.md`,
+`specs/19-refunds.md`.

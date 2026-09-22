@@ -1,47 +1,54 @@
 # 25. Social / Channel Publishing
 
-**Status:** DRAFT
+**Status:** APPROVED (adapter architecture only — decided 2026-09-22;
+concrete marketplace integrations explicitly deferred — see
+`blueprint/DECISION_REGISTER.md` `CHAN-001`)
 
 ## Purpose
 
 Define how the product master/catalog is published to channels beyond
-the primary website: Google (Shopping/Merchant Center), Meta/Instagram/
-Facebook, and future marketplaces.
+the primary website.
 
 ## Scope
 
 ```
-PRODUCT MASTER -> CHANNEL PUBLISHING -> WEBSITE / GOOGLE / META / future marketplaces
+PRODUCT MASTER -> CHANNEL PUBLISHING -> WEBSITE / GOOGLE / META / marketplaces
 ```
 
-- Channel feed generation (product data mapped to each channel's
-  required format)
-- Channel-specific availability/pricing overrides (if needed)
+- Channel adapter/contract architecture
+- Channel-specific field mapping/configuration
 - Publishing status tracking per channel per SKU
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- The product/catalog core must not be tightly coupled to one channel
-  (`ARCHITECTURE.md` §7, `PRODUCT.md` §2.E) — this spec is the
-  concrete design of that principle.
+- The core Product Master (`specs/02-product-master.md`) **MUST NOT**
+  embed marketplace-specific fields — channel requirements are
+  expressed through **channel-specific mappings/configuration**, kept
+  outside the core schema.
+- A **channel adapter/publishing contract** MUST be built now,
+  designed to support future configurable integration with: Meta,
+  Instagram, Facebook, Google Merchant Center, Amazon, Flipkart,
+  Myntra, Ajio, and future channels.
+- **No concrete marketplace integration is built now.** Each actual
+  integration requires separate, explicit milestone authorization
+  before implementation begins (explicit, §3) — this spec's approval
+  covers the adapter architecture only, not any specific channel's
+  live integration.
+- Not a third-party seller marketplace model — see
+  `specs/31-organization-locations.md` `ORG-001`.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- **Exact integrations are not yet approved** (`PRODUCT.md` §2.E) —
-  which channels launch first (Google, Meta, both, neither initially)?
-- Channel-specific business rules (e.g., different pricing or
-  availability per channel) — not yet defined.
-- Marketplace integrations (future) — none currently approved.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on: `CHAN-001`.
+Which channel(s), if any, get a concrete integration and when remains
+a future, separately-authorized decision — not a blocker on this
+spec's approved architecture scope.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m26-social-channel-publishing.md` (adapter contract
+scope only).
 
 ## Dependencies
 
-Depends on: `02-product-master.md`, `07-catalog-merchandising.md`.
-Related: `24-marketing.md`, `26-seo.md`.
+Depends on: `specs/02-product-master.md`, `specs/07-catalog-merchandising.md`.
+Related: `specs/24-marketing.md`, `specs/26-seo.md`.

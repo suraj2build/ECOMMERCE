@@ -1,6 +1,6 @@
 # 05. Goods Receipt (GRN)
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `GRN-001`–`003`)
 
 ## Purpose
 
@@ -13,41 +13,40 @@ inspection and exception handling, before it becomes available stock.
 - Receipt against PO (full/partial)
 - Quality inspection / exceptions (damaged, wrong item, short/over
   shipment)
-- GRN-to-inventory-ledger posting (this is the primary point where
-  inventory ledger "receipt" entries originate — see
-  `06-inventory.md` and ADR-0012)
-- Discrepancy resolution workflow (supplier debit/credit, return to
-  supplier)
+- GRN-to-inventory-ledger posting
+- Discrepancy resolution workflow
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- A completed GRN (or the relevant portion of it) must post ledger
-  entries into the inventory system — inventory must never be
-  incremented by directly editing a stock count (ADR-0012).
+- **QC is required.** GRN MUST support each of: received quantity,
+  short receipt, excess receipt, damaged receipt, and rejected/
+  QC-failed receipt, each with defined exception handling.
+- The per-category inspection checklist content is a configurable
+  operational parameter, not hard-coded — the *capability* to define
+  and apply a checklist per category is what's required.
+- Exception resolution (supplier debit/credit note, return-to-supplier,
+  write-off) MUST be supported as configurable resolution paths keyed
+  to the exception type recorded at GRN. Credit-note generation for a
+  supplier exception ties to `specs/32-india-tax-invoicing.md` `TAX-005`
+  once its compliance verification completes.
+- A completed GRN MUST post the corresponding inventory ledger
+  transaction (`specs/06-inventory.md` `INV-001`) — QC-passed
+  quantities post as `receipt`; QC-failed quantities post as `damaged`
+  or are excluded pending resolution, never silently added to sellable
+  stock.
+- Barcode/scanning-based receipt is **not required at launch** — manual/
+  UI-based entry is acceptable; the architecture MUST NOT block adding
+  scanning later.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Exact quality inspection checklist/criteria per category — not yet
-  defined (likely varies by product type).
-- Who performs GRN (warehouse staff role — depends on `01-auth-rbac.md`
-  role definitions)?
-- Exception resolution workflow: does a damaged-on-receipt item ever
-  become sellable (e.g., as "damaged/clearance" stock) or is it always
-  quarantined/returned to supplier?
-- Barcode/scanning requirements for GRN — in scope for initial build?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`GRN-001`, `GRN-002`, `GRN-003`, `PO-002`, `TAX-005`. See also
-`blueprint/END_TO_END_FLOWS.md` flow 2 (Receipt → GRN → QC) and
-`blueprint/INVENTORY_INTEGRITY.md` for how GRN outcomes map to ledger
-transactions.
+None within this spec's own scope. Credit-note format specifics remain
+`UNDER_REVIEW` in `specs/32-india-tax-invoicing.md`.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m05-grn.md`.
 
 ## Dependencies
 
-Depends on: `04-purchase-orders.md`. Feeds: `06-inventory.md`.
+Depends on: `specs/04-purchase-orders.md`. Feeds: `specs/06-inventory.md`.

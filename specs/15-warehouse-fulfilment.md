@@ -1,48 +1,43 @@
 # 15. Warehouse / Fulfilment
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `WH-001`, `WH-002`)
 
 ## Purpose
 
-Define warehouse-side fulfilment operations: pick, pack, and
-handoff to shipping, including how orders are allocated to warehouse
-staff/processes.
+Define warehouse-side fulfilment operations: pick, pack, and handoff to
+shipping.
 
 ## Scope
 
 - Pick list generation and picking workflow
-- Packing workflow (including partial-order packing if applicable)
-- Warehouse staff roles (depends on `01-auth-rbac.md`)
-- Exception handling during pick/pack (e.g., item not found, damaged
-  at pick)
-- Multi-warehouse routing (if applicable — depends on
-  `06-inventory.md` open question on multi-location support)
+- Packing workflow (including split-shipment packing)
+- Exception handling during pick/pack
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Pick/pack actions that consume or adjust inventory must post ledger
-  entries (ADR-0012).
+- Manual/UI-based pick-pack is sufficient at launch (matches the given
+  operating scale of 1,000–10,000 orders/day); the architecture MUST
+  NOT block adding barcode/scanning later without redesign.
+- Pick/pack actions that consume or adjust inventory MUST post ledger
+  entries (`specs/06-inventory.md`).
+- A pick exception (item missing/damaged at pick time) MUST post an
+  authorized/audited inventory adjustment and trigger the
+  `specs/14-order-management.md` order-exception path; Warehouse
+  Manager and Customer Service are notified.
+- Fulfilment MUST support split shipments — packing and shipping a
+  subset of an order's lines independently.
+- Every fulfilment action MUST reference the operating location
+  (`specs/31-organization-locations.md`).
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Single-warehouse or multi-warehouse for initial build? (Same open
-  question as in `06-inventory.md`.)
-- Pick/pack technology — barcode scanning, mobile app, or paper-based
-  initially?
-- How pick exceptions (item missing/damaged at pick time) feed back
-  into inventory (creates a ledger adjustment + triggers order
-  exception in `14-order-management.md`)?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`WH-001`, `WH-002`, `ORG-002` (decide together with `INV-004`).
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m16-warehouse-fulfilment.md`.
 
 ## Dependencies
 
-Depends on: `14-order-management.md`, `06-inventory.md`. Feeds:
-`16-shipping-tracking.md`.
+Depends on: `specs/14-order-management.md`, `specs/06-inventory.md`.
+Feeds: `specs/16-shipping-tracking.md`.

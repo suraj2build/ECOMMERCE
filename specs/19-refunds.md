@@ -1,6 +1,6 @@
 # 19. Refunds
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `REF-001`–`004`)
 
 ## Purpose
 
@@ -10,49 +10,47 @@ methods.
 
 ## Scope
 
-- Refund trigger points (cancellation, return acceptance)
-- Refund method: original payment method (gateway reversal) vs.
-  alternative (bank transfer/UPI, store credit) — particularly for COD
-  orders where there is no original electronic payment to reverse
-- Refund status lifecycle and customer visibility
-- Interaction with the payment provider abstraction (ADR-0011)
+- Refund trigger points
+- Refund method
+- Refund status lifecycle
+- Store credit issuance
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Refunds go through the payment provider abstraction (ADR-0011);
-  no refund code may call a provider SDK directly.
-- COD refunds must be modeled as a first-class case, not an
-  afterthought — COD orders need a refund path that doesn't depend on
-  reversing an online payment (`ARCHITECTURE.md` §9, ADR-0011).
+- **Prepaid orders: refund to the original payment method** where
+  supported/appropriate, via `specs/13-payment.md`'s provider
+  abstraction.
+- **COD orders: refund as STORE CREDIT** — see
+  `specs/33-store-credit-gift-cards.md` for the store-credit ledger
+  this issues into.
+- **Refund calculation MUST use the original transaction values, not
+  current catalog prices** (reinforcing `specs/07-catalog-merchandising.md`
+  `CAT-001`'s price-snapshot requirement).
+- **Partial refunds MUST be supported.**
+- **Refund operations MUST be auditable and idempotent** — a duplicated
+  triggering event (retried webhook, duplicated cancellation request)
+  MUST NOT issue a refund or store credit twice.
+- Refund reason is inherited from the triggering return's reason by
+  default; captured separately for non-return-triggered refunds (e.g.,
+  cancellation, goodwill).
+- Every qualifying refund/cancellation generates a GST credit-note
+  document (`specs/32-india-tax-invoicing.md` `TAX-005`) linked to the
+  original invoice.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- COD refund mechanism — bank transfer, UPI, store credit, or
-  customer choice? Not yet decided.
-- Store credit / wallet — is this a platform concept at all? Not yet
-  decided (would need its own ledger if introduced, per the ledger
-  principle in ADR-0012/0013).
-- Refund timelines and partial refund rules (e.g., restocking fees, if
-  any)?
-- Refund reason capture and its relationship to return reason
-  (`18-returns.md`)?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`REF-001` through `REF-004`, `TAX-005`, `PAY-001`. See
-`blueprint/ORDER_PAYMENT_INTEGRITY.md` for reconciliation requirements
-this spec must satisfy.
+Credit-note format specifics remain `UNDER_REVIEW` in
+`specs/32-india-tax-invoicing.md`.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first. Given financial
-sensitivity, acceptance criteria must include double-refund prevention
-and reconciliation test scenarios before this spec can be considered
-ready for `APPROVED` status.
+See `acceptance/m20-refunds-store-credit.md`. Given financial
+sensitivity, acceptance criteria include double-refund-prevention and
+reconciliation test scenarios — see `acceptance/e2e-commerce-flows.md`
+FLOWS 9–10.
 
 ## Dependencies
 
-Depends on: `13-payment.md`, `17-cancellation.md`, `18-returns.md`.
-Feeds: `21-customer-profile.md` (refund visibility),
-`27-analytics-reporting.md`.
+Depends on: `specs/13-payment.md`, `specs/17-cancellation.md`,
+`specs/18-returns.md`, `specs/33-store-credit-gift-cards.md`. Feeds:
+`specs/21-customer-profile.md`, `specs/27-analytics-reporting.md`.

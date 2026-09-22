@@ -1,70 +1,110 @@
 # 06. Inventory
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `INV-001`–`007`)
 
 ## Purpose
 
 Define the inventory ledger: the auditable system of record for all
-stock movements and derived stock states across the platform.
+stock movements and derived stock states across the platform. This is
+the most financially and operationally critical domain in the
+platform.
 
 ## Scope
 
-- Ledger transaction types: receipts (from GRN), sales (from orders),
-  cancellations, returns, transfers, adjustments, reservations,
-  releases, damage
+- Ledger transaction types
 - Derived states: stock on hand, reserved, available, in transit,
   damaged, return pending
-- Reservation semantics (how/when stock is reserved during checkout,
-  and released on timeout/cancellation)
-- Multi-location/warehouse support (if applicable)
+- Reservation semantics
+- Location-aware, multi-location-ready model
 - Reconciliation and audit reporting
 
-## Key architectural constraints (approved — binding, see ADR-0012)
+## Approved requirements (2026-09-22)
 
-- Inventory **must** be modeled as an auditable transaction/ledger.
-  `product.quantity = N` as the sole source of truth is explicitly
-  disallowed.
-- Every inventory-affecting operation elsewhere in the system must
-  write a ledger entry.
-- Derived "current stock" figures may be cached/materialized for
-  performance but must always be reconstructable from the ledger.
+### Ledger (binding — ADR-0012)
 
-## Open questions — DECISION_REQUIRED
+- Inventory **MUST** use an auditable ledger. `product.quantity = N`
+  as sole source of truth is prohibited.
+- Minimum states: `ON_HAND`, `RESERVED`, `AVAILABLE`, `IN_TRANSIT`,
+  `DAMAGED`, `RETURN_PENDING`, each backed by auditable transaction
+  events.
+- Approved starting transaction-type set (extensible without
+  redesign): `receipt`, `qc_pass`, `qc_fail`, `reservation`,
+  `reservation_release`, `allocation`, `sale/fulfilment`,
+  `cancellation`, `return_received`, `return_qc_pass`,
+  `return_qc_fail`, `exchange` (release + reserve pair), `RTO`,
+  `adjustment` (authorized + audited only), `transfer_out`,
+  `transfer_in`.
+- Every SKU-affecting event anywhere in the system MUST write a ledger
+  transaction — there is no code path that changes "how much stock
+  exists" without going through the ledger.
 
-- Exact list of ledger transaction types and their required fields —
-  the set in `ARCHITECTURE.md` §5 is a minimum, not necessarily
-  exhaustive.
-- Reservation timeout duration and what triggers release (cart
-  abandonment, checkout failure, payment timeout)?
-- Oversell policy — is oversell ever permitted (e.g., pre-order), and
-  if so how is it modeled in the ledger?
-- Multi-warehouse/multi-location support — in scope for initial build,
-  or single-location initially?
-- Safety stock / buffer stock rules — business-owned, not yet defined.
-- How damaged/return-pending stock re-enters sellable inventory (if
-  ever) — depends on `05-grn.md` and `18-returns.md` resolution.
+### Reservation (binding)
 
-## Blueprint references
+- The platform MUST NOT reserve inventory when an item is merely added
+  to cart.
+- The platform MUST use **short-lived reservation during checkout/
+  payment initiation only**:
+  `AVAILABLE -> TEMPORARY RESERVATION -> SUCCESSFUL ORDER -> COMMITTED ALLOCATION`,
+  or on failure: `AVAILABLE -> TEMPORARY RESERVATION -> PAYMENT FAILURE/TIMEOUT/ABANDONMENT -> RESERVATION RELEASED`.
+- **For COD orders: inventory MUST be committed/reserved at the point
+  the COD order is successfully accepted**, not merely at checkout
+  start (there is no gateway step to bound a shorter window).
+- Reservation expiry duration **MUST be configurable** — it MUST NOT
+  be hard-coded into core logic.
+- Concurrency and idempotency **MUST** ensure two customers cannot
+  purchase the same final unit — this MUST be verified under
+  concurrent-load testing, not assumed correct from code review alone.
 
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`INV-001` through `INV-007`, `ORG-002` (decide together with
-`INV-004`), `ADM-003`, `RET-002`. See
-`blueprint/INVENTORY_INTEGRITY.md` for the full conceptual ledger
-model (candidate transaction types, derived states, and reliability
-requirements) that expands this spec's open questions into a working
-draft for Product Owner review — it does not finalize the schema.
+### Overselling (binding)
+
+- **Overselling MUST be prevented.** The system MUST NOT intentionally
+  sell inventory beyond reliably available sellable stock. Standard
+  SKUs never oversell; a distinct pre-order/backorder capability is
+  **FUTURE_CONSIDERATION**, not built now.
+
+### Location-awareness (binding)
+
+- Every inventory transaction MUST be capable of referencing a
+  **location** (`specs/31-organization-locations.md`), even though V1
+  operates warehouse-only, single/few-location.
+- Stock transfers between locations MUST be supported by the domain
+  model (`transfer_out`/`transfer_in` pair preserving total stock
+  integrity).
+
+### Damaged / return-pending stock
+
+- Damaged and return-pending stock **MUST NOT** automatically become
+  sellable `ON_HAND` inventory — re-entry requires passing QC first.
+  Disposition at QC time (restock sellable, restock as marked-down/
+  damaged clearance, write-off, return-to-supplier) is a configurable
+  workflow outcome.
+
+### Manual adjustments
+
+- Manual inventory adjustments (including cycle-count corrections)
+  **MUST be authorized** (per `specs/28-admin.md` `ADM-003`) **and
+  fully audited** (who/what/when/old value/new value/reference, per
+  `specs/30-audit-compliance.md`).
+- Safety/buffer stock is supported as a configurable per-SKU/category
+  buffer subtracted from `AVAILABLE`.
+
+## Remaining open items
+
+None. This is the most consequential domain fully resolved by the
+2026-09-22 decision session.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first. Given the
-financial/integrity sensitivity of this domain, acceptance criteria
-must include explicit concurrency and integrity test scenarios (see
-`TESTING.md` §2) before this spec can be considered ready for
-`APPROVED` status.
+See `acceptance/m06-inventory.md`. Given the financial/integrity
+sensitivity of this domain, acceptance criteria include explicit
+concurrency, idempotency, and integrity test scenarios — see
+`TESTING.md` §2 and `acceptance/e2e-commerce-flows.md` FLOW 6 (last-unit
+concurrency).
 
 ## Dependencies
 
-Depends on: `05-grn.md` (receipts), `02-product-master.md` (SKU
-identity). Feeds: `07-catalog-merchandising.md` (availability),
-`12-checkout.md` (reservation), `14-order-management.md`,
-`17-cancellation.md`, `18-returns.md`, `15-warehouse-fulfilment.md`.
+Depends on: `specs/05-grn.md`, `specs/02-product-master.md`,
+`specs/31-organization-locations.md`. Feeds: `specs/07-catalog-merchandising.md`,
+`specs/12-checkout.md`, `specs/14-order-management.md`,
+`specs/17-cancellation.md`, `specs/18-returns.md`,
+`specs/15-warehouse-fulfilment.md`, `specs/20-exchanges.md`.

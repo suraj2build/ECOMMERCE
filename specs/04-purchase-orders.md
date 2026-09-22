@@ -1,6 +1,6 @@
 # 04. Procurement / Purchase Orders
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PO-001`–`003`)
 
 ## Purpose
 
@@ -10,41 +10,44 @@ to arrive.
 
 ## Scope
 
-- PO creation (style/color/size/SKU, quantities, cost, supplier, expected
-  dates)
+- PO creation (style/color/size/SKU, quantities, cost, supplier,
+  expected dates)
 - PO approval workflow
 - PO status lifecycle (draft, submitted, approved, partially received,
   fully received, closed, cancelled)
 - Linkage to `05-grn.md` for actual receipt against a PO
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- PO receipt must ultimately produce ledger entries in the inventory
-  system (`ARCHITECTURE.md` §5, ADR-0012) — a PO itself is a
-  commitment/expectation record, not an inventory-affecting event
-  until goods are actually received via GRN.
+- PO approval workflow is **required**. Value-based approval
+  thresholds MUST be supported and MUST be configurable business
+  parameters (not hard-coded). Approvers are drawn from the
+  Buying/Finance/Business Admin roles per `specs/01-auth-rbac.md`'s
+  permission matrix.
+- **Partial PO receipt MUST be supported** — a PO can be received in
+  more than one GRN event.
+- Short/excess delivery tolerance before an exception is flagged MUST
+  be a configurable business parameter (see `specs/05-grn.md` `GRN-002`).
+- **Purchase cost MUST be captured and maintained** for margin/
+  profitability analysis (feeds `specs/27-analytics-reporting.md`).
+  Unit cost is captured at minimum; landed-cost components (freight/
+  duties/taxes) are captured where available and refined once GST
+  input-credit treatment (`specs/32-india-tax-invoicing.md` `TAX-001`)
+  is confirmed.
+- A PO MUST reference the receiving **location** (`specs/31-organization-locations.md`).
+- A PO MUST reference the supplying entity via `specs/03-suppliers-procurement.md`,
+  covering both finished-merchandise and manufacturing/job-work
+  suppliers uniformly.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- PO approval hierarchy — who can approve, are there value-based
-  approval thresholds?
-- Partial receipt and over/under-delivery tolerance rules?
-- PO amendment rules after submission/approval?
-- Costing basis captured on the PO (landed cost vs. unit cost vs.
-  taxes/duties) — not yet defined, affects `specs/07-catalog-merchandising.md`
-  pricing inputs.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`PO-001`, `PO-002`, `PO-003`, `SUP-001`. See also
-`blueprint/END_TO_END_FLOWS.md` flow 1 (Supplier → PO → Approval).
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m04-purchase-orders.md`.
 
 ## Dependencies
 
-Depends on: `03-suppliers-procurement.md`, `02-product-master.md`.
-Feeds: `05-grn.md`.
+Depends on: `specs/03-suppliers-procurement.md`, `specs/02-product-master.md`,
+`specs/31-organization-locations.md`. Feeds: `specs/05-grn.md`.

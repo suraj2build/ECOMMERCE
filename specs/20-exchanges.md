@@ -1,53 +1,54 @@
 # 20. Exchanges
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `EXC-001`–`003`)
 
 ## Purpose
 
-Define exchange flows (e.g., a customer wants a different size/color of
-the same or a different item in place of a return-for-refund).
+Define exchange flows: a customer exchanging a delivered item for a
+different size or colour.
 
 ## Scope
 
 - Exchange eligibility rules
-- Exchange flow: is it modeled as return + new order, or a dedicated
-  linked transaction type? **Undecided** (see `18-returns.md` open
-  questions).
-- Inventory effects: release of original SKU (ledger entry) and
-  reservation/allocation of replacement SKU
-- Price difference handling (exchange for a different-priced item)
+- Exchange data model
+- Inventory effects
+- Price difference handling
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Whatever the exchange model, all inventory effects must be ledger
-  entries (ADR-0012), and the exchange must not be modeled as a silent
-  net-zero adjustment that loses the audit trail of what actually
-  happened.
+- **Support both size exchange AND colour exchange.**
+- Exchange is modeled as a **first-class Exchange entity** (`EXC-001`)
+  — not a linked return+new-order pair — to cleanly preserve financial
+  and inventory auditability across a single coherent operation.
+- **Replacement SKU availability MUST be checked and appropriately
+  reserved** at exchange-request time, using the same short-lived
+  reservation mechanics as `specs/06-inventory.md` `INV-002`. This
+  resolves the replacement-SKU-reservation-timing gap identified during
+  the Blueprint V2 audit.
+- **If the replacement costs MORE, the customer pays the difference
+  through an online payment flow/link/checkout** (via
+  `specs/13-payment.md`'s abstraction, idempotent per the same
+  requirements as any other payment operation).
+- **If the replacement costs LESS, the difference becomes STORE
+  CREDIT** (`specs/33-store-credit-gift-cards.md`).
+- Exchange inventory effects MUST be two explicit ledger transactions
+  (release original SKU + reserve/allocate replacement SKU) — never a
+  silent net-zero adjustment that loses the audit trail.
+- Exchange eligibility window matches the return window
+  (`specs/18-returns.md` `RET-001`), configured together.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Exchange data model: linked pair of (return + new order), or a
-  single first-class "exchange" entity? Not yet decided — this is the
-  primary open design question for this domain.
-- Is exchange limited to same-style/different-variant, or any product?
-- Price difference handling (customer pays more / gets refund
-  difference)?
-- Exchange eligibility window — same as return window or different?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`EXC-001` through `EXC-003`. See also
-`blueprint/FASHION_DOMAIN_GAPS.md` for the replacement-SKU-reservation
-timing question surfaced during the audit (not yet assigned a
-decision ID — recommend adding once `EXC-001` is decided).
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m21-exchanges.md`. See `acceptance/e2e-commerce-flows.md`
+FLOWS 11–14 for size exchange, colour exchange, additional-payment
+exchange, and store-credit-producing exchange.
 
 ## Dependencies
 
-Depends on: `18-returns.md`, `06-inventory.md`, `13-payment.md`
-(price difference settlement). Feeds: `22-loyalty.md` (points
-adjustment if order value changes).
+Depends on: `specs/18-returns.md`, `specs/06-inventory.md`,
+`specs/13-payment.md`, `specs/33-store-credit-gift-cards.md`. Feeds:
+`specs/22-loyalty.md` (points adjustment if order value changes).

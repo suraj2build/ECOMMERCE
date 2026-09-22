@@ -1,6 +1,6 @@
 # 11. Wishlist / Cart
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CART-001`–`003`, `INV-002`)
 
 ## Purpose
 
@@ -9,40 +9,37 @@ but not including checkout.
 
 ## Scope
 
-- Cart: add/remove/update line items, quantity limits, persistence
-  (guest vs. logged-in), price/availability re-validation
-- Wishlist: save/remove items, guest vs. logged-in persistence,
-  move-to-cart
-- Cart-level promotion display (interaction with `23-promotions.md`)
-- Inventory reservation timing — does adding to cart reserve stock, or
-  only checkout? (see `06-inventory.md` open questions)
+- Cart: add/remove/update line items, persistence, re-validation
+- Wishlist: save/remove items, guest vs. logged-in persistence
+- Cart-level promotion display
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-None beyond the general storefront/inventory baseline. This domain's
-interaction with the inventory reservation model (whether cart itself
-reserves stock) must be resolved consistently with `06-inventory.md`.
+- **Adding an item to cart MUST NOT reserve inventory** (see
+  `specs/06-inventory.md` `INV-002`) — availability shown in cart is
+  informational, re-validated at checkout.
+- Guest cart/wishlist is supported (guest checkout is required, see
+  `specs/12-checkout.md`), persisted via a device/session identifier
+  for a configurable duration (engineering default: 30 days), and
+  merges into the account cart on login or post-purchase account
+  activation.
+- Cart quantity is subject to a configurable per-SKU maximum
+  (anti-scalping/fair-access control); default threshold is
+  operational configuration.
+- Wishlist sharing is **FUTURE_CONSIDERATION**, not launch scope.
+- The cart MUST re-validate price and availability against current
+  catalog/inventory state before allowing checkout to proceed, and
+  MUST clearly surface any change (price or stock) to the customer.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Does adding an item to cart create an inventory reservation, or does
-  reservation only happen at checkout start? This materially affects
-  the inventory ledger design and is currently unresolved.
-- Guest cart/wishlist persistence duration and merge-on-login behavior?
-- Cart quantity limits per SKU — business-owned, not yet defined.
-- Wishlist sharing (e.g., shareable wishlist link) — in scope or
-  future?
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`CART-001`, `CART-002`, `CART-003`, `INV-002`.
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m12-wishlist-cart.md`.
 
 ## Dependencies
 
-Depends on: `10-pdp.md`, `06-inventory.md`, `07-catalog-merchandising.md`
-(pricing). Feeds: `12-checkout.md`.
+Depends on: `specs/10-pdp.md`, `specs/06-inventory.md`,
+`specs/07-catalog-merchandising.md`. Feeds: `specs/12-checkout.md`.

@@ -1,48 +1,44 @@
 # 27. Analytics / Reporting
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `ANL-001`)
 
 ## Purpose
 
-Define what business and operational analytics/reporting the platform
-must produce — sales, inventory, customer, marketing, and operational
-KPIs — and how that data is collected and surfaced.
+Define the business and operational analytics/reporting the platform
+must produce.
 
 ## Scope
 
-- Event tracking (storefront behavior, conversion funnel)
-- Business reporting (sales, inventory turnover, return rates,
-  procurement performance)
-- Data warehouse / analytics store (if separate from the operational
-  PostgreSQL database) — not yet decided
-- Dashboards / reporting surfaces (in `28-admin.md` or a separate BI
-  tool — not yet decided)
+- Event tracking, business reporting, data foundations
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-None domain-specific yet. Should be designed to read from the ledger
-models (inventory, loyalty) rather than duplicating/bypassing them, to
-stay consistent with the audit/traceability principles in ADR-0012 and
-ADR-0013.
+Required analytics categories (explicit, §27):
 
-## Open questions — DECISION_REQUIRED
+- **Commerce:** sales, orders, returns, refunds, inventory, customer
+  metrics, margin, profitability.
+- **Fashion-specific:** style performance, colour performance, size
+  performance, stock ageing, sell-through, availability, return
+  reasons, size-related returns.
+- **Procurement:** supplier fill rate, short receipts, excess receipts,
+  damaged receipts, lead time, purchase vs. sales, supplier
+  performance.
 
-- Build vs. integrate: native reporting vs. third-party analytics/BI
-  tool integration — not yet decided.
-- Which KPIs are required for launch vs. later? Business-owned, not
-  yet defined.
-- Data retention for analytics/event data — not yet defined (may have
-  compliance implications, see `30-audit-compliance.md`).
+Build-vs-integrate: build native event/data foundations first (reading
+from the ledger models — inventory, loyalty, store credit — rather
+than duplicating or bypassing them, consistent with ADR-0012/0013);
+evaluate a BI/dashboard presentation layer separately, later. This is
+an engineering default, not a business blocker.
 
-## Blueprint references
+## Remaining open items
 
-See `blueprint/DECISION_REGISTER.md` for full context on: `ANL-001`.
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m28-analytics-reporting.md`.
 
 ## Dependencies
 
-Depends on nearly every other domain as a data source (inventory,
-orders, loyalty, marketing, etc.). Feeds: `28-admin.md`.
+Depends on nearly every other domain as a data source. Feeds:
+`specs/28-admin.md`.

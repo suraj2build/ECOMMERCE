@@ -74,3 +74,19 @@ READ APPROVED SPEC -> REVIEW ACCEPTANCE CRITERIA -> PLAN -> IMPLEMENT
 
 A milestone does not advance past "REVIEW" in that loop until this
 checklist is fully satisfied.
+
+## Per-milestone acceptance criteria (added 2026-09-22)
+
+Following the Product Owner's Blueprint V2 decision session, every
+milestone in `BUILD_PLAN.md` (M00–M33) now has a dedicated
+`acceptance/mNN-*.md` document with testable, milestone-specific
+criteria — business acceptance, functional acceptance, data integrity,
+authorization, auditability, positive/negative scenarios, mobile/
+desktop behavior where relevant, API/database behavior, concurrency/
+idempotency where relevant, security, performance expectations,
+observability, and test requirements. These documents apply this
+checklist concretely per milestone; they do not replace it.
+
+See `acceptance/e2e-commerce-flows.md` for the 20 cross-domain
+automated E2E scenarios referenced throughout the per-milestone
+documents.

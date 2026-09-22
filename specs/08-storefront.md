@@ -1,53 +1,47 @@
 # 08. Storefront Foundation
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SF-001`, `SF-002`, `NFR-004`, `NFR-005`)
 
 ## Purpose
 
 Define the foundational storefront application: layout shell,
-navigation, responsive/mobile-first framework, and the cross-cutting
-concerns every storefront page depends on (not page-specific content —
-PDP is `10-pdp.md`, search/PLP is `09-search-discovery.md`, cart is
-`11-wishlist-cart.md`).
+navigation, responsive/mobile-first framework, and cross-cutting
+concerns every storefront page depends on.
 
 ## Scope
 
 - Next.js application structure and routing foundation (ADR-0008)
 - Global layout, navigation, header/footer
 - Mobile-first responsive framework/design system foundation
-- Internationalization/localization readiness (if in scope — see open
-  questions)
-- Performance baseline (Core Web Vitals targets)
+- Performance and accessibility baseline
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Next.js + React + TypeScript, mobile-first responsive (ADR-0008).
-- Must be architected with SEO requirements in mind from the start
-  (`ARCHITECTURE.md` §8, `26-seo.md`) — not retrofitted later.
-- Separate admin experience where appropriate (`28-admin.md`) — this
-  spec covers the customer-facing storefront shell only.
+- **Both mobile web and desktop web are required. The UI MUST be fully
+  responsive. Native mobile applications are explicitly LATER, not
+  launch scope.**
+- Single locale at launch (India / English / INR); architecture MUST
+  NOT preclude future localization.
+- Design system: adopt an accessible, actively-maintained component
+  foundation customized with brand/multi-brand design tokens
+  (supporting `specs/31-organization-locations.md`'s multi-brand
+  requirement) rather than a fully custom build from scratch.
+- Accessibility target: WCAG 2.1 AA.
+- Browser/device support: last 2 versions of Chrome, Safari, Firefox,
+  Edge; current iOS Safari and Android Chrome.
+- Performance targets (initial, revisable after M32 load testing): PDP
+  LCP < 2.5s on representative 4G mobile; see `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Design system / component library choice — not yet decided.
-- Internationalization scope: single locale/currency initially, or
-  multi-locale from the start?
-- Performance budgets / Core Web Vitals targets — not yet defined.
-- Browser support matrix — not yet defined.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`SF-001`, `SF-002`, `NFR-004`, `NFR-005`. See also
-`blueprint/CUSTOMER_JOURNEYS.md` for the mobile-first journey
-considerations this spec must account for.
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m09-storefront-foundation.md`.
 
 ## Dependencies
 
-Foundational for: `09-search-discovery.md`, `10-pdp.md`,
-`11-wishlist-cart.md`, `12-checkout.md`, and all other customer-facing
-specs.
+Foundational for: `specs/09-search-discovery.md`, `specs/10-pdp.md`,
+`specs/11-wishlist-cart.md`, `specs/12-checkout.md`, and all other
+customer-facing specs.

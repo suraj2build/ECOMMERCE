@@ -1,6 +1,6 @@
 # 01. Authentication / RBAC
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `AUTH-001`–`003`, `ADM-001`)
 
 ## Purpose
 
@@ -21,39 +21,77 @@ across the storefront and internal/admin surfaces.
 
 ## Key architectural constraints (approved)
 
-- Authorization must be enforced on every endpoint touching customer,
+- Authorization MUST be enforced on every endpoint touching customer,
   order, payment, or inventory data — not only at the UI layer
-  (`SECURITY.md` §4).
-- Secrets/credentials are never committed (`SECURITY.md` §3).
+  (`SECURITY.md` §4). **UI hiding alone is never considered security**
+  — server-side authorization is authoritative.
+- Secrets/credentials MUST NOT be committed (`SECURITY.md` §3).
 
-## Open questions — DECISION_REQUIRED
+## Approved requirements (2026-09-22)
 
-- What roles exist beyond "customer" and "admin"? (e.g., warehouse
-  staff, merchandiser, customer service, finance, supplier-facing
-  role?) Exact role list and permission matrix not yet defined.
-- Authentication method(s): email/password, OTP, social login,
-  passkeys? Not yet decided.
-- Multi-factor authentication requirements for staff/admin roles?
-- Session/token strategy (e.g., JWT vs. server session) — implementation
-  detail, but should be recorded here once decided since it affects
-  every other domain's integration.
-- Does Medusa v2's built-in auth/customer model cover storefront
-  customer auth sufficiently, or is a custom layer needed for staff
-  roles beyond Medusa's admin users? Needs evaluation once
-  implementation starts.
+### Customer authentication
 
-## Blueprint references
+- **Mobile OTP MUST be the primary customer authentication method.**
+  Email is optional/supporting, never the sole primary path.
+- **Guest checkout MUST be supported and MUST be genuinely guest** —
+  the system MUST NOT force account creation before purchase (see
+  `specs/12-checkout.md` `CHK-001`).
+- The platform MUST capture appropriate contact information (mobile,
+  and email where provided) for order processing and transactional
+  communication regardless of whether the customer has a full account.
+- After purchase, the customer MAY be invited to activate/access a
+  full account; this MUST remain optional.
 
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`AUTH-001`, `AUTH-002`, `AUTH-003`, `ADM-001`. See also
-`blueprint/OPERATING_ROLES.md` for candidate role definitions feeding
-`ADM-001`.
+### Staff/admin authentication
+
+- Staff/admin authentication MUST use password + **mandatory MFA for
+  every role with elevated/approval authority** (Super Admin, Business
+  Admin, Finance, and any role granted approval permissions under the
+  RBAC matrix below). MFA MUST be available (recommended, not forced)
+  for execution-only roles.
+- The platform MUST NOT weaken staff authentication security to reduce
+  implementation effort (`SECURITY.md`, Product Owner instruction §11).
+
+### Session strategy
+
+- Customer sessions: short-lived JWT access token + refresh token
+  (engineering default, chosen for stateless scalability).
+- Staff/admin sessions: server-side, instantly-revocable session
+  (Redis-backed), chosen so an offboarded or compromised staff account
+  can be revoked immediately.
+
+### RBAC role list & permission matrix
+
+The following role set is **approved** (finalized by the Principal
+Engineering Agent per explicit Product Owner delegation, §25 of the
+2026-09-22 decision session — see `blueprint/OPERATING_ROLES.md` for
+full responsibilities/screens/permissions per role, and
+`specs/28-admin.md` for the admin-surface consumption of this matrix):
+
+**Super Admin, Business Admin, Buying, Merchandising, Catalog,
+Warehouse Manager, Warehouse Operator, Customer Service, Marketing,
+Finance, Analytics.**
+
+- Sensitive operations — large/exceptional discounts, manual inventory
+  adjustments, exceptional refunds, high-risk financial actions,
+  role/permission changes — MUST require elevated authorization (a
+  role explicitly granted that permission, or a configurable
+  second-approver threshold), not merely the ability to reach the
+  relevant screen.
+- Every role/permission change MUST be audited (`specs/30-audit-compliance.md`).
+- This role list and matrix MAY be revised by the Product Owner at any
+  time — it is a documented default, not a frozen commitment, but it is
+  sufficient to build against now.
+
+## Remaining open items
+
+None. All decisions within this spec's scope were resolved on
+2026-09-22.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first. See
-`acceptance/README.md` for the Definition of Done process that will
-apply once this spec is approved and implementation begins.
+See `acceptance/m01-auth-rbac.md` for the full testable Definition of
+Done for this milestone.
 
 ## Dependencies
 

@@ -1,6 +1,6 @@
 # 12. Checkout
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CHK-001`–`004`, `IND-002`, `IND-003`, `IND-005`)
 
 ## Purpose
 
@@ -11,45 +11,49 @@ creation.
 ## Scope
 
 - Checkout steps (address, shipping method, review)
-- Inventory reservation at checkout (see open question in
-  `11-wishlist-cart.md` and `06-inventory.md`)
-- Guest checkout vs. account-required
-- Order creation trigger (handoff to `14-order-management.md`)
-- Handoff to payment (`13-payment.md`)
+- Inventory reservation at checkout
+- Guest checkout
+- Order creation trigger
+- Handoff to payment
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Checkout logic must depend only on the payment provider abstraction
-  (ADR-0011), never a specific provider's API directly.
-- Any inventory reservation made during checkout must be a ledger
-  transaction (ADR-0012), with defined release semantics on
-  abandonment/failure.
+- **Guest checkout is REQUIRED and MUST be genuinely guest** — account
+  creation MUST NOT be forced before purchase. Logged-in checkout is
+  also supported.
+- Checkout triggers the **short-lived inventory reservation**
+  (`specs/06-inventory.md` `INV-002`) — reservation begins here, not at
+  add-to-cart.
+- **PIN-code serviceability MUST be re-validated at checkout** before
+  order placement (in addition to the PDP-level check, `specs/10-pdp.md`),
+  against carrier API data where available with a static-list fallback.
+- Address fields follow the standard Indian address structure (house/
+  flat, locality, landmark, city, state, PIN code), with PIN-to-city/
+  state auto-complete where feasible.
+- Shipping cost is computed by a configurable rule engine (flat,
+  weight/value-based, or free-shipping-threshold based); a
+  configurable free-shipping threshold is supported.
+- Tax is computed by a **pluggable, configurable, HSN-rate-based tax
+  engine**, displaying tax-inclusive pricing per `specs/07-catalog-merchandising.md`.
+  Legal correctness of the exact GST rate/registration logic depends on
+  `specs/32-india-tax-invoicing.md`'s compliance verification and does
+  not block building the engine itself.
+- Checkout logic MUST depend only on the payment provider abstraction
+  (`specs/13-payment.md`, ADR-0011) — never a specific provider's API
+  directly.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- Is guest checkout supported, or account required? Not yet decided.
-- Exact reservation timing and timeout during checkout (see
-  `06-inventory.md`).
-- Address validation requirements (e.g., serviceability check against
-  shipping/warehouse coverage) — depends on `15-warehouse-fulfilment.md`
-  / `16-shipping-tracking.md`, not yet defined.
-- Shipping cost calculation rules — business-owned, not yet defined.
-- Tax calculation approach — not yet decided (jurisdiction rules
-  unresolved, see `PRODUCT.md` §4).
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`CHK-001` through `CHK-004`, `TAX-001` through `TAX-003`, `IND-002`,
-`IND-003`, `IND-005`. See also `blueprint/INDIA_COMMERCE_GAPS.md` for
-the India-specific requirements (PIN-code serviceability, address
-structure, GST) this spec currently only glancingly addresses.
+Final GST computation correctness (`TAX-001`–`003`) remains
+`UNDER_REVIEW` in `specs/32-india-tax-invoicing.md` — a production
+go-live gate, not a development blocker (the engine is built
+configurable specifically so this doesn't block building).
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m13-checkout.md`.
 
 ## Dependencies
 
-Depends on: `11-wishlist-cart.md`, `06-inventory.md`. Feeds:
-`13-payment.md`, `14-order-management.md`.
+Depends on: `specs/11-wishlist-cart.md`, `specs/06-inventory.md`.
+Feeds: `specs/13-payment.md`, `specs/14-order-management.md`.

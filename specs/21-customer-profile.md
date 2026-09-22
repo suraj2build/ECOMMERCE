@@ -1,52 +1,59 @@
 # 21. Customer Profile (Customer 360)
 
-**Status:** DRAFT
+**Status:** UNDER_REVIEW (most features DECIDED 2026-09-22; data
+retention/deletion policy `CUST-001` remains `UNDER_REVIEW` pending
+legal input — see `blueprint/DECISION_REGISTER.md`)
 
 ## Purpose
 
 Define the customer's account experience: profile data, address book,
-order history, and a unified ("360") view of the customer relationship
-across orders, loyalty, and support interactions.
+order history, and self-service features.
 
 ## Scope
 
-- Customer profile data (identity, contact, preferences)
-- Address book management
-- Order history and status visibility (reads from
-  `14-order-management.md`, `16-shipping-tracking.md`)
-- Loyalty balance visibility (reads from `22-loyalty.md`)
+- Customer profile data, address book
+- Order history and status visibility
+- Wishlist, recently viewed, saved sizes
+- Ratings/reviews, loyalty, store credit, coupons
+- Communication preferences
 - Data privacy/PII handling posture
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Customer PII must be isolated appropriately and minimized in logs;
-  every endpoint touching customer data must enforce authorization
-  (`SECURITY.md` §4).
+The following are **required** customer-facing features (explicit,
+§12): customer profile, addresses, order history, shipment tracking,
+wishlist, recently viewed, saved/preferred sizes ("My Sizes"), ratings,
+reviews, loyalty (balance/history), store credit (balance/history),
+coupons, communication preferences.
 
-## Open questions — DECISION_REQUIRED
+- Address fields follow the Indian address structure
+  (`specs/12-checkout.md` `IND-003`).
+- Communication preferences MUST be **granular per channel** (SMS/
+  WhatsApp/Email/Push) and per message type — not a single global
+  toggle.
+- The internal Customer-Service-facing "Customer 360" view is a
+  **distinct, data-minimized view** in `specs/28-admin.md`, separate
+  from this self-service profile.
 
-- Data retention and deletion policy (e.g., account deletion requests)
-  — not yet defined; likely has regulatory implications depending on
-  target market, needs product-owner input.
-- Preference center scope (marketing opt-in/out granularity) — ties
-  into `24-marketing.md`, not yet defined.
-- Is there a unified "Customer 360" internal admin view distinct from
-  the customer's own self-service profile? Scope for `28-admin.md`
-  overlap not yet clarified.
+## Remaining open items — UNDER_REVIEW
 
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`CUST-001` through `CUST-003`, `IND-003`. See
-`blueprint/CUSTOMER_360.md` for the full conceptual data model,
-including two gaps surfaced during the audit ("recently viewed" and
-"customer service history") not currently modeled here.
+- **`CUST-001` — Data retention & deletion policy.** Not resolved by
+  Product Owner business instruction: this is a data-protection
+  **compliance/legal question requiring verification**, explicitly not
+  to be settled by invented legal conclusions (§28). Tracked jointly
+  with `specs/30-audit-compliance.md` `AUD-002`. **Does not block M22
+  build** of the profile features above — it governs retention/deletion
+  *policy*, which can be layered onto an already-built profile once
+  confirmed.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m22-customer-360.md`. Data-retention-specific
+acceptance criteria are deferred pending `CUST-001`/`AUD-002`
+resolution.
 
 ## Dependencies
 
-Depends on: `01-auth-rbac.md`, `14-order-management.md`,
-`22-loyalty.md`. Feeds: `24-marketing.md`, `28-admin.md`.
+Depends on: `specs/01-auth-rbac.md`, `specs/14-order-management.md`,
+`specs/22-loyalty.md`, `specs/33-store-credit-gift-cards.md`. Feeds:
+`specs/24-marketing.md`, `specs/28-admin.md`.

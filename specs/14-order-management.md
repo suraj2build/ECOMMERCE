@@ -1,61 +1,66 @@
 # 14. Order Management
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `ORD-001`–`006`)
 
 ## Purpose
 
 Define the order entity, its full lifecycle state machine, and how it
 coordinates payment, inventory allocation, fulfilment, and post-order
-events (cancellation, return, refund, exchange).
+events.
 
 ## Scope
 
-- Order state machine: payment, allocation, picking, packing,
-  shipment, delivery, cancellation, partial cancellation, returns,
-  refunds, exchanges, RTO, exceptions (`PRODUCT.md` §2.D)
+- Order state machine
 - Order line-item-level state (for partial fulfilment/cancellation)
-- Order-to-inventory allocation (ties into `06-inventory.md` reserved
-  -> allocated -> shipped states)
-- Order history / audit trail (ties into `30-audit-compliance.md`)
+- Order-to-inventory allocation
+- Order history / audit trail
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Order lifecycle must support the full state set listed above
-  (`PRODUCT.md` §2.D) — exact transition rules are not frozen and must
-  be defined here before implementation.
-- Every order state change that affects inventory must produce a
-  corresponding ledger entry (ADR-0012), not just an order-table
-  status update.
+- The order lifecycle **MUST** support: creation, confirmation,
+  inventory allocation, fulfilment (including **split shipments — one
+  order MAY have multiple fulfilments/packages**), shipment, delivery,
+  cancellation (**allowed before shipment**, subject to configurable
+  state/policy rules — see `specs/17-cancellation.md`), **partial
+  cancellation** (required), returns, refunds, exchanges, RTO, and
+  exception handling.
+- The exact state enum implementing this shape is an engineering
+  design decision at build time; the business shape above is fixed.
+- **Payment state and order state MUST remain separate** (see
+  `specs/13-payment.md` `PAY-002`).
+- **Post-order-placement customer self-service modification of address
+  or items is NOT required.** The V1 pattern is cancel/reorder, or
+  controlled customer-service intervention where operationally
+  possible.
+- RTO on a prepaid order triggers the standard refund flow (using
+  original transaction value); RTO on a COD order triggers closure
+  without a refund (no payment was ever collected).
+- Reservation converts to committed allocation upon successful payment
+  capture (prepaid) or successful COD order acceptance.
+- Every order MUST generate an invoice-equivalent document at
+  confirmation, using a versioned/configurable template (see
+  `specs/32-india-tax-invoicing.md`).
+- Full order history MUST be retained and queryable for the customer's
+  account indefinitely by default; compliance-driven retention/deletion
+  periods depend on `specs/30-audit-compliance.md`'s legal verification.
+- Order exceptions (undeliverable address, pick shortfall, etc.) route
+  to a defined exception state requiring CS/warehouse intervention, and
+  are tracked and audited.
 
-## Open questions — DECISION_REQUIRED
+## Remaining open items
 
-- **Complete order state machine is undefined.** This is one of the
-  most consequential open decisions in the whole platform — states,
-  valid transitions, and which roles/systems can trigger each
-  transition are all `DECISION_REQUIRED`.
-- Partial cancellation and partial shipment rules?
-- RTO (return-to-origin) handling and its interaction with refunds?
-- Order exception handling (e.g., undeliverable address, failed
-  delivery attempts) — not yet defined.
-
-## Blueprint references
-
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`ORD-001` through `ORD-006`, `PAY-002`, `TAX-004`. `ORD-001` (the
-complete order state machine) is flagged in `blueprint/READINESS.md`
-as the single largest blocker cluster on the platform — see
-`blueprint/END_TO_END_FLOWS.md` and `blueprint/ORDER_PAYMENT_INTEGRITY.md`
-before attempting to resolve it.
+Final invoice format (`TAX-004`) remains `UNDER_REVIEW` in
+`specs/32-india-tax-invoicing.md` — engineering-ready template
+mechanism exists regardless.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first. This spec is a
-prerequisite for `17-cancellation.md` through `20-exchanges.md`, all of
-which depend on the order state machine defined here.
+See `acceptance/m15-order-management.md`.
 
 ## Dependencies
 
-Depends on: `12-checkout.md`, `13-payment.md`, `06-inventory.md`.
-Feeds: `15-warehouse-fulfilment.md`, `16-shipping-tracking.md`,
-`17-cancellation.md`, `18-returns.md`, `19-refunds.md`,
-`20-exchanges.md`, `21-customer-profile.md`, `22-loyalty.md`.
+Depends on: `specs/12-checkout.md`, `specs/13-payment.md`,
+`specs/06-inventory.md`. Feeds: `specs/15-warehouse-fulfilment.md`,
+`specs/16-shipping-tracking.md`, `specs/17-cancellation.md`,
+`specs/18-returns.md`, `specs/19-refunds.md`, `specs/20-exchanges.md`,
+`specs/21-customer-profile.md`, `specs/22-loyalty.md`.

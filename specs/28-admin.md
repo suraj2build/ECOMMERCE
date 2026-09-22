@@ -1,57 +1,72 @@
 # 28. Administration
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `ADM-001`–`003`)
 
 ## Purpose
 
-Define the internal admin/operations experience: the tools staff use
-to manage product, inventory, orders, customers, promotions, and
-platform configuration.
+Define the internal admin/operations experience, including
+admin-controlled content management (CMS).
 
 ## Scope
 
-- Admin application structure (separate app vs. shared codebase with
-  route separation — see ADR-0008 and `08-storefront.md`)
-- Per-domain admin screens (product management, order management,
-  inventory adjustments, customer service tools, promotion management,
-  etc.) — each ultimately governed by its own domain spec
-- Admin RBAC (depends on `01-auth-rbac.md` role/permission model)
-- Audit trail for admin actions (ties into `30-audit-compliance.md`)
+- Admin application structure
+- Per-domain admin screens
+- Admin RBAC
+- Audit trail for admin actions
+- Content Management (CMS)
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- Admin experience is separate from the customer storefront "where
-  appropriate" (ADR-0008) — exact separation (fully separate app vs.
-  shared app with access control) is not yet decided.
-- Every admin action that mutates ledger-backed state (inventory,
-  loyalty) must go through the same ledger-writing paths as
-  customer-facing flows — no direct database edits bypassing the
-  ledger (ADR-0012, ADR-0013).
+### RBAC (finalized per Product Owner delegation, §25)
 
-## Open questions — DECISION_REQUIRED
+- Approved role set: **Super Admin, Business Admin, Buying,
+  Merchandising, Catalog, Warehouse Manager, Warehouse Operator,
+  Customer Service, Marketing, Finance, Analytics** — see
+  `blueprint/OPERATING_ROLES.md` for full per-role responsibilities,
+  screens, permissions, high-risk actions, and approval requirements.
+- Sensitive operations — **large/exceptional discounts, manual
+  inventory adjustments, exceptional refunds, high-risk financial
+  actions, role/permission changes** — MUST require elevated
+  authorization via configurable approval/permission controls, not
+  merely screen access.
+- All role/permission changes MUST be audited.
 
-- Separate admin app vs. shared app with role-gated routes — not yet
-  decided.
-- Full list of admin capabilities required for launch — depends on
-  which domains are prioritized in `BUILD_PLAN.md`.
-- Manual inventory adjustment workflow (who can adjust stock manually,
-  and what justification/audit is required)?
+### Application structure
 
-## Blueprint references
+- One admin application (separate from the customer storefront app),
+  with role-gated routes internally.
 
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`ADM-001` through `ADM-003`. See `blueprint/OPERATING_ROLES.md` for
-the full candidate persona list (Super Admin, Business Admin, Buyer,
-Merchandiser, Catalog Manager, Warehouse Manager, Warehouse Operator,
-Customer Service, Marketing, Finance, Analyst) feeding `ADM-001` —
-none of these roles are approved yet.
+### Manual inventory adjustment (`ADM-003`)
+
+- Restricted to Warehouse Manager and above; Finance co-approval for
+  high-value adjustments; mandatory justification field; fully audited
+  (who/what/when/old value/new value/reference).
+
+### Content Management (CMS)
+
+- Admin-controlled content **is required**, supporting at minimum:
+  homepage banners, collections, campaign landing pages, navigation/
+  menus, and content blocks.
+- The content architecture MUST support routine merchandising changes
+  **without requiring a code deployment**.
+
+### Internal Customer 360 view
+
+- A distinct, data-minimized Customer-Service-facing Customer 360 view
+  lives here, separate from the customer's own self-service profile
+  (`specs/21-customer-profile.md` `CUST-003`).
+
+## Remaining open items
+
+None.
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m29-admin-cms.md`. See
+`acceptance/e2e-commerce-flows.md` FLOW 19 (unauthorized admin action
+blocked) and FLOW 20 (inventory adjustment audited).
 
 ## Dependencies
 
-Depends on: `01-auth-rbac.md` and effectively every other domain spec
-(admin surfaces most domains). Feeds: `27-analytics-reporting.md`
-(admin-facing dashboards), `30-audit-compliance.md`.
+Depends on: `specs/01-auth-rbac.md` and effectively every other domain
+spec. Feeds: `specs/27-analytics-reporting.md`, `specs/30-audit-compliance.md`.

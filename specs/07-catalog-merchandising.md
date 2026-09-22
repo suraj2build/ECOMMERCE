@@ -1,54 +1,64 @@
-# 07. Catalog / Merchandising
+# 07. Catalog / Merchandising / Pricing
 
-**Status:** DRAFT
+**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CAT-001`–`004`)
 
 ## Purpose
 
 Define how enriched product master data becomes a sellable catalog
 listing — pricing, categorization for browsing, merchandising
-collections, and publishing status — for the website channel (and, per
-`25-social-channel-publishing.md`, other channels).
+collections, and publishing status.
 
 ## Scope
 
-- Pricing (list price, sale price, price rules — exact promotion
-  interaction is `23-promotions.md`)
-- Listing/publishing status (which SKUs are visible/purchasable, and
-  where)
+- Pricing (list price, sale price, price rules)
+- Listing/publishing status
 - Merchandising collections, category assignment for browsing
-  (distinct from the product-attribute taxonomy in
-  `02-product-master.md`, though related)
-- Catalog-to-search indexing trigger (feeds `09-search-discovery.md`)
+- Catalog-to-search indexing trigger
 
-## Key architectural constraints (approved)
+## Approved requirements (2026-09-22)
 
-- The product/catalog core must not be tightly coupled to one channel
-  (`ARCHITECTURE.md` §7) — catalog/listing data must be structured so
-  it can feed multiple channels via publishing, not just the website.
+### Pricing (binding — financial integrity)
 
-## Open questions — DECISION_REQUIRED
+- **MRP and selling price are both required** on every SKU, displayed
+  **tax-inclusive** (India market norm; exact GST computation tracked
+  separately in `specs/32-india-tax-invoicing.md`).
+- Single currency/region (INR, India) at launch.
+- **Default price MUST be the same across sizes for the same
+  style-colour** — size-based pricing is not normal V1 behavior.
+- **Scheduled markdown/sale pricing is required**, with configurable
+  start/end dates.
+- **Historical orders/refunds MUST use the actual transaction price
+  paid.** A later product-price change MUST NOT alter the financial
+  value of an existing order or refund — this is a hard requirement
+  enforced by snapshotting price at order time, not by looking up the
+  current catalog price retroactively.
 
-- Pricing model details: currency/region handling, tax-inclusive vs.
-  exclusive pricing, minimum price rules — not yet defined.
-- Who owns publishing decisions (merchandising role vs. automated
-  rules based on inventory availability)?
-- Relationship between catalog "category" (browsing/merchandising) and
-  product master "category" attribute — single taxonomy or two
-  separate ones? Not yet decided.
+### Publishing & taxonomy
 
-## Blueprint references
+- A SKU's storefront visibility requires **both**: the automated
+  `ready_for_qa -> published` completeness gate (`specs/02-product-master.md`
+  `PROD-003`) **and** an explicit Merchandiser publish action.
+- The catalog browsing category tree and the product attribute
+  "category" field are a **single, unified taxonomy** for V1 (not two
+  independent structures). Merchandising collections are a separate,
+  additive concept layered on top.
+- Merchandising badges ("New Arrival," "Bestseller," "Sale") are
+  rule-driven where computable, with manual merchandiser override
+  always available.
 
-See `blueprint/DECISION_REGISTER.md` for full context on:
-`CAT-001` through `CAT-004`, `TAX-001`, `TAX-002`, `PROD-002`,
-`PROD-003`. See also `blueprint/INDIA_COMMERCE_GAPS.md` for the
-MRP/tax-inclusive pricing question underlying `CAT-001`.
+## Remaining open items
+
+MRP legal disclosure mechanics (`TAX-002`) remain `UNDER_REVIEW` in
+`specs/32-india-tax-invoicing.md` — does not block this spec's own
+build (the display behavior itself is decided).
 
 ## Acceptance criteria
 
-Not yet defined — requires `APPROVED` status first.
+See `acceptance/m07-catalog-merchandising.md`.
 
 ## Dependencies
 
-Depends on: `02-product-master.md`, `06-inventory.md` (availability).
-Feeds: `08-storefront.md`, `09-search-discovery.md`, `10-pdp.md`,
-`25-social-channel-publishing.md`, `26-seo.md`.
+Depends on: `specs/02-product-master.md`, `specs/06-inventory.md`.
+Feeds: `specs/08-storefront.md`, `specs/09-search-discovery.md`,
+`specs/10-pdp.md`, `specs/25-social-channel-publishing.md`,
+`specs/26-seo.md`.
