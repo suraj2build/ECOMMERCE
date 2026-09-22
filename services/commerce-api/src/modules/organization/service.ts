@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { NotFoundError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 
 export interface UpdateBrandInput {
   name?: string;
@@ -44,7 +45,7 @@ export class OrganizationService {
   }
 
   async createBrand(input: CreateBrandInput, actorStaffId: string) {
-    const brand = await this.prisma.brand.create({ data: input });
+    const brand = await withUniqueConstraintCheck(() => this.prisma.brand.create({ data: input }), 'Brand');
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,
@@ -82,9 +83,10 @@ export class OrganizationService {
   }
 
   async createLocation(input: CreateLocationInput, actorStaffId: string) {
-    const location = await this.prisma.location.create({
-      data: { ...input, type: input.type ?? 'WAREHOUSE' },
-    });
+    const location = await withUniqueConstraintCheck(
+      () => this.prisma.location.create({ data: { ...input, type: input.type ?? 'WAREHOUSE' } }),
+      'Location',
+    );
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,

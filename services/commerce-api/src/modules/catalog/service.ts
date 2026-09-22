@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@fcp/db';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 
 export interface SetPriceInput {
   styleId: string;
@@ -152,7 +153,10 @@ export class CatalogService {
   }
 
   async createCollection(input: { name: string; slug: string; description?: string }, actorStaffId: string) {
-    const collection = await this.prisma.collection.create({ data: input });
+    const collection = await withUniqueConstraintCheck(
+      () => this.prisma.collection.create({ data: input }),
+      'Collection',
+    );
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,

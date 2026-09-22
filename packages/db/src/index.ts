@@ -15,6 +15,9 @@ export function getPrismaClient(): PrismaClient {
   return prisma;
 }
 
+// `export *` below already re-exports `Prisma` as both a value (the
+// runtime namespace, needed for e.g. Prisma.PrismaClientKnownRequestError)
+// and a type - an explicit `export type { Prisma }` here would shadow
+// that and make it type-only again, breaking any runtime usage.
 export * from '../generated/client/index.js';
 export { PrismaClient } from '../generated/client/index.js';
-export type { Prisma } from '../generated/client/index.js';

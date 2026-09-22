@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { NotFoundError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 
 export interface CreateSupplierInput {
   code: string;
@@ -27,7 +28,7 @@ export class SupplierService {
   }
 
   async createSupplier(input: CreateSupplierInput, actorStaffId: string) {
-    const supplier = await this.prisma.supplier.create({ data: input });
+    const supplier = await withUniqueConstraintCheck(() => this.prisma.supplier.create({ data: input }), 'Supplier');
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,

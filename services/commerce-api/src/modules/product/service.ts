@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Prisma } from '@fcp/db';
 import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 
 export interface CreateStyleInput {
   styleCode: string;
@@ -50,9 +51,13 @@ export class ProductService {
     if (!input.season?.trim()) throw new ValidationError('season is required');
     if (!input.collection?.trim()) throw new ValidationError('collection is required');
 
-    const style = await this.prisma.style.create({
-      data: { ...input, customAttributes: input.customAttributes as Prisma.InputJsonValue | undefined },
-    });
+    const style = await withUniqueConstraintCheck(
+      () =>
+        this.prisma.style.create({
+          data: { ...input, customAttributes: input.customAttributes as Prisma.InputJsonValue | undefined },
+        }),
+      'Style',
+    );
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,
@@ -87,7 +92,10 @@ export class ProductService {
 
   async addColour(styleId: string, input: { name: string; colourCode: string; hexSwatch?: string }, actorStaffId: string) {
     await this.getStyle(styleId);
-    const colour = await this.prisma.colour.create({ data: { styleId, ...input } });
+    const colour = await withUniqueConstraintCheck(
+      () => this.prisma.colour.create({ data: { styleId, ...input } }),
+      'Colour',
+    );
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,
@@ -126,7 +134,10 @@ export class ProductService {
     });
     if (existing) throw new ConflictError('A SKU already exists for this style/colour/size combination');
 
-    const sku = await this.prisma.sku.create({ data: input });
+    // The pre-check above only covers the style/colour/size composite -
+    // skuCode and barcode are independently unique, so a genuine
+    // duplicate there still needs this backstop.
+    const sku = await withUniqueConstraintCheck(() => this.prisma.sku.create({ data: input }), 'Sku');
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,
