@@ -1,5 +1,5 @@
 import fp from 'fastify-plugin';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyError } from 'fastify';
 import { ZodError } from 'zod';
 import { AppError } from '@fcp/shared';
 
@@ -10,7 +10,7 @@ import { AppError } from '@fcp/shared';
  * server-side and returned to the client as a generic 500.
  */
 const errorHandlerPlugin: FastifyPluginAsync = async (fastify) => {
-  fastify.setErrorHandler((error, request, reply) => {
+  fastify.setErrorHandler((error: FastifyError | AppError | ZodError, request, reply) => {
     if (error instanceof AppError) {
       reply.status(error.statusCode).send({
         error: { code: error.code, message: error.message, details: error.details },

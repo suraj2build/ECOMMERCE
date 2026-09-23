@@ -30,7 +30,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   const logger: FastifyBaseLogger = createLogger('commerce-api', env.LOG_LEVEL);
 
   const app = Fastify({
-    logger,
+    // Fastify v5: a pre-built pino instance goes via loggerInstance, not
+    // logger (that option now only accepts true/false/a pino config
+    // object) - see docs/decisions/0018-fastify-v5-cve-migration.md.
+    loggerInstance: logger,
     disableRequestLogging: env.NODE_ENV === 'test',
     trustProxy: true,
   });
