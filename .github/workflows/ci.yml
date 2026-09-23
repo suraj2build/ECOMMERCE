@@ -94,14 +94,19 @@ jobs:
       - name: Unit tests
         run: npm run test --workspace=services/commerce-api
 
+      - name: Integration tests (real Postgres + Redis)
+        run: npm run test:integration --workspace=services/commerce-api
+
+      # Runs *after* integration tests, not before: every integration test
+      # file truncates all tables (test/helpers/db.ts resetDatabase()) in
+      # its own beforeAll, so seeding first would just get wiped out by the
+      # first test file to run, leaving no admin user for the E2E step below
+      # (a real bug, not a flake - see BUILD_PLAN.md M11 entry).
       - name: Seed test-relevant reference data
         run: npm run db:seed
         env:
           SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
           SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
-
-      - name: Integration tests (real Postgres + Redis)
-        run: npm run test:integration --workspace=services/commerce-api
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

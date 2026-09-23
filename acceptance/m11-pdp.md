@@ -113,7 +113,29 @@ browser E2E tests against a real Chromium instance).
       Prisma, exactly like the vitest suite's own `seedBrandAndLocation`
       helper).
 
-## Infrastructure fix (found via real-browser verification, not a
+## Infrastructure fix #2 (found via CI failure investigation)
+
+- [x] **CI seeded the E2E super-admin user *before* the integration
+      test step, not after.** Every integration test file truncates
+      all tables (`test/helpers/db.ts` `resetDatabase()`, called in
+      each file's `beforeAll`) to start from a known-empty state - so
+      the first integration test file to run wiped out the seeded
+      admin, and by the time the later E2E step tried to log in as
+      that admin to provision its own test product, the account no
+      longer existed (`401 Unauthorized`). This surfaced as an opaque
+      `TypeError: Cannot read properties of undefined (reading
+      'skuId')` in CI before `pdp.spec.ts`'s `beforeAll` was hardened
+      with an `expectOk()` status-checking helper, which turned it
+      into a clear `Staff login failed: 401 Unauthorized` instead. Not
+      reproducible locally by re-running `test:e2e` alone (the
+      seed step run just before it was never wiped), only by
+      reproducing CI's exact step order (integration tests, *then*
+      seed, *then* E2E) - confirmed both ways locally before pushing.
+      Fixed by moving `.github/workflows/ci.yml`'s "Seed test-relevant
+      reference data" step to run after "Integration tests" and before
+      "Install Playwright browsers" / "E2E smoke".
+
+## Infrastructure fix #1 (found via real-browser verification, not a
 ## pre-existing bug report)
 
 - [x] **CORS was entirely unconfigured on commerce-api.** Every earlier
