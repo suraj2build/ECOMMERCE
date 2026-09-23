@@ -1,17 +1,13 @@
 # Build Plan
 
-## STATUS: READINESS GATE — SEE §3
+## STATUS: PHASE 2 BUILD IN PROGRESS (M08–M15) — SEE §3
 
-> As of **2026-09-22**, the Product Owner has completed a Blueprint V2
-> decision session resolving 105 of 112 open decisions (see
-> `blueprint/DECISION_REGISTER.md`). This unblocks the milestone
-> sequence below for engineering purposes. **This does not by itself
-> authorize implementation.** Per `CLAUDE.md` §0, starting
-> implementation still requires an explicit, separate **START BUILD**
-> authorization from the human Product Owner. Until that authorization
-> is given, no application code, frameworks, or database migrations
-> may be created, regardless of how many milestones show
-> `READY_FOR_IMPLEMENTATION` below.
+> Phase 1 (M00–M07) is `PHASE_1_CERTIFIED` as of 2026-09-22 at commit
+> `240debca8179df0b05db07216cfce64d0b10d0ae`. On **2026-09-23** the
+> Product Owner gave explicit **"START BUILD — PHASE 2"** authorization
+> for milestones **M08–M15** only, with a mandatory stop for
+> independent review after M15 certification. **M16 and beyond remain
+> unauthorized** — see `CLAUDE.md` §0.
 
 ## 1. What changed from the original plan
 
@@ -59,14 +55,14 @@ to the original 32, for a revised total of **34 milestones (M00–M33)**
 | M05 | GRN / QC | `05` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
 | M06 | Inventory | `06` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
 | M07 | Catalog / Merchandising / Pricing | `07` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
-| M08 | **Tax & Invoicing Foundation** (NEW) | `32` | **BLOCKED** — compliance verification pending (`TAX-001`–`005`) |
-| M09 | Storefront Foundation | `08` | READY_FOR_IMPLEMENTATION — must begin with the Medusa v2 integration spike required by `docs/decisions/0017-medusa-custom-domain-ownership-boundary.md` before other M09 work |
-| M10 | Search / Discovery | `09` | READY_FOR_IMPLEMENTATION |
-| M11 | PDP | `10` | READY_FOR_IMPLEMENTATION |
-| M12 | Wishlist / Cart | `11` | READY_FOR_IMPLEMENTATION |
-| M13 | Checkout | `12` | READY_FOR_IMPLEMENTATION* |
-| M14 | Payment | `13` | READY_FOR_IMPLEMENTATION |
-| M15 | Order Management | `14` | READY_FOR_IMPLEMENTATION |
+| M08 | **Tax & Invoicing Foundation** (NEW) | `32` | **IMPLEMENTING** (Phase 2 build, 2026-09-23) — engineering-configurable architecture only; `TAX-001`–`005` remain `UNDER_REVIEW` and gate production configuration, not development |
+| M09 | Storefront Foundation | `08` | IMPLEMENTING (Phase 2 build) — begins with the mandatory Medusa v2 integration spike required by `docs/decisions/0017-medusa-custom-domain-ownership-boundary.md` |
+| M10 | Search / Discovery | `09` | IMPLEMENTING (Phase 2 build) |
+| M11 | PDP | `10` | IMPLEMENTING (Phase 2 build) |
+| M12 | Wishlist / Cart | `11` | IMPLEMENTING (Phase 2 build) |
+| M13 | Checkout | `12` | IMPLEMENTING (Phase 2 build)* |
+| M14 | Payment | `13` | IMPLEMENTING (Phase 2 build) |
+| M15 | Order Management | `14` | IMPLEMENTING (Phase 2 build) |
 | M16 | Warehouse / Fulfilment | `15` | READY_FOR_IMPLEMENTATION |
 | M17 | Shipping / Tracking | `16` | READY_FOR_IMPLEMENTATION |
 | M18 | Cancellation | `17` | READY_FOR_IMPLEMENTATION |
@@ -114,23 +110,19 @@ is authorized to start. Two separate gates must both be satisfied:
 
 1. **Decision readiness** (this document, per-milestone, now largely
    satisfied).
-2. **Explicit human authorization** ("**START BUILD**") — given
-   2026-09-22 for **Phase 1 (M00–M07) only**, via an explicit
-   "START BUILD — PHASE 1" instruction scoped to those milestones and
-   requiring a stop at a Phase 1 review gate before any further
-   milestone. M00–M07 are now `IMPLEMENTED` (real code, real migrations
-   against a live PostgreSQL instance, a real Redis-backed session
-   store, and a passing automated test suite — unit, integration, the
-   mandatory inventory-oversell concurrency test, and a full end-to-end
-   proof — not scaffolding). **M08 and beyond remain unauthorized** and
-   were not implemented. Continuing past M07 requires a new, separate,
+2. **Explicit human authorization** ("**START BUILD**") — Phase 1
+   (M00–M07) was authorized 2026-09-22, implemented, and independently
+   certified `PHASE_1_CERTIFIED` at commit
+   `240debca8179df0b05db07216cfce64d0b10d0ae`. Phase 2 (M08–M15) was
+   authorized 2026-09-23 via an explicit "START BUILD — PHASE 2"
+   instruction scoped to those milestones and requiring a stop for
+   independent review after M15 certification. **M16 and beyond remain
+   unauthorized.** Continuing past M15 requires a new, separate,
    explicit authorization from the human project owner — this document
    being updated is not that authorization.
 
-**`BLOCKED` milestones (M08, M32, M33)** have a stated, specific
-reason — either genuine external compliance verification (M08) or
-sequence dependency on prior milestones (M32, M33) — not vague
-uncertainty.
+**`BLOCKED` milestones (M32, M33)** have a stated, specific reason —
+sequence dependency on prior milestones — not vague uncertainty.
 
 **No milestone is classified `FUTURE_SCOPE`** at the milestone level;
 instead, specific **features within several milestones** are marked
@@ -165,4 +157,6 @@ that governs all of them.
 |---|---|
 | 2026-09-22 | Documentation/specification foundation established. Build plan created and marked BLOCKED pending Product Blueprint V2. |
 | 2026-09-22 | Product Blueprint V2 decision framework created in `/blueprint` (112 decisions registered, all `OPEN`). |
-| 2026-09-22 | Product Owner Blueprint V2 decision session completed. 105/112 decisions `DECIDED`, 7 `UNDER_REVIEW` (compliance verification). Build plan revised: 2 new milestones inserted (Tax & Invoicing, Gift Cards), 4 new specs added (`31`–`34`), all specs updated with normative requirements, per-milestone acceptance criteria created. Per-milestone readiness classified above. **Implementation remains NOT authorized** pending explicit **START BUILD** from the Product Owner.
+| 2026-09-22 | Product Owner Blueprint V2 decision session completed. 105/112 decisions `DECIDED`, 7 `UNDER_REVIEW` (compliance verification). Build plan revised: 2 new milestones inserted (Tax & Invoicing, Gift Cards), 4 new specs added (`31`–`34`), all specs updated with normative requirements, per-milestone acceptance criteria created. Per-milestone readiness classified above. **Implementation remains NOT authorized** pending explicit **START BUILD** from the Product Owner. |
+| 2026-09-22 | **START BUILD — PHASE 1** authorized (M00–M07). Implemented and independently certified `PHASE_1_CERTIFIED` at commit `240debca8179df0b05db07216cfce64d0b10d0ae` after an expanded engineering certification pass (database integrity, adversarial inventory/GRN/product/pricing/auth/input/audit testing, migration safety, CI/infrastructure/dependency review, ADR-0017 critical review, performance sanity). |
+| 2026-09-23 | **START BUILD — PHASE 2** authorized (M08–M15), with a mandatory stop for independent review after M15 certification. M08–M15 moved from `READY_FOR_IMPLEMENTATION` to `IMPLEMENTING`. **M16 and beyond remain unauthorized.**

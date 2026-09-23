@@ -1,11 +1,17 @@
 # 32. India Tax / GST / Invoicing
 
-**Status:** DRAFT — engineering architecture direction is decided;
-**core legal/compliance content remains UNDER_REVIEW pending
-qualified professional verification.** This spec MUST NOT be marked
-`APPROVED` until `TAX-001` through `TAX-005` in
-`blueprint/DECISION_REGISTER.md` are resolved through that
-verification. See `blueprint/INDIA_COMMERCE_GAPS.md`.
+**Status:** APPROVED for the engineering-architecture requirements
+only (Product Owner "START BUILD — PHASE 2" instruction, 2026-09-23,
+explicitly directs this configurable-architecture approach in detail —
+see M08 in `BUILD_PLAN.md`). **Core legal/compliance content remains
+UNDER_REVIEW pending qualified professional verification** and MUST
+NOT be implemented as final. `TAX-001` through `TAX-005` in
+`blueprint/DECISION_REGISTER.md` gate *production configuration*
+(real GSTIN/rate/HSN values), not the build of the configurable
+engine itself — the engine is required to fail safely whenever that
+configuration is absent, precisely so it can be built now without
+resolving the compliance questions. See
+`blueprint/INDIA_COMMERCE_GAPS.md`.
 
 ## Purpose
 

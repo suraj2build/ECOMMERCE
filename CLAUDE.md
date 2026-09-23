@@ -6,47 +6,53 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-22 (updated same day, Phase 1 build):** The
-Product Owner's Blueprint V2 decision session completed earlier on
-2026-09-22 (105/112 decisions `DECIDED`, 7 `UNDER_REVIEW`, 0 `OPEN`).
-Later the same day, the human project owner gave explicit
-**"START BUILD — PHASE 1"** authorization, scoped specifically to
-milestones **M00 through M07** (Project Foundation through Catalog/
-Merchandising/Pricing), with an explicit instruction to stop at a
-Phase 1 review gate afterward rather than self-authorizing further
-milestones.
+**Status as of 2026-09-23 (Phase 2 build in progress):** Phase 1
+(M00–M07) completed an expanded engineering certification pass and was
+accepted by the human project owner as **`PHASE_1_CERTIFIED`** at
+commit `240debca8179df0b05db07216cfce64d0b10d0ae`. On 2026-09-23 the
+human project owner gave explicit **"START BUILD — PHASE 2"**
+authorization, scoped specifically to milestones **M08 through M15**
+(Tax & Invoicing Foundation through Order Management), again with an
+explicit instruction to **stop after M15 certification** for
+independent review rather than self-authorizing M16+.
 
-**M00–M07 have now been implemented** under that authorization: a real
-npm-workspaces monorepo, a Prisma/PostgreSQL schema with applied,
-reproducible migrations, a Fastify-based `commerce-api` service
-implementing all seven milestones' domain logic (including the
-ledger-based, concurrency-safe inventory model and its mandatory
-oversell-prevention test), and a passing automated test suite (unit +
-integration, run against real PostgreSQL/Redis, not mocks). See
-`BUILD_PLAN.md` §3 for the milestone-by-milestone status and the most
-recent Phase 1 completion report for full detail (test results,
-commit history, deviations, and confirmed scope boundary).
+**M00–M07 remain the certified, protected baseline.** Phase 2 work
+MUST NOT regress: the STYLE→COLOUR→SIZE→SKU hierarchy, the inventory
+ledger, reservation atomicity/oversell prevention, GRN atomicity,
+pricing invariants, RBAC, audit history, idempotency, database
+constraints, clean-clone reproducibility, or CI. Every Phase 1 test
+remains mandatory and must stay green.
 
-**This authorization does NOT extend beyond M07.** Decision/spec/
-milestone readiness (`blueprint/READINESS.md` Layers 1–3) remains a
-separate thing from implementation authorization (Layer 4):
+**This authorization does NOT extend beyond M15.**
+Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
+1–3) remains a separate thing from implementation authorization
+(Layer 4):
 
-- **M08 and every later milestone remain unauthorized.** No
-  application code for M08+ should be added until the human project
+- **M16 and every later milestone remain unauthorized.** No
+  application code for M16+ should be added until the human project
   owner gives a new, separate, explicit **START BUILD** authorization
-  for that phase — the Phase 1 authorization does not carry forward
-  automatically, regardless of how cleanly M00–M07 landed.
-- Do **not** interpret "Phase 1 shipped cleanly" or "the docs are
-  done" as authorization for the next phase. Authorization must be
-  explicit and human-given for each phase, not inferred from a prior
-  phase's completeness.
-- A small number of items remain `UNDER_REVIEW` for genuine
-  compliance/legal reasons (India GST/tax specifics in
-  `specs/32-india-tax-invoicing.md`; data-retention policy in
-  `specs/21-customer-profile.md` and `specs/30-audit-compliance.md`).
-  These require a qualified professional's verification, not an
-  engineering agent's judgment — never resolve them yourself. M08
-  (which depends on the tax items) was correctly left unimplemented.
+  for that phase — the Phase 2 authorization does not carry forward
+  automatically, regardless of how cleanly M08–M15 land.
+- Do **not** interpret "Phase 2 shipped cleanly" as authorization for
+  the next phase. Authorization must be explicit and human-given for
+  each phase.
+- M08 is explicitly authorized to proceed now as a **configurable
+  compliance architecture** — GST registrations, HSN/rate reference
+  data, and e-invoice applicability are all engineering-configurable,
+  never hard-coded, and the system must fail safely when that
+  configuration is absent. This is *not* the same as resolving the
+  underlying compliance/legal questions (`TAX-001`–`005` in
+  `blueprint/DECISION_REGISTER.md`) — those still require a qualified
+  professional's verification before real GSTIN/rate/HSN values are
+  entered as production configuration, and must never be guessed by
+  an engineering agent. Data-retention policy
+  (`specs/21-customer-profile.md`, `specs/30-audit-compliance.md`)
+  remains `UNDER_REVIEW` for the same reason.
+- M09 must begin with the mandatory Medusa v2 integration spike
+  required by `docs/decisions/0017-medusa-custom-domain-ownership-boundary.md`
+  before other M09 work proceeds. If the spike shows the ownership
+  model is not technically workable, stop and raise
+  `DECISION_REQUIRED` rather than quietly changing ownership.
 
 If you are unsure whether implementation is authorized for a given
 milestone, **stop and ask** rather than proceeding.
