@@ -6,15 +6,20 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-23 (Phase 2 build in progress):** Phase 1
-(M00–M07) completed an expanded engineering certification pass and was
-accepted by the human project owner as **`PHASE_1_CERTIFIED`** at
-commit `240debca8179df0b05db07216cfce64d0b10d0ae`. On 2026-09-23 the
-human project owner gave explicit **"START BUILD — PHASE 2"**
-authorization, scoped specifically to milestones **M08 through M15**
-(Tax & Invoicing Foundation through Order Management), again with an
+**Status as of 2026-09-23 (Phase 2 build complete, M08–M15 — awaiting
+independent review):** Phase 1 (M00–M07) completed an expanded
+engineering certification pass and was accepted by the human project
+owner as **`PHASE_1_CERTIFIED`** at commit
+`240debca8179df0b05db07216cfce64d0b10d0ae`. On 2026-09-23 the human
+project owner gave explicit **"START BUILD — PHASE 2"** authorization,
+scoped specifically to milestones **M08 through M15** (Tax &
+Invoicing Foundation through Order Management), again with an
 explicit instruction to **stop after M15 certification** for
-independent review rather than self-authorizing M16+.
+independent review rather than self-authorizing M16+. As of
+2026-09-23, all of M08–M15 are implemented and confirmed CI-green (see
+`BUILD_PLAN.md` for each milestone's status and CI run link) — this
+agent has stopped per that instruction and is awaiting independent
+human review before any M16+ work.
 
 **M00–M07 remain the certified, protected baseline.** Phase 2 work
 MUST NOT regress: the STYLE→COLOUR→SIZE→SKU hierarchy, the inventory
