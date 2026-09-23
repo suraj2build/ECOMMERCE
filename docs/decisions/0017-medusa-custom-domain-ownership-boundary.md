@@ -125,19 +125,16 @@ of truth" failure mode this ADR exists to prevent.
   at add-to-cart time. A cart held open across a markdown change or a
   stock-out is a stale read model, not a price/availability guarantee;
   Medusa's checkout workflow must re-fetch, not trust its own cache.
-- **M09 (Storefront Foundation) must begin with a spike**, not
-  straight implementation: validate that Medusa v2's Cart/Checkout
-  workflows can (a) accept a cart line item with an externally-supplied
-  SKU reference and unit price without a matching Medusa Product/Price
-  record, (b) call an external inventory-availability hook (this
-  repository's `InventoryService.reserve()`) instead of its own
-  Inventory module at checkout time, and (c) re-invoke that same
-  price/inventory lookup at payment-capture time rather than trusting
-  the cart's cached values from (a). If any of the three is not cleanly
-  supported by Medusa v2's current module/workflow API, that is a
-  **DECISION_REQUIRED** architectural escalation before M09 continues
-  — not something to silently work around with a sync/cache layer that
-  reintroduces a second source of truth.
+- **M09's mandatory pre-implementation spike is COMPLETE (2026-09-23)
+  — see "Medusa v2 integration spike — results" below.** All three
+  questions this bullet originally posed are answered from direct
+  inspection of the real, currently-published `@medusajs/*` v2.21.1
+  packages, not assumed from memory. The ownership model is
+  **technically workable**; no `DECISION_REQUIRED` escalation is
+  needed. M09 proceeds, but per the spike's finding (b), it builds
+  **custom** cart-add/checkout-complete workflows composed from
+  Medusa's own step primitives — it does not use `addToCartWorkflow`/
+  `completeCartWorkflow` unmodified.
 - Medusa's Product, Inventory, Pricing, and Admin-Auth modules are
   **not installed/enabled** when Medusa v2 is bootstrapped at M09,
   unless a future ADR explicitly revises this boundary.
@@ -156,3 +153,87 @@ of truth" failure mode this ADR exists to prevent.
   Inventory, or Pricing modules become writable/authoritative for data
   this table assigns to the custom domain requires a new ADR, not an
   incidental refactor.
+
+## Medusa v2 integration spike — results (2026-09-23)
+
+**Method:** `@medusajs/framework@2.21.1`, `@medusajs/types@2.21.1`,
+`@medusajs/core-flows@2.21.1`, `@medusajs/cart@2.21.1`, and
+`@medusajs/inventory@2.21.1` — the current published Medusa v2 line —
+were installed in an isolated scratch directory and their actual
+compiled workflow source and TypeScript type definitions were read
+directly. This is real evidence from the current package, not a
+recollection of Medusa's documentation.
+
+**(a) External SKU reference + price without a matching Medusa
+Product/Price record — CONFIRMED.**
+`CreateCartCreateLineItemDTO` (`@medusajs/types`) makes `variant_id`
+**optional**, alongside free-text `variant_sku`, `product_title`,
+`unit_price`, etc. Reading `addToCartWorkflow`'s compiled source
+(`@medusajs/core-flows/dist/cart/workflows/add-to-cart.js`) shows the
+workflow computes `variantIds` from only the items that *do* carry a
+`variant_id`, then gates its entire pricing/variant-resolution branch
+on `when("should-calculate-prices", ...) => !!variantIds.length`. A
+line item with no `variant_id` skips Medusa's Pricing module
+resolution entirely and uses the caller-supplied `unit_price` as-is
+(`isCustomPrice: isDefined(item.unit_price)`). A cart line referencing
+our own SKU (via `variant_sku`, display-only) and our own
+`CatalogService.getActivePrice()` value (via `unit_price`) requires
+zero matching Medusa Product/Variant/Price record.
+
+**(b) An external inventory-availability hook instead of Medusa's own
+Inventory module — PARTIALLY CONFIRMED, WITH A CORRECTION.** Medusa
+has no single named "external inventory hook" to flip on. Two things
+are true simultaneously:
+  - Inventory confirmation is *already skipped* for the same
+    variant_id-less items pricing skips: `add-to-cart.js` computes
+    `itemsToConfirmInventory` by filtering to only items with a
+    resolved `variant_id`, before calling `confirmVariantInventoryWorkflow`.
+    So Medusa's own inventory module is never consulted for our
+    externally-priced items in the first place — nothing to disable.
+  - But the stock `reserveInventoryStep` used by `completeCartWorkflow`
+    (`@medusajs/core-flows/dist/cart/steps/reserve-inventory.js`)
+    unconditionally does `container.resolve(Modules.INVENTORY)` —
+    Medusa's own Inventory module — with no configuration flag to
+    substitute a different service.
+  - **Correction to this ADR's original framing:** the right pattern
+    is not "configure a hook" but "compose a custom workflow." Medusa's
+    Workflow SDK (`createWorkflow`/`createStep`, used throughout
+    `@medusajs/core-flows`) is explicitly built for this — the same
+    library's own doc-comments point integrators at custom workflows
+    for comparable customization (e.g. the Subscriptions recipe
+    referenced in `complete-cart.js`). M09 will build a custom
+    checkout-complete workflow that calls this repository's
+    `InventoryService.reserve()` as its own step in place of
+    `reserveInventoryStep` for externally-priced items — supported,
+    documented extensibility, not a workaround.
+
+**(c) Re-validating price/inventory at payment-capture time rather
+than trusting the cart's cached values — CONFIRMED, AND MEDUSA'S OWN
+DOCS INDEPENDENTLY REQUIRE THE SAME THING.** `completeCartWorkflow`'s
+doc-comment (`@medusajs/core-flows/dist/cart/workflows/complete-cart.js`)
+states plainly: the workflow "retrieves the cart once at the
+beginning, before any hook runs, and builds the order from that
+snapshot. It doesn't re-retrieve the cart or refresh the payment
+collection afterwards," and explicitly warns "Don't Mutate the Cart in
+Hooks" for this reason, instructing integrators to revalidate/refresh
+"in a separate step or workflow that runs before `completeCartWorkflow`."
+This is exactly this ADR's Consequences requirement above, arrived at
+independently by Medusa's own maintainers — strong corroboration, not
+just this repository's own caution.
+
+**Module Links (read models/adapters, for completeness):**
+`defineLink` (`@medusajs/utils`) is Medusa v2's real, supported
+mechanism for linking two *Medusa module* entities (with a `readOnly`
+option for one-directional links). It links module-to-module, not
+directly to an arbitrary external table — using it to expose this
+repository's Product/Inventory/Price data inside Medusa would require
+building a thin custom Medusa module around our commerce-api first,
+then `defineLink`-ing it to Order/Cart as a read-only reference. This
+is real, non-zero integration work for M09 to scope, not a blocker.
+
+**Conclusion:** ADR-0017's ownership model is confirmed technically
+workable by direct source inspection. M09 proceeds under the boundary
+this ADR already defines, building custom cart-add and
+checkout-complete workflows (composed from Medusa's own primitives)
+rather than the stock ones, with an explicit price/inventory
+revalidation step before `completeCartWorkflow` per (c).
