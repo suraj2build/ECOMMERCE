@@ -23,15 +23,23 @@ describe('Tax & Invoicing Foundation certification (M08)', () => {
   let styleHsn: string;
   let categoryId: string;
   let sizeId: string;
+  let gstinCounter = 0;
 
+  // Certification-pass finding: a single random digit (Math.random() * 9,
+  // 9 possible values) is not enough entropy to guarantee uniqueness when
+  // a test calls this helper more than once (e.g. two invoices from two
+  // registrations in the same test) - an ~11% chance of a spurious
+  // gstin-unique-constraint failure per such test, observed in CI. A
+  // monotonic counter guarantees uniqueness deterministically instead.
   async function makeLegalEntityAndRegistration(stateCode: string, stateName: string, overrides: Partial<{ status: 'ACTIVE' | 'PENDING'; effectiveFrom: Date; effectiveTo: Date }> = {}) {
+    gstinCounter += 1;
     const legalEntity = await testPrisma.legalEntity.create({
       data: { legalName: 'Test Fashion Pvt Ltd', registeredState: stateName },
     });
     const registration = await testPrisma.gstRegistration.create({
       data: {
         legalEntityId: legalEntity.id,
-        gstin: `${stateCode}AAAAA0000A1Z${Math.floor(Math.random() * 9)}`,
+        gstin: `${stateCode}AAAAA${String(gstinCounter).padStart(4, '0')}A1Z${gstinCounter % 10}`,
         stateCode,
         stateName,
         status: overrides.status ?? 'ACTIVE',
