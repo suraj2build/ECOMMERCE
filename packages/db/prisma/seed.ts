@@ -52,6 +52,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'catalog:price:write',
     'catalog:publish',
     'catalog:collection:manage',
+    'catalog:search:pin',
+    'search:reindex',
     'inventory:read',
   ],
   CATALOG: ['product:read', 'product:write', 'product:taxonomy:manage', 'inventory:read'],

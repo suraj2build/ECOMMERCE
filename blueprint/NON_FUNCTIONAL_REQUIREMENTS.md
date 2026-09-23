@@ -114,7 +114,14 @@ into the full structured checklist referenced by `TESTING.md` and
 
 - Maximum acceptable delay between a catalog change (price, stock,
   publish status) and it being reflected in Meilisearch:
-  `TARGET_REQUIRED`
+  `TARGET_REQUIRED`. Engineering note (M10, 2026-09-23): the built
+  pipeline indexes synchronously, within the same request that makes
+  the change (`services/commerce-api/src/modules/search/index-
+  service.ts`) — effectively zero lag in this build, since there is no
+  job queue to make it asynchronous with (ADR-0005). This is the best
+  available engineering answer, not a decided SLA number; a formal
+  target is still needed if/when indexing moves to an async queue at
+  higher catalog-change volume.
 
 ## Image optimization
 

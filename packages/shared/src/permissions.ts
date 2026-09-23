@@ -46,6 +46,8 @@ export const PERMISSION_KEYS = [
   'catalog:price:approve',
   'catalog:publish',
   'catalog:collection:manage',
+  'catalog:search:pin',
+  'search:reindex',
   'audit:read',
   'analytics:read',
   'marketing:manage',

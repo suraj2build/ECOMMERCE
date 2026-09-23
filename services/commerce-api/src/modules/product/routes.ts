@@ -138,17 +138,23 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/products/styles/:id/publish', { preHandler: publishAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    reply.status(200).send(await service.publish(id, request.staffUser!.id));
+    const result = await service.publish(id, request.staffUser!.id);
+    await fastify.searchIndex.indexStyle(id); // M10: newly-publishable styles must be searchable immediately
+    reply.status(200).send(result);
   });
 
   fastify.post('/products/styles/:id/unpublish', { preHandler: publishAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    reply.status(200).send(await service.unpublish(id, request.staffUser!.id));
+    const result = await service.unpublish(id, request.staffUser!.id);
+    await fastify.searchIndex.removeStyle(id); // M10: unpublished styles must disappear from search immediately
+    reply.status(200).send(result);
   });
 
   fastify.post('/products/styles/:id/archive', { preHandler: writeAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    reply.status(200).send(await service.archive(id, request.staffUser!.id));
+    const result = await service.archive(id, request.staffUser!.id);
+    await fastify.searchIndex.removeStyle(id); // M10
+    reply.status(200).send(result);
   });
 };
 

@@ -10,6 +10,7 @@ on:
 env:
   DATABASE_URL: postgresql://fcp_app:fcp_dev_password@localhost:5432/fcp_test
   REDIS_URL: redis://localhost:6379
+  MEILISEARCH_HOST: http://localhost:7700
   JWT_ACCESS_SECRET: ci-only-secret-ci-only-secret-not-for-prod
   NODE_ENV: test
   LOG_LEVEL: fatal
@@ -41,6 +42,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # M10 search/discovery (ADR-0006). No --health-cmd: the distroless
+      # Meilisearch image has no shell/curl to exec a healthcheck with, so
+      # readiness is polled from the host instead (see "Wait for
+      # Meilisearch" step below), matching how the E2E step already waits
+      # on the API/storefront ports.
+      meilisearch:
+        image: getmeili/meilisearch:v1.10
+        env:
+          MEILI_NO_ANALYTICS: 'true'
+          MEILI_ENV: development
+        ports:
+          - 7700:7700
 
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +62,13 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      - name: Wait for Meilisearch
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:7700/health && break
+            sleep 1
+          done
 
       - name: Install dependencies
         run: npm ci

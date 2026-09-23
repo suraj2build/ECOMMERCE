@@ -4,6 +4,7 @@ import { createLogger } from '@fcp/shared';
 
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js';
+import meilisearchPlugin from './plugins/meilisearch.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import authPlugin from './plugins/auth.js';
 
@@ -17,6 +18,8 @@ import inventoryRoutes from './modules/inventory/routes.js';
 import catalogRoutes from './modules/catalog/routes.js';
 import taxRoutes from './modules/tax/routes.js';
 import contentRoutes from './modules/content/routes.js';
+import searchRoutes from './modules/search/routes.js';
+import { SearchIndexService } from './modules/search/index-service.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -31,8 +34,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Core infrastructure plugins (order matters: auth depends on prisma+redis)
   await app.register(prismaPlugin);
   await app.register(redisPlugin);
+  await app.register(meilisearchPlugin);
   await app.register(errorHandlerPlugin);
   await app.register(authPlugin);
+
+  // Search indexing (M10, ADR-0006) - decorated once so every module can
+  // trigger a best-effort reindex after a catalog/price/stock change
+  // without importing another module's service class directly.
+  app.decorate('searchIndex', new SearchIndexService(app));
+  // Fire-and-forget: index settings converge eventually even if
+  // Meilisearch isn't up yet at boot (see SearchIndexService.configureIndex).
+  void app.searchIndex.configureIndex();
 
   // Health & readiness (M00 requirement)
   app.get('/health', async () => ({ status: 'ok' }));
@@ -58,6 +70,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(catalogRoutes, { prefix: '/api/v1' });
   await app.register(taxRoutes, { prefix: '/api/v1' });
   await app.register(contentRoutes, { prefix: '/api/v1' });
+  await app.register(searchRoutes, { prefix: '/api/v1' });
 
   return app;
 }

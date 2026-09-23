@@ -39,12 +39,16 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/catalog/prices', { preHandler: priceWriteAuth }, async (request, reply) => {
     const body = priceSchema.parse(request.body);
-    reply.status(201).send(await service.setBasePrice(body, request.staffUser!.id));
+    const result = await service.setBasePrice(body, request.staffUser!.id);
+    await fastify.searchIndex.indexStyle(body.styleId); // M10: price affects sort/facet/eligibility
+    reply.status(201).send(result);
   });
 
   fastify.post('/catalog/prices/markdown', { preHandler: priceApproveAuth }, async (request, reply) => {
     const body = priceSchema.parse(request.body);
-    reply.status(201).send(await service.setMarkdownPrice(body, request.staffUser!.id));
+    const result = await service.setMarkdownPrice(body, request.staffUser!.id);
+    await fastify.searchIndex.indexStyle(body.styleId); // M10
+    reply.status(201).send(result);
   });
 
   fastify.get('/catalog/prices/:styleId', { preHandler: readAuth }, async (request, reply) => {

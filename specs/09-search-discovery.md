@@ -1,6 +1,6 @@
 # 09. Search / Discovery
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SRCH-001`, `SRCH-002`)
+**Status:** IMPLEMENTED (Phase 2 build, 2026-09-23 — see `blueprint/DECISION_REGISTER.md` `SRCH-001`, `SRCH-002`, and `acceptance/m10-search-discovery.md`)
 
 ## Purpose
 

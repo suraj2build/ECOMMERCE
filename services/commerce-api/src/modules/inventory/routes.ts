@@ -48,7 +48,9 @@ const inventoryRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/inventory/reserve', { preHandler: reserveAuth }, async (request, reply) => {
     const body = reserveSchema.parse(request.body);
-    reply.status(201).send(await service.reserve(body));
+    const result = await service.reserve(body);
+    await fastify.searchIndex.indexStyleForSku(body.skuId); // M10: reservation reduces available-for-sale
+    reply.status(201).send(result);
   });
 
   fastify.post(
@@ -57,7 +59,9 @@ const inventoryRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
       const { reason } = z.object({ reason: z.string().optional() }).parse(request.body ?? {});
-      reply.status(200).send(await service.releaseReservation(id, reason));
+      const result = await service.releaseReservation(id, reason);
+      await fastify.searchIndex.indexStyleForSku(result.skuId); // M10: release increases available-for-sale
+      reply.status(200).send(result);
     },
   );
 
@@ -97,14 +101,16 @@ const inventoryRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    reply.status(201).send(await service.postAdjustment({ ...body, actorStaffId: request.staffUser!.id }));
+    const result = await service.postAdjustment({ ...body, actorStaffId: request.staffUser!.id });
+    await fastify.searchIndex.indexStyleForSku(body.skuId); // M10
+    reply.status(201).send(result);
   });
 
   fastify.post('/inventory/transfers/out', { preHandler: transferAuth }, async (request, reply) => {
     const body = transferOutSchema.parse(request.body);
-    reply
-      .status(201)
-      .send(await service.transferOut({ ...body, actorStaffId: request.staffUser!.id }));
+    const result = await service.transferOut({ ...body, actorStaffId: request.staffUser!.id });
+    await fastify.searchIndex.indexStyleForSku(body.skuId); // M10: source location's availability drops
+    reply.status(201).send(result);
   });
 
   fastify.post(
@@ -112,7 +118,9 @@ const inventoryRoutes: FastifyPluginAsync = async (fastify) => {
     { preHandler: transferAuth },
     async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-      reply.status(200).send(await service.transferIn(id, request.staffUser!.id));
+      const result = await service.transferIn(id, request.staffUser!.id);
+      await fastify.searchIndex.indexStyleForSku(result.skuId); // M10: destination location's availability rises
+      reply.status(200).send(result);
     },
   );
 

@@ -294,6 +294,14 @@ model Style {
   publishedAt        DateTime?
   publishedByStaffId String?
 
+  // M10 search ranking (SRCH-001): manual merchandiser pin, boosted above
+  // ordinary relevance/recency ranking in the Meilisearch index. Never set
+  // by any automated/rule-based process - always an explicit staff action
+  // (catalog:search:pin), mirroring the "no autonomous merchandising"
+  // discipline used elsewhere (e.g. Watch & Shop's staff-only publishing).
+  searchPinned   Boolean   @default(false)
+  searchPinnedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

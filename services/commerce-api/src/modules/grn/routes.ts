@@ -28,7 +28,13 @@ const grnRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/grn', { preHandler: createAuth }, async (request, reply) => {
     const body = createGrnSchema.parse(request.body);
-    reply.status(201).send(await service.createGoodsReceipt(body, request.staffUser!.id));
+    const result = await service.createGoodsReceipt(body, request.staffUser!.id);
+    // M10: accepted stock changes availability for every distinct SKU on the GRN.
+    const distinctSkuIds = [...new Set(body.lines.map((line) => line.skuId))];
+    for (const skuId of distinctSkuIds) {
+      await fastify.searchIndex.indexStyleForSku(skuId);
+    }
+    reply.status(201).send(result);
   });
 
   fastify.get('/grn', { preHandler: readAuth }, async (request, reply) => {
