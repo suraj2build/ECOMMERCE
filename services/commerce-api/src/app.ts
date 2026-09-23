@@ -22,6 +22,7 @@ import contentRoutes from './modules/content/routes.js';
 import searchRoutes from './modules/search/routes.js';
 import { SearchIndexService } from './modules/search/index-service.js';
 import pdpRoutes from './modules/pdp/routes.js';
+import cartRoutes from './modules/cart/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -75,6 +76,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(contentRoutes, { prefix: '/api/v1' });
   await app.register(searchRoutes, { prefix: '/api/v1' });
   await app.register(pdpRoutes, { prefix: '/api/v1' });
+  await app.register(cartRoutes, { prefix: '/api/v1' });
 
   return app;
 }

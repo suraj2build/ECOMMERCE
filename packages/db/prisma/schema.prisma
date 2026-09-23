@@ -92,6 +92,8 @@ model Customer {
 
   refreshTokens CustomerRefreshToken[]
   reviews       Review[]
+  cart          Cart?
+  wishlist      Wishlist?
 
   @@map("customers")
 }
@@ -414,6 +416,8 @@ model Sku {
   reservations       InventoryReservation[]
   transfers          InventoryTransfer[]
   invoiceLines       InvoiceLine[]
+  cartItems          CartItem[]
+  wishlistItems      WishlistItem[]
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -1283,4 +1287,78 @@ model CrossSellOverride {
 
   @@unique([styleId, relatedStyleId])
   @@map("cross_sell_overrides")
+}
+
+// ---------------------------------------------------------------------------
+// M12: Wishlist / Cart (specs/11-wishlist-cart.md, CART-001/002/003, INV-002)
+// ---------------------------------------------------------------------------
+
+// One cart per identity: either a logged-in Customer (customerId set,
+// guestSessionId null) or a guest device/session (guestSessionId set,
+// customerId null) - never both, enforced by a hand-written CHECK
+// constraint (see migration) mirroring the M08/M11 defense-in-depth
+// pattern. A guest cart is considered expired once lastActivityAt is
+// older than the configurable CART_GUEST_TTL_DAYS window (CART-001);
+// expiry is evaluated at read time in CartService, not swept by a cron.
+model Cart {
+  id             String   @id @default(uuid())
+  customerId     String?  @unique
+  guestSessionId String?  @unique
+  lastActivityAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items    CartItem[]
+
+  @@map("carts")
+}
+
+// Adding to cart never reserves inventory (INV-002) - this table has no
+// relationship to InventoryReservation at all. priceAtAdd is a snapshot
+// used only to detect and surface a price change to the customer
+// (spec requirement); it is never charged - the checkout flow (M13) will
+// always re-price from the live Price table.
+model CartItem {
+  id         String   @id @default(uuid())
+  cartId     String
+  skuId      String
+  quantity   Int
+  priceAtAdd Decimal  @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku  Sku  @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, skuId])
+  @@map("cart_items")
+}
+
+// Same identity model as Cart above (one per Customer or one per guest
+// session, never both).
+model Wishlist {
+  id             String   @id @default(uuid())
+  customerId     String?  @unique
+  guestSessionId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer Customer?      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items    WishlistItem[]
+
+  @@map("wishlists")
+}
+
+model WishlistItem {
+  id         String   @id @default(uuid())
+  wishlistId String
+  skuId      String
+  createdAt  DateTime @default(now())
+
+  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  sku      Sku      @relation(fields: [skuId], references: [id], onDelete: Cascade)
+
+  @@unique([wishlistId, skuId])
+  @@map("wishlist_items")
 }

@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Container } from '../ui/Container';
+import { getCart } from '@/lib/cart';
 
 const PRIMARY_NAV = [
   { label: 'Shop Women', href: '/category/women' },
@@ -19,6 +20,25 @@ const PRIMARY_NAV = [
  */
 export function Header() {
   const [open, setOpen] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function refresh() {
+      try {
+        const cart = await getCart();
+        if (!cancelled) setCartCount(cart.itemCount);
+      } catch {
+        // Not fatal to navigation rendering - the badge just stays at its last known value.
+      }
+    }
+    void refresh();
+    window.addEventListener('fcp:cart-updated', refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('fcp:cart-updated', refresh);
+    };
+  }, []);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-canvas/95 backdrop-blur">
@@ -49,8 +69,8 @@ export function Header() {
           <Link href="/wishlist" className="hidden text-sm text-ink md:inline" aria-label="Wishlist">
             Wishlist
           </Link>
-          <Link href="/bag" className="text-sm text-ink" aria-label="Shopping bag">
-            Bag
+          <Link href="/bag" className="text-sm text-ink" aria-label={`Shopping bag, ${cartCount} item${cartCount === 1 ? '' : 's'}`}>
+            Bag{cartCount > 0 ? ` (${cartCount})` : ''}
           </Link>
           <button
             type="button"

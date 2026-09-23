@@ -3,19 +3,17 @@
 import { useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { ProductDetail } from '@/lib/api';
+import { addToCart, addToWishlist } from '@/lib/cart';
 import { buttonClassName } from '../ui/Button';
 
 /**
- * Owns all client-side interaction on the PDP (M11, specs/10-pdp.md):
- * image gallery, colour/size selection (and the availability/price/
- * image updates that follow from it), size chart, and the add-to-bag
- * gate. Add-to-bag itself is intentionally NOT wired to a real cart
- * call - Cart is M12's own milestone, not yet built. The client-side
- * "select a variant first" validation (negative scenario #1,
- * acceptance/m11-pdp.md) is real and enforced here; what happens after
- * a valid selection is honestly labeled "coming soon" rather than
- * faking a successful add, consistent with how M09 handled the same
- * PDP/Cart dependency for Watch & Shop.
+ * Owns all client-side interaction on the PDP (M11/M12, specs/10-pdp.md,
+ * specs/11-wishlist-cart.md): image gallery, colour/size selection (and
+ * the availability/price/image updates that follow from it), size chart,
+ * and add-to-bag/save-to-wishlist. Add-to-bag calls the real Cart API
+ * (M12) now that it exists - notably it never calls anything
+ * inventory-reservation-related (INV-002: adding to cart must not
+ * reserve stock, only checkout does, M13's own milestone).
  */
 export function ProductDetailInteractive({ product }: { product: ProductDetail }) {
   const colours = useMemo(() => {
@@ -34,6 +32,8 @@ export function ProductDetailInteractive({ product }: { product: ProductDetail }
   const [selectedColourId, setSelectedColourId] = useState<string | null>(defaultColourId);
   const [selectedSizeId, setSelectedSizeId] = useState<string | null>(null);
   const [addToBagMessage, setAddToBagMessage] = useState<string | null>(null);
+  const [addingToBag, setAddingToBag] = useState(false);
+  const [wishlistMessage, setWishlistMessage] = useState<string | null>(null);
   const [showSizeChart, setShowSizeChart] = useState(false);
 
   const sizesForColour = product.variants.filter((v) => v.colourId === selectedColourId);
@@ -57,16 +57,40 @@ export function ProductDetailInteractive({ product }: { product: ProductDetail }
     setAddToBagMessage(null);
   }
 
-  function handleAddToBag() {
+  async function handleAddToBag() {
     if (!selectedSizeId) {
       setAddToBagMessage('Please select a size before adding to bag.');
       return;
     }
-    if (selectedVariant && !selectedVariant.inStock) {
+    if (!selectedVariant || !selectedVariant.inStock) {
       setAddToBagMessage('This size is currently out of stock.');
       return;
     }
-    setAddToBagMessage('Bag is coming soon - this size is reserved for launch, not yet added.');
+    setAddingToBag(true);
+    setAddToBagMessage(null);
+    try {
+      await addToCart(selectedVariant.skuId, 1);
+      window.dispatchEvent(new Event('fcp:cart-updated'));
+      setAddToBagMessage('Added to bag.');
+    } catch (err) {
+      setAddToBagMessage(err instanceof Error ? err.message : 'Could not add this item to your bag.');
+    } finally {
+      setAddingToBag(false);
+    }
+  }
+
+  async function handleSaveToWishlist() {
+    if (!selectedVariant) {
+      setWishlistMessage('Please select a colour and size first.');
+      return;
+    }
+    try {
+      await addToWishlist(selectedVariant.skuId);
+      window.dispatchEvent(new Event('fcp:wishlist-updated'));
+      setWishlistMessage('Saved to wishlist.');
+    } catch (err) {
+      setWishlistMessage(err instanceof Error ? err.message : 'Could not save this item.');
+    }
   }
 
   const allOutOfStock = product.variants.every((v) => !v.inStock);
@@ -193,10 +217,21 @@ export function ProductDetailInteractive({ product }: { product: ProductDetail }
         </fieldset>
 
         <div className="mt-6 hidden md:block">
-          <button type="button" onClick={handleAddToBag} className={buttonClassName('primary', 'w-full')}>
-            Add to Bag
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleAddToBag}
+              disabled={addingToBag}
+              className={buttonClassName('primary', 'flex-1')}
+            >
+              {addingToBag ? 'Adding...' : 'Add to Bag'}
+            </button>
+            <button type="button" onClick={handleSaveToWishlist} className={buttonClassName('secondary')}>
+              Save
+            </button>
+          </div>
           {addToBagMessage && <p role="status" className="mt-2 text-sm text-ink-muted">{addToBagMessage}</p>}
+          {wishlistMessage && <p role="status" className="mt-1 text-sm text-ink-muted">{wishlistMessage}</p>}
         </div>
 
         {(product.fabric || product.fit || product.washCare || product.countryOfOrigin) && (
@@ -234,8 +269,13 @@ export function ProductDetailInteractive({ product }: { product: ProductDetail }
         {addToBagMessage && <p role="status" className="mb-2 text-xs text-ink-muted">{addToBagMessage}</p>}
         <div className="flex items-center gap-4">
           <span className="text-base text-ink">&#8377;{product.sellingPrice}</span>
-          <button type="button" onClick={handleAddToBag} className={buttonClassName('primary', 'flex-1')}>
-            Add to Bag
+          <button
+            type="button"
+            onClick={handleAddToBag}
+            disabled={addingToBag}
+            className={buttonClassName('primary', 'flex-1')}
+          >
+            {addingToBag ? 'Adding...' : 'Add to Bag'}
           </button>
         </div>
       </div>

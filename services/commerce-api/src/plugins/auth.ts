@@ -14,6 +14,7 @@ declare module 'fastify' {
       permission: PermissionKey,
     ) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireCustomerAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    tryCustomerAuth: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 
   interface FastifyRequest {
@@ -72,6 +73,24 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.decorate('requireCustomerAuth', async (request: FastifyRequest) => {
+    try {
+      const payload = await request.jwtVerify<{ sub: string; mobile: string }>();
+      request.customer = { id: payload.sub, mobile: payload.mobile };
+    } catch {
+      throw new UnauthorizedError('Invalid or expired customer token');
+    }
+  });
+
+  /**
+   * For routes that serve both logged-in customers and guests (M12 cart/
+   * wishlist, CART-001) - populates request.customer when a valid bearer
+   * token is present, but never blocks the request when one isn't; a
+   * present-but-invalid/expired token IS still rejected (a guest simply
+   * omits the header entirely, so an invalid one is a real client bug,
+   * not a legitimate guest request).
+   */
+  fastify.decorate('tryCustomerAuth', async (request: FastifyRequest) => {
+    if (!extractBearerToken(request)) return;
     try {
       const payload = await request.jwtVerify<{ sub: string; mobile: string }>();
       request.customer = { id: payload.sub, mobile: payload.mobile };

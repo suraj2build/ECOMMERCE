@@ -61,6 +61,10 @@ const envSchema = z.object({
   // everything before M11 was server-side-only fetching, which isn't
   // subject to CORS). Comma-separated allowed origins.
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
+
+  // --- Wishlist / Cart (M12, CART-001/002) ---
+  CART_GUEST_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  CART_MAX_QUANTITY_PER_SKU: z.coerce.number().int().positive().default(10),
 });
 
 export type Env = z.infer<typeof envSchema>;

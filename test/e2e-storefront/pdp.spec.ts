@@ -3,8 +3,15 @@ import AxeBuilder from '@axe-core/playwright';
 import { PrismaClient } from '@fcp/db';
 
 const API_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
+const STOREFRONT_URL = process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000';
 const ADMIN_EMAIL = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@example.com';
 const ADMIN_PASSWORD = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe123!';
+// A same-origin static asset rather than an external image host - product
+// media loading correctness isn't this suite's concern, and a third-party
+// image dependency is one more thing that can flake/be network-policy-
+// blocked in a given environment for reasons that have nothing to do with
+// the code under test.
+const FIXTURE_IMAGE_URL = `${STOREFRONT_URL}/e2e-fixture.png`;
 
 /**
  * Fails loudly and specifically on the failing call (status + body) rather
@@ -107,7 +114,7 @@ test.describe('Product Detail Page', () => {
     await expectOk(
       await api.post(`/api/v1/products/styles/${styleId}/media`, {
         headers: authHeaders,
-        data: { colourId: colour.id, url: 'https://placehold.co/800x1000' },
+        data: { colourId: colour.id, url: FIXTURE_IMAGE_URL },
       }),
       'Add media',
     );
@@ -155,7 +162,7 @@ test.describe('Product Detail Page', () => {
 
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
-    await expect(page.getByText('coming soon').first()).toBeVisible();
+    await expect(page.getByText('Added to bag.').first()).toBeVisible();
   });
 
   test('renders correctly on mobile with no horizontal overflow and a reachable footer', async ({ page }) => {

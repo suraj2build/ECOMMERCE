@@ -1,6 +1,6 @@
 # 11. Wishlist / Cart
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CART-001`–`003`, `INV-002`)
+**Status:** IMPLEMENTED (Phase 2 build, 2026-09-23 — see `blueprint/DECISION_REGISTER.md` `CART-001`–`003`, `INV-002`, and `acceptance/m12-wishlist-cart.md`)
 
 ## Purpose
 
