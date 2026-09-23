@@ -1,10 +1,25 @@
-import { test, expect, request as playwrightRequest, type APIRequestContext } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { PrismaClient } from '@fcp/db';
 
 const API_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
 const ADMIN_EMAIL = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@example.com';
 const ADMIN_PASSWORD = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe123!';
+
+/**
+ * Fails loudly and specifically on the failing call (status + body) rather
+ * than letting setup limp on with an unexpected shape and blow up several
+ * lines later with an opaque "Cannot read properties of undefined" - that
+ * exact failure mode is what made a real CI failure here hard to diagnose
+ * from the logs alone (see BUILD_PLAN.md M11 entry).
+ */
+async function expectOk(res: APIResponse, label: string): Promise<unknown> {
+  if (!res.ok()) {
+    const body = await res.text().catch(() => '<unreadable body>');
+    throw new Error(`${label} failed: ${res.status()} ${res.statusText()}\n${body}`);
+  }
+  return res.json();
+}
 
 /**
  * PDP browser E2E (M11, acceptance/m11-pdp.md): full browse -> variant
@@ -27,10 +42,10 @@ test.describe('Product Detail Page', () => {
   test.beforeAll(async () => {
     api = await playwrightRequest.newContext({ baseURL: API_URL });
 
-    const login = await api.post('/api/v1/auth/staff/login', {
+    const loginRes = await api.post('/api/v1/auth/staff/login', {
       data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
     });
-    const { token } = await login.json();
+    const { token } = (await expectOk(loginRes, 'Staff login')) as { token: string };
     const authHeaders = { authorization: `Bearer ${token}` };
 
     const category = await prisma.category.upsert({
@@ -48,13 +63,13 @@ test.describe('Product Detail Page', () => {
       headers: authHeaders,
       data: { code: `E2E${Date.now() % 100000}`, name: 'E2E Test Brand' },
     });
-    const brand = await brandRes.json();
+    const brand = (await expectOk(brandRes, 'Create brand')) as { id: string };
 
     const locationRes = await api.post('/api/v1/organization/locations', {
       headers: authHeaders,
       data: { code: `E2ELOC${Date.now() % 100000}`, name: 'E2E Location', type: 'WAREHOUSE' },
     });
-    const location = await locationRes.json();
+    const location = (await expectOk(locationRes, 'Create location')) as { id: string };
 
     const styleRes = await api.post('/api/v1/products/styles', {
       headers: authHeaders,
@@ -68,36 +83,60 @@ test.describe('Product Detail Page', () => {
         fabric: '100% Cotton',
       },
     });
-    const style = await styleRes.json();
+    const style = (await expectOk(styleRes, 'Create style')) as { id: string };
     styleId = style.id;
 
     const colourRes = await api.post(`/api/v1/products/styles/${styleId}/colours`, {
       headers: authHeaders,
       data: { name: 'Black', colourCode: 'BLK' },
     });
-    const colour = await colourRes.json();
+    const colour = (await expectOk(colourRes, 'Add colour')) as { id: string };
 
     const skuRes = await api.post(`/api/v1/products/styles/${styleId}/skus/generate`, {
       headers: authHeaders,
       data: { sizeIds: [size.id] },
     });
-    const sku = (await skuRes.json())[0];
+    const skus = (await expectOk(skuRes, 'Generate SKUs')) as { skuId: string }[];
+    if (skus.length === 0) {
+      throw new Error(
+        `Generate SKUs returned an empty array for style ${styleId}, colour ${colour.id}, size ${size.id}`,
+      );
+    }
+    const sku = skus[0]!;
 
-    await api.post(`/api/v1/products/styles/${styleId}/media`, {
-      headers: authHeaders,
-      data: { colourId: colour.id, url: 'https://placehold.co/800x1000' },
-    });
-    await api.post(`/api/v1/products/styles/${styleId}/ready-for-enrichment`, { headers: authHeaders });
-    await api.post(`/api/v1/products/styles/${styleId}/qa-check`, { headers: authHeaders });
-    await api.post(`/api/v1/products/styles/${styleId}/publish`, { headers: authHeaders });
-    await api.post('/api/v1/catalog/prices', {
-      headers: authHeaders,
-      data: { styleId, mrp: 1999, sellingPrice: 1999 },
-    });
-    await api.post('/api/v1/inventory/adjustments', {
-      headers: authHeaders,
-      data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' },
-    });
+    await expectOk(
+      await api.post(`/api/v1/products/styles/${styleId}/media`, {
+        headers: authHeaders,
+        data: { colourId: colour.id, url: 'https://placehold.co/800x1000' },
+      }),
+      'Add media',
+    );
+    await expectOk(
+      await api.post(`/api/v1/products/styles/${styleId}/ready-for-enrichment`, { headers: authHeaders }),
+      'Transition to ready-for-enrichment',
+    );
+    await expectOk(
+      await api.post(`/api/v1/products/styles/${styleId}/qa-check`, { headers: authHeaders }),
+      'QA check',
+    );
+    await expectOk(
+      await api.post(`/api/v1/products/styles/${styleId}/publish`, { headers: authHeaders }),
+      'Publish style',
+    );
+    await expectOk(
+      await api.post('/api/v1/catalog/prices', {
+        headers: authHeaders,
+        data: { styleId, mrp: 1999, sellingPrice: 1999 },
+      }),
+      'Set price',
+    );
+    await expectOk(
+      await api.post('/api/v1/inventory/adjustments', {
+        headers: authHeaders,
+        data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' },
+      }),
+      'Inventory adjustment',
+    );
   });
 
   test.afterAll(async () => {
