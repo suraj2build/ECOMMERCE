@@ -66,6 +66,9 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-4">
+          <Link href="/orders" className="hidden text-sm text-ink md:inline" aria-label="Your orders">
+            Orders
+          </Link>
           <Link href="/wishlist" className="hidden text-sm text-ink md:inline" aria-label="Wishlist">
             Wishlist
           </Link>

@@ -66,13 +66,14 @@ model Location {
 
   gstRegistration GstRegistration? @relation(fields: [gstRegistrationId], references: [id], onDelete: Restrict)
 
-  purchaseOrders    PurchaseOrder[]
-  goodsReceipts     GoodsReceipt[]
-  inventoryBalances InventoryBalance[]
-  inventoryTxns     InventoryTransaction[]
-  transfersFrom     InventoryTransfer[]    @relation("TransferFrom")
-  transfersTo       InventoryTransfer[]    @relation("TransferTo")
+  purchaseOrders       PurchaseOrder[]
+  goodsReceipts        GoodsReceipt[]
+  inventoryBalances    InventoryBalance[]
+  inventoryTxns        InventoryTransaction[]
+  transfersFrom        InventoryTransfer[]    @relation("TransferFrom")
+  transfersTo          InventoryTransfer[]    @relation("TransferTo")
   checkoutSessionLines CheckoutSessionLine[]
+  orderLines           OrderLine[]
 
   @@index([gstRegistrationId])
   @@map("locations")
@@ -91,11 +92,12 @@ model Customer {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  refreshTokens CustomerRefreshToken[]
-  reviews       Review[]
-  cart          Cart?
-  wishlist      Wishlist?
+  refreshTokens    CustomerRefreshToken[]
+  reviews          Review[]
+  cart             Cart?
+  wishlist         Wishlist?
   checkoutSessions CheckoutSession[]
+  orders           Order[]
 
   @@map("customers")
 }
@@ -410,17 +412,18 @@ model Sku {
   size      Size       @relation(fields: [sizeId], references: [id])
   sizeChart SizeChart? @relation(fields: [sizeChartId], references: [id])
 
-  supplierSkus       SupplierSku[]
-  purchaseOrderLines PurchaseOrderLine[]
-  goodsReceiptLines  GoodsReceiptLine[]
-  inventoryBalances  InventoryBalance[]
-  inventoryTxns      InventoryTransaction[]
-  reservations       InventoryReservation[]
-  transfers          InventoryTransfer[]
-  invoiceLines       InvoiceLine[]
-  cartItems             CartItem[]
-  wishlistItems         WishlistItem[]
-  checkoutSessionLines  CheckoutSessionLine[]
+  supplierSkus         SupplierSku[]
+  purchaseOrderLines   PurchaseOrderLine[]
+  goodsReceiptLines    GoodsReceiptLine[]
+  inventoryBalances    InventoryBalance[]
+  inventoryTxns        InventoryTransaction[]
+  reservations         InventoryReservation[]
+  transfers            InventoryTransfer[]
+  invoiceLines         InvoiceLine[]
+  cartItems            CartItem[]
+  wishlistItems        WishlistItem[]
+  checkoutSessionLines CheckoutSessionLine[]
+  orderLines           OrderLine[]
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -1415,7 +1418,7 @@ enum CheckoutPaymentMethod {
 }
 
 model CheckoutSession {
-  id                 String                 @id @default(uuid())
+  id                 String                @id @default(uuid())
   customerId         String?
   guestSessionId     String?
   contactName        String
@@ -1424,22 +1427,23 @@ model CheckoutSession {
   billingAddress     Json
   shippingAddress    Json
   shippingStateCode  String
-  shippingMethodCode String                 @default("STANDARD")
-  shippingCost       Decimal                @db.Decimal(10, 2)
-  subtotal           Decimal                @db.Decimal(10, 2) // tax-inclusive sum of lines
-  taxAmount          Decimal                @db.Decimal(10, 2) // informational - already included within subtotal
-  grandTotal         Decimal                @db.Decimal(10, 2)
-  currency           String                 @default("INR")
+  shippingMethodCode String                @default("STANDARD")
+  shippingCost       Decimal               @db.Decimal(10, 2)
+  subtotal           Decimal               @db.Decimal(10, 2) // tax-inclusive sum of lines
+  taxAmount          Decimal               @db.Decimal(10, 2) // informational - already included within subtotal
+  grandTotal         Decimal               @db.Decimal(10, 2)
+  currency           String                @default("INR")
   paymentMethod      CheckoutPaymentMethod
-  status             CheckoutSessionStatus  @default(STARTED)
-  idempotencyKey     String                 @unique
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  status             CheckoutSessionStatus @default(STARTED)
+  idempotencyKey     String                @unique
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
   confirmedAt        DateTime?
 
   customer Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines    CheckoutSessionLine[]
   payments Payment[]
+  order    Order?
 
   @@map("checkout_sessions")
 }
@@ -1447,16 +1451,16 @@ model CheckoutSession {
 // Frozen line-item snapshot, the same discipline as InvoiceLine - never
 // re-derived from current product/price data after creation.
 model CheckoutSessionLine {
-  id                   String   @id @default(uuid())
+  id                   String  @id @default(uuid())
   checkoutSessionId    String
   skuId                String
   locationId           String
   quantity             Int
-  unitPriceInclusive   Decimal  @db.Decimal(10, 2)
-  taxableValueSnapshot Decimal  @db.Decimal(10, 2)
-  gstRatePercent       Decimal  @db.Decimal(5, 2)
-  taxAmountSnapshot    Decimal  @db.Decimal(10, 2)
-  lineTotalInclusive   Decimal  @db.Decimal(10, 2)
+  unitPriceInclusive   Decimal @db.Decimal(10, 2)
+  taxableValueSnapshot Decimal @db.Decimal(10, 2)
+  gstRatePercent       Decimal @db.Decimal(5, 2)
+  taxAmountSnapshot    Decimal @db.Decimal(10, 2)
+  lineTotalInclusive   Decimal @db.Decimal(10, 2)
   reservationId        String? // plain reference to InventoryReservation.id
 
   checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
@@ -1516,16 +1520,167 @@ model Payment {
 // refund. This is the auditable record financial-integrity review
 // depends on - never pruned, never mutated after insert.
 model PaymentEvent {
-  id              String   @id @default(uuid())
+  id              String              @id @default(uuid())
   provider        PaymentProviderType
   providerEventId String
   eventType       String
   paymentId       String?
   payload         Json
-  receivedAt      DateTime @default(now())
+  receivedAt      DateTime            @default(now())
 
   payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerEventId])
   @@map("payment_events")
+}
+
+// ---------------------------------------------------------------------------
+// M15: Order Management (specs/14-order-management.md, ORD-001-006)
+// ---------------------------------------------------------------------------
+//
+// Scope boundary (documented, not silently cut): this milestone owns the
+// Order entity, its state machine, order-to-inventory allocation, partial
+// cancellation, and the split-shipment DATA MODEL. It deliberately does
+// NOT include a real carrier adapter/tracking webhook
+// (specs/16-shipping-tracking.md), a real warehouse pick-list UI
+// (specs/15-warehouse-fulfilment.md), actual refund EXECUTION via Razorpay
+// (specs/19-refunds.md - PaymentProvider.refund() exists and is correct,
+// same "built but not yet wired to a route" honesty as M14's own refund
+// scope note), or return/QC processing (specs/18-returns.md) - all
+// explicitly later milestones per specs/14's own "Feeds:" list. Where an
+// acceptance-criteria flow (e.g. RTO) needs one of those to be fully
+// automatic, this milestone provides the correct STATE TRANSITION and
+// business-rule branching (e.g. COD vs prepaid RTO closure) via an
+// explicit staff-triggered action, not a simulated carrier callback.
+
+// Coarse, queryable order-level status, derived from OrderLine statuses
+// (see OrderService.computeOrderStatus) except RTO, which is always an
+// explicit staff action on a SHIPPED order - never derived.
+enum OrderStatus {
+  CONFIRMED
+  PROCESSING
+  DELIVERED
+  CANCELLED
+  RTO
+  EXCEPTION
+}
+
+// Line-level status carries the real granularity (partial cancellation,
+// split shipment) - ORD-001's "line-item-level state" requirement.
+enum OrderLineStatus {
+  ALLOCATED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  EXCEPTION
+}
+
+enum FulfilmentStatus {
+  PENDING
+  PACKED
+  SHIPPED
+  DELIVERED
+}
+
+// The formal Order (as distinct from CheckoutSession, the "order creation
+// trigger" artifact - see the comment on CheckoutSession). Created
+// in-process, never via a public "create order" endpoint, the moment a
+// CheckoutSession's payment genuinely succeeds (COD acceptance or
+// Razorpay capture webhook) - OrderService.createOrderFromCheckoutSession,
+// called from CheckoutService and PaymentService respectively, the same
+// "M15 calls issueInvoice() in-process... once the Order model exists"
+// pattern the M08 InvoiceService docblock already anticipated.
+model Order {
+  id                String                @id @default(uuid())
+  orderNumber       String                @unique
+  checkoutSessionId String                @unique
+  customerId        String?
+  guestSessionId    String?
+  contactName       String
+  contactMobile     String
+  contactEmail      String?
+  billingAddress    Json
+  shippingAddress   Json
+  shippingCost      Decimal               @db.Decimal(10, 2)
+  subtotal          Decimal               @db.Decimal(10, 2)
+  taxAmount         Decimal               @db.Decimal(10, 2)
+  grandTotal        Decimal               @db.Decimal(10, 2)
+  currency          String                @default("INR")
+  paymentMethod     CheckoutPaymentMethod
+  status            OrderStatus           @default(CONFIRMED)
+  // Set true when a cancellation/RTO on a PREPAID order requires a
+  // refund that this milestone deliberately does not execute (M19's own
+  // scope) - an honest marker for Finance/CS to action, never silently
+  // dropped.
+  refundRequired    Boolean               @default(false)
+  invoiceId         String?               @unique
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  customer        Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  checkoutSession CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
+  lines           OrderLine[]
+  fulfilments     OrderFulfilment[]
+
+  @@index([customerId])
+  @@index([guestSessionId])
+  @@map("orders")
+}
+
+// Frozen line-item snapshot (same discipline as CheckoutSessionLine/
+// InvoiceLine - never re-derived from current product/price data).
+// reservationId is the data-integrity traceability link
+// (acceptance/m15-order-management.md "Data integrity") from this line
+// back to the exact InventoryReservation it converted from at checkout.
+model OrderLine {
+  id                   String          @id @default(uuid())
+  orderId              String
+  skuId                String
+  locationId           String
+  quantity             Int
+  unitPriceInclusive   Decimal         @db.Decimal(10, 2)
+  taxableValueSnapshot Decimal         @db.Decimal(10, 2)
+  gstRatePercent       Decimal         @db.Decimal(5, 2)
+  taxAmountSnapshot    Decimal         @db.Decimal(10, 2)
+  lineTotalInclusive   Decimal         @db.Decimal(10, 2)
+  reservationId        String?
+  fulfilmentId         String?
+  status               OrderLineStatus @default(ALLOCATED)
+  cancelledAt          DateTime?
+  cancelledReason      String?
+  exceptionReason      String?
+
+  order      Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku        Sku              @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location   Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  fulfilment OrderFulfilment? @relation(fields: [fulfilmentId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_lines")
+}
+
+// A single shipment/package (ORD-001: "one order MAY have multiple
+// fulfilments/packages"). Each OrderLine belongs to at most one
+// Fulfilment at a time - a line is assigned to a Fulfilment (the
+// engineering-level analogue of "generate a pick list" this milestone
+// provides, per the scope-boundary note above) and the two progress
+// through PACKED/SHIPPED/DELIVERED together.
+model OrderFulfilment {
+  id          String           @id @default(uuid())
+  orderId     String
+  status      FulfilmentStatus @default(PENDING)
+  carrierName String?
+  trackingRef String?
+  packedAt    DateTime?
+  shippedAt   DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  order Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lines OrderLine[]
+
+  @@index([orderId])
+  @@map("order_fulfilments")
 }

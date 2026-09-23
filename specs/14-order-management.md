@@ -1,6 +1,6 @@
 # 14. Order Management
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `ORD-001`–`006`)
+**Status:** IMPLEMENTED (Phase 2 build, 2026-09-23 — see `blueprint/DECISION_REGISTER.md` `ORD-001`–`006`, and `acceptance/m15-order-management.md`)
 
 ## Purpose
 
@@ -52,6 +52,23 @@ events.
 Final invoice format (`TAX-004`) remains `UNDER_REVIEW` in
 `specs/32-india-tax-invoicing.md` — engineering-ready template
 mechanism exists regardless.
+
+Implementation scope boundary (see the schema comment above the
+Order/OrderLine/OrderFulfilment models in `packages/db/prisma/schema.prisma`
+for the full rationale): this milestone owns the Order entity, its
+state machine, order-to-inventory allocation, partial cancellation, and
+the split-shipment data model. It deliberately does not include a real
+carrier adapter/tracking webhook (`specs/16-shipping-tracking.md`), a
+real warehouse pick-list UI (`specs/15-warehouse-fulfilment.md`),
+actual refund execution via Razorpay (`specs/19-refunds.md` -
+`PaymentProvider.refund()` exists and is correct, the same "built but
+not yet wired to a route" honesty as `specs/13-payment.md`'s own
+scope note), or return/QC processing (`specs/18-returns.md`) - all
+explicitly later milestones per this spec's own "Feeds:" list below.
+Where an acceptance flow (e.g. RTO) needs one of those to be fully
+automatic, this milestone provides the correct state transition and
+business-rule branching (e.g. COD vs. prepaid RTO closure) via an
+explicit staff-triggered action instead of a simulated external event.
 
 ## Acceptance criteria
 

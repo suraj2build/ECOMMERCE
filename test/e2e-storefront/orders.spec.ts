@@ -6,7 +6,7 @@ const STOREFRONT_URL = process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000
 const ADMIN_EMAIL = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@example.com';
 const ADMIN_PASSWORD = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe123!';
 const FIXTURE_IMAGE_URL = `${STOREFRONT_URL}/e2e-fixture.png`;
-const SERVICEABLE_PINCODE = '110011';
+const SERVICEABLE_PINCODE = '110099';
 
 async function expectOk(res: APIResponse, label: string): Promise<unknown> {
   if (!res.ok()) {
@@ -17,14 +17,14 @@ async function expectOk(res: APIResponse, label: string): Promise<unknown> {
 }
 
 /**
- * Checkout browser E2E (M13, acceptance/m13-checkout.md). Provisions a
- * fully checkout-ready product (published, priced, in-stock, GST/HSN-
- * rate configured, PIN-code serviceable) via the real HTTP API, then
- * drives the actual Bag -> Checkout -> Confirmation flow in a real
- * browser for the COD path - the one path this milestone genuinely
- * completes end to end without an external payment gateway.
+ * Order history browser E2E (M15, specs/14-order-management.md - "Full
+ * order history MUST be retained and queryable for the customer's
+ * account"). Provisions a checkout-ready product the same way
+ * checkout.spec.ts does, completes a real COD order through the browser,
+ * then proves the resulting Order is genuinely visible on /orders and
+ * /orders/[id] - not just present in the database.
  */
-test.describe('Checkout', () => {
+test.describe('Order history', () => {
   let styleId: string;
   let api: APIRequestContext;
   const prisma = new PrismaClient();
@@ -39,14 +39,14 @@ test.describe('Checkout', () => {
     const authHeaders = { authorization: `Bearer ${token}` };
 
     const category = await prisma.category.upsert({
-      where: { slug: 'e2e-checkout-category' },
+      where: { slug: 'e2e-orders-category' },
       update: {},
-      create: { name: 'E2E Checkout Category', slug: 'e2e-checkout-category' },
+      create: { name: 'E2E Orders Category', slug: 'e2e-orders-category' },
     });
     const size = await prisma.size.upsert({
-      where: { label: 'E2E-CHK-M' },
+      where: { label: 'E2E-ORD-M' },
       update: {},
-      create: { label: 'E2E-CHK-M', sortOrder: 0 },
+      create: { label: 'E2E-ORD-M', sortOrder: 0 },
     });
 
     await expectOk(
@@ -59,7 +59,7 @@ test.describe('Checkout', () => {
 
     const legalEntityRes = await api.post('/api/v1/tax/legal-entities', {
       headers: authHeaders,
-      data: { legalName: 'E2E Checkout Pvt Ltd', registeredState: 'Delhi' },
+      data: { legalName: 'E2E Orders Pvt Ltd', registeredState: 'Delhi' },
     });
     const legalEntity = (await expectOk(legalEntityRes, 'Create legal entity')) as { id: string };
 
@@ -67,7 +67,7 @@ test.describe('Checkout', () => {
       headers: authHeaders,
       data: {
         legalEntityId: legalEntity.id,
-        gstin: `DLE2ECHK${Date.now() % 100000}A1Z5`,
+        gstin: `DLE2EORD${Date.now() % 100000}A1Z5`,
         stateCode: 'DL',
         stateName: 'Delhi',
         status: 'ACTIVE',
@@ -78,13 +78,13 @@ test.describe('Checkout', () => {
 
     const brandRes = await api.post('/api/v1/organization/brands', {
       headers: authHeaders,
-      data: { code: `E2ECHK${Date.now() % 100000}`, name: 'E2E Checkout Brand' },
+      data: { code: `E2EORD${Date.now() % 100000}`, name: 'E2E Orders Brand' },
     });
     const brand = (await expectOk(brandRes, 'Create brand')) as { id: string };
 
     const locationRes = await api.post('/api/v1/organization/locations', {
       headers: authHeaders,
-      data: { code: `E2ECHKLOC${Date.now() % 100000}`, name: 'E2E Checkout Location', type: 'WAREHOUSE' },
+      data: { code: `E2EORDLOC${Date.now() % 100000}`, name: 'E2E Orders Location', type: 'WAREHOUSE' },
     });
     const location = (await expectOk(locationRes, 'Create location')) as { id: string };
 
@@ -108,8 +108,8 @@ test.describe('Checkout', () => {
     const styleRes = await api.post('/api/v1/products/styles', {
       headers: authHeaders,
       data: {
-        styleCode: `E2E-CHK-${Date.now()}`,
-        name: 'E2E Checkout Jacket',
+        styleCode: `E2E-ORD-${Date.now()}`,
+        name: 'E2E Order History Jacket',
         brandId: brand.id,
         categoryId: category.id,
         season: 'SS26',
@@ -150,7 +150,7 @@ test.describe('Checkout', () => {
     await expectOk(await api.post(`/api/v1/products/styles/${styleId}/qa-check`, { headers: authHeaders }), 'QA check');
     await expectOk(await api.post(`/api/v1/products/styles/${styleId}/publish`, { headers: authHeaders }), 'Publish style');
     await expectOk(
-      await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId, mrp: 1499, sellingPrice: 1499 } }),
+      await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId, mrp: 899, sellingPrice: 899 } }),
       'Set price',
     );
     await expectOk(
@@ -167,46 +167,43 @@ test.describe('Checkout', () => {
     await prisma.$disconnect();
   });
 
-  test('completes a COD order end to end: bag -> checkout -> confirmation, with a real reservation created only at checkout submission', async ({ page }) => {
+  test('a completed COD order is genuinely visible on the storefront order-history pages', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/product/${styleId}`);
 
+    // Before ever ordering: an empty order history, not an error.
+    await page.goto('/orders');
+    await expect(page.getByText('You have no orders yet.')).toBeVisible();
+
+    await page.goto(`/product/${styleId}`);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
     await expect(page.getByText('Added to bag.').first()).toBeVisible();
-
-    const reservationsBeforeCheckout = await prisma.inventoryReservation.count({ where: { sku: { styleId } } });
-    expect(reservationsBeforeCheckout).toBe(0);
 
     await page.goto('/bag');
     await page.getByRole('link', { name: 'Checkout' }).click();
     await expect(page).toHaveURL(/\/checkout$/);
 
-    await page.getByPlaceholder('Full name').fill('E2E Test Buyer');
+    await page.getByPlaceholder('Full name').fill('E2E Order History Buyer');
     await page.getByPlaceholder('10-digit mobile number').fill('9876543210');
     await page.getByPlaceholder('House / Flat, Building, Street').first().fill('221B Test Street');
     await page.getByPlaceholder('City').first().fill('New Delhi');
     await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
     await page.locator('select').first().selectOption('Delhi');
-
     await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
-
     await page.getByLabel('Cash on Delivery').check();
     await page.getByRole('button', { name: 'Place Order' }).click();
-
     await expect(page).toHaveURL(/\/checkout\/[0-9a-f-]+$/, { timeout: 10_000 });
     await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible();
-    await expect(page.getByText(/Cash on Delivery order is confirmed/)).toBeVisible();
 
-    const reservationsAfterCheckout = await prisma.inventoryReservation.findMany({ where: { sku: { styleId } } });
-    expect(reservationsAfterCheckout).toHaveLength(1);
-    // CONVERTED, not ACTIVE - M15 (Order Management) converts the
-    // reservation to a committed allocation in-process the moment COD
-    // accepts (specs/13-payment.md).
-    expect(reservationsAfterCheckout[0]!.status).toBe('CONVERTED');
+    // Now the order genuinely appears in this same browser's order history.
+    await page.getByRole('link', { name: 'Orders' }).click();
+    await expect(page).toHaveURL(/\/orders$/);
+    await expect(page.getByText(/^ORD-\d{4}-\d{6}$/)).toBeVisible();
+    await expect(page.getByText('Confirmed')).toBeVisible();
 
-    const order = await prisma.order.findFirst({ where: { checkoutSession: { lines: { some: { sku: { styleId } } } } } });
-    expect(order).not.toBeNull();
-    expect(order!.status).toBe('CONFIRMED');
+    await page.getByText(/^ORD-\d{4}-\d{6}$/).click();
+    await expect(page.getByRole('heading', { name: /^Order ORD-\d{4}-\d{6}$/ })).toBeVisible();
+    await expect(page.getByText('E2E Order History Jacket', { exact: false })).toBeVisible();
+    await expect(page.getByText('Preparing')).toBeVisible();
   });
 });

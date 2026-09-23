@@ -404,6 +404,102 @@ export class InventoryService {
   }
 
   /**
+   * ALLOCATION (M15, ORD-001): converts a checkout-time reservation into
+   * a committed order allocation - "reservation converts to committed
+   * allocation upon successful payment capture" (specs/13-payment.md).
+   * No balance change (the units were already counted in `reserved`);
+   * only the reservation's status flips ACTIVE -> CONVERTED, which also
+   * makes it immune to expireStaleReservations()'s TTL sweep (that only
+   * ever touches ACTIVE rows) - a committed order's stock never silently
+   * expires back to available. Idempotent: converting an
+   * already-CONVERTED reservation is a safe no-op (OrderService may call
+   * this from more than one caller path in principle).
+   */
+  async convertReservation(reservationId: string, externalTx?: Prisma.TransactionClient) {
+    const run = async (tx: Prisma.TransactionClient) => {
+      const reservation = await tx.inventoryReservation.findUnique({ where: { id: reservationId } });
+      if (!reservation) throw new NotFoundError('InventoryReservation', reservationId);
+      if (reservation.status === 'CONVERTED') return reservation;
+      if (reservation.status !== 'ACTIVE') {
+        throw new ValidationError(`Cannot convert a reservation in status '${reservation.status}' to an allocation`);
+      }
+
+      await this.writeLedgerRow(tx, {
+        skuId: reservation.skuId,
+        locationId: reservation.locationId,
+        type: 'ALLOCATION',
+        quantity: reservation.quantity,
+        referenceType: 'RESERVATION',
+        referenceId: reservation.id,
+      });
+
+      return tx.inventoryReservation.update({ where: { id: reservationId }, data: { status: 'CONVERTED' } });
+    };
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
+   * CANCELLATION (M15, ORD-001 partial cancellation): releases a
+   * CONVERTED allocation before it ships - distinct from
+   * releaseReservation's RESERVATION_RELEASE (a checkout-time hold being
+   * abandoned/retried) by ledger type, since this represents a firm
+   * order's stock being given back. Idempotent - cancelling a
+   * non-CONVERTED reservation (already released/expired) is a safe no-op.
+   */
+  async cancelAllocation(reservationId: string, reason: string, externalTx?: Prisma.TransactionClient) {
+    const run = async (tx: Prisma.TransactionClient) => {
+      const reservation = await tx.inventoryReservation.findUnique({ where: { id: reservationId } });
+      if (!reservation) throw new NotFoundError('InventoryReservation', reservationId);
+      if (reservation.status !== 'CONVERTED') return reservation;
+
+      const balance = await this.lockBalance(tx, reservation.skuId, reservation.locationId);
+      await tx.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: reservation.skuId, locationId: reservation.locationId } },
+        data: { reserved: Math.max(0, balance.reserved - reservation.quantity) },
+      });
+
+      await this.writeLedgerRow(tx, {
+        skuId: reservation.skuId,
+        locationId: reservation.locationId,
+        type: 'CANCELLATION',
+        quantity: reservation.quantity,
+        referenceType: 'RESERVATION',
+        referenceId: reservation.id,
+        reason,
+      });
+
+      return tx.inventoryReservation.update({ where: { id: reservationId }, data: { status: 'RELEASED' } });
+    };
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
+   * SALE (M15, ORD-001): posted when a fulfilment ships - stock
+   * physically leaves the warehouse, so both `onHand` and `reserved`
+   * decrement (unlike ALLOCATION, which only changes the reservation's
+   * status). The trigger point FLOW 8 asks for ("inventory posts the
+   * sale/fulfilment transaction at the defined trigger point").
+   */
+  async recordSale(
+    params: { skuId: string; locationId: string; quantity: number; referenceType?: string; referenceId?: string },
+    externalTx?: Prisma.TransactionClient,
+  ) {
+    if (params.quantity <= 0) throw new ValidationError('Sale quantity must be positive');
+    const run = async (tx: Prisma.TransactionClient) => {
+      const balance = await this.lockBalance(tx, params.skuId, params.locationId);
+      await tx.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: params.skuId, locationId: params.locationId } },
+        data: {
+          onHand: Math.max(0, balance.onHand - params.quantity),
+          reserved: Math.max(0, balance.reserved - params.quantity),
+        },
+      });
+      return this.writeLedgerRow(tx, { ...params, type: 'SALE' });
+    };
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
    * ADJUSTMENT: authorized manual correction (ADM-003). Requires a reason.
    * Adjustments whose absolute quantity exceeds the configured threshold
    * require a co-approver id (checked for a Finance-tier permission at the

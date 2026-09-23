@@ -12,6 +12,7 @@ import { determinePlaceOfSupply, splitTax } from '../tax/tax-engine.js';
 import { ShippingService } from './shipping-service.js';
 import { resolvePaymentProvider } from './payment-provider.js';
 import { recordAudit } from '../audit/service.js';
+import { OrderService } from '../order/service.js';
 
 export interface AddressInput {
   line1: string;
@@ -45,9 +46,11 @@ interface PricedLine {
 
 /**
  * Checkout (M13, specs/12-checkout.md). Produces the "order creation
- * trigger" artifact (CheckoutSession) - NOT the formal Order model,
- * which is M15's own milestone to create (see the schema comment on
- * CheckoutSession and InvoiceService's docblock). Depends only on the
+ * trigger" artifact (CheckoutSession) - NOT the formal Order model
+ * itself; OrderService.createOrderFromCheckoutSession (M15) is called
+ * in-process the moment a COD session is genuinely CONFIRMED below,
+ * mirroring how PaymentService calls the same method from a Razorpay
+ * capture webhook. Depends only on the
  * PaymentProvider interface (ADR-0011), never a specific provider
  * directly, and reuses the exact same re-validation building blocks
  * every other milestone already built: CartService (price/availability),
@@ -61,6 +64,7 @@ export class CheckoutService {
   private readonly inventory: InventoryService;
   private readonly taxConfig: TaxConfigService;
   private readonly shipping: ShippingService;
+  private readonly order: OrderService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.cart = new CartService(fastify);
@@ -68,6 +72,7 @@ export class CheckoutService {
     this.inventory = new InventoryService(fastify);
     this.taxConfig = new TaxConfigService(fastify);
     this.shipping = new ShippingService(fastify);
+    this.order = new OrderService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -335,6 +340,16 @@ export class CheckoutService {
       }
     }
 
+    // COD accepts and confirms in the same request - "successful COD
+    // order acceptance" is exactly the M15 order-creation trigger
+    // (specs/13-payment.md). PREPAID's own trigger is the Razorpay
+    // capture webhook (PaymentService), not here. Idempotent on
+    // checkoutSessionId, so the idempotency-race "winner" path above
+    // safely calls this too without risking a duplicate order.
+    if (paymentResult.status === 'CONFIRMED') {
+      await this.order.createOrderFromCheckoutSession(sessionId);
+    }
+
     return this.toView(sessionId, paymentResult.message);
   }
 
@@ -413,6 +428,10 @@ export class CheckoutService {
       if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) {
         throw err;
       }
+    }
+
+    if (paymentResult.status === 'CONFIRMED') {
+      await this.order.createOrderFromCheckoutSession(session.id);
     }
 
     return this.toView(session.id, paymentResult.message);

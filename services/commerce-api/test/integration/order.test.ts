@@ -1,0 +1,656 @@
+import { createHmac } from 'node:crypto';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import { createTestApp } from '../helpers/app.js';
+import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
+import { createAuthenticatedStaff, createAuthenticatedCustomer } from '../helpers/auth.js';
+
+process.env.RAZORPAY_KEY_ID = 'test_key_id';
+process.env.RAZORPAY_KEY_SECRET = 'test_key_secret';
+process.env.RAZORPAY_WEBHOOK_SECRET = 'test_webhook_secret';
+
+const GUEST_HEADER = 'x-guest-session-id';
+const SERVICEABLE_PINCODE = '110001';
+
+function signWebhook(rawBody: string): string {
+  return createHmac('sha256', 'test_webhook_secret').update(rawBody).digest('hex');
+}
+
+function capturedEvent(orderId: string, paymentEntityId: string) {
+  return {
+    id: `evt_${paymentEntityId}_captured`,
+    event: 'payment.captured',
+    payload: { payment: { entity: { id: paymentEntityId, order_id: orderId } } },
+  };
+}
+
+/**
+ * M15 Order Management (specs/14-order-management.md, ORD-001-006).
+ * Order is created in-process at genuine payment success (never via a
+ * public endpoint) - both the COD path (CheckoutService) and the
+ * PREPAID/Razorpay-capture path (PaymentService) are exercised here,
+ * proving the same Order model results from either trigger.
+ */
+describe('Order Management (M15)', () => {
+  let app: FastifyInstance;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let counter = 0;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    vi.unstubAllGlobals();
+  });
+
+  beforeEach(async () => {
+    await resetDatabase();
+    await seedRbac();
+    await testPrisma.serviceablePincode.create({
+      data: { pincode: SERVICEABLE_PINCODE, city: 'New Delhi', state: 'Delhi', isServiceable: true, codAvailable: true },
+    });
+
+    counter += 1;
+    fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = url.toString();
+      if (href.endsWith('/orders') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ id: `order_mock_${counter}` }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch in test: ${href}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  async function merchandisingToken() {
+    await grantPermissions('MERCHANDISING', ['product:read', 'product:write', 'product:publish', 'catalog:price:write']);
+    return (await createAuthenticatedStaff(app, ['MERCHANDISING'])).token;
+  }
+
+  async function seedContext() {
+    const { brand, category, size, location } = await seedBrandAndLocation();
+    const legalEntity = await testPrisma.legalEntity.create({ data: { legalName: 'Order Test Pvt Ltd', registeredState: 'Delhi' } });
+    const registration = await testPrisma.gstRegistration.create({
+      data: {
+        legalEntityId: legalEntity.id,
+        gstin: `DLORDTST${counter}A1Z${counter % 10}`,
+        stateCode: 'DL',
+        stateName: 'Delhi',
+        status: 'ACTIVE',
+        effectiveFrom: new Date(Date.now() - 86_400_000),
+      },
+    });
+    await testPrisma.location.update({ where: { id: location.id }, data: { gstRegistrationId: registration.id } });
+    return { brandId: brand.id, categoryId: category.id, sizeId: size.id, locationId: location.id };
+  }
+
+  async function setupCheckoutableSku(sellingPrice: number, ctx?: Awaited<ReturnType<typeof seedContext>>) {
+    const token = await merchandisingToken();
+    const seeded = ctx ?? (await seedContext());
+    const hsnCode = '6109';
+    const existingRate = await testPrisma.taxRate.findFirst({ where: { hsnCode } });
+    if (!existingRate) {
+      await testPrisma.taxRate.create({ data: { hsnCode, gstRatePercent: 12, effectiveFrom: new Date(Date.now() - 86_400_000) } });
+    }
+
+    const styleRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/products/styles',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        styleCode: `ORD-${Date.now()}-${counter}-${Math.random().toString(36).slice(2, 8)}`,
+        name: 'Order Test Jacket',
+        brandId: seeded.brandId,
+        categoryId: seeded.categoryId,
+        season: 'SS26',
+        collection: 'Core',
+        hsnCode,
+      },
+    });
+    const styleId = styleRes.json().id as string;
+
+    const colourRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/products/styles/${styleId}/colours`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Black', colourCode: 'BLK' },
+    });
+    const colourId = colourRes.json().id as string;
+
+    const skuRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/products/styles/${styleId}/skus/generate`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { sizeIds: [seeded.sizeId] },
+    });
+    const skuId = skuRes.json()[0].skuId as string;
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/products/styles/${styleId}/media`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { colourId, url: 'https://example.com/x.jpg' },
+    });
+    await app.inject({ method: 'POST', url: `/api/v1/products/styles/${styleId}/ready-for-enrichment`, headers: { authorization: `Bearer ${token}` } });
+    await app.inject({ method: 'POST', url: `/api/v1/products/styles/${styleId}/qa-check`, headers: { authorization: `Bearer ${token}` } });
+    await app.inject({ method: 'POST', url: `/api/v1/products/styles/${styleId}/publish`, headers: { authorization: `Bearer ${token}` } });
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/catalog/prices',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { styleId, mrp: sellingPrice, sellingPrice },
+    });
+    await testPrisma.inventoryBalance.create({ data: { skuId, locationId: seeded.locationId, onHand: 10, reserved: 0 } });
+
+    return skuId;
+  }
+
+  function validAddress() {
+    return { line1: '123 Test Street', city: 'New Delhi', state: 'Delhi', stateCode: 'DL', pincode: SERVICEABLE_PINCODE };
+  }
+
+  async function addToCart(skuId: string, headers: Record<string, string>, quantity = 1) {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/storefront/cart/items', headers, payload: { skuId, quantity } });
+    expect(res.statusCode).toBe(201);
+  }
+
+  /** COD checkout - genuinely CONFIRMED at submission, so an Order exists immediately. */
+  async function codOrder(skuId: string, guestId: string, idempotencyKey: string) {
+    const headers = { [GUEST_HEADER]: guestId };
+    await addToCart(skuId, headers);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: {
+        contactName: 'Jane Doe',
+        contactMobile: '9876543210',
+        billingAddress: validAddress(),
+        shippingAddress: validAddress(),
+        paymentMethod: 'COD',
+        idempotencyKey,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id } });
+    return { sessionId: res.json().id as string, orderId: order.id, headers };
+  }
+
+  /** PREPAID checkout, then a Razorpay capture webhook - the other order-creation trigger. */
+  async function prepaidCapturedOrder(skuId: string, guestId: string, idempotencyKey: string) {
+    const headers = { [GUEST_HEADER]: guestId };
+    await addToCart(skuId, headers);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: {
+        contactName: 'Jane Doe',
+        contactMobile: '9876543210',
+        billingAddress: validAddress(),
+        shippingAddress: validAddress(),
+        paymentMethod: 'PREPAID',
+        idempotencyKey,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const sessionId = res.json().id as string;
+    const payment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+
+    const body = JSON.stringify(capturedEvent(payment.providerReferenceId!, `pay_${idempotencyKey}`));
+    const webhookRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/webhooks/razorpay',
+      headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) },
+      payload: body,
+    });
+    expect(webhookRes.statusCode).toBe(200);
+
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+    return { sessionId, orderId: order.id, headers };
+  }
+
+  describe('Order creation trigger', () => {
+    it('creates an Order + invoice when a COD checkout is accepted, converting the reservation to a committed allocation', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-cod', 'idem-ord-cod');
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      expect(order.orderNumber).toMatch(/^ORD-\d{4}-\d{6}$/);
+      expect(order.status).toBe('CONFIRMED');
+      expect(order.paymentMethod).toBe('COD');
+      expect(order.lines).toHaveLength(1);
+      expect(order.lines[0]!.status).toBe('ALLOCATED');
+      expect(order.invoiceId).not.toBeNull();
+
+      const invoice = await testPrisma.invoice.findUniqueOrThrow({ where: { id: order.invoiceId! } });
+      expect(invoice.orderId).toBe(order.id);
+
+      const ledgerEntry = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: 'ALLOCATION' } });
+      expect(ledgerEntry).not.toBeNull();
+    });
+
+    it('creates an Order when a Razorpay payment is captured via webhook (PREPAID trigger)', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await prepaidCapturedOrder(skuId, 'guest-ord-prepaid', 'idem-ord-prepaid');
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } });
+      expect(order.status).toBe('CONFIRMED');
+      expect(order.paymentMethod).toBe('PREPAID');
+      expect(order.invoiceId).not.toBeNull();
+    });
+  });
+
+  describe('Split shipment (FLOW 8)', () => {
+    it('two lines of a multi-line order can be packed/shipped/delivered independently, posting a SALE transaction per shipment', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+
+      const ctx = await seedContext();
+      const skuA = await setupCheckoutableSku(500, ctx);
+      const skuB = await setupCheckoutableSku(700, ctx);
+      const headers = { [GUEST_HEADER]: 'guest-ord-split' };
+      await addToCart(skuA, headers);
+      await addToCart(skuB, headers);
+
+      const checkoutRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: {
+          contactName: 'Jane Doe',
+          contactMobile: '9876543210',
+          billingAddress: validAddress(),
+          shippingAddress: validAddress(),
+          paymentMethod: 'COD',
+          idempotencyKey: 'idem-ord-split',
+        },
+      });
+      expect(checkoutRes.statusCode).toBe(201);
+      const order = await testPrisma.order.findUniqueOrThrow({
+        where: { checkoutSessionId: checkoutRes.json().id },
+        include: { lines: true },
+      });
+      expect(order.lines).toHaveLength(2);
+      const [lineA, lineB] = order.lines;
+
+      // Ship line A immediately.
+      const fulfilARes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${order.id}/fulfilments`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { lineIds: [lineA!.id] },
+      });
+      expect(fulfilARes.statusCode).toBe(201);
+      const fulfilmentA = fulfilARes.json();
+
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentA.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      const shipARes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/fulfilments/${fulfilmentA.id}/ship`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { carrierName: 'BlueDart', trackingRef: 'BD123' },
+      });
+      expect(shipARes.statusCode).toBe(200);
+      expect(shipARes.json().status).toBe('SHIPPED');
+
+      // Line B is "back-ordered" - not yet fulfilled at all.
+      let orderView = await app.inject({ method: 'GET', url: `/api/v1/orders/${order.id}`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      expect(orderView.json().status).toBe('PROCESSING');
+      const lineBView = orderView.json().lines.find((l: { id: string }) => l.id === lineB!.id);
+      expect(lineBView.status).toBe('ALLOCATED');
+
+      // SALE posted for the shipped line only.
+      const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE' } });
+      expect(saleTxns).toHaveLength(1);
+      expect(saleTxns[0]!.skuId).toBe(lineA!.skuId);
+
+      const balanceA = await testPrisma.inventoryBalance.findFirst({ where: { skuId: lineA!.skuId } });
+      expect(balanceA!.onHand).toBe(9); // decremented on sale
+      expect(balanceA!.reserved).toBe(0);
+
+      // Now line B ships as its own, independently-tracked second shipment.
+      const fulfilBRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${order.id}/fulfilments`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { lineIds: [lineB!.id] },
+      });
+      const fulfilmentB = fulfilBRes.json();
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentB.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentB.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentA.id}/deliver`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentB.id}/deliver`, headers: { authorization: `Bearer ${warehouseToken}` } });
+
+      orderView = await app.inject({ method: 'GET', url: `/api/v1/orders/${order.id}`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      expect(orderView.json().status).toBe('DELIVERED');
+      expect(orderView.json().fulfilments).toHaveLength(2);
+    });
+
+    it('rejects packing a fulfilment for a role lacking order:fulfil', async () => {
+      const { token } = await createAuthenticatedStaff(app, ['ANALYTICS']);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/orders/fulfilments/00000000-0000-0000-0000-000000000000/pack',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
+  describe('Partial cancellation (FLOW 7)', () => {
+    it('cancelling a pre-shipment line releases its allocation and flags refund required for a PREPAID order', async () => {
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:cancel']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await prepaidCapturedOrder(skuId, 'guest-ord-cancel-prepaid', 'idem-ord-cancel-prepaid');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/lines/${line.id}/cancel`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Customer requested cancellation' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().status).toBe('CANCELLED');
+
+      const reservation = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: line.reservationId! } });
+      expect(reservation.status).toBe('RELEASED');
+
+      const updatedOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } });
+      expect(updatedOrder.status).toBe('CANCELLED'); // only line, and it's the only line
+      expect(updatedOrder.refundRequired).toBe(true);
+
+      const ledgerEntry = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: 'CANCELLATION' } });
+      expect(ledgerEntry).not.toBeNull();
+    });
+
+    it('cancelling a line on a COD order does not require a refund (nothing was collected)', async () => {
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:cancel']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-cancel-cod', 'idem-ord-cancel-cod');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/lines/${order.lines[0]!.id}/cancel`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Out of stock at pick time' },
+      });
+      expect(res.statusCode).toBe(200);
+
+      const updatedOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } });
+      expect(updatedOrder.refundRequired).toBe(false);
+    });
+
+    it('the remaining line proceeds unaffected when one line of a multi-line order is cancelled', async () => {
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:cancel']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const ctx = await seedContext();
+      const skuA = await setupCheckoutableSku(500, ctx);
+      const skuB = await setupCheckoutableSku(700, ctx);
+      const headers = { [GUEST_HEADER]: 'guest-ord-partial-cancel' };
+      await addToCart(skuA, headers);
+      await addToCart(skuB, headers);
+
+      const checkoutRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: {
+          contactName: 'Jane Doe',
+          contactMobile: '9876543210',
+          billingAddress: validAddress(),
+          shippingAddress: validAddress(),
+          paymentMethod: 'COD',
+          idempotencyKey: 'idem-ord-partial-cancel',
+        },
+      });
+      const order = await testPrisma.order.findUniqueOrThrow({
+        where: { checkoutSessionId: checkoutRes.json().id },
+        include: { lines: true },
+      });
+
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${order.id}/lines/${order.lines[0]!.id}/cancel`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Customer changed mind on one item' },
+      });
+
+      const updatedOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      // Not CANCELLED - the other line is still active/proceeding.
+      expect(updatedOrder.status).toBe('PROCESSING');
+
+      const remainingLine = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: order.lines[1]!.id } });
+      expect(remainingLine.status).toBe('ALLOCATED');
+    });
+  });
+
+  describe('Negative scenario #1: cannot cancel a shipped line', () => {
+    it('blocks cancellation once a line has shipped - routes to return instead', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:cancel']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-blocked-cancel', 'idem-ord-blocked-cancel');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+
+      const fulfilRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/fulfilments`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { lineIds: [line.id] },
+      });
+      const fulfilment = fulfilRes.json();
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+
+      const cancelRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/lines/${line.id}/cancel`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Too late attempt' },
+      });
+      expect(cancelRes.statusCode).toBe(400);
+    });
+  });
+
+  describe('Negative scenario #2: order exception handling', () => {
+    it('flags a pick-shortfall exception, which is not silently stuck and can be resolved', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:exception:manage']);
+      const { token } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-exception', 'idem-ord-exception');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+
+      const flagRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/lines/${line.id}/exception`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { reason: 'Pick shortfall - short by 1 unit' },
+      });
+      expect(flagRes.statusCode).toBe(200);
+      expect(flagRes.json().status).toBe('EXCEPTION');
+
+      let updatedOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } });
+      expect(updatedOrder.status).toBe('EXCEPTION');
+
+      const resolveRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/lines/${line.id}/exception/resolve`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { resolution: 'REINSTATE', reason: 'Stock found on re-count' },
+      });
+      expect(resolveRes.statusCode).toBe(200);
+      expect(resolveRes.json().status).toBe('ALLOCATED');
+
+      updatedOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } });
+      expect(updatedOrder.status).toBe('PROCESSING');
+    });
+  });
+
+  describe('RTO (FLOW 15)', () => {
+    it('closes a COD order with no refund on RTO', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:rto']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-rto-cod', 'idem-ord-rto-cod');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+
+      const fulfilRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/fulfilments`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { lineIds: [line.id] },
+      });
+      const fulfilment = fulfilRes.json();
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+
+      const rtoRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/rto`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Repeated failed delivery attempts, carrier reported RTO' },
+      });
+      expect(rtoRes.statusCode).toBe(200);
+      expect(rtoRes.json().status).toBe('RTO');
+      expect(rtoRes.json().refundRequired).toBe(false);
+    });
+
+    it('flags refund required on RTO for a PREPAID order', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:rto']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await prepaidCapturedOrder(skuId, 'guest-ord-rto-prepaid', 'idem-ord-rto-prepaid');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+
+      const fulfilRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/fulfilments`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { lineIds: [line.id] },
+      });
+      const fulfilment = fulfilRes.json();
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+
+      const rtoRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/rto`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Carrier reported RTO' },
+      });
+      expect(rtoRes.statusCode).toBe(200);
+      expect(rtoRes.json().refundRequired).toBe(true);
+    });
+
+    it('rejects RTO on an order that has not shipped', async () => {
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:rto']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-rto-tooearly', 'idem-ord-rto-tooearly');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/rto`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Premature attempt' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('Data integrity: allocation traceability', () => {
+    it('every order line traces back to the exact reservation it converted from', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-traceability', 'idem-ord-traceability');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      expect(line.reservationId).not.toBeNull();
+
+      const reservation = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: line.reservationId! } });
+      expect(reservation.skuId).toBe(skuId);
+      expect(reservation.status).toBe('CONVERTED');
+    });
+  });
+
+  describe('Auditability: full order history retained', () => {
+    it('logs every state transition with an entity/action pair queryable by order id', async () => {
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:cancel']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-ord-audit', 'idem-ord-audit');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/lines/${order.lines[0]!.id}/cancel`,
+        headers: { authorization: `Bearer ${csToken}` },
+        payload: { reason: 'Audit trail check' },
+      });
+
+      const createEntry = await testPrisma.auditLog.findFirst({ where: { action: 'order.create', entityId: orderId } });
+      expect(createEntry).not.toBeNull();
+      expect(createEntry!.actorType).toBe('SYSTEM');
+
+      const cancelEntry = await testPrisma.auditLog.findFirst({ where: { action: 'order.line.cancel', reference: orderId } });
+      expect(cancelEntry).not.toBeNull();
+      expect(cancelEntry!.actorType).toBe('STAFF');
+    });
+  });
+
+  describe('Storefront: customer order history', () => {
+    it('lets the owning guest read their own order, and no one else', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId, headers } = await codOrder(skuId, 'guest-ord-owner', 'idem-ord-owner-read');
+
+      const ownRes = await app.inject({ method: 'GET', url: `/api/v1/storefront/orders/${orderId}`, headers });
+      expect(ownRes.statusCode).toBe(200);
+      expect(ownRes.json().id).toBe(orderId);
+
+      const listRes = await app.inject({ method: 'GET', url: '/api/v1/storefront/orders', headers });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json()).toHaveLength(1);
+
+      const otherRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/storefront/orders/${orderId}`,
+        headers: { [GUEST_HEADER]: 'guest-ord-not-owner' },
+      });
+      expect(otherRes.statusCode).toBe(404);
+
+      const { token: customerToken } = await createAuthenticatedCustomer(app);
+      const customerRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/storefront/orders/${orderId}`,
+        headers: { authorization: `Bearer ${customerToken}` },
+      });
+      expect(customerRes.statusCode).toBe(404);
+    });
+  });
+});

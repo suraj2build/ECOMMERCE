@@ -82,7 +82,14 @@ export class InvoiceService {
     return { number: formatDocumentNumber(kind, financialYear, sequence), sequence };
   }
 
-  async issueInvoice(input: IssueInvoiceInput, actorStaffId: string) {
+  /**
+   * actorStaffId is optional: the M08 HTTP entry point always has a
+   * real staff actor, but M15's in-process call at order confirmation
+   * (OrderService.createOrderFromCheckoutSession) is a SYSTEM-triggered
+   * event with no staff member involved - recorded honestly as such
+   * rather than attributed to a fabricated/borrowed staff identity.
+   */
+  async issueInvoice(input: IssueInvoiceInput, actorStaffId?: string) {
     if (input.lines.length === 0) throw new ValidationError('An invoice must have at least one line');
     const atDate = input.atDate ?? new Date();
     const financialYear = getIndianFinancialYear(atDate);
@@ -239,7 +246,7 @@ export class InvoiceService {
       });
 
       await recordAudit(tx, {
-        actorType: 'STAFF',
+        actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
         actorStaffId,
         action: 'invoice.issue',
         entityType: 'Invoice',

@@ -64,6 +64,11 @@ export const PERMISSION_KEYS = [
   'catalog:cross_sell:manage',
   'shipping:manage',
   'payment:refund',
+  'order:read',
+  'order:fulfil',
+  'order:cancel',
+  'order:exception:manage',
+  'order:rto',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

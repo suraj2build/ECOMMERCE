@@ -218,7 +218,11 @@ describe('Checkout (M13)', () => {
 
       const reservations = await testPrisma.inventoryReservation.findMany({ where: { skuId } });
       expect(reservations).toHaveLength(1);
-      expect(reservations[0]!.status).toBe('ACTIVE');
+      // CONVERTED, not ACTIVE - M15 (Order Management) converts the
+      // reservation to a committed allocation the moment COD accepts,
+      // in-process (specs/13-payment.md: "reservation converts to
+      // committed allocation upon ... successful COD order acceptance").
+      expect(reservations[0]!.status).toBe('CONVERTED');
 
       const balance = await testPrisma.inventoryBalance.findFirst({ where: { skuId } });
       expect(balance!.reserved).toBe(1);

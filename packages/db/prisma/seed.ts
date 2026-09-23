@@ -44,6 +44,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tax:read',
     'invoice:read',
     'content:read',
+    'order:read',
   ],
   BUYING: ['supplier:read', 'supplier:write', 'po:create', 'po:submit', 'po:read', 'product:read'],
   MERCHANDISING: [
@@ -70,9 +71,21 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'po:read',
     'product:read',
     'pincode:manage',
+    'order:read',
+    'order:fulfil',
+    'order:exception:manage',
   ],
-  WAREHOUSE_OPERATOR: ['grn:create', 'grn:read', 'inventory:read', 'po:read', 'product:read'],
-  CUSTOMER_SERVICE: ['customer_service:manage', 'product:read', 'inventory:read', 'review:moderate'],
+  WAREHOUSE_OPERATOR: ['grn:create', 'grn:read', 'inventory:read', 'po:read', 'product:read', 'order:read', 'order:fulfil'],
+  CUSTOMER_SERVICE: [
+    'customer_service:manage',
+    'product:read',
+    'inventory:read',
+    'review:moderate',
+    'order:read',
+    'order:cancel',
+    'order:exception:manage',
+    'order:rto',
+  ],
   MARKETING: [
     'marketing:manage',
     'product:read',
@@ -93,8 +106,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'invoice:read',
     'invoice:create',
     'payment:refund',
+    'order:read',
   ],
-  ANALYTICS: ['analytics:read', 'product:read', 'inventory:read'],
+  ANALYTICS: ['analytics:read', 'product:read', 'inventory:read', 'order:read'],
 };
 
 async function main() {

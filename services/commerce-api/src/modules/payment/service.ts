@@ -4,6 +4,7 @@ import { loadEnv } from '@fcp/config';
 import { InventoryService } from '../inventory/service.js';
 import { resolvePaymentProvider, type WebhookEvent } from '../checkout/payment-provider.js';
 import { recordAudit } from '../audit/service.js';
+import { OrderService } from '../order/service.js';
 
 export interface WebhookResult {
   ok: boolean;
@@ -22,9 +23,11 @@ export interface WebhookResult {
  */
 export class PaymentService {
   private readonly inventory: InventoryService;
+  private readonly order: OrderService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
+    this.order = new OrderService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -93,6 +96,18 @@ export class PaymentService {
     }
 
     await this.applyOutcome(payment.id, event);
+
+    // "successful payment capture" is the PREPAID order-creation trigger
+    // (specs/13-payment.md) - mirrors CheckoutService's own call to the
+    // same method on COD acceptance. Idempotent on checkoutSessionId, so
+    // a captured/already-CONFIRMED session (a genuine capture just now,
+    // or a replayed/duplicate-outcome webhook that was a no-op above) is
+    // always safe to call - it only ever throws if the session were
+    // somehow still not CONFIRMED, which capture guarantees it now is.
+    if (event.outcome === 'CAPTURED') {
+      await this.order.createOrderFromCheckoutSession(payment.checkoutSessionId);
+    }
+
     return { ok: true };
   }
 

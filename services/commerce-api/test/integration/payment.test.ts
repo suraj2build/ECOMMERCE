@@ -263,8 +263,11 @@ describe('Payment (M14)', () => {
       // Correlation id swapped from the order id to the actual payment id on capture.
       expect(payment.providerReferenceId).toBe('pay_capture_1');
 
+      // CONVERTED, not ACTIVE - M15 converts the reservation to a
+      // committed allocation in-process the moment capture confirms the
+      // session (see checkout.test.ts's equivalent COD assertion).
       const reservation = await testPrisma.inventoryReservation.findFirstOrThrow({ where: { skuId } });
-      expect(reservation.status).toBe('ACTIVE');
+      expect(reservation.status).toBe('CONVERTED');
     });
 
     it('a duplicate delivery of the same captured webhook is a safe no-op (negative scenario #2)', async () => {
