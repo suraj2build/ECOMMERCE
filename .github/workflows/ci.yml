@@ -124,3 +124,8 @@ jobs:
           npm run test:e2e
         env:
           NEXT_PUBLIC_API_URL: 'http://localhost:4000'
+          # M11: the PDP E2E spec logs in as the seeded super admin to
+          # provision its own test product - must match the "Seed
+          # test-relevant reference data" step's values above.
+          SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
+          SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
