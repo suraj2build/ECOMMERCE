@@ -1,6 +1,6 @@
 # 12. Checkout
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CHK-001`–`004`, `IND-002`, `IND-003`, `IND-005`)
+**Status:** IMPLEMENTED (Phase 2 build, 2026-09-23 — see `blueprint/DECISION_REGISTER.md` `CHK-001`–`004`, `IND-002`, `IND-003`, `IND-005`, and `acceptance/m13-checkout.md`)
 
 ## Purpose
 

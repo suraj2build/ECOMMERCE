@@ -14,16 +14,15 @@ import { getCart, updateCartItemQuantity, removeCartItem, type CartView } from '
  * price/availability on every load (the GET /storefront/cart response
  * already does this server-side) and surfaces price/stock changes
  * clearly rather than silently proceeding - spec requirement. Checkout
- * itself is honestly not wired up yet - M13's own milestone, same
- * PDP/Cart-style honesty M09/M11 used for their own not-yet-built
- * dependencies.
+ * itself is now wired up (M13, /checkout) - blocked here whenever
+ * hasBlockingChanges is true, so the customer resolves cart issues
+ * before checkout ever re-validates them again.
  */
 export default function BagPage() {
   const [cart, setCart] = useState<CartView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingSkuId, setPendingSkuId] = useState<string | null>(null);
-  const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
 
   async function refresh() {
     try {
@@ -158,19 +157,19 @@ export default function BagPage() {
                 Some items need your attention before you can check out.
               </p>
             )}
-            <button
-              type="button"
-              disabled={cart.hasBlockingChanges}
-              className={buttonClassName('primary', 'mt-4 w-full')}
-              onClick={() => setCheckoutMessage('Checkout is coming soon - not yet built.')}
+            <Link
+              href="/checkout"
+              aria-disabled={cart.hasBlockingChanges}
+              className={buttonClassName(
+                'primary',
+                `mt-4 w-full${cart.hasBlockingChanges ? ' pointer-events-none opacity-50' : ''}`,
+              )}
+              onClick={(e) => {
+                if (cart.hasBlockingChanges) e.preventDefault();
+              }}
             >
               Checkout
-            </button>
-            {checkoutMessage && (
-              <p role="status" className="mt-2 text-xs text-ink-muted">
-                {checkoutMessage}
-              </p>
-            )}
+            </Link>
           </div>
         </div>
       )}

@@ -38,6 +38,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'po:read',
     'catalog:price:approve',
     'catalog:publish',
+    'shipping:manage',
     'audit:read',
     'analytics:read',
     'tax:read',

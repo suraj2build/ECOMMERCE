@@ -65,6 +65,11 @@ const envSchema = z.object({
   // --- Wishlist / Cart (M12, CART-001/002) ---
   CART_GUEST_TTL_DAYS: z.coerce.number().int().positive().default(30),
   CART_MAX_QUANTITY_PER_SKU: z.coerce.number().int().positive().default(10),
+
+  // --- Checkout / Payment (M13, CHK-003, PAY-001 COD value cap) ---
+  SHIPPING_DEFAULT_FLAT_AMOUNT: z.coerce.number().nonnegative().default(99),
+  SHIPPING_DEFAULT_FREE_ABOVE_THRESHOLD: z.coerce.number().nonnegative().default(1999),
+  COD_MAX_ORDER_VALUE_INR: z.coerce.number().positive().default(5000),
 });
 
 export type Env = z.infer<typeof envSchema>;

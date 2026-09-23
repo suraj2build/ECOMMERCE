@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { Prisma, PrismaClient, InventoryTxnType } from '@fcp/db';
+import { Prisma, type PrismaClient, type InventoryTxnType } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
 import { ConflictError, InsufficientStockError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
@@ -252,6 +252,38 @@ export class InventoryService {
     const env = loadEnv();
     const ttl = params.ttlSeconds ?? env.INVENTORY_RESERVATION_TTL_SECONDS;
 
+    try {
+      return await this.runReserveTransaction(params, ttl);
+    } catch (err) {
+      // Two concurrent callers can both pass the idempotencyKey
+      // existence check below before either has committed - the DB's
+      // own unique constraint on idempotencyKey is the real guarantee,
+      // and the loser here hits it as a raw P2002 on INSERT (found via
+      // a genuine concurrent-double-submission checkout test, M13).
+      // Never surface that as an opaque 500 or a spurious conflict:
+      // return the winner's reservation, the same idempotent outcome
+      // the loser would have gotten had it simply run a moment later.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const winner = await this.prisma.inventoryReservation.findUnique({
+          where: { idempotencyKey: params.idempotencyKey },
+        });
+        if (winner) return winner;
+      }
+      throw err;
+    }
+  }
+
+  private async runReserveTransaction(
+    params: {
+      skuId: string;
+      locationId: string;
+      quantity: number;
+      referenceType?: string;
+      referenceId?: string;
+      idempotencyKey: string;
+    },
+    ttl: number,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.inventoryReservation.findUnique({
         where: { idempotencyKey: params.idempotencyKey },

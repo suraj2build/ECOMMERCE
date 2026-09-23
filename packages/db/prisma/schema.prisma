@@ -72,6 +72,7 @@ model Location {
   inventoryTxns     InventoryTransaction[]
   transfersFrom     InventoryTransfer[]    @relation("TransferFrom")
   transfersTo       InventoryTransfer[]    @relation("TransferTo")
+  checkoutSessionLines CheckoutSessionLine[]
 
   @@index([gstRegistrationId])
   @@map("locations")
@@ -94,6 +95,7 @@ model Customer {
   reviews       Review[]
   cart          Cart?
   wishlist      Wishlist?
+  checkoutSessions CheckoutSession[]
 
   @@map("customers")
 }
@@ -416,8 +418,9 @@ model Sku {
   reservations       InventoryReservation[]
   transfers          InventoryTransfer[]
   invoiceLines       InvoiceLine[]
-  cartItems          CartItem[]
-  wishlistItems      WishlistItem[]
+  cartItems             CartItem[]
+  wishlistItems         WishlistItem[]
+  checkoutSessionLines  CheckoutSessionLine[]
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -1361,4 +1364,140 @@ model WishlistItem {
 
   @@unique([wishlistId, skuId])
   @@map("wishlist_items")
+}
+
+// ---------------------------------------------------------------------------
+// M13: Checkout (specs/12-checkout.md, CHK-001/002/003/004, INV-002)
+// ---------------------------------------------------------------------------
+
+// Configurable shipping-cost rule (CHK-003). Engineering-default shape:
+// a single active row, either a flat rate or "free above a threshold"
+// (the two rule types actually wired up - weight/value-based shipping is
+// deferred, since no product-weight data model exists yet). Kept as a
+// table (not an env var) so ops can change it without a redeploy.
+enum ShippingRuleType {
+  FLAT
+  FREE_ABOVE_THRESHOLD
+}
+
+model ShippingRule {
+  id                 String           @id @default(uuid())
+  type               ShippingRuleType
+  flatAmount         Decimal?         @db.Decimal(10, 2)
+  freeAboveThreshold Decimal?         @db.Decimal(10, 2)
+  isActive           Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@map("shipping_rules")
+}
+
+// This is the "order creation trigger" artifact checkout produces - NOT
+// the formal Order/order-management model. That is M15's own milestone
+// to create (see the pre-existing comment on Invoice.orderId below and
+// InvoiceService's docblock: "M15 ... will call issueInvoice() ... once
+// the Order model exists"). A CheckoutSession's id is a stable,
+// order-shaped identifier other modules can already reference by plain
+// string (the same pattern Invoice.orderId already uses) without a real
+// FK, so M15 can adopt/promote it later without a breaking change here.
+enum CheckoutSessionStatus {
+  STARTED
+  RESERVED
+  CONFIRMED
+  PAYMENT_FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum CheckoutPaymentMethod {
+  PREPAID
+  COD
+}
+
+model CheckoutSession {
+  id                 String                 @id @default(uuid())
+  customerId         String?
+  guestSessionId     String?
+  contactName        String
+  contactMobile      String
+  contactEmail       String?
+  billingAddress     Json
+  shippingAddress    Json
+  shippingStateCode  String
+  shippingMethodCode String                 @default("STANDARD")
+  shippingCost       Decimal                @db.Decimal(10, 2)
+  subtotal           Decimal                @db.Decimal(10, 2) // tax-inclusive sum of lines
+  taxAmount          Decimal                @db.Decimal(10, 2) // informational - already included within subtotal
+  grandTotal         Decimal                @db.Decimal(10, 2)
+  currency           String                 @default("INR")
+  paymentMethod      CheckoutPaymentMethod
+  status             CheckoutSessionStatus  @default(STARTED)
+  idempotencyKey     String                 @unique
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  confirmedAt        DateTime?
+
+  customer Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines    CheckoutSessionLine[]
+  payment  Payment?
+
+  @@map("checkout_sessions")
+}
+
+// Frozen line-item snapshot, the same discipline as InvoiceLine - never
+// re-derived from current product/price data after creation.
+model CheckoutSessionLine {
+  id                   String   @id @default(uuid())
+  checkoutSessionId    String
+  skuId                String
+  locationId           String
+  quantity             Int
+  unitPriceInclusive   Decimal  @db.Decimal(10, 2)
+  taxableValueSnapshot Decimal  @db.Decimal(10, 2)
+  gstRatePercent       Decimal  @db.Decimal(5, 2)
+  taxAmountSnapshot    Decimal  @db.Decimal(10, 2)
+  lineTotalInclusive   Decimal  @db.Decimal(10, 2)
+  reservationId        String? // plain reference to InventoryReservation.id
+
+  checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
+  sku             Sku             @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location        Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@map("checkout_session_lines")
+}
+
+// Payment (M13 lays the abstraction + a fully-working COD path; the real
+// Razorpay integration - authorize/capture/refund/webhook - is M14's own
+// scope, ADR-0011). Payment state is deliberately its own state machine,
+// never conflated with CheckoutSessionStatus (specs/13-payment.md).
+enum PaymentProviderType {
+  RAZORPAY
+  COD
+}
+
+enum PaymentStatus {
+  INITIATED
+  AUTHORIZED
+  CAPTURED
+  CONFIRMED // COD's own terminal success state - no capture step
+  FAILED
+  EXPIRED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model Payment {
+  id                  String              @id @default(uuid())
+  checkoutSessionId   String              @unique
+  provider            PaymentProviderType
+  status              PaymentStatus       @default(INITIATED)
+  amount              Decimal             @db.Decimal(10, 2)
+  providerReferenceId String?
+  idempotencyKey      String              @unique
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
 }
