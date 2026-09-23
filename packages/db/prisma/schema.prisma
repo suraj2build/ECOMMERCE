@@ -1,18 +1,21 @@
 // Fashion Commerce Platform - Prisma schema
 // Covers Phase 1 (M00-M07): Foundation, Auth/RBAC, Product Master,
 // Suppliers, Purchase Orders, GRN/QC, Inventory, Catalog/Pricing.
+// Phase 2 (M08+) adds Tax & Invoicing Foundation and beyond.
 //
 // See ARCHITECTURE.md, ADR-0012 (inventory ledger), ADR-0016 (Medusa
 // sequencing), and blueprint/DECISION_REGISTER.md for the decisions
 // this schema implements.
 //
-// NOTE: migration 20260922171222_add_integrity_constraints also adds a
-// set of CHECK constraints (non-negative/positive quantities and money,
+// NOTE: migrations 20260922171222_add_integrity_constraints and
+// 20260923000000_add_tax_invoicing_foundation also add hand-written
+// CHECK constraints (non-negative/positive quantities and money,
 // InventoryBalance.reserved <= onHand, GRN quantity-balance, Price
-// sellingPrice <= mrp) that are NOT representable in this DSL and so have
-// no corresponding attribute here. Read that migration file before
-// assuming the schema below is the complete set of database-level
-// invariants.
+// sellingPrice <= mrp, Invoice/InvoiceLine/CreditNote/CreditNoteLine
+// CGST+SGST vs IGST mutual exclusivity, effective-date window sanity)
+// that are NOT representable in this DSL and so have no corresponding
+// attribute here. Read those migration files before assuming the schema
+// below is the complete set of database-level invariants.
 
 generator client {
   provider = "prisma-client-js"
@@ -47,18 +50,21 @@ enum LocationType {
 }
 
 model Location {
-  id        String       @id @default(uuid())
-  code      String       @unique
-  name      String
-  type      LocationType @default(WAREHOUSE)
-  isActive  Boolean      @default(true)
-  addressLine1 String?
-  addressLine2 String?
-  city         String?
-  state        String?
-  pinCode      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String       @id @default(uuid())
+  code              String       @unique
+  name              String
+  type              LocationType @default(WAREHOUSE)
+  isActive          Boolean      @default(true)
+  addressLine1      String?
+  addressLine2      String?
+  city              String?
+  state             String?
+  pinCode           String?
+  gstRegistrationId String? // M08: which GST registration supplies from this location (TAX-001); nullable until configured
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  gstRegistration GstRegistration? @relation(fields: [gstRegistrationId], references: [id], onDelete: Restrict)
 
   purchaseOrders    PurchaseOrder[]
   goodsReceipts     GoodsReceipt[]
@@ -67,6 +73,7 @@ model Location {
   transfersFrom     InventoryTransfer[]    @relation("TransferFrom")
   transfersTo       InventoryTransfer[]    @relation("TransferTo")
 
+  @@index([gstRegistrationId])
   @@map("locations")
 }
 
@@ -75,13 +82,13 @@ model Location {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id              String    @id @default(uuid())
-  mobile          String    @unique
-  email           String?
-  fullName        String?
+  id               String    @id @default(uuid())
+  mobile           String    @unique
+  email            String?
+  fullName         String?
   mobileVerifiedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   refreshTokens CustomerRefreshToken[]
 
@@ -89,15 +96,15 @@ model Customer {
 }
 
 model OtpCode {
-  id         String    @id @default(uuid())
-  mobile     String
-  codeHash   String
-  purpose    String    @default("LOGIN")
-  attempts   Int       @default(0)
-  maxAttempts Int      @default(5)
-  expiresAt  DateTime
-  consumedAt DateTime?
-  createdAt  DateTime  @default(now())
+  id          String    @id @default(uuid())
+  mobile      String
+  codeHash    String
+  purpose     String    @default("LOGIN")
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([mobile, consumedAt])
   @@map("otp_codes")
@@ -118,39 +125,39 @@ model CustomerRefreshToken {
 }
 
 model StaffUser {
-  id           String    @id @default(uuid())
-  email        String    @unique
+  id           String   @id @default(uuid())
+  email        String   @unique
   passwordHash String
   fullName     String
-  isActive     Boolean   @default(true)
-  mfaEnabled   Boolean   @default(false)
+  isActive     Boolean  @default(true)
+  mfaEnabled   Boolean  @default(false)
   mfaSecret    String? // TOTP secret, encrypted at rest by application layer
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  roles               StaffUserRole[]
-  sessions            StaffSession[]
-  submittedPOs        PurchaseOrder[]        @relation("POSubmittedBy")
-  approvedPOs         PurchaseOrder[]        @relation("POApprovedBy")
-  poApprovalEvents    PurchaseOrderApproval[]
-  receivedGRNs        GoodsReceipt[]         @relation("GRNReceivedBy")
-  inventoryAdjustments InventoryTransaction[] @relation("InventoryAdjustmentActor")
-  coApprovedAdjustments InventoryTransaction[] @relation("InventoryAdjustmentCoApprover")
-  publishedStyles      Style[]               @relation("StylePublishedBy")
-  auditLogEntries      AuditLog[]
+  roles                 StaffUserRole[]
+  sessions              StaffSession[]
+  submittedPOs          PurchaseOrder[]         @relation("POSubmittedBy")
+  approvedPOs           PurchaseOrder[]         @relation("POApprovedBy")
+  poApprovalEvents      PurchaseOrderApproval[]
+  receivedGRNs          GoodsReceipt[]          @relation("GRNReceivedBy")
+  inventoryAdjustments  InventoryTransaction[]  @relation("InventoryAdjustmentActor")
+  coApprovedAdjustments InventoryTransaction[]  @relation("InventoryAdjustmentCoApprover")
+  publishedStyles       Style[]                 @relation("StylePublishedBy")
+  auditLogEntries       AuditLog[]
 
   @@map("staff_users")
 }
 
 model StaffSession {
-  id         String    @id @default(uuid())
+  id          String    @id @default(uuid())
   staffUserId String
-  tokenHash  String    @unique
-  ipAddress  String?
-  userAgent  String?
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
+  tokenHash   String    @unique
+  ipAddress   String?
+  userAgent   String?
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
 
   staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
 
@@ -172,8 +179,8 @@ model Role {
 }
 
 model Permission {
-  id          String   @id @default(uuid())
-  key         String   @unique // e.g. "po:approve", "inventory:adjust"
+  id          String  @id @default(uuid())
+  key         String  @unique // e.g. "po:approve", "inventory:adjust"
   description String?
 
   roles RolePermission[]
@@ -245,11 +252,11 @@ enum StyleLifecycleState {
 }
 
 model Category {
-  id       String     @id @default(uuid())
+  id       String  @id @default(uuid())
   name     String
-  slug     String     @unique
+  slug     String  @unique
   parentId String?
-  isActive Boolean    @default(true)
+  isActive Boolean @default(true)
 
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children Category[] @relation("CategoryTree")
@@ -259,47 +266,47 @@ model Category {
 }
 
 model Style {
-  id             String              @id @default(uuid())
-  styleCode      String              @unique
-  name           String
-  brandId        String
-  categoryId     String
-  department     String? // e.g. Men, Women
-  gender         String?
-  division       String?
-  subcategory    String?
-  season         String // required (PROD-001)
-  collection     String // required (PROD-001)
-  fabric         String?
-  fit            String?
-  pattern        String?
-  occasion       String?
-  sleeve         String?
-  neck           String?
-  washCare       String?
-  countryOfOrigin String?
-  hsnCode        String? // nullable pending TAX-003 verification
-  customAttributes Json?             // extensible attribute bag (PROD-001)
+  id               String  @id @default(uuid())
+  styleCode        String  @unique
+  name             String
+  brandId          String
+  categoryId       String
+  department       String? // e.g. Men, Women
+  gender           String?
+  division         String?
+  subcategory      String?
+  season           String // required (PROD-001)
+  collection       String // required (PROD-001)
+  fabric           String?
+  fit              String?
+  pattern          String?
+  occasion         String?
+  sleeve           String?
+  neck             String?
+  washCare         String?
+  countryOfOrigin  String?
+  hsnCode          String? // nullable pending TAX-003 verification
+  customAttributes Json? // extensible attribute bag (PROD-001)
 
-  lifecycleState StyleLifecycleState @default(DRAFT)
-  qaPassedAt     DateTime?           // automated completeness gate (PROD-002/003)
-  publishedAt    DateTime?
+  lifecycleState     StyleLifecycleState @default(DRAFT)
+  qaPassedAt         DateTime? // automated completeness gate (PROD-002/003)
+  publishedAt        DateTime?
   publishedByStaffId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  brand    Brand    @relation(fields: [brandId], references: [id])
-  category Category @relation(fields: [categoryId], references: [id])
+  brand       Brand      @relation(fields: [brandId], references: [id])
+  category    Category   @relation(fields: [categoryId], references: [id])
   publishedBy StaffUser? @relation("StylePublishedBy", fields: [publishedByStaffId], references: [id], onDelete: Restrict)
 
-  colours       Colour[]
-  skus          Sku[]
-  media         ProductMedia[]
-  prices        Price[]
-  collections   CollectionStyle[]
-  badges        MerchandiseBadge[]
-  supplierSkus  SupplierSku[]
+  colours      Colour[]
+  skus         Sku[]
+  media        ProductMedia[]
+  prices       Price[]
+  collections  CollectionStyle[]
+  badges       MerchandiseBadge[]
+  supplierSkus SupplierSku[]
 
   @@index([lifecycleState])
   @@index([brandId])
@@ -314,9 +321,9 @@ model Colour {
   colourCode String
   hexSwatch  String?
 
-  style Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  skus  Sku[]
-  media ProductMedia[]
+  style  Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  skus   Sku[]
+  media  ProductMedia[]
   prices Price[]
 
   @@unique([styleId, colourCode])
@@ -334,16 +341,16 @@ model Size {
 }
 
 model SizeChart {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   name          String
   category      String? // scoping dimensions (PROD-004)
   gender        String?
   brandId       String?
-  version       Int      @default(1)
-  effectiveFrom DateTime @default(now())
+  version       Int       @default(1)
+  effectiveFrom DateTime  @default(now())
   effectiveTo   DateTime?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
 
   entries SizeChartEntry[]
   skus    Sku[]
@@ -352,9 +359,9 @@ model SizeChart {
 }
 
 model SizeChartEntry {
-  id          String @id @default(uuid())
-  sizeChartId String
-  sizeLabel   String
+  id           String @id @default(uuid())
+  sizeChartId  String
+  sizeLabel    String
   measurements Json
 
   sizeChart SizeChart @relation(fields: [sizeChartId], references: [id], onDelete: Cascade)
@@ -371,6 +378,7 @@ model Sku {
   colourId    String
   sizeId      String
   sizeChartId String?
+  hsnCode     String? // M08: per-SKU HSN override; falls back to Style.hsnCode when null (TAX-003)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -387,6 +395,7 @@ model Sku {
   inventoryTxns      InventoryTransaction[]
   reservations       InventoryReservation[]
   transfers          InventoryTransfer[]
+  invoiceLines       InvoiceLine[]
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -399,16 +408,16 @@ enum MediaType {
 }
 
 model ProductMedia {
-  id        String    @id @default(uuid())
-  styleId   String
-  colourId  String? // null = applies to all colours; set = variant-specific imagery
-  url       String
-  type      MediaType @default(IMAGE)
-  sortOrder Int       @default(0)
-  altText   String?
-  isSwatch  Boolean   @default(false)
+  id          String    @id @default(uuid())
+  styleId     String
+  colourId    String? // null = applies to all colours; set = variant-specific imagery
+  url         String
+  type        MediaType @default(IMAGE)
+  sortOrder   Int       @default(0)
+  altText     String?
+  isSwatch    Boolean   @default(false)
   seoMetadata Json?
-  createdAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
 
   style  Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
   colour Colour? @relation(fields: [colourId], references: [id], onDelete: Cascade)
@@ -427,18 +436,18 @@ enum SupplierType {
 }
 
 model Supplier {
-  id            String       @id @default(uuid())
-  code          String       @unique
-  name          String
-  type          SupplierType
-  contactName   String?
-  contactEmail  String?
-  contactPhone  String?
-  paymentTerms  String?
-  leadTimeDays  Int?
-  isActive      Boolean      @default(true)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id           String       @id @default(uuid())
+  code         String       @unique
+  name         String
+  type         SupplierType
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  paymentTerms String?
+  leadTimeDays Int?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   supplierSkus   SupplierSku[]
   purchaseOrders PurchaseOrder[]
@@ -447,14 +456,14 @@ model Supplier {
 }
 
 model SupplierSku {
-  id         String   @id @default(uuid())
-  supplierId String
-  skuId      String
-  styleId    String
-  cost       Decimal  @db.Decimal(12, 2)
-  currency   String   @default("INR")
-  isPreferred Boolean @default(false)
-  createdAt  DateTime @default(now())
+  id          String   @id @default(uuid())
+  supplierId  String
+  skuId       String
+  styleId     String
+  cost        Decimal  @db.Decimal(12, 2)
+  currency    String   @default("INR")
+  isPreferred Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
   supplier Supplier @relation(fields: [supplierId], references: [id])
   sku      Sku      @relation(fields: [skuId], references: [id])
@@ -480,19 +489,19 @@ enum PurchaseOrderStatus {
 }
 
 model PurchaseOrder {
-  id            String              @id @default(uuid())
-  poNumber      String              @unique
-  supplierId    String
-  locationId    String
-  status        PurchaseOrderStatus @default(DRAFT)
-  submittedByStaffId String?
-  approvedByStaffId  String?
-  approvalThresholdApplied Decimal? @db.Decimal(12, 2)
-  totalCost     Decimal             @default(0) @db.Decimal(14, 2)
-  currency      String              @default("INR")
-  expectedDate  DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id                       String              @id @default(uuid())
+  poNumber                 String              @unique
+  supplierId               String
+  locationId               String
+  status                   PurchaseOrderStatus @default(DRAFT)
+  submittedByStaffId       String?
+  approvedByStaffId        String?
+  approvalThresholdApplied Decimal?            @db.Decimal(12, 2)
+  totalCost                Decimal             @default(0) @db.Decimal(14, 2)
+  currency                 String              @default("INR")
+  expectedDate             DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
 
   supplier    Supplier   @relation(fields: [supplierId], references: [id])
   location    Location   @relation(fields: [locationId], references: [id])
@@ -533,12 +542,12 @@ enum POApprovalAction {
 }
 
 model PurchaseOrderApproval {
-  id        String            @id @default(uuid())
+  id        String           @id @default(uuid())
   poId      String
   staffId   String
   action    POApprovalAction
   comment   String?
-  createdAt DateTime          @default(now())
+  createdAt DateTime         @default(now())
 
   po    PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
   staff StaffUser     @relation(fields: [staffId], references: [id])
@@ -557,14 +566,14 @@ enum GoodsReceiptStatus {
 }
 
 model GoodsReceipt {
-  id             String             @id @default(uuid())
-  grnNumber      String             @unique
-  poId           String
-  locationId     String
+  id                String             @id @default(uuid())
+  grnNumber         String             @unique
+  poId              String
+  locationId        String
   receivedByStaffId String
-  status         GoodsReceiptStatus @default(OPEN)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  status            GoodsReceiptStatus @default(OPEN)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   po         PurchaseOrder @relation(fields: [poId], references: [id])
   location   Location      @relation(fields: [locationId], references: [id])
@@ -637,23 +646,23 @@ enum InventoryTxnType {
 
 // Append-only ledger - the source of truth. Never mutated after insert.
 model InventoryTransaction {
-  id             String           @id @default(uuid())
-  skuId          String
-  locationId     String
-  type           InventoryTxnType
-  quantity       Int // always positive; `type` determines directional effect
-  referenceType  String? // e.g. "GRN", "PO", "MANUAL", "TRANSFER", "RESERVATION"
-  referenceId    String?
-  reason         String?
-  idempotencyKey String?          @unique
-  actorType      AuditActorType   @default(SYSTEM)
-  actorStaffId   String?
+  id                String           @id @default(uuid())
+  skuId             String
+  locationId        String
+  type              InventoryTxnType
+  quantity          Int // always positive; `type` determines directional effect
+  referenceType     String? // e.g. "GRN", "PO", "MANUAL", "TRANSFER", "RESERVATION"
+  referenceId       String?
+  reason            String?
+  idempotencyKey    String?          @unique
+  actorType         AuditActorType   @default(SYSTEM)
+  actorStaffId      String?
   coApproverStaffId String?
-  createdAt      DateTime         @default(now())
+  createdAt         DateTime         @default(now())
 
-  sku      Sku       @relation(fields: [skuId], references: [id])
-  location Location  @relation(fields: [locationId], references: [id])
-  actorStaff StaffUser? @relation("InventoryAdjustmentActor", fields: [actorStaffId], references: [id], onDelete: Restrict)
+  sku             Sku        @relation(fields: [skuId], references: [id])
+  location        Location   @relation(fields: [locationId], references: [id])
+  actorStaff      StaffUser? @relation("InventoryAdjustmentActor", fields: [actorStaffId], references: [id], onDelete: Restrict)
   coApproverStaff StaffUser? @relation("InventoryAdjustmentCoApprover", fields: [coApproverStaffId], references: [id], onDelete: Restrict)
 
   @@index([skuId, locationId])
@@ -811,4 +820,283 @@ model MerchandiseBadge {
 
   @@index([styleId])
   @@map("merchandise_badges")
+}
+
+// ---------------------------------------------------------------------------
+// M08: India Tax / GST / Invoicing (specs/32-india-tax-invoicing.md)
+//
+// Everything below is an ENGINEERING-CONFIGURABLE architecture per the
+// Product Owner's Phase 2 "START BUILD" instruction: no GST rate, HSN
+// classification, or registration is hard-coded. TAX-001-005
+// (blueprint/DECISION_REGISTER.md) gate the real production values that
+// get entered as rows below - they do not gate this schema. The tax
+// engine must fail safely (reject, not guess) whenever a required row is
+// absent, per that instruction.
+//
+// Invoice/InvoiceLine/CreditNote/CreditNoteLine are immutable historical
+// SNAPSHOTS, not live joins - every display field a document needs is
+// copied onto the row at issue time so a later change to product,
+// customer, or tax-reference data can never silently rewrite a document
+// already issued (spec 32 "Historical orders must retain the actual tax
+// calculation used at transaction time").
+//
+// Invoice.orderId is a plain (non-FK) reference deliberately: the Order
+// model does not exist until M15. The FK relation is added when M15
+// creates Order, without changing this table's shape.
+// ---------------------------------------------------------------------------
+
+enum GstRegistrationStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+model LegalEntity {
+  id                     String   @id @default(uuid())
+  legalName              String
+  pan                    String?
+  cin                    String?
+  registeredAddressLine1 String?
+  registeredAddressLine2 String?
+  registeredCity         String?
+  registeredState        String?
+  registeredPinCode      String?
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  gstRegistrations   GstRegistration[]
+  complianceProfiles ComplianceProfile[]
+
+  @@map("legal_entities")
+}
+
+// One legal entity MAY hold multiple GST registrations (one per State/UT
+// it is established in, per TAX-001) - modelled as a real one-to-many
+// from day one rather than a single-registration assumption baked into
+// the shape, even though only one row is expected to exist at launch.
+model GstRegistration {
+  id            String                @id @default(uuid())
+  legalEntityId String
+  gstin         String                @unique
+  stateCode     String // 2-digit GST State/UT code
+  stateName     String
+  status        GstRegistrationStatus @default(PENDING)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  locations   Location[]
+  invoices    Invoice[]
+
+  @@index([stateCode])
+  @@index([legalEntityId])
+  @@map("gst_registrations")
+}
+
+// Configurable applicability gate for e-invoicing (IRP reporting), kept
+// deliberately separate from IRP *reporting-time* restrictions (spec 32
+// "keep separate concepts for: whether e-invoicing applies; and
+// applicable IRP reporting time restrictions" - the latter is enforced in
+// the adapter/service layer against einvoiceApplicableFrom, not modelled
+// as a second table here).
+model ComplianceProfile {
+  id                     String    @id @default(uuid())
+  legalEntityId          String
+  aatoThresholdCrores    Decimal?  @db.Decimal(10, 2) // annual aggregate turnover profile, configured, never inferred
+  einvoiceApplicable     Boolean   @default(false)
+  einvoiceApplicableFrom DateTime?
+  exemptionNotes         String?
+  effectiveFrom          DateTime  @default(now())
+  effectiveTo            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  legalEntity LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+
+  @@index([legalEntityId, effectiveFrom])
+  @@map("compliance_profiles")
+}
+
+enum TaxVerificationStatus {
+  UNVERIFIED
+  PENDING_REVIEW
+  VERIFIED
+}
+
+// Effective-dated HSN/rate/cess reference data. Resolution picks the
+// row whose [effectiveFrom, effectiveTo) window contains the query date,
+// mirroring CatalogService.getActivePrice's deterministic resolution
+// (specificity/recency ordering) rather than assuming at most one row
+// can ever match.
+model TaxRate {
+  id                 String                @id @default(uuid())
+  hsnCode            String
+  description        String?
+  gstRatePercent     Decimal               @db.Decimal(5, 2)
+  cessPercent        Decimal?              @db.Decimal(5, 2)
+  effectiveFrom      DateTime
+  effectiveTo        DateTime?
+  sourceReference    String? // notification number / URL - provenance, not verification
+  verificationStatus TaxVerificationStatus @default(UNVERIFIED)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([hsnCode, effectiveFrom])
+  @@map("tax_rates")
+}
+
+enum EInvoiceStatus {
+  NOT_APPLICABLE
+  PENDING
+  SUBMITTED
+  ACKNOWLEDGED
+  FAILED
+}
+
+model Invoice {
+  id                String   @id @default(uuid())
+  invoiceNumber     String   @unique // formatted, e.g. "INV/2026-27/000123"
+  financialYear     String // e.g. "2026-27"
+  sequenceNumber    Int // raw per-financial-year counter behind invoiceNumber
+  gstRegistrationId String
+  invoiceDate       DateTime @default(now())
+  orderId           String   @unique // plain reference; FK added when M15 creates Order
+
+  // Supplier snapshot (frozen from LegalEntity/GstRegistration at issue time)
+  supplierLegalName String
+  supplierAddress   Json
+  supplierGstin     String
+
+  // Recipient snapshot (frozen; B2C recipient GSTIN is normally absent)
+  recipientName      String
+  recipientGstin     String?
+  billingAddress     Json
+  deliveryAddress    Json
+  placeOfSupplyState String
+  placeOfSupplyCode  String
+  isIntraState       Boolean
+  reverseCharge      Boolean @default(false)
+
+  // Commercial totals (sum of InvoiceLine rows, frozen)
+  totalTaxableValue Decimal @db.Decimal(14, 2)
+  totalDiscount     Decimal @default(0) @db.Decimal(14, 2)
+  totalCgst         Decimal @default(0) @db.Decimal(14, 2)
+  totalSgst         Decimal @default(0) @db.Decimal(14, 2)
+  totalIgst         Decimal @default(0) @db.Decimal(14, 2)
+  totalCess         Decimal @default(0) @db.Decimal(14, 2)
+  totalInvoiceValue Decimal @db.Decimal(14, 2)
+
+  templateVersion Int @default(1)
+
+  // E-invoice / IRP readiness (adapter boundary - see einvoice-adapter.ts).
+  // No real IRP integration is authorized; these fields exist so one can
+  // be plugged in later without a schema change.
+  irpStatus      EInvoiceStatus @default(NOT_APPLICABLE)
+  irn            String?
+  irnAckNumber   String?
+  irnAckDate     DateTime?
+  irnQrPayload   String?
+  irpSubmittedAt DateTime?
+  irpErrorDetail String?
+  irpRetryCount  Int            @default(0)
+
+  createdAt DateTime @default(now())
+
+  gstRegistration GstRegistration @relation(fields: [gstRegistrationId], references: [id], onDelete: Restrict)
+  lines           InvoiceLine[]
+  creditNotes     CreditNote[]
+
+  @@index([financialYear, sequenceNumber])
+  @@index([gstRegistrationId])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id        String @id @default(uuid())
+  invoiceId String
+  skuId     String
+
+  // Frozen display snapshot - never re-derived from current product data
+  skuCodeSnapshot     String
+  descriptionSnapshot String
+  colourSnapshot      String?
+  sizeSnapshot        String?
+  hsnCodeSnapshot     String
+
+  quantity       Int
+  unitOfMeasure  String  @default("PCS")
+  grossValue     Decimal @db.Decimal(12, 2)
+  discountAmount Decimal @default(0) @db.Decimal(12, 2)
+  taxableValue   Decimal @db.Decimal(12, 2)
+  gstRatePercent Decimal @db.Decimal(5, 2)
+  cgstAmount     Decimal @default(0) @db.Decimal(12, 2)
+  sgstAmount     Decimal @default(0) @db.Decimal(12, 2)
+  igstAmount     Decimal @default(0) @db.Decimal(12, 2)
+  cessAmount     Decimal @default(0) @db.Decimal(12, 2)
+  lineTotal      Decimal @db.Decimal(12, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  sku     Sku     @relation(fields: [skuId], references: [id], onDelete: Restrict)
+
+  creditNoteLines CreditNoteLine[]
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
+}
+
+model CreditNote {
+  id                String   @id @default(uuid())
+  creditNoteNumber  String   @unique
+  financialYear     String
+  sequenceNumber    Int
+  originalInvoiceId String
+  issueDate         DateTime @default(now())
+  reason            String
+  referenceNote     String? // plain reference to the cancellation/return/refund record that triggered this (those milestones are not built yet)
+
+  totalTaxableValueReduction Decimal @db.Decimal(14, 2)
+  totalCgstReduction         Decimal @default(0) @db.Decimal(14, 2)
+  totalSgstReduction         Decimal @default(0) @db.Decimal(14, 2)
+  totalIgstReduction         Decimal @default(0) @db.Decimal(14, 2)
+  totalCessReduction         Decimal @default(0) @db.Decimal(14, 2)
+  totalValueReduction        Decimal @db.Decimal(14, 2)
+
+  templateVersion Int      @default(1)
+  createdAt       DateTime @default(now())
+
+  originalInvoice Invoice          @relation(fields: [originalInvoiceId], references: [id], onDelete: Restrict)
+  lines           CreditNoteLine[]
+
+  @@index([financialYear, sequenceNumber])
+  @@index([originalInvoiceId])
+  @@map("credit_notes")
+}
+
+model CreditNoteLine {
+  id            String @id @default(uuid())
+  creditNoteId  String
+  invoiceLineId String
+
+  descriptionSnapshot String
+  hsnCodeSnapshot     String
+  quantity            Int
+
+  taxableValueReduction Decimal @db.Decimal(12, 2)
+  gstRatePercent        Decimal @db.Decimal(5, 2)
+  cgstReduction         Decimal @default(0) @db.Decimal(12, 2)
+  sgstReduction         Decimal @default(0) @db.Decimal(12, 2)
+  igstReduction         Decimal @default(0) @db.Decimal(12, 2)
+  cessReduction         Decimal @default(0) @db.Decimal(12, 2)
+  lineTotalReduction    Decimal @db.Decimal(12, 2)
+
+  creditNote  CreditNote  @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  invoiceLine InvoiceLine @relation(fields: [invoiceLineId], references: [id], onDelete: Restrict)
+
+  @@index([creditNoteId])
+  @@index([invoiceLineId])
+  @@map("credit_note_lines")
 }

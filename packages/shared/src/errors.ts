@@ -59,3 +59,18 @@ export class InsufficientStockError extends AppError {
     );
   }
 }
+
+/**
+ * Raised when a request is well-formed but cannot be processed because
+ * required compliance configuration (GST registration, tax rate/HSN
+ * reference data, etc. - specs/32-india-tax-invoicing.md) is absent.
+ * Distinct from ValidationError (client sent something wrong) and
+ * NotFoundError (a specific entity id doesn't exist): this means the
+ * *system* is not yet configured to answer the question safely, so the
+ * engine must refuse rather than guess (CLAUDE.md SS0, spec 32).
+ */
+export class TaxConfigurationError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, 422, 'TAX_CONFIGURATION_MISSING', details);
+  }
+}
