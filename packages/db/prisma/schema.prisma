@@ -1439,7 +1439,7 @@ model CheckoutSession {
 
   customer Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines    CheckoutSessionLine[]
-  payment  Payment?
+  payments Payment[]
 
   @@map("checkout_sessions")
 }
@@ -1486,9 +1486,14 @@ enum PaymentStatus {
   PARTIALLY_REFUNDED
 }
 
+// M14: one-to-many with CheckoutSession (not unique) - a failed/expired
+// payment attempt can be retried from the same session without creating
+// a new session or losing the reservation (PAY-005). CheckoutService's
+// own view always resolves "the current attempt" as the most recent row
+// for a session, ordered by createdAt.
 model Payment {
   id                  String              @id @default(uuid())
-  checkoutSessionId   String              @unique
+  checkoutSessionId   String
   provider            PaymentProviderType
   status              PaymentStatus       @default(INITIATED)
   amount              Decimal             @db.Decimal(10, 2)
@@ -1498,6 +1503,29 @@ model Payment {
   updatedAt           DateTime            @updatedAt
 
   checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
+  events          PaymentEvent[]
 
+  @@index([checkoutSessionId, createdAt])
   @@map("payments")
+}
+
+// Webhook event log (PAY-003): every inbound provider webhook is
+// recorded here BEFORE any state change is applied, keyed uniquely per
+// (provider, providerEventId) so a duplicate delivery of the same event
+// is detected and turned into a safe no-op rather than a second capture/
+// refund. This is the auditable record financial-integrity review
+// depends on - never pruned, never mutated after insert.
+model PaymentEvent {
+  id              String   @id @default(uuid())
+  provider        PaymentProviderType
+  providerEventId String
+  eventType       String
+  paymentId       String?
+  payload         Json
+  receivedAt      DateTime @default(now())
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@map("payment_events")
 }

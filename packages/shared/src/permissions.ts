@@ -63,6 +63,7 @@ export const PERMISSION_KEYS = [
   'pincode:manage',
   'catalog:cross_sell:manage',
   'shipping:manage',
+  'payment:refund',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

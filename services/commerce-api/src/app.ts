@@ -1,4 +1,4 @@
-import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyError } from 'fastify';
 import { loadEnv } from '@fcp/config';
 import { createLogger } from '@fcp/shared';
 
@@ -24,6 +24,7 @@ import { SearchIndexService } from './modules/search/index-service.js';
 import pdpRoutes from './modules/pdp/routes.js';
 import cartRoutes from './modules/cart/routes.js';
 import checkoutRoutes from './modules/checkout/routes.js';
+import paymentRoutes from './modules/payment/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -36,6 +37,45 @@ export async function buildApp(): Promise<FastifyInstance> {
     loggerInstance: logger,
     disableRequestLogging: env.NODE_ENV === 'test',
     trustProxy: true,
+  });
+
+  // Single global `application/json` parser (Fastify does not allow a
+  // child plugin to register a second parser for the same content type,
+  // even in its own encapsulated context - FST_ERR_CTP_ALREADY_PRESENT -
+  // so this one function must serve every route, not just the webhook).
+  // Two things it does beyond Fastify's default:
+  //
+  // 1. Tolerates an EMPTY body sent with this content-type. Fastify v5's
+  //    default parser rejects that ("Body cannot be empty...") where v4
+  //    tolerated it (docs/decisions/0018-fastify-v5-cve-migration.md) -
+  //    every storefront DELETE call (remove cart item, remove wishlist
+  //    item, etc.) sends exactly that shape, since the browser fetch
+  //    wrapper always sets Content-Type even with nothing to send.
+  // 2. Stashes the exact raw bytes on `request.rawBody` - the Razorpay
+  //    webhook route (modules/payment/routes.ts) needs the untouched
+  //    bytes to verify Razorpay's HMAC signature; re-serializing the
+  //    parsed JSON would silently break on any whitespace/key-ordering
+  //    difference. Harmless for every other route, which just ignores it.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+    const raw = body as string;
+    request.rawBody = raw;
+    if (raw.length === 0) {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(raw));
+    } catch {
+      // Fastify's own default parser sets statusCode/code on a malformed-
+      // JSON error, which error-handler.ts relies on to return a clean
+      // 400 rather than falling through to the generic 500 - a raw
+      // SyntaxError from JSON.parse carries neither, so build the same
+      // shape here (certification-pass finding, api-input-failures.test.ts).
+      const error = new Error('Body is not valid JSON') as FastifyError;
+      error.statusCode = 400;
+      error.code = 'FST_ERR_CTP_INVALID_JSON_BODY';
+      done(error, undefined);
+    }
   });
 
   // Core infrastructure plugins (order matters: auth depends on prisma+redis)
@@ -82,6 +122,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(pdpRoutes, { prefix: '/api/v1' });
   await app.register(cartRoutes, { prefix: '/api/v1' });
   await app.register(checkoutRoutes, { prefix: '/api/v1' });
+  await app.register(paymentRoutes, { prefix: '/api/v1' });
 
   return app;
 }

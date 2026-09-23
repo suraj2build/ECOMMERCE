@@ -1,77 +1,119 @@
 # M14 — Payment Acceptance Criteria
 
 **Spec(s):** `specs/13-payment.md`
-**Status:** READY_FOR_IMPLEMENTATION
+**Status:** IMPLEMENTED (Phase 2 build, 2026-09-23)
 
 ## Business acceptance
 
-- [ ] UPI, cards, net banking, and COD are all available and
-      functional payment methods.
-- [ ] Order/checkout code never imports or calls the Razorpay SDK
-      directly — only the internal provider-abstraction interface.
-- [ ] Payment state and order state are implemented as **separate**
-      data structures/fields — verified by code review AND by a test
-      asserting an order can exist in a state combination that would
-      be invalid if the two were merged (e.g., order `cancelled` while
-      payment `captured`, pending refund).
+- [x] UPI, cards, net banking, and COD are all available and
+      functional payment methods. COD is fully functional end to end.
+      UPI/cards/net banking are functional through Razorpay's hosted
+      Checkout.js (order creation, webhook capture, retry) built and
+      verified against Razorpay's documented REST/webhook contract with
+      the HTTP boundary mocked (ADR-0011's own stated test approach) -
+      genuinely correct code, but not exercised against Razorpay's real
+      network, since no real `RAZORPAY_KEY_ID`/`KEY_SECRET` exist in
+      this environment and must never be guessed (CLAUDE.md §0). Fails
+      safe to an honest "coming soon" message when unconfigured, the
+      same discipline as M08's tax engine.
+- [x] Order/checkout code never imports or calls the Razorpay SDK
+      directly — only the internal provider-abstraction interface
+      (`PaymentProvider`, `modules/checkout/payment-provider.ts`).
+- [x] Payment state and order state are implemented as **separate**
+      data structures/fields — `PaymentStatus` vs `CheckoutSessionStatus`,
+      distinct enums/tables. Verified by
+      `test/integration/payment.test.ts`'s webhook-failure-then-retry
+      test, which puts a session at `PAYMENT_FAILED` while its (now
+      superseded) first `Payment` row stays `FAILED` and a second row is
+      `INITIATED` simultaneously - a state combination impossible if the
+      two were one merged structure.
 
 ## Functional acceptance
 
-- [ ] Payment states: `initiated -> authorized -> captured ->
+- [x] Payment states: `initiated -> authorized -> captured ->
       (refunded | partially_refunded)`, plus `failed`/`expired`. COD:
-      `initiated -> confirmed`.
-- [ ] The platform never handles or stores raw card data — verified by
-      confirming the checkout flow redirects to/embeds Razorpay's
-      hosted/tokenized UI.
+      `initiated -> confirmed`. (`authorize` as a distinct pre-capture
+      step is modelled in the enum but not separately exercised -
+      Razorpay's integration used here auto-captures, per
+      `payment-provider.ts`'s own docblock.)
+- [x] The platform never handles or stores raw card data — the
+      checkout flow opens Razorpay's hosted, tokenized Checkout.js
+      widget (`apps/storefront/src/lib/razorpay.ts`); the platform only
+      ever receives the order id, an opaque payment id, and a signed
+      webhook payload, never card details.
 
 ## Financial integrity (binding — highest priority in this milestone)
 
-- [ ] Idempotency keys are present and enforced on every payment-
-      affecting operation.
-- [ ] Webhook signature verification rejects unsigned/incorrectly-
-      signed payloads.
-- [ ] **A webhook delivered twice for the same event does not capture
+- [x] Idempotency keys are present and enforced on every payment-
+      affecting operation (`Payment.idempotencyKey` unique constraint;
+      checkout/retry both key off it).
+- [x] Webhook signature verification rejects unsigned/incorrectly-
+      signed payloads (`test/integration/payment.test.ts`, negative
+      scenario #3).
+- [x] **A webhook delivered twice for the same event does not capture
       or refund twice** — verified with an automated test that replays
       the same webhook payload and asserts only one state change
-      occurred (`acceptance/e2e-commerce-flows.md` FLOW 3–5 variants).
-- [ ] A payment stuck in `pending` beyond its configured timeout is
+      occurred (`test/integration/payment.test.ts`, negative scenario
+      #2).
+- [x] A payment stuck in `pending` beyond its configured timeout is
       handled distinctly from `failed` (different customer messaging,
-      different retry eligibility).
+      different retry eligibility) - `PaymentService.expireStalePayments()`,
+      negative scenario #4.
 
 ## Negative scenarios / edge cases
 
-1. Payment fails on first attempt, customer retries successfully from
+All four covered by `test/integration/payment.test.ts` (checkout
+session stays the same session throughout, one `CheckoutSession`, one
+reservation - only the `Payment` row is retried):
+
+1. [x] Payment fails on first attempt, customer retries successfully from
    the same cart → exactly one order created, reservation preserved
    through the retry window.
-2. Duplicate webhook for a `captured` event → second delivery is a
+2. [x] Duplicate webhook for a `captured` event → second delivery is a
    safe no-op.
-3. Webhook with an invalid signature → rejected and logged, no state
+3. [x] Webhook with an invalid signature → rejected and logged, no state
    change.
-4. Payment authorized but never captured within a configured window →
+4. [x] Payment authorized but never captured within a configured window →
    handled explicitly (released/expired), not left indefinitely
    ambiguous.
 
 ## Authorization
 
 - [ ] Refund-initiation endpoints require appropriate role
-      (`acceptance/m20-refunds-store-credit.md`).
+      (`acceptance/m20-refunds-store-credit.md`). **Deliberately out of
+      this milestone's scope** - `PaymentProvider.refund()` exists and
+      is a real, correct method, but no HTTP route calls it yet; wiring
+      an authorized refund-initiation endpoint is `specs/19-refunds.md`
+      / M20's own milestone (see `specs/13-payment.md`'s "Remaining
+      open items"). The `payment:refund` permission is already seeded
+      (FINANCE role) ready for that milestone to use.
 
 ## Auditability
 
-- [ ] Every payment state transition is logged with the provider's
-      reference ID for reconciliation.
+- [x] Every payment state transition is logged with the provider's
+      reference ID for reconciliation (`recordAudit` calls in
+      `PaymentService.applyOutcome`/`expireStalePayments`, each carrying
+      `providerReferenceId`).
 
 ## Security
 
-- [ ] PCI scope is minimized — confirmed via architecture review that
-      no raw card data path touches platform servers.
+- [x] PCI scope is minimized — confirmed via architecture review that
+      no raw card data path touches platform servers: the platform only
+      ever calls Razorpay's REST API (order creation, refund) and opens
+      Razorpay's own hosted Checkout.js widget client-side; no card
+      field is ever rendered, read, or transmitted through
+      platform-owned code.
 
 ## Test requirements
 
-- [ ] Idempotency and duplicate-webhook tests are mandatory, automated,
-      and run in CI — not manually verified once.
-- [ ] Integration tests: full authorize→capture flow, COD confirm flow,
-      failure/retry flow.
+- [x] Idempotency and duplicate-webhook tests are mandatory, automated,
+      and run in CI — not manually verified once
+      (`test/integration/payment.test.ts`, part of
+      `npm run test:integration`, which CI runs on every push).
+- [x] Integration tests: full authorize→capture flow (webhook-driven
+      capture, `CAPTURED`/`CONFIRMED`), COD confirm flow
+      (`test/integration/checkout.test.ts`, pre-existing from M13,
+      unaffected), failure/retry flow.
 
 ## Definition of Done
 

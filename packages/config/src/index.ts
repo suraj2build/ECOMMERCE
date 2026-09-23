@@ -70,6 +70,19 @@ const envSchema = z.object({
   SHIPPING_DEFAULT_FLAT_AMOUNT: z.coerce.number().nonnegative().default(99),
   SHIPPING_DEFAULT_FREE_ABOVE_THRESHOLD: z.coerce.number().nonnegative().default(1999),
   COD_MAX_ORDER_VALUE_INR: z.coerce.number().positive().default(5000),
+
+  // --- Razorpay (M14, ADR-0011, PAY-001/002/003/005) ---
+  // Deliberately optional with an empty-string default, never required:
+  // when absent, RazorpayPaymentProvider fails safe to an honest
+  // "unavailable" result (the same TaxConfigurationError-style
+  // fail-safe-when-unconfigured discipline as M08's tax engine) rather
+  // than crashing the whole service at startup. Real credentials are
+  // operational configuration, never guessed or hard-coded.
+  RAZORPAY_KEY_ID: z.string().default(''),
+  RAZORPAY_KEY_SECRET: z.string().default(''),
+  RAZORPAY_WEBHOOK_SECRET: z.string().default(''),
+  PAYMENT_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900), // 15 min, matches the reservation TTL default (PAY-005)
+  PAYMENT_MAX_RETRY_ATTEMPTS: z.coerce.number().int().positive().default(3),
 });
 
 export type Env = z.infer<typeof envSchema>;

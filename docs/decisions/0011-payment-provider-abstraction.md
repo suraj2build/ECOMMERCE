@@ -36,7 +36,12 @@ implementing the abstraction, without modifying order/checkout logic.
   payment provider's SDK directly — only the abstraction interface.
 - Exact abstraction interface design and Razorpay-specific
   integration details are specified in `specs/13-payment.md` (status:
-  DRAFT until approved).
+  IMPLEMENTED, M14). As implemented, the interface is `initiate` /
+  `verifyWebhookSignature` / `parseWebhookEvent` / `refund` - signature
+  verification and webhook parsing are split into two pure functions
+  rather than one `handleWebhook`, with the DB-touching dedup/state-
+  transition orchestration living in `PaymentService`, not the
+  provider. Same abstraction boundary, refined shape.
 - Refunds and exchanges (`specs/19-refunds.md`, `specs/20-exchanges.md`)
   must also go through the same abstraction, including for COD orders
   (e.g., refund-to-bank/UPI flows).

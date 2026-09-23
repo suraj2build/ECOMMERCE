@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
 import { InsufficientStockError, NotFoundError, ValidationError } from '@fcp/shared';
@@ -241,8 +242,15 @@ export class CheckoutService {
       throw err;
     }
 
+    // Generated up front (rather than left to Prisma's own default) so
+    // it can be handed to the payment provider as the order `receipt`
+    // before the CheckoutSession row exists - Razorpay order creation
+    // necessarily happens before the row it will be linked to.
+    const sessionIdCandidate = randomUUID();
+
     const paymentProvider = resolvePaymentProvider(input.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY');
     const paymentResult = await paymentProvider.initiate({
+      checkoutSessionId: sessionIdCandidate,
       amount: grandTotal,
       idempotencyKey: `${input.idempotencyKey}:payment`,
     });
@@ -261,6 +269,7 @@ export class CheckoutService {
       const created = await this.prisma.$transaction(async (tx) => {
         const session = await tx.checkoutSession.create({
           data: {
+            id: sessionIdCandidate,
             customerId: identity.customerId,
             guestSessionId: identity.guestSessionId,
             contactName: input.contactName,
@@ -290,7 +299,7 @@ export class CheckoutService {
                 reservationId: l.reservationId,
               })),
             },
-            payment: {
+            payments: {
               create: {
                 provider: input.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY',
                 status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'INITIATED',
@@ -330,6 +339,86 @@ export class CheckoutService {
   }
 
   async getCheckoutSession(id: string, identity: CartOwnerIdentity) {
+    await this.loadOwnedSession(id, identity);
+    return this.toView(id);
+  }
+
+  /**
+   * Starts a NEW Payment attempt against an already-reserved session
+   * (PAY-005 - "reservation preserved through the retry window"). Only
+   * valid while the session's reservations are still intact
+   * (status PAYMENT_FAILED) - once the session has expired the
+   * reservations are already released and the customer must start a
+   * fresh checkout, never silently re-reserve stock here.
+   */
+  async retryPayment(id: string, identity: CartOwnerIdentity, idempotencyKey: string) {
+    const session = await this.loadOwnedSession(id, identity);
+
+    const paymentIdempotencyKey = `${idempotencyKey}:payment`;
+    const existingPayment = await this.prisma.payment.findUnique({ where: { idempotencyKey: paymentIdempotencyKey } });
+    if (existingPayment) return this.toView(session.id);
+
+    if (session.status !== 'PAYMENT_FAILED') {
+      throw new ValidationError('This checkout can no longer be retried - please start a new checkout');
+    }
+
+    const lines = await this.prisma.checkoutSessionLine.findMany({ where: { checkoutSessionId: session.id } });
+    for (const line of lines) {
+      const reservation = line.reservationId
+        ? await this.prisma.inventoryReservation.findUnique({ where: { id: line.reservationId } })
+        : null;
+      if (!reservation || reservation.status !== 'ACTIVE') {
+        throw new ValidationError('Your reservation has expired - please start a new checkout');
+      }
+    }
+
+    const paymentProvider = resolvePaymentProvider(session.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY');
+    const paymentResult = await paymentProvider.initiate({
+      checkoutSessionId: session.id,
+      amount: Number(session.grandTotal),
+      idempotencyKey: paymentIdempotencyKey,
+    });
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.payment.create({
+          data: {
+            checkoutSessionId: session.id,
+            provider: session.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY',
+            status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'INITIATED',
+            amount: session.grandTotal,
+            providerReferenceId: paymentResult.providerReferenceId,
+            idempotencyKey: paymentIdempotencyKey,
+          },
+        });
+        await tx.checkoutSession.update({
+          where: { id: session.id },
+          data: {
+            status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'RESERVED',
+            confirmedAt: paymentResult.status === 'CONFIRMED' ? new Date() : null,
+          },
+        });
+        await recordAudit(tx, {
+          actorType: identity.customerId ? 'CUSTOMER' : 'SYSTEM',
+          action: 'checkout.payment.retry',
+          entityType: 'CheckoutSession',
+          entityId: session.id,
+          newValue: { status: paymentResult.status },
+        });
+      });
+    } catch (err) {
+      // Same concurrent-double-submission handling as startCheckout - the
+      // DB's unique constraint on Payment.idempotencyKey is the real
+      // guarantee against a duplicate retry attempt racing itself.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) {
+        throw err;
+      }
+    }
+
+    return this.toView(session.id, paymentResult.message);
+  }
+
+  private async loadOwnedSession(id: string, identity: CartOwnerIdentity) {
     const session = await this.prisma.checkoutSession.findUnique({ where: { id } });
     if (!session) throw new NotFoundError('CheckoutSession', id);
 
@@ -338,7 +427,7 @@ export class CheckoutService {
       (identity.guestSessionId && session.guestSessionId === identity.guestSessionId);
     if (!owns) throw new NotFoundError('CheckoutSession', id);
 
-    return this.toView(id);
+    return session;
   }
 
   private async toView(id: string, paymentMessage?: string) {
@@ -346,16 +435,33 @@ export class CheckoutService {
       where: { id },
       include: {
         lines: { include: { sku: { include: { style: true, colour: true, size: true } } } },
-        payment: true,
+        // "The current attempt" is always the most recent row for this
+        // session (retries create new rows rather than mutating an old
+        // one - PAY-005) - take(1) ordered by createdAt desc resolves it
+        // without pulling the whole retry history into every view.
+        payments: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
     });
+    const currentPayment = session.payments[0];
+    // Razorpay's hosted Checkout.js needs the order id + the account's
+    // PUBLIC key id to open (never the secret) - only meaningful while
+    // a real Razorpay attempt is still in flight (INITIATED). Key id is
+    // not sensitive (it's embedded in every Razorpay integration's
+    // client-side JS by design); pulled from env directly rather than
+    // persisted, since it isn't Payment-row state.
+    const isOpenRazorpayAttempt = currentPayment?.provider === 'RAZORPAY' && currentPayment.status === 'INITIATED';
 
     return {
       id: session.id,
       status: session.status,
       paymentMethod: session.paymentMethod,
-      payment: session.payment
-        ? { status: session.payment.status, message: paymentMessage }
+      payment: currentPayment
+        ? {
+            status: currentPayment.status,
+            message: paymentMessage,
+            providerOrderId: isOpenRazorpayAttempt ? currentPayment.providerReferenceId ?? undefined : undefined,
+            providerPublicKeyId: isOpenRazorpayAttempt ? loadEnv().RAZORPAY_KEY_ID || undefined : undefined,
+          }
         : null,
       contactName: session.contactName,
       contactMobile: session.contactMobile,

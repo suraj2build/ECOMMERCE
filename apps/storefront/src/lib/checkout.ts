@@ -86,7 +86,13 @@ export interface CheckoutSessionView {
   id: string;
   status: 'STARTED' | 'RESERVED' | 'CONFIRMED' | 'PAYMENT_FAILED' | 'CANCELLED' | 'EXPIRED';
   paymentMethod: 'PREPAID' | 'COD';
-  payment: { status: string; message?: string } | null;
+  payment: {
+    status: string;
+    message?: string;
+    /** Present only while a real Razorpay attempt is in flight (INITIATED) - what Checkout.js needs to open. */
+    providerOrderId?: string;
+    providerPublicKeyId?: string;
+  } | null;
   contactName: string;
   contactMobile: string;
   shippingAddress: Address;
@@ -111,3 +117,9 @@ export const startCheckout = (input: StartCheckoutInput) =>
   checkoutFetch<CheckoutSessionView>('/api/v1/storefront/checkout', { method: 'POST', body: JSON.stringify(input) });
 
 export const getCheckoutSession = (id: string) => checkoutFetch<CheckoutSessionView>(`/api/v1/storefront/checkout/${id}`);
+
+export const retryPayment = (id: string, idempotencyKey: string) =>
+  checkoutFetch<CheckoutSessionView>(`/api/v1/storefront/checkout/${id}/retry-payment`, {
+    method: 'POST',
+    body: JSON.stringify({ idempotencyKey }),
+  });

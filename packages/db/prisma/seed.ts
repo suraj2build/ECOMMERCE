@@ -92,6 +92,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'tax:read',
     'invoice:read',
     'invoice:create',
+    'payment:refund',
   ],
   ANALYTICS: ['analytics:read', 'product:read', 'inventory:read'],
 };

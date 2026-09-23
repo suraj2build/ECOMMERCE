@@ -1,6 +1,6 @@
 # 13. Payment
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PAY-001`–`006`, `IND-001`, `IND-004`)
+**Status:** IMPLEMENTED (Phase 2 build, 2026-09-23 — see `blueprint/DECISION_REGISTER.md` `PAY-001`–`006`, `IND-001`, `IND-004`, and `acceptance/m14-payment.md`)
 
 ## Purpose
 
@@ -64,7 +64,20 @@ Razorpay and COD integrations.
 
 ## Remaining open items
 
-None within this spec's own scope.
+None within this spec's own scope. Two implementation notes for future
+reference:
+
+- The provider interface actually implemented is `initiate` /
+  `verifyWebhookSignature` / `parseWebhookEvent` / `refund`, not the
+  single `handleWebhook` named in ADR-0011 - signature verification and
+  event parsing are split into two pure, independently testable
+  functions, with the DB-touching orchestration (dedup, state
+  transition) living in `PaymentService`, not the provider. This is a
+  refinement of the same abstraction, not a scope change.
+- A refund-initiation HTTP endpoint is intentionally NOT built here -
+  `PaymentProvider.refund()` exists and is tested at the provider layer,
+  but wiring it to an authorized route belongs to `specs/19-refunds.md`
+  / `acceptance/m20-refunds-store-credit.md`'s own milestone.
 
 ## Acceptance criteria
 
