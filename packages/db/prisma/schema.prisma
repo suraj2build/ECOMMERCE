@@ -135,16 +135,17 @@ model StaffUser {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  roles                 StaffUserRole[]
-  sessions              StaffSession[]
-  submittedPOs          PurchaseOrder[]         @relation("POSubmittedBy")
-  approvedPOs           PurchaseOrder[]         @relation("POApprovedBy")
-  poApprovalEvents      PurchaseOrderApproval[]
-  receivedGRNs          GoodsReceipt[]          @relation("GRNReceivedBy")
-  inventoryAdjustments  InventoryTransaction[]  @relation("InventoryAdjustmentActor")
-  coApprovedAdjustments InventoryTransaction[]  @relation("InventoryAdjustmentCoApprover")
-  publishedStyles       Style[]                 @relation("StylePublishedBy")
-  auditLogEntries       AuditLog[]
+  roles                   StaffUserRole[]
+  sessions                StaffSession[]
+  submittedPOs            PurchaseOrder[]         @relation("POSubmittedBy")
+  approvedPOs             PurchaseOrder[]         @relation("POApprovedBy")
+  poApprovalEvents        PurchaseOrderApproval[]
+  receivedGRNs            GoodsReceipt[]          @relation("GRNReceivedBy")
+  inventoryAdjustments    InventoryTransaction[]  @relation("InventoryAdjustmentActor")
+  coApprovedAdjustments   InventoryTransaction[]  @relation("InventoryAdjustmentCoApprover")
+  publishedStyles         Style[]                 @relation("StylePublishedBy")
+  auditLogEntries         AuditLog[]
+  moderatedShoppableMedia ShoppableMedia[]        @relation("ShoppableMediaModeratedBy")
 
   @@map("staff_users")
 }
@@ -300,13 +301,14 @@ model Style {
   category    Category   @relation(fields: [categoryId], references: [id])
   publishedBy StaffUser? @relation("StylePublishedBy", fields: [publishedByStaffId], references: [id], onDelete: Restrict)
 
-  colours      Colour[]
-  skus         Sku[]
-  media        ProductMedia[]
-  prices       Price[]
-  collections  CollectionStyle[]
-  badges       MerchandiseBadge[]
-  supplierSkus SupplierSku[]
+  colours            Colour[]
+  skus               Sku[]
+  media              ProductMedia[]
+  prices             Price[]
+  collections        CollectionStyle[]
+  badges             MerchandiseBadge[]
+  supplierSkus       SupplierSku[]
+  shoppableMediaTags ShoppableMediaTag[]
 
   @@index([lifecycleState])
   @@index([brandId])
@@ -321,10 +323,11 @@ model Colour {
   colourCode String
   hexSwatch  String?
 
-  style  Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  skus   Sku[]
-  media  ProductMedia[]
-  prices Price[]
+  style              Style               @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  skus               Sku[]
+  media              ProductMedia[]
+  prices             Price[]
+  shoppableMediaTags ShoppableMediaTag[]
 
   @@unique([styleId, colourCode])
   @@map("colours")
@@ -335,7 +338,8 @@ model Size {
   label     String @unique
   sortOrder Int    @default(0)
 
-  skus Sku[]
+  skus               Sku[]
+  shoppableMediaTags ShoppableMediaTag[]
 
   @@map("sizes")
 }
@@ -1099,4 +1103,85 @@ model CreditNoteLine {
   @@index([creditNoteId])
   @@index([invoiceLineId])
   @@map("credit_note_lines")
+}
+
+// ---------------------------------------------------------------------------
+// M09: Watch & Shop (specs/35-watch-and-shop.md)
+//
+// A discovery surface over the SAME commerce data PDP/Cart use - never a
+// second source of product/price/inventory truth. ShoppableMediaTag only
+// references a Style(+Colour+Size); it carries no price/availability copy
+// of its own for the storefront to resolve at read time via the real
+// Catalog/Inventory services.
+// ---------------------------------------------------------------------------
+
+enum ShoppableMediaState {
+  DRAFT
+  PENDING_MODERATION
+  SCHEDULED
+  PUBLISHED
+  UNPUBLISHED
+  REJECTED
+}
+
+model ShoppableMedia {
+  id                    String              @id @default(uuid())
+  title                 String
+  mediaUrl              String
+  thumbnailUrl          String?
+  creatorAttribution    String?
+  campaignRef           String?
+  state                 ShoppableMediaState @default(DRAFT)
+  scheduledPublishAt    DateTime?
+  publishedAt           DateTime?
+  merchandisingPosition Int                 @default(0)
+  moderatedByStaffId    String?
+  moderationNote        String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Explicitly Restrict, not Prisma's implicit SetNull default - same
+  // audit-attribution rationale as AuditLog.actorStaff.
+  moderatedBy StaffUser? @relation("ShoppableMediaModeratedBy", fields: [moderatedByStaffId], references: [id], onDelete: Restrict)
+
+  tags   ShoppableMediaTag[]
+  events ShoppableMediaEvent[]
+
+  @@index([state, merchandisingPosition])
+  @@index([state, scheduledPublishAt])
+  @@map("shoppable_media")
+}
+
+model ShoppableMediaTag {
+  id               String  @id @default(uuid())
+  shoppableMediaId String
+  styleId          String
+  colourId         String?
+  sizeId           String?
+  sortOrder        Int     @default(0)
+
+  shoppableMedia ShoppableMedia @relation(fields: [shoppableMediaId], references: [id], onDelete: Cascade)
+  style          Style          @relation(fields: [styleId], references: [id], onDelete: Restrict)
+  colour         Colour?        @relation(fields: [colourId], references: [id], onDelete: Restrict)
+  size           Size?          @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+
+  @@unique([shoppableMediaId, styleId, colourId])
+  @@index([shoppableMediaId])
+  @@map("shoppable_media_tags")
+}
+
+// Analytics event *capture* only (spec 35) - no dashboards/reporting here.
+model ShoppableMediaEvent {
+  id               String         @id @default(uuid())
+  shoppableMediaId String
+  eventType        String // VIEW | TAG_TAP | ADD_TO_BAG
+  actorType        AuditActorType @default(CUSTOMER)
+  customerId       String?
+  sessionRef       String?
+  createdAt        DateTime       @default(now())
+
+  shoppableMedia ShoppableMedia @relation(fields: [shoppableMediaId], references: [id], onDelete: Cascade)
+
+  @@index([shoppableMediaId, eventType])
+  @@map("shoppable_media_events")
 }

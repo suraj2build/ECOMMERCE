@@ -56,7 +56,7 @@ to the original 32, for a revised total of **34 milestones (M00–M33)**
 | M06 | Inventory | `06` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
 | M07 | Catalog / Merchandising / Pricing | `07` | IMPLEMENTED (Phase 1 build, 2026-09-22) |
 | M08 | **Tax & Invoicing Foundation** (NEW) | `32` | Engineering-configurable architecture **IMPLEMENTED** (Phase 2 build, 2026-09-23: GST registration model, effective-dated HSN/rate reference data, tax computation engine, immutable invoice/credit-note snapshots with concurrency-safe FY numbering, e-invoice adapter boundary — 19 passing tests). Milestone as a whole remains **BLOCKED** for the compliance-dependent portion — `TAX-001`–`005` remain `UNDER_REVIEW` and gate production configuration (real GSTIN/rate/HSN values), not the engineering build. See `acceptance/m08-tax-invoicing-foundation.md`. |
-| M09 | Storefront Foundation | `08` | IMPLEMENTING (Phase 2 build) — begins with the mandatory Medusa v2 integration spike required by `docs/decisions/0017-medusa-custom-domain-ownership-boundary.md` |
+| M09 | Storefront Foundation (+ Watch & Shop) | `08`, `35` | IMPLEMENTING (Phase 2 build) — Medusa v2 integration spike required by `docs/decisions/0017-medusa-custom-domain-ownership-boundary.md` is COMPLETE (2026-09-23, see ADR-0017); application build in progress |
 | M10 | Search / Discovery | `09` | IMPLEMENTING (Phase 2 build) |
 | M11 | PDP | `10` | IMPLEMENTING (Phase 2 build) |
 | M12 | Wishlist / Cart | `11` | IMPLEMENTING (Phase 2 build) |

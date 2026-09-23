@@ -16,6 +16,7 @@ import grnRoutes from './modules/grn/routes.js';
 import inventoryRoutes from './modules/inventory/routes.js';
 import catalogRoutes from './modules/catalog/routes.js';
 import taxRoutes from './modules/tax/routes.js';
+import contentRoutes from './modules/content/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -56,6 +57,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(inventoryRoutes, { prefix: '/api/v1' });
   await app.register(catalogRoutes, { prefix: '/api/v1' });
   await app.register(taxRoutes, { prefix: '/api/v1' });
+  await app.register(contentRoutes, { prefix: '/api/v1' });
 
   return app;
 }

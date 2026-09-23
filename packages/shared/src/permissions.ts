@@ -54,6 +54,9 @@ export const PERMISSION_KEYS = [
   'tax:read',
   'invoice:read',
   'invoice:create',
+  'content:manage',
+  'content:moderate',
+  'content:read',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

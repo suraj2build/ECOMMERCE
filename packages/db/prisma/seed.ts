@@ -42,6 +42,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'analytics:read',
     'tax:read',
     'invoice:read',
+    'content:read',
   ],
   BUYING: ['supplier:read', 'supplier:write', 'po:create', 'po:submit', 'po:read', 'product:read'],
   MERCHANDISING: [
@@ -67,7 +68,14 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   WAREHOUSE_OPERATOR: ['grn:create', 'grn:read', 'inventory:read', 'po:read', 'product:read'],
   CUSTOMER_SERVICE: ['customer_service:manage', 'product:read', 'inventory:read'],
-  MARKETING: ['marketing:manage', 'product:read', 'catalog:collection:manage'],
+  MARKETING: [
+    'marketing:manage',
+    'product:read',
+    'catalog:collection:manage',
+    'content:manage',
+    'content:moderate',
+    'content:read',
+  ],
   FINANCE: [
     'po:approve',
     'po:read',
