@@ -117,6 +117,23 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     const { styleId } = z.object({ styleId: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await service.listBadges(styleId));
   });
+
+  // Public (unauthenticated) storefront read routes - never exposes a
+  // draft/unpublished style or an entry with no active price. See
+  // CatalogService.listPublicStyles/listPublicCollections.
+  fastify.get('/storefront/styles', async (request, reply) => {
+    const { take, skip } = z
+      .object({
+        take: z.coerce.number().int().positive().max(60).optional(),
+        skip: z.coerce.number().int().nonnegative().optional(),
+      })
+      .parse(request.query);
+    reply.status(200).send(await service.listPublicStyles({ take, skip }));
+  });
+
+  fastify.get('/storefront/collections', async (_request, reply) => {
+    reply.status(200).send(await service.listPublicCollections());
+  });
 };
 
 export default catalogRoutes;

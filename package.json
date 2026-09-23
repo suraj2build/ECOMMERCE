@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "postinstall": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run db:generate --workspace=packages/db && npm run build --workspace=packages/db",
-    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run build --workspace=packages/db && npm run build --workspace=services/commerce-api",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run build --workspace=packages/db && npm run build --workspace=services/commerce-api && npm run build --workspace=apps/storefront",
     "dev:api": "npm run dev --workspace=services/commerce-api",
     "dev:storefront": "npm run dev --workspace=apps/storefront",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
@@ -30,6 +30,7 @@
     "db:reset": "npm run db:reset --workspace=packages/db"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.48.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",

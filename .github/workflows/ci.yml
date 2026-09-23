@@ -86,16 +86,22 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      # API-level smoke check via Playwright (see playwright.config.ts -
-      # full browser UI E2E has no target yet; no storefront app exists
-      # in the M00-M07 Phase 1 scope).
-      - name: E2E smoke (start API, run Playwright)
+      # API-level smoke check (playwright.config.ts project "api-smoke")
+      # plus real-browser storefront checks (project "storefront", M09+)
+      # against the production builds of both services.
+      - name: E2E smoke (start API + storefront, run Playwright)
         run: |
           npm run dev:api &
           for i in $(seq 1 30); do
             curl -sf http://localhost:4000/health && break
             sleep 1
           done
+          npm run start --workspace=apps/storefront &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/ && break
+            sleep 1
+          done
           npm run test:e2e
         env:
           PORT: '4000'
+          NEXT_PUBLIC_API_URL: 'http://localhost:4000'

@@ -1,20 +1,43 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Playwright is approved tooling (Phase 1 authorization §Approved
- * Technical Direction) but real browser UI E2E has no target yet: no
- * `apps/storefront` exists in the M00-M07 Phase 1 scope (Storefront is
- * M09+). This config runs API-level smoke checks via Playwright's HTTP
- * request context against a running commerce-api instance, so the
- * `test:e2e` script and CI wiring are real and exercised now - full
- * browser E2E against the storefront is added when that milestone
- * starts, without changing this config's shape.
+ * Two independent Playwright projects, matching the two things that need
+ * browser/HTTP E2E coverage:
+ *
+ * - `api-smoke`: HTTP-level request checks against commerce-api
+ *   (test/e2e-smoke) - no browser needed, just a running commerce-api.
+ * - `storefront`: real Chromium browser checks against apps/storefront
+ *   (test/e2e-storefront), added at M09 now that the storefront exists.
+ *
+ * CI starts both servers itself (see .github/workflows/ci.yml) and sets
+ * E2E_BASE_URL/STOREFRONT_BASE_URL; both default to localhost for local
+ * development against `npm run dev:api` / `npm run dev:storefront`.
  */
 export default defineConfig({
-  testDir: './test/e2e-smoke',
   timeout: 30_000,
-  use: {
-    baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:4000',
-  },
   reporter: [['list']],
+  projects: [
+    {
+      name: 'api-smoke',
+      testDir: './test/e2e-smoke',
+      use: {
+        baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:4000',
+      },
+    },
+    {
+      name: 'storefront',
+      testDir: './test/e2e-storefront',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000',
+        // apps/storefront (via Next.js's peer dependency) can resolve a
+        // newer @playwright/test than this sandbox's pre-cached browser
+        // revision - launch the pre-installed chromium binary directly
+        // rather than the version-pinned headless-shell variant.
+        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+          ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+          : {},
+      },
+    },
+  ],
 });

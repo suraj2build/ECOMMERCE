@@ -1,0 +1,29 @@
+{
+  "name": "@fcp/storefront",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Production customer-facing storefront (M09+, specs/08-storefront.md) - Next.js/React/TypeScript per ADR-0008. Distinct from the suraj2build/stitch-spark-cart Lovable prototype, which remains UX-reference only (see specs/08-storefront.md).",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "15.5.26",
+    "react": "19.1.9",
+    "react-dom": "19.1.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint-config-next": "15.5.26",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.2"
+  }
+}

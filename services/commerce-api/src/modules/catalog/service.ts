@@ -283,4 +283,76 @@ export class CatalogService {
 
     return { style, activePrice, badges, isPublishable };
   }
+
+  /**
+   * Public (unauthenticated) storefront read: only ever PUBLISHED styles
+   * that also have an active price - the same `isPublishable` gate as
+   * getCatalogEntry, applied at list scope. This is a read PROJECTION
+   * over Style/Price/ProductMedia - CatalogService remains the only
+   * writer; nothing here becomes a second source of truth (ADR-0017's
+   * read-model discipline).
+   *
+   * M10 (Search/Discovery) will replace "newest published first" with
+   * real search/facet ranking; this exists now only so M09's Home page
+   * has genuine (not fabricated) data to render, per the Phase 2
+   * instruction's "configuration/seed content is acceptable for now."
+   */
+  async listPublicStyles(params: { take?: number; skip?: number } = {}) {
+    const take = Math.min(params.take ?? 24, 60);
+    const skip = params.skip ?? 0;
+
+    const candidates = await this.prisma.style.findMany({
+      where: { lifecycleState: 'PUBLISHED' },
+      orderBy: { publishedAt: 'desc' },
+      take: take * 2, // over-fetch since some published styles may lack an active price
+      skip,
+      include: {
+        media: { where: { colourId: null }, orderBy: { sortOrder: 'asc' }, take: 1 },
+        brand: true,
+      },
+    });
+
+    const withPrice = await Promise.all(
+      candidates.map(async (style) => ({ style, activePrice: await this.getActivePrice(style.id) })),
+    );
+
+    return withPrice
+      .filter((entry) => entry.activePrice !== null)
+      .slice(0, take)
+      .map(({ style, activePrice }) => ({
+        id: style.id,
+        styleCode: style.styleCode,
+        name: style.name,
+        brandName: style.brand.name,
+        thumbnailUrl: style.media[0]?.url ?? null,
+        mrp: activePrice!.mrp,
+        sellingPrice: activePrice!.sellingPrice,
+        isMarkdown: activePrice!.isMarkdown,
+        publishedAt: style.publishedAt,
+      }));
+  }
+
+  /** Public: active collections with a handful of their publishable styles, for Home's "Collections/Stories" module. */
+  async listPublicCollections(take = 6) {
+    const collections = await this.prisma.collection.findMany({
+      where: { isActive: true },
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        styles: {
+          take: 4,
+          include: { style: { include: { media: { where: { colourId: null }, take: 1, orderBy: { sortOrder: 'asc' } } } } },
+        },
+      },
+    });
+    return collections.map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      description: c.description,
+      styleThumbnails: c.styles
+        .map((cs) => cs.style.media[0]?.url)
+        .filter((url): url is string => Boolean(url)),
+    }));
+  }
 }
