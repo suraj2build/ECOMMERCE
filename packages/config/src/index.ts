@@ -55,6 +55,12 @@ const envSchema = z.object({
   // --- Service ---
   PORT: z.coerce.number().int().positive().default(4000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+
+  // --- CORS (M11 - the storefront's client-side PIN-check/review/OTP
+  // calls are the first browser-originated requests this API serves;
+  // everything before M11 was server-side-only fetching, which isn't
+  // subject to CORS). Comma-separated allowed origins.
+  CORS_ORIGINS: z.string().default('http://localhost:3000'),
 });
 
 export type Env = z.infer<typeof envSchema>;

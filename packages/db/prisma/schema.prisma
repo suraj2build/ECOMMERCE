@@ -91,6 +91,7 @@ model Customer {
   updatedAt        DateTime  @updatedAt
 
   refreshTokens CustomerRefreshToken[]
+  reviews       Review[]
 
   @@map("customers")
 }
@@ -146,6 +147,8 @@ model StaffUser {
   publishedStyles         Style[]                 @relation("StylePublishedBy")
   auditLogEntries         AuditLog[]
   moderatedShoppableMedia ShoppableMedia[]        @relation("ShoppableMediaModeratedBy")
+  moderatedReviews        Review[]                @relation("ReviewModeratedBy")
+  crossSellOverrides      CrossSellOverride[]
 
   @@map("staff_users")
 }
@@ -317,6 +320,9 @@ model Style {
   badges             MerchandiseBadge[]
   supplierSkus       SupplierSku[]
   shoppableMediaTags ShoppableMediaTag[]
+  reviews            Review[]
+  crossSellFrom      CrossSellOverride[] @relation("CrossSellFrom")
+  crossSellTo        CrossSellOverride[] @relation("CrossSellTo")
 
   @@index([lifecycleState])
   @@index([brandId])
@@ -429,6 +435,11 @@ model ProductMedia {
   altText     String?
   isSwatch    Boolean   @default(false)
   seoMetadata Json?
+  // M11 (PROD-005): optional model-measurements/model-worn-size enrichment,
+  // e.g. {"height": "5'9\"", "bust": "34", "waist": "26", "wornSize": "M"}.
+  // Never required, never fabricated - null when not captured by
+  // merchandising, exactly reflecting what was actually entered.
+  modelInfo   Json?
   createdAt   DateTime  @default(now())
 
   style  Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
@@ -1192,4 +1203,84 @@ model ShoppableMediaEvent {
 
   @@index([shoppableMediaId, eventType])
   @@map("shoppable_media_events")
+}
+
+// ---------------------------------------------------------------------------
+// M11: PDP (specs/10-pdp.md) - reviews/ratings (PDP-001), PIN-code
+// serviceability static-list fallback (IND-002), cross-sell manual
+// overrides (PDP-002 - rule-based same-category matching is computed at
+// query time in the service layer, never stored).
+// ---------------------------------------------------------------------------
+
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+}
+
+// Auto-published on submission (engineering default - PDP-001 doesn't
+// specify a pre-moderation queue); staff can hide abusive/spam content
+// after the fact via content:moderate. Average rating/count shown on PDP
+// are always computed live from PUBLISHED rows here - never a fabricated
+// or cached count (consistent with the "no fake engagement numbers"
+// discipline applied throughout Phase 2 - see Watch & Shop).
+model Review {
+  id                 String       @id @default(uuid())
+  styleId            String
+  customerId         String
+  rating             Int
+  title              String?
+  body               String
+  status             ReviewStatus @default(PUBLISHED)
+  moderatedByStaffId String?
+  moderatedAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  style       Style      @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  customer    Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  moderatedBy StaffUser? @relation("ReviewModeratedBy", fields: [moderatedByStaffId], references: [id], onDelete: Restrict)
+
+  // One review per customer per style - prevents review-count inflation.
+  @@unique([styleId, customerId])
+  @@index([styleId, status])
+  @@map("reviews")
+}
+
+// IND-002 engineering-default fallback data source ("static/periodically-
+// updated list") - a real carrier-API check (SHIP-002) is M16's own scope
+// and not built here; this table is what PDP and checkout (M13) both
+// query today, structured so a real carrier adapter can be swapped in
+// later without changing the read-path contract.
+model ServiceablePincode {
+  pincode          String   @id
+  city             String
+  state            String
+  isServiceable    Boolean  @default(true)
+  codAvailable     Boolean  @default(true)
+  estimatedDaysMin Int?
+  estimatedDaysMax Int?
+  updatedAt        DateTime @updatedAt
+
+  @@map("serviceable_pincodes")
+}
+
+// PDP-002: only the manual-override half of cross-sell is persisted - the
+// rule-based half (same/complementary category) is computed live in
+// CrossSellService, never stored, so it can never drift from the current
+// catalog. An override always outranks a rule-based pick for the same
+// styleId.
+model CrossSellOverride {
+  id               String   @id @default(uuid())
+  styleId          String
+  relatedStyleId   String
+  sortOrder        Int      @default(0)
+  createdByStaffId String
+  createdAt        DateTime @default(now())
+
+  style          Style     @relation("CrossSellFrom", fields: [styleId], references: [id], onDelete: Cascade)
+  relatedStyle   Style     @relation("CrossSellTo", fields: [relatedStyleId], references: [id], onDelete: Cascade)
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@unique([styleId, relatedStyleId])
+  @@map("cross_sell_overrides")
 }

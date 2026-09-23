@@ -59,6 +59,9 @@ export const PERMISSION_KEYS = [
   'content:manage',
   'content:moderate',
   'content:read',
+  'review:moderate',
+  'pincode:manage',
+  'catalog:cross_sell:manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

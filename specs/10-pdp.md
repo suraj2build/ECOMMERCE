@@ -1,6 +1,6 @@
 # 10. Product Detail Page (PDP)
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PDP-001`, `PDP-002`, `PROD-004`, `PROD-005`, `IND-002`)
+**Status:** IMPLEMENTED (Phase 2 build, 2026-09-23 — see `blueprint/DECISION_REGISTER.md` `PDP-001`, `PDP-002`, `PROD-004`, `PROD-005`, `IND-002`, and `acceptance/m11-pdp.md`)
 
 ## Purpose
 

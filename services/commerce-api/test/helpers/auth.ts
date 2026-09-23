@@ -31,3 +31,24 @@ export async function createAuthenticatedStaff(
   const session = await app.staffSessionStore.create(staffUser.id, {});
   return { staffUserId: staffUser.id, token: session.token };
 }
+
+/**
+ * Creates a Customer and mints a valid access token directly via
+ * app.jwt.sign, bypassing the OTP request/verify HTTP flow entirely -
+ * that flow is exercised by its own auth tests, not re-tested by every
+ * module that needs an authenticated customer fixture.
+ */
+export async function createAuthenticatedCustomer(
+  app: FastifyInstance,
+  overrides: { fullName?: string } = {},
+): Promise<{ customerId: string; token: string }> {
+  counter += 1;
+  const mobile = `9${String(1000000000 + counter).padStart(9, '0')}`;
+
+  const customer = await testPrisma.customer.create({
+    data: { mobile, fullName: overrides.fullName ?? 'Test Customer', mobileVerifiedAt: new Date() },
+  });
+
+  const token = await app.jwt.sign({ sub: customer.id, mobile: customer.mobile });
+  return { customerId: customer.id, token };
+}

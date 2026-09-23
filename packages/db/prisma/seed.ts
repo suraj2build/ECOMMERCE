@@ -54,6 +54,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'catalog:collection:manage',
     'catalog:search:pin',
     'search:reindex',
+    'catalog:cross_sell:manage',
     'inventory:read',
   ],
   CATALOG: ['product:read', 'product:write', 'product:taxonomy:manage', 'inventory:read'],
@@ -67,9 +68,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'inventory:transfer',
     'po:read',
     'product:read',
+    'pincode:manage',
   ],
   WAREHOUSE_OPERATOR: ['grn:create', 'grn:read', 'inventory:read', 'po:read', 'product:read'],
-  CUSTOMER_SERVICE: ['customer_service:manage', 'product:read', 'inventory:read'],
+  CUSTOMER_SERVICE: ['customer_service:manage', 'product:read', 'inventory:read', 'review:moderate'],
   MARKETING: [
     'marketing:manage',
     'product:read',
@@ -77,6 +79,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'content:manage',
     'content:moderate',
     'content:read',
+    'review:moderate',
   ],
   FINANCE: [
     'po:approve',
