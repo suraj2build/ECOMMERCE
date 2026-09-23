@@ -102,4 +102,5 @@ jobs:
             sleep 1
           done
           npm run test:e2e
+        env:
           NEXT_PUBLIC_API_URL: 'http://localhost:4000'
