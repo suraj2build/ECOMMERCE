@@ -35,14 +35,19 @@ questionnaire this register was originally built from. See
 build-readiness — that document is being superseded by
 `BUILD_PLAN.md`'s new readiness classification in this same update.
 
-## Reconciliation summary (2026-09-22)
+## Reconciliation summary (2026-09-22, updated 2026-09-24 for M16)
 
 | | Count |
 |---|---|
-| **DECIDED** | **105** |
-| **UNDER_REVIEW** | **7** |
+| **DECIDED** | **106** |
+| **UNDER_REVIEW** | **8** |
 | **OPEN** | **0** |
-| Total | 112 |
+| Total | 114 |
+
+2026-09-24 additions (M16 build): `WH-003` (DECIDED, engineering
+default - the M16 state-machine/data-model shape) and `SEC-001`
+(`UNDER_REVIEW` - the consolidated pre-production security & privacy
+gate the M16 build instruction required the roadmap to track).
 
 **P0 remaining (not DECIDED):** 5 — all five are India GST/tax
 compliance items (`TAX-001` through `TAX-005`) that are fundamentally
@@ -646,6 +651,39 @@ of what is still needed from anyone, and from whom.
 - **Final decision:** A pick exception posts an authorized/audited inventory adjustment and triggers the `ORD-004` order-exception path; Warehouse Manager and CS are notified.
 - **Affected specs:** `specs/15-warehouse-fulfilment.md`
 
+#### WH-003 — M16 warehouse state-machine/data-model shape · **P1**
+- **Question:** How does "obtain actionable pick work from an allocated
+  OrderLine" (WH-001/WH-002's engineering-default implementation) map
+  onto concrete states and tables, without inventing a replacement
+  architecture for the already-certified M15 Order/OrderLine/
+  OrderFulfilment model?
+- **Dependencies:** WH-001, WH-002, ORD-001 (M15)
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-24
+  (M16 build)
+- **Final decision:** A new `PickTask` table, exactly one per `OrderLine`
+  (1:1, unique on `orderLineId`), auto-created in the same transaction as
+  order creation. `OrderLineStatus` gains one new value, `PICKED`,
+  inserted between the existing `ALLOCATED` and `PACKED`.
+  `OrderFulfilment`/`FulfilmentStatus` (M15's existing "package" model,
+  already supporting multiple packages per order) gains one new value,
+  `READY_TO_SHIP`, inserted between `PACKED` and `SHIPPED` - the explicit
+  warehouse-to-shipping hand-off boundary `specs/16-shipping-tracking.md`
+  (M17) picks up from. `OrderService.assignLinesToFulfilment` now
+  requires `PICKED` (not M15-original `ALLOCATED`); `markFulfilmentShipped`
+  now requires `READY_TO_SHIP` (not `PACKED` directly) via a new explicit
+  `markFulfilmentReadyToShip` staff action. Deliberately NOT a 4-state
+  pick lifecycle (no separate `IN_PROGRESS/claimed-by` state): every
+  pick/pack action in this manual/UI-based (WH-001) architecture is one
+  synchronous HTTP call, not a long-running async job that could crash
+  mid-way through an unobserved intermediate state - the same reasoning
+  already applied to `PaymentEventStatus`'s 3-state design (M14). Full
+  design rationale and the complete state machine:
+  `services/commerce-api/src/modules/warehouse/service.ts` and the
+  `PickTask`/`OrderLineStatus`/`FulfilmentStatus` schema comments in
+  `packages/db/prisma/schema.prisma`.
+- **Affected specs:** `specs/15-warehouse-fulfilment.md`,
+  `specs/14-order-management.md`
+
 ---
 
 ## SHIP — Shipping / Tracking
@@ -1099,3 +1137,112 @@ after real load testing at M32 — none block M00/M01.
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** Standard per-IP/per-session rate limits on public storefront APIs; exact figures tuned during M32 load testing.
 - **Affected specs:** `SECURITY.md`
+
+---
+
+## SEC — Pre-Production Security & Privacy Gate
+
+**Status as of 2026-09-24 (M16 build):** this section exists because the
+M16 build instruction made security/privacy a **binding, cross-cutting
+acceptance requirement from M16 onward**, not something bolted on at
+launch, and required the roadmap to explicitly track a consolidated
+pre-production gate covering every area below. This is a **tracking
+record, not a completed security program** - almost everything below is
+`UNDER_REVIEW`/`EXTERNAL_VERIFICATION_REQUIRED`, deliberately: engineering
+has applied per-feature security discipline throughout Phase 1/2/M16
+(server-side authorization on every route, parameterized queries via
+Prisma everywhere, webhook signature verification, idempotency/replay
+protection on every payment/inventory/pick mutation, audit logging, no
+raw card storage, clean input validation), but a **holistic external
+security/privacy review has not been performed**, and this agent does
+**not** claim `DPDP_COMPLIANT`, `CERT-IN_COMPLIANT`, or `PCI_COMPLIANT` -
+those require qualified external verification no engineering agent may
+self-certify.
+
+#### SEC-001 — Pre-production security & privacy program · **P0**
+- **Question:** What must be independently verified/completed before this
+  platform is production-ready from a security and privacy standpoint?
+- **Dependencies:** CART-004, CUST-001, AUD-002, TAX-001–005 (all already
+  tracked above - this entry does not duplicate them, it indexes them
+  alongside the areas below that have no existing entry yet)
+- **Status:** `UNDER_REVIEW` / `EXTERNAL_VERIFICATION_REQUIRED` ·
+  **Identified:** 2026-09-24 (M16 build instruction, binding from M16
+  onward)
+- **Authentication / account security:** OTP brute-force protection
+  beyond the existing per-code `maxAttempts`/expiry (M01) - rate limiting
+  across OTP *requests*, not just verify attempts; credential/account
+  enumeration resistance (login/OTP error messages already avoid
+  confirming account existence - not independently pen-tested); staff
+  session security is implemented (Redis-backed, revoked on deactivation,
+  M01) but staff/admin **MFA is enforced only for `MFA_REQUIRED_ROLES`**
+  (`SUPER_ADMIN`/`BUSINESS_ADMIN`/`FINANCE`) - extending to all
+  privileged roles before production is a policy decision, not yet made;
+  privileged-session controls (step-up auth for high-risk actions) not
+  built.
+- **Application / API security:** no formal OWASP web/API Top-10 threat
+  review has been performed end to end (per-feature IDOR/BOLA tests exist
+  for order/payment/warehouse/cart resources - see `warehouse.test.ts`'s
+  own IDOR/BOLA describe block for M16's own contribution - but this is
+  not the same as a systematic review); injection defense relies on
+  Prisma's parameterized queries throughout (no raw string-concatenated
+  SQL exists in this codebase) but has not been independently verified;
+  no storefront user-generated HTML rendering exists yet so XSS surface
+  is currently small, unreviewed; CSRF is not applicable to this
+  bearer-token API design but that assumption is unverified; SSRF surface
+  (webhook/URL-accepting endpoints) not reviewed; no file-upload endpoint
+  exists yet; security headers/CSP are not yet configured at the
+  reverse-proxy/CDN layer (out of this repo's scope until that
+  infrastructure exists); rate limiting exists only as an `NFR-006`
+  engineering-default target, not yet implemented/tuned.
+- **Bot / scraper / abuse protection:** no CDN/WAF, DDoS protection, or
+  bot-management layer is provisioned (infrastructure decision, outside
+  application code); no scraping/catalog-enumeration throttling; OTP
+  abuse controls are limited to per-code attempt/expiry limits (no
+  per-mobile-number or per-IP request-rate cap yet); checkout-abuse and
+  inventory-hoarding/reservation-abuse controls rely on the existing
+  reservation TTL (`INVENTORY_RESERVATION_TTL_SECONDS`) and per-SKU cart
+  quantity cap (`CART_MAX_QUANTITY_PER_SKU`) - no dedicated anti-abuse
+  layer beyond those.
+- **Customer data:** data classification has not been formally documented
+  (see `AUD-002`); TLS/encryption-in-transit is an infrastructure/deploy
+  concern outside this repo; encryption-at-rest depends on the production
+  database provider's configuration (not yet chosen); PII minimization is
+  applied per-feature (e.g. `PickTask` deliberately carries zero customer
+  PII - see the M16 final report's own explicit accounting) but not
+  formally audited platform-wide; secrets management today is
+  environment-variable-based (`.env`, never committed - `SECURITY.md`)
+  with no vault/rotation system yet; production access controls, backup
+  security, and deletion/retention architecture all depend on `CUST-001`.
+- **Payment security:** webhook authentication (HMAC-SHA256 signature
+  verification, `timingSafeEqual`), replay/idempotency protection
+  (`PaymentEvent` uniqueness + durable processing-state recovery, M14),
+  provider-boundary secret isolation, and "never store raw card data" are
+  all already implemented and adversarially tested (`payment.test.ts`).
+  Reconciliation tooling (`CAPTURE_RECONCILIATION_REQUIRED` state, M14
+  finding #3) exists for the capture/expiry race; broader payment-ops
+  reconciliation dashboards are not built.
+- **Software supply chain:** `npm audit` is run ad hoc, not wired into CI
+  as a blocking gate; no dependency-scanning/SAST/secret-scanning/SBOM
+  tooling is configured in `.github/workflows/ci.yml`; no formal
+  patch/update cadence is documented.
+- **Operations:** no security monitoring/alerting, suspicious-activity
+  detection, incident-response runbook, or breach-response process exists
+  yet; audit-log protection (append-only at the application layer via
+  `recordAudit` - no separate row ever mutates a prior entry) exists, but
+  database-level immutability (e.g. a trigger preventing `UPDATE`/`DELETE`
+  on `audit_logs`) is not enforced; backup/restore verification is an
+  infrastructure/deploy-time concern (`NFR-003`), not yet exercised.
+- **Privacy / India (DPDP):** `CUST-001` (data retention/deletion) and
+  `AUD-002` (applicable regulatory requirements) remain `UNDER_REVIEW` -
+  no statutory retention period has been guessed or hard-coded anywhere
+  in this codebase. No privacy notice, data inventory, purpose-mapping
+  document, consent-collection workflow, data-subject-rights (access/
+  correction/erasure/withdrawal) workflow, grievance-officer process, or
+  processor/vendor inventory exists yet. CERT-In incident-reporting
+  readiness has not been assessed. None of `DPDP_COMPLIANT`,
+  `CERT-IN_COMPLIANT`, or `PCI_COMPLIANT` may be claimed until a
+  qualified external reviewer confirms each.
+- **Affected specs:** cross-cutting - `SECURITY.md`,
+  `specs/01-auth-rbac.md`, `specs/21-customer-profile.md`,
+  `specs/30-audit-compliance.md`, and every milestone spec touching
+  customer or payment data.

@@ -6,64 +6,86 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-24: `PHASE 2 CERTIFICATION REPAIRS COMPLETE,
-AWAITING INDEPENDENT RE-REVIEW. M16+ NOT AUTHORIZED.`** Phase 1
-(M00–M07) completed an expanded engineering certification pass and was
-accepted by the human project owner as **`PHASE_1_CERTIFIED`** at
-commit `240debca8179df0b05db07216cfce64d0b10d0ae`. On 2026-09-23 the
-human project owner gave explicit **"START BUILD — PHASE 2"**
-authorization, scoped specifically to milestones **M08 through M15**
-(Tax & Invoicing Foundation through Order Management), again with an
-explicit instruction to **stop after M15 certification** for
-independent review rather than self-authorizing M16+. On 2026-09-23
-all of M08–M15 were implemented and confirmed CI-green; an independent
+**Status as of 2026-09-24: `M16 BUILD COMPLETE — AWAITING INDEPENDENT
+REVIEW. M17+ NOT AUTHORIZED.`** Phase 1 (M00–M07) completed an
+expanded engineering certification pass and was accepted by the human
+project owner as **`PHASE_1_CERTIFIED`** at commit
+`240debca8179df0b05db07216cfce64d0b10d0ae`. On 2026-09-23 the human
+project owner gave explicit **"START BUILD — PHASE 2"** authorization,
+scoped specifically to milestones **M08 through M15** (Tax & Invoicing
+Foundation through Order Management), again with an explicit
+instruction to **stop after M15 certification** for independent
+review rather than self-authorizing M16+. On 2026-09-23 all of
+M08–M15 were implemented and confirmed CI-green; an independent
 reviewer then examined that build and returned nine numbered findings
-(three BLOCKER, two BLOCKER/HIGH, one HIGH, three lower-severity) —
-see `blueprint/DECISION_REGISTER.md`'s cross-references and the
+(three BLOCKER, two BLOCKER/HIGH, one HIGH, three lower-severity),
+fixed on 2026-09-24 under a separate certification-repair
+authorization. A further independent re-review of that repaired state
+returned two more findings (Blocker 1: same-request credit-note
+over-credit; Blocker 2: payment-event dedup could suppress recovery
+of a genuinely-failed webhook event), fixed the same day under a
+second, explicitly scoped final certification-repair-pass
+authorization — see `acceptance/m08-tax-invoicing-foundation.md` and
+`acceptance/m14-payment.md` for those two fixes' detail, and the
 per-finding commits on `claude/loving-fermat-cyucke` for the full
-detail. On 2026-09-24 this agent was given a separate, explicit
-**certification-repair authorization** scoped ONLY to fixing those
-nine findings in the existing M08–M15 implementation - not a new
-build, not M16+. All nine findings now have a corresponding fix,
-adversarial test, and updated documentation, and the full clean-state
-suite (lint, typecheck, build, unit, integration, migration-from-zero,
-Playwright E2E desktop+mobile) is green. A subsequent independent
-re-review of that repaired state returned two further findings
-(Blocker 1: same-request credit-note over-credit; Blocker 2: payment-
-event dedup could suppress recovery of a genuinely-failed webhook
-event). On 2026-09-24 this agent received a second, explicitly scoped
-**final certification repair pass** authorization covering ONLY those
-two blockers - again not a new build, not M16+. Both are now fixed
-with adversarial regression tests and updated documentation (see
-`acceptance/m08-tax-invoicing-foundation.md` and
-`acceptance/m14-payment.md`), and the full clean-state suite is green
-again. **This agent still does not self-declare `PHASE_2_CERTIFIED`** -
-that determination belongs to the independent reviewer, who has not
-yet re-reviewed this second repair. This agent has stopped per that
-instruction and is awaiting independent human re-review before any
-M16+ work. Status remains, more precisely: **`PHASE 2 BUILD COMPLETE —
-AWAITING INDEPENDENT CERTIFICATION`**.
+nine-finding history. **On 2026-09-24 the human project owner
+recorded that repaired state — commit
+`e1143994cd103e5fdabae9a779fbda56428a2164` — as `PHASE_2_CERTIFIED`**
+(engineering-implementation scope for M08–M15; this is **not** the
+same as production-readiness — `TAX-001`–`005`, GST/HSN statutory
+verification, production performance verification, `CART-004`,
+data-retention/privacy decisions, and the full pre-production
+security/privacy program tracked at `SEC-001` all remain open
+pre-production gates, listed in full in
+`blueprint/DECISION_REGISTER.md`). The human project owner then gave
+explicit **"START BUILD — M16"** authorization, scoped specifically
+and only to milestone **M16** (Warehouse & Fulfilment), again with an
+explicit instruction not to continue automatically into M17+. M16 is
+now implemented, adversarially tested (concurrency, idempotency,
+IDOR/BOLA, transactional rollback — see
+`test/integration/warehouse.test.ts` and
+`acceptance/m16-warehouse-fulfilment.md`), and the full clean-state
+suite (lint, typecheck, build, unit, integration — the complete
+pre-existing M00–M15 suite included, zero regressions — migration-
+from-zero, seed, Playwright E2E) is green. **This agent does not
+self-declare M16 certified** — per the M16 build instruction's own
+stop condition, that determination belongs to the independent
+reviewer. This agent has stopped and is awaiting independent human
+review before any M17+ work.
 
-**M00–M07 remain the certified, protected baseline.** Phase 2 work
-MUST NOT regress: the STYLE→COLOUR→SIZE→SKU hierarchy, the inventory
-ledger, reservation atomicity/oversell prevention, GRN atomicity,
-pricing invariants, RBAC, audit history, idempotency, database
-constraints, clean-clone reproducibility, or CI. Every Phase 1 test
-remains mandatory and must stay green.
+**M00–M07 remain the certified, protected baseline; M08–M15 are now
+`PHASE_2_CERTIFIED` (engineering-implementation scope).** All later
+work MUST NOT regress either: the STYLE→COLOUR→SIZE→SKU hierarchy,
+the inventory ledger, reservation atomicity/oversell prevention, GRN
+atomicity, pricing invariants, RBAC, audit history, idempotency,
+database constraints, clean-clone reproducibility, CI, and every
+M08–M15 financial-integrity/concurrency invariant (credit-note
+over-credit prevention, payment-event durability, capture/expiry
+reconciliation, order-invoice recovery). Every Phase 1 and Phase 2
+test remains mandatory and must stay green — M16's own build kept all
+of them green throughout.
 
-**This authorization does NOT extend beyond M15.**
+**This authorization does NOT extend beyond M16.**
 Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
 1–3) remains a separate thing from implementation authorization
 (Layer 4):
 
-- **M16 and every later milestone remain unauthorized.** No
-  application code for M16+ should be added until the human project
+- **M17 and every later milestone remain unauthorized.** No
+  application code for M17+ should be added until the human project
   owner gives a new, separate, explicit **START BUILD** authorization
-  for that phase — the Phase 2 authorization does not carry forward
-  automatically, regardless of how cleanly M08–M15 land.
-- Do **not** interpret "Phase 2 shipped cleanly" as authorization for
-  the next phase. Authorization must be explicit and human-given for
-  each phase.
+  for that phase — neither the Phase 2 authorization nor the M16
+  authorization carries forward automatically, regardless of how
+  cleanly M08–M16 land.
+- Do **not** interpret "M16 shipped cleanly" as authorization for the
+  next milestone. Authorization must be explicit and human-given for
+  each milestone.
+- M16 (Warehouse & Fulfilment) was explicitly authorized on
+  2026-09-24, scoped only to that milestone, building on the
+  `PHASE_2_CERTIFIED` baseline at commit
+  `e1143994cd103e5fdabae9a779fbda56428a2164`. See `WH-003` in
+  `blueprint/DECISION_REGISTER.md` for the full state-machine/
+  data-model design record and `acceptance/m16-warehouse-fulfilment.md`
+  for the Definition of Done.
 - M08 is explicitly authorized to proceed now as a **configurable
   compliance architecture** — GST registrations, HSN/rate reference
   data, and e-invoice applicability are all engineering-configurable,

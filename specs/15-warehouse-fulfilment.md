@@ -1,6 +1,6 @@
 # 15. Warehouse / Fulfilment
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `WH-001`, `WH-002`)
+**Status:** IMPLEMENTED (M16 build, 2026-09-24 — see `blueprint/DECISION_REGISTER.md` `WH-001`, `WH-002`, `WH-003` and `acceptance/m16-warehouse-fulfilment.md`)
 
 ## Purpose
 
