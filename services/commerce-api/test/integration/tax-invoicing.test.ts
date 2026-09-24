@@ -651,6 +651,197 @@ describe('Tax & Invoicing Foundation certification (M08)', () => {
         expect(second.sequenceNumber).toBe(2);
       });
     });
+
+    /**
+     * Final certification repair pass, Blocker 1: the cumulative
+     * over-credit check above compares each requested line against
+     * already-COMMITTED (previously persisted) CreditNoteLine rows - it
+     * has no visibility into OTHER lines within the SAME in-flight
+     * request, since none of them exist in the DB yet. A single request
+     * containing the same invoiceLineId twice (e.g. 7 + 7 against an
+     * original quantity of 10) could therefore have both entries
+     * independently read the same pre-request "already credited" sum
+     * and both pass, crediting 14 against 10. Fixed by rejecting a
+     * duplicate invoiceLineId within one request outright (the request
+     * as a whole is invalid - not silently merged or partially applied).
+     */
+    describe('Same-request over-credit prevention (final certification repair, Blocker 1)', () => {
+      it('A: rejects a single request containing the same invoiceLineId twice (7 + 7 against a 10-unit line)', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-samereq-a', 10);
+
+        await expect(
+          invoiceService.issueCreditNote(
+            {
+              originalInvoiceId: invoice.id,
+              reason: 'Duplicate line entries in one request',
+              lines: [
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 7 },
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 7 },
+              ],
+            },
+            actorStaffId,
+          ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        const creditNotes = await invoiceService.listCreditNotesForInvoice(invoice.id);
+        expect(creditNotes).toHaveLength(0);
+        const totalCredited = await testPrisma.creditNoteLine.aggregate({
+          where: { invoiceLineId: invoice.lines[0]!.id },
+          _sum: { quantity: true },
+        });
+        expect(totalCredited._sum.quantity).toBeNull();
+      });
+
+      it('B: rejects a single request containing the same invoiceLineId twice even when the two quantities individually sum to exactly the original (4 + 6 against a 10-unit line)', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-samereq-b', 10);
+
+        await expect(
+          invoiceService.issueCreditNote(
+            {
+              originalInvoiceId: invoice.id,
+              reason: 'Duplicate line entries summing to exactly the original quantity',
+              lines: [
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 4 },
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 6 },
+              ],
+            },
+            actorStaffId,
+          ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        const creditNotes = await invoiceService.listCreditNotesForInvoice(invoice.id);
+        expect(creditNotes).toHaveLength(0);
+      });
+
+      it('C: a prior committed credit of 4 followed by a new (non-duplicate) request for 7 against a 10-unit line is rejected - the pre-existing cross-request cumulative check is unaffected', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-samereq-c', 10);
+
+        await invoiceService.issueCreditNote(
+          { originalInvoiceId: invoice.id, reason: 'First committed credit', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 4 }] },
+          actorStaffId,
+        );
+
+        await expect(
+          invoiceService.issueCreditNote(
+            { originalInvoiceId: invoice.id, reason: 'Second request exceeding the remainder', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 7 }] },
+            actorStaffId,
+          ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        const totalCredited = await testPrisma.creditNoteLine.aggregate({
+          where: { invoiceLineId: invoice.lines[0]!.id },
+          _sum: { quantity: true },
+        });
+        expect(totalCredited._sum.quantity).toBe(4);
+      });
+
+      it('D: multiple DIFFERENT invoiceLineIds in the same credit note request continue to work correctly (not treated as duplicates)', async () => {
+        const invoiceService = new InvoiceService(app);
+        const { registration } = await makeLegalEntityAndRegistration('DL', 'Delhi');
+        await testPrisma.location.update({ where: { id: locationId }, data: { gstRegistrationId: registration.id } });
+        await testPrisma.taxRate.create({
+          data: { hsnCode: styleHsn, gstRatePercent: 12, effectiveFrom: new Date(Date.now() - 86_400_000) },
+        });
+        // Two distinct InvoiceLine rows for the same SKU - all that
+        // matters here is two genuinely different invoiceLineIds.
+        const invoice = await invoiceService.issueInvoice(
+          {
+            orderId: 'order-cn-samereq-d',
+            locationId,
+            recipientName: 'Jane Doe',
+            billingAddress: {},
+            deliveryAddress: {},
+            shippingStateCode: 'DL',
+            lines: [
+              { skuId, quantity: 10, unitPrice: 250 },
+              { skuId, quantity: 10, unitPrice: 250 },
+            ],
+          },
+          actorStaffId,
+        );
+        expect(invoice.lines).toHaveLength(2);
+
+        const created = await invoiceService.issueCreditNote(
+          {
+            originalInvoiceId: invoice.id,
+            reason: 'Two distinct lines in one request',
+            lines: [
+              { invoiceLineId: invoice.lines[0]!.id, quantity: 3 },
+              { invoiceLineId: invoice.lines[1]!.id, quantity: 5 },
+            ],
+          },
+          actorStaffId,
+        );
+        expect(created.lines).toHaveLength(2);
+        expect(created.lines.map((l) => l.quantity).sort()).toEqual([3, 5]);
+      });
+
+      it('E: concurrent requests each containing a same-request duplicate are both rejected, and cross-request concurrent protection is unaffected', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-samereq-e', 10);
+
+        const results = await Promise.allSettled([
+          invoiceService.issueCreditNote(
+            {
+              originalInvoiceId: invoice.id,
+              reason: 'Concurrent duplicate-line request A',
+              lines: [
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 6 },
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 6 },
+              ],
+            },
+            actorStaffId,
+          ),
+          invoiceService.issueCreditNote(
+            {
+              originalInvoiceId: invoice.id,
+              reason: 'Concurrent duplicate-line request B',
+              lines: [
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 8 },
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 8 },
+              ],
+            },
+            actorStaffId,
+          ),
+        ]);
+
+        expect(results.every((r) => r.status === 'rejected')).toBe(true);
+        const creditNotes = await invoiceService.listCreditNotesForInvoice(invoice.id);
+        expect(creditNotes).toHaveLength(0);
+      });
+
+      it('F: a rejected same-request duplicate leaves no partial credit note, no lines, and no sequence-number corruption', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-samereq-f', 10);
+
+        await expect(
+          invoiceService.issueCreditNote(
+            {
+              originalInvoiceId: invoice.id,
+              reason: 'Duplicate line entries',
+              lines: [
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 5 },
+                { invoiceLineId: invoice.lines[0]!.id, quantity: 5 },
+              ],
+            },
+            actorStaffId,
+          ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        const allCreditNotes = await testPrisma.creditNote.findMany({ where: { originalInvoiceId: invoice.id } });
+        expect(allCreditNotes).toHaveLength(0);
+
+        // Sequence numbering was never consumed by the rejected attempt.
+        const first = await invoiceService.issueCreditNote(
+          { originalInvoiceId: invoice.id, reason: 'First genuine credit after the rejected attempt', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 3 }] },
+          actorStaffId,
+        );
+        expect(first.sequenceNumber).toBe(1);
+      });
+    });
   });
 
   describe('HTTP-layer authorization', () => {

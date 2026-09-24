@@ -331,9 +331,27 @@ export class InvoiceService {
 
     const invoiceLineById = new Map(originalInvoice.lines.map((l) => [l.id, l]));
 
-    // Shape validation (line belongs to this invoice, positive quantity)
-    // can happen before opening the transaction - only the cumulative
-    // over-credit check needs the lock.
+    // Shape validation (line belongs to this invoice, positive quantity,
+    // no duplicate invoiceLineId within THIS request) can happen before
+    // opening the transaction - only the cumulative over-credit check
+    // needs the lock.
+    //
+    // Same-request over-credit (independent-review follow-up finding):
+    // the cumulative check below compares each requested line's quantity
+    // against already-COMMITTED (i.e. previously persisted)
+    // CreditNoteLine rows - it has no visibility into OTHER lines of
+    // this same in-flight request, since none of them exist in the DB
+    // yet. Two entries in one request both referencing the same
+    // invoiceLineId (e.g. 7 + 7 against an original quantity of 10)
+    // would therefore each independently read the same pre-request
+    // "already credited" sum and both pass, even though the request as
+    // a whole credits 14 against 10. Rejecting a duplicate
+    // invoiceLineId within a single request closes this deterministically
+    // (no ambiguity about how to merge/prorate two partial entries
+    // against the same line) - a caller that genuinely wants to credit
+    // more of one line submits a single entry with the combined
+    // quantity, not two entries.
+    const seenLineIds = new Set<string>();
     for (const line of input.lines) {
       if (!invoiceLineById.has(line.invoiceLineId)) {
         throw new ValidationError(
@@ -341,6 +359,12 @@ export class InvoiceService {
         );
       }
       if (line.quantity <= 0) throw new ValidationError('Credit note line quantity must be positive');
+      if (seenLineIds.has(line.invoiceLineId)) {
+        throw new ValidationError(
+          `Invoice line '${line.invoiceLineId}' appears more than once in this credit-note request - combine into a single entry with the total quantity instead`,
+        );
+      }
+      seenLineIds.add(line.invoiceLineId);
     }
 
     return this.prisma.$transaction(async (tx) => {
