@@ -36,13 +36,20 @@ export class PaymentService {
   }
 
   /**
-   * Verifies signature -> dedupes by (provider, providerEventId) via the
-   * DB's own unique constraint, BEFORE any state change -> applies the
-   * resulting outcome. A duplicate delivery of the same event is a safe
-   * no-op (acceptance/m14-payment.md, negative scenario #2). An invalid
-   * signature is rejected and logged, with no state change and nothing
-   * persisted (negative scenario #3) - the payload isn't trustworthy
-   * enough to even record under its claimed event id.
+   * Verifies signature -> durably records (or resumes) the event via
+   * `recordOrResumeEvent` -> applies the resulting outcome -> marks the
+   * event PROCESSED only once that outcome has actually been applied.
+   * An invalid signature is rejected and logged, with no state change
+   * and nothing persisted (negative scenario #3) - the payload isn't
+   * trustworthy enough to even record under its claimed event id.
+   *
+   * Final certification repair pass, Blocker 2: a duplicate delivery of
+   * an ALREADY-PROCESSED event is a safe no-op (acceptance/m14-payment.md,
+   * negative scenario #2) - but a duplicate delivery of an event that
+   * was recorded and then never successfully processed (a transient
+   * failure between the two) is NOT treated as a duplicate: it resumes
+   * processing against the SAME row, never a second insert, and never
+   * silently dropped. See recordOrResumeEvent's own docblock.
    */
   async handleRazorpayWebhook(rawBody: string, signatureHeader: string | undefined): Promise<WebhookResult> {
     const provider = resolvePaymentProvider('RAZORPAY');
@@ -74,47 +81,125 @@ export class PaymentService {
         ? await this.prisma.payment.findFirst({ where: { provider: 'RAZORPAY', providerReferenceId: event.paymentEntityId } })
         : null;
 
-    try {
-      await this.prisma.paymentEvent.create({
-        data: {
-          provider: 'RAZORPAY',
-          providerEventId: event.providerEventId,
-          eventType: event.eventType,
-          paymentId: payment?.id,
-          payload: payload as Prisma.InputJsonValue,
-        },
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        return { ok: true, duplicate: true };
-      }
-      throw err;
+    const eventRecord = await this.recordOrResumeEvent(event, payment?.id, payload);
+    if (eventRecord.status === 'PROCESSED') {
+      return { ok: true, duplicate: true };
     }
 
     if (!payment) {
       this.fastify.log.warn({ orderId: event.orderId, paymentEntityId: event.paymentEntityId }, 'Razorpay webhook for unknown payment reference');
+      // Nothing to process against - there is no payment record this
+      // event could ever apply to, so there is no future state in which
+      // reprocessing this row would do anything different. Mark it
+      // PROCESSED (a legitimate terminal outcome, not a failure) so a
+      // redelivery of the same event id is a safe no-op rather than
+      // re-logging the same warning forever.
+      await this.markEventProcessed(eventRecord.id);
       return { ok: true };
     }
 
-    // "successful payment capture" is the PREPAID order-creation trigger
-    // (specs/13-payment.md). Order creation (and the checkout-time
-    // reservation's conversion into a firm allocation) now happens
-    // INSIDE applyOutcome's own capture transaction, not as a separate
-    // call after it commits (independent-review finding #3) - see
-    // applyCaptureOutcome for why: a late/lost-race reservation must
-    // roll back the payment/session state atomically with it, never
-    // leave a CAPTURED payment linked to no order.
-    const outcome = await this.applyOutcome(payment.id, event);
+    try {
+      // "successful payment capture" is the PREPAID order-creation trigger
+      // (specs/13-payment.md). Order creation (and the checkout-time
+      // reservation's conversion into a firm allocation) now happens
+      // INSIDE applyOutcome's own capture transaction, not as a separate
+      // call after it commits (independent-review finding #3) - see
+      // applyCaptureOutcome for why: a late/lost-race reservation must
+      // roll back the payment/session state atomically with it, never
+      // leave a CAPTURED payment linked to no order.
+      const outcome = await this.applyOutcome(payment.id, event);
 
-    if (event.outcome === 'CAPTURED' && outcome.orderId) {
-      // Invoice issuance is deliberately decoupled from the order-
-      // creation transaction (independent-review finding #2) - a
-      // transient invoice failure must never resurface as a webhook
-      // failure to Razorpay.
-      await this.order.retryOrderInvoice(outcome.orderId).catch(() => undefined);
+      if (event.outcome === 'CAPTURED' && outcome.orderId) {
+        // Invoice issuance is deliberately decoupled from the order-
+        // creation transaction (independent-review finding #2) - a
+        // transient invoice failure must never resurface as a webhook
+        // failure to Razorpay, and must never block this event from
+        // being marked PROCESSED (the payment outcome itself DID apply
+        // successfully - invoice recovery has its own separate durable
+        // mechanism, retryOrderInvoice/reconcilePendingInvoices).
+        await this.order.retryOrderInvoice(outcome.orderId).catch(() => undefined);
+      }
+
+      await this.markEventProcessed(eventRecord.id);
+      return { ok: true };
+    } catch (err) {
+      // The required business transition did NOT complete - this event
+      // must remain retryable, never silently marked done. Durably
+      // record the failure (never delete the row, never touch the
+      // unique providerEventId guarantee) and signal failure so
+      // Razorpay's own retry redelivers the same event id, which
+      // recordOrResumeEvent will then resume against this same row.
+      const message = err instanceof Error ? err.message : String(err);
+      this.fastify.log.error({ err, providerEventId: event.providerEventId, paymentId: payment.id }, 'Payment event processing failed - will resume on redelivery');
+      await this.prisma.paymentEvent
+        .update({ where: { id: eventRecord.id }, data: { status: 'FAILED', processingError: message } })
+        .catch((updateErr) => this.fastify.log.error({ updateErr, providerEventId: event.providerEventId }, 'Failed to durably record payment-event processing failure'));
+      return { ok: false, reason: 'processing_failed' };
     }
+  }
 
-    return { ok: true };
+  /**
+   * Independent-review-equivalent finding (Blocker 2, final
+   * certification repair pass): the unique constraint on
+   * (provider, providerEventId) used to mean "a row already exists ->
+   * treat as a duplicate no-op" - but that row could have been
+   * persisted BEFORE the required business transition (applyOutcome)
+   * completed, so a transient failure between the two turned a
+   * genuinely undelivered event into an unrecoverable "poison" record:
+   * Razorpay's own retry of the identical event id would hit the
+   * unique constraint and be silently swallowed, forever.
+   *
+   * Now: attempt the insert (status RECEIVED). If it succeeds, this is
+   * a genuinely new event - return it as-is. If it fails on the unique
+   * constraint, a row for this exact (provider, providerEventId)
+   * already exists - fetch and return IT instead of a fresh insert
+   * (never a second row, the unique guarantee is preserved exactly as
+   * before). The caller then branches on that row's `status`: PROCESSED
+   * is the only status that short-circuits as a duplicate no-op; every
+   * other status (RECEIVED - recorded but never finished, or FAILED - a
+   * previous attempt durably recorded its own failure) causes
+   * processing to be attempted again against this SAME row, converging
+   * once the underlying transient condition clears. Concurrent
+   * redeliveries of the same event id are safe even if both resume
+   * processing simultaneously: the actual business logic
+   * (applyOutcome/applyCaptureOutcome) row-locks the Payment itself, so
+   * two concurrent attempts genuinely serialize there regardless of
+   * this table's own state (independent-review finding #3's own
+   * guarantee, unchanged).
+   */
+  private async recordOrResumeEvent(
+    event: WebhookEvent,
+    paymentId: string | undefined,
+    payload: unknown,
+  ): Promise<{ id: string; status: 'RECEIVED' | 'PROCESSED' | 'FAILED' }> {
+    try {
+      return await this.prisma.paymentEvent.create({
+        data: {
+          provider: 'RAZORPAY',
+          providerEventId: event.providerEventId,
+          eventType: event.eventType,
+          paymentId,
+          payload: payload as Prisma.InputJsonValue,
+          status: 'RECEIVED',
+        },
+        select: { id: true, status: true },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return await this.prisma.paymentEvent.findFirstOrThrow({
+          where: { provider: 'RAZORPAY', providerEventId: event.providerEventId },
+          select: { id: true, status: true },
+        });
+      }
+      throw err;
+    }
+  }
+
+  private async markEventProcessed(eventId: string): Promise<void> {
+    await this.prisma.paymentEvent.update({
+      where: { id: eventId },
+      data: { status: 'PROCESSED', processedAt: new Date(), processingError: null },
+    });
   }
 
   /**

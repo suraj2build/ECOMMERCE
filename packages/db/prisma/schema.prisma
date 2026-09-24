@@ -1536,19 +1536,44 @@ model Payment {
 // (provider, providerEventId) so a duplicate delivery of the same event
 // is detected and turned into a safe no-op rather than a second capture/
 // refund. This is the auditable record financial-integrity review
-// depends on - never pruned, never mutated after insert.
+// depends on - never pruned, never mutated after insert (except its own
+// `status`/`processedAt`/`processingError` processing-lifecycle fields
+// below, which record what happened to THIS event, not the payload).
+//
+// Final certification repair pass, Blocker 2: the unique-constraint
+// dedup above used to mean "already recorded = skip" - but the row was
+// persisted BEFORE the business transition (applyOutcome) ran, so a
+// transient failure between recording and completing that transition
+// left a "RECEIVED but never actually applied" row that a Razorpay
+// retry of the SAME providerEventId could never re-trigger (the retry
+// hit the unique constraint and was treated as a duplicate no-op,
+// silently losing the event). `status` makes "recorded" and
+// "successfully processed" two distinct, durable facts: only PROCESSED
+// short-circuits a retry as a safe no-op; RECEIVED or FAILED means
+// processing is retried using this same row (never a second insert,
+// never data loss, never re-running an already-PROCESSED event).
+enum PaymentEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
 model PaymentEvent {
-  id              String              @id @default(uuid())
-  provider        PaymentProviderType
-  providerEventId String
-  eventType       String
-  paymentId       String?
-  payload         Json
-  receivedAt      DateTime            @default(now())
+  id               String              @id @default(uuid())
+  provider         PaymentProviderType
+  providerEventId  String
+  eventType        String
+  paymentId        String?
+  payload          Json
+  receivedAt       DateTime            @default(now())
+  status           PaymentEventStatus  @default(RECEIVED)
+  processedAt      DateTime?
+  processingError  String?
 
   payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerEventId])
+  @@index([status])
   @@map("payment_events")
 }
 

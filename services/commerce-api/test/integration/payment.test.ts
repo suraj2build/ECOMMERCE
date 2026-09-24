@@ -6,6 +6,7 @@ import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPr
 import { createAuthenticatedStaff } from '../helpers/auth.js';
 import { PaymentService } from '../../src/modules/payment/service.js';
 import { InventoryService } from '../../src/modules/inventory/service.js';
+import * as auditService from '../../src/modules/audit/service.js';
 
 // RazorpayPaymentProvider only fails safe to UNAVAILABLE when these are
 // unset (@fcp/config's own default) - set before the first loadEnv()
@@ -634,6 +635,245 @@ describe('Payment (M14)', () => {
         where: { action: 'payment.captured.reconciliation_required', entityId: payments[0]!.id },
       });
       expect(auditEntries).toHaveLength(1); // the second delivery was a true no-op, not a second flag
+    });
+  });
+
+  /**
+   * Final certification repair pass, Blocker 2: the PaymentEvent unique-
+   * constraint dedup used to mean "a row already exists for this
+   * (provider, providerEventId) -> treat as a duplicate no-op" - but
+   * that row is persisted BEFORE the required business transition
+   * (applyOutcome) runs. A transient failure between the two turned a
+   * genuinely undelivered event into an unrecoverable "poison" record:
+   * Razorpay's own retry of the identical event id hit the unique
+   * constraint and was silently swallowed forever, even though the
+   * payment was never actually applied. These tests inject a real,
+   * deterministic transient failure (a one-time throw from
+   * app.prisma.checkoutSession.update, the exact call inside
+   * applyOutcome's own transaction) to prove PaymentEvent.status now
+   * makes "recorded" and "successfully processed" two distinct, durable
+   * facts, and that a redelivery of the same event id resumes and
+   * converges rather than being dropped.
+   */
+  describe('Payment event processing-state durability and recovery (final certification repair, Blocker 2)', () => {
+    it('A: a normal event is recorded and marked processed exactly once', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-evt-a', 'idem-evt-a');
+      const body = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_evt_a_1'));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/razorpay',
+        headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) },
+        payload: body,
+      });
+      expect(res.statusCode).toBe(200);
+
+      const events = await testPrisma.paymentEvent.findMany({ where: { providerEventId: 'evt_pay_evt_a_1_captured' } });
+      expect(events).toHaveLength(1);
+      expect(events[0]!.status).toBe('PROCESSED');
+      expect(events[0]!.processedAt).not.toBeNull();
+      expect(events[0]!.processingError).toBeNull();
+
+      const session = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(session.status).toBe('CONFIRMED');
+    });
+
+    it('B: an exact duplicate delivery after successful processing is a safe no-op, never re-processed', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-evt-b', 'idem-evt-b');
+      const body = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_evt_b_1'));
+      const headers = { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) };
+
+      const first = await app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body });
+      expect(first.statusCode).toBe(200);
+      expect(first.json().duplicate).toBeFalsy();
+
+      const second = await app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body });
+      expect(second.statusCode).toBe(200);
+      expect(second.json().duplicate).toBe(true);
+
+      const events = await testPrisma.paymentEvent.findMany({ where: { providerEventId: 'evt_pay_evt_b_1_captured' } });
+      expect(events).toHaveLength(1);
+      expect(events[0]!.status).toBe('PROCESSED');
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+      const orderCount = await testPrisma.order.count({ where: { checkoutSessionId: sessionId } });
+      expect(orderCount).toBe(1);
+      expect(order.status).toBe('CONFIRMED');
+    });
+
+    it('C/D: a transient failure after event persistence leaves the event durably FAILED (not silently swallowed), and redelivering the same event id resumes and converges', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-evt-cd', 'idem-evt-cd');
+      const body = JSON.stringify(razorpayOrderFailedEvent(orderId, 'pay_evt_cd_1'));
+      const headers = { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) };
+
+      // Inject a real, one-time transient failure at the last step
+      // inside applyOutcome's own transaction (recordAudit, called after
+      // the Payment/CheckoutSession rows are already written within
+      // that same transaction) - simulating a genuine transient error
+      // (DB blip, timeout) after the PaymentEvent row was already
+      // durably persisted. Spying on the tx-scoped Prisma client itself
+      // isn't possible (a fresh object per transaction) - recordAudit is
+      // a plain imported function, the same one Prisma's transaction
+      // callback calls, so this reliably intercepts it.
+      const auditSpy = vi.spyOn(auditService, 'recordAudit').mockImplementationOnce(() => {
+        throw new Error('Simulated transient failure between event persistence and business-transition completion');
+      });
+
+      const firstDelivery = await app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body });
+      expect(firstDelivery.statusCode).toBe(400); // C: signals failure so Razorpay's own retry redelivers
+
+      auditSpy.mockRestore();
+
+      // C: the event is durably recorded as FAILED, not deleted, not
+      // silently dropped, and the unique providerEventId guarantee is
+      // untouched (still exactly one row for this event id).
+      let events = await testPrisma.paymentEvent.findMany({ where: { providerEventId: 'evt_pay_evt_cd_1_failed' } });
+      expect(events).toHaveLength(1);
+      expect(events[0]!.status).toBe('FAILED');
+      expect(events[0]!.processingError).toContain('Simulated transient failure');
+
+      // The failed transaction rolled back fully - no partial state.
+      const paymentAfterFailure = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+      expect(paymentAfterFailure.status).toBe('INITIATED');
+      const sessionAfterFailure = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(sessionAfterFailure.status).toBe('RESERVED');
+
+      // D: Razorpay redelivers the SAME providerEventId (the transient
+      // condition has now cleared) - this must resume processing
+      // against the same row, not be treated as an already-handled
+      // duplicate, and must converge to the correct final state.
+      const redelivery = await app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body });
+      expect(redelivery.statusCode).toBe(200);
+      expect(redelivery.json().duplicate).toBeFalsy();
+
+      events = await testPrisma.paymentEvent.findMany({ where: { providerEventId: 'evt_pay_evt_cd_1_failed' } });
+      expect(events).toHaveLength(1); // still exactly one row - resumed, never duplicated
+      expect(events[0]!.status).toBe('PROCESSED');
+      expect(events[0]!.processedAt).not.toBeNull();
+
+      const paymentAfterRecovery = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+      expect(paymentAfterRecovery.status).toBe('FAILED');
+      const sessionAfterRecovery = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(sessionAfterRecovery.status).toBe('PAYMENT_FAILED');
+    });
+
+    it('E/F/G/H: capture recovery after a transient failure produces exactly one order, one reservation transition, one allocation ledger entry, and one invoice', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-evt-efgh', 'idem-evt-efgh');
+      const body = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_evt_efgh_1'));
+      const headers = { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) };
+
+      // applyCaptureOutcome has its own internal fallback (reconciliation)
+      // that absorbs a single failed attempt and completes successfully -
+      // by design (finding #3). To prove a genuine transient failure that
+      // survives even that fallback still leaves the event retryable
+      // (rather than being silently absorbed into a "successful"
+      // reconciliation), this throws on every recordAudit call during
+      // the first delivery, not just once - covering both the primary
+      // attempt and its own reconciliation fallback attempt.
+      const auditSpy = vi.spyOn(auditService, 'recordAudit').mockImplementation(() => {
+        throw new Error('Simulated transient failure during capture');
+      });
+
+      const firstDelivery = await app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body });
+      expect(firstDelivery.statusCode).toBe(400);
+      auditSpy.mockRestore();
+
+      // No order, no allocation, no invoice from the failed attempt.
+      expect(await testPrisma.order.count({ where: { checkoutSessionId: sessionId } })).toBe(0);
+
+      const redelivery = await app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body });
+      expect(redelivery.statusCode).toBe(200);
+
+      // E: exactly one Order.
+      const orders = await testPrisma.order.findMany({ where: { checkoutSessionId: sessionId } });
+      expect(orders).toHaveLength(1);
+      expect(orders[0]!.status).toBe('CONFIRMED');
+
+      // F: exactly one reservation, cleanly CONVERTED (not stuck ACTIVE,
+      // not released, not converted twice).
+      const reservations = await testPrisma.inventoryReservation.findMany({ where: { skuId } });
+      expect(reservations).toHaveLength(1);
+      expect(reservations[0]!.status).toBe('CONVERTED');
+
+      // G: exactly one ALLOCATION ledger entry - no duplicate inventory mutation.
+      const allocationTxns = await testPrisma.inventoryTransaction.findMany({ where: { skuId, type: 'ALLOCATION' } });
+      expect(allocationTxns).toHaveLength(1);
+      const reservationTxns = await testPrisma.inventoryTransaction.findMany({ where: { skuId, type: 'RESERVATION' } });
+      expect(reservationTxns).toHaveLength(1); // the original reservation, never re-reserved
+
+      // H: exactly one invoice for the order - retryOrderInvoice is
+      // awaited inside handleRazorpayWebhook before the HTTP response is
+      // sent, so it has already completed by this point.
+      const invoices = await testPrisma.invoice.findMany({ where: { orderId: orders[0]!.id } });
+      expect(invoices).toHaveLength(1);
+    });
+
+    it('I: genuinely concurrent duplicate deliveries of the same event id remain safe - exactly one PaymentEvent row, one consistent Payment outcome', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-evt-i', 'idem-evt-i');
+      const body = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_evt_i_1'));
+      const headers = { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) };
+
+      const [resA, resB] = await Promise.all([
+        app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body }),
+        app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers, payload: body }),
+      ]);
+      expect(resA.statusCode).toBe(200);
+      expect(resB.statusCode).toBe(200);
+
+      const events = await testPrisma.paymentEvent.findMany({ where: { providerEventId: 'evt_pay_evt_i_1_captured' } });
+      expect(events).toHaveLength(1);
+      expect(events[0]!.status).toBe('PROCESSED');
+
+      const payments = await testPrisma.payment.findMany({ where: { checkoutSessionId: sessionId } });
+      expect(payments).toHaveLength(1);
+      expect(payments[0]!.status).toBe('CAPTURED');
+
+      const orders = await testPrisma.order.findMany({ where: { checkoutSessionId: sessionId } });
+      expect(orders).toHaveLength(1);
+    });
+
+    it('J: a durably FAILED event can be recovered by a fresh PaymentService instance with no reference to the original request (process-restart equivalent)', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-evt-j', 'idem-evt-j');
+      const body = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_evt_j_1'));
+
+      // Throws on every recordAudit call during this delivery attempt -
+      // covers both applyCaptureOutcome's primary attempt and its own
+      // internal reconciliation fallback (finding #3), so the failure
+      // genuinely survives to leave the event unprocessed (see the
+      // E/F/G/H test above for why a single mockImplementationOnce isn't
+      // enough for a CAPTURED event specifically).
+      const auditSpy = vi.spyOn(auditService, 'recordAudit').mockImplementation(() => {
+        throw new Error('Simulated transient failure before restart');
+      });
+      const freshServiceForFailure = new PaymentService(app);
+      const failureResult = await freshServiceForFailure.handleRazorpayWebhook(body, signWebhook(body));
+      expect(failureResult.ok).toBe(false);
+      auditSpy.mockRestore();
+
+      const failedEvent = await testPrisma.paymentEvent.findFirstOrThrow({ where: { providerEventId: 'evt_pay_evt_j_1_captured' } });
+      expect(failedEvent.status).toBe('FAILED');
+
+      // A brand-new PaymentService instance, with no in-memory reference
+      // to (or memory of) the original request that produced the
+      // failure - the only thing driving recovery is the PaymentEvent
+      // row's own durable status, exactly like OrderService's own
+      // process-restart-simulation test (finding #2).
+      const freshServiceAfterRestart = new PaymentService(app);
+      const recoveryResult = await freshServiceAfterRestart.handleRazorpayWebhook(body, signWebhook(body));
+      expect(recoveryResult.ok).toBe(true);
+      expect(recoveryResult.duplicate).toBeFalsy();
+
+      const recoveredEvent = await testPrisma.paymentEvent.findUniqueOrThrow({ where: { id: failedEvent.id } });
+      expect(recoveredEvent.status).toBe('PROCESSED');
+
+      const session = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(session.status).toBe('CONFIRMED');
     });
   });
 });
