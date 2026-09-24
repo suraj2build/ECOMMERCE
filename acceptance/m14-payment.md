@@ -132,3 +132,23 @@ the case where inventory genuinely cannot be re-derived safely) and 5
 new adversarial tests proving each race outcome - see
 `services/commerce-api/src/modules/payment/service.ts` and
 `test/integration/payment.test.ts`.
+
+**2026-09-24 final certification repair pass, Blocker 2:** a further
+independent review identified that `PaymentEvent`'s (provider,
+providerEventId) unique-constraint dedup was applied BEFORE the
+required business transition (`applyOutcome`) necessarily completed -
+a transient failure between recording the event and finishing that
+transition left an unrecoverable "poison" record: Razorpay's own retry
+of the identical event id hit the unique constraint and was treated as
+an already-handled duplicate, silently losing the event. Fixed by
+adding a durable `PaymentEventStatus` (RECEIVED/PROCESSED/FAILED) to
+`PaymentEvent`: only PROCESSED short-circuits a redelivery as a safe
+no-op; RECEIVED or FAILED causes processing to resume against the same
+row (never a second insert, never data loss, never re-running an
+already-PROCESSED event) - see `handleRazorpayWebhook`'s new
+`recordOrResumeEvent`/`markEventProcessed` and 10 new adversarial
+tests (`test/integration/payment.test.ts`, "Payment event
+processing-state durability and recovery") proving normal processing,
+duplicate no-ops, injected-failure recovery, exactly-once order/
+allocation/invoice outcomes, concurrent-duplicate safety, and
+process-restart-equivalent recovery.

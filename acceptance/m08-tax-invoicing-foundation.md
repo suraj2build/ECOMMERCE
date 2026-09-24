@@ -93,9 +93,16 @@ completes.
 The **engineering-scaffolding acceptance** section above is
 **IMPLEMENTED, TESTED, ENGINEERING_VERIFIED** (2026-09-23 Phase 2
 build; 2026-09-24 certification repair pass finding #1 additionally
-closed a cumulative over-credit gap in `issueCreditNote()` - see
-`services/commerce-api/src/modules/tax/invoice-service.ts` and its
-4 new adversarial tests). The milestone's full Definition of Done —
+closed a cumulative over-credit gap in `issueCreditNote()`, and a
+2026-09-24 final repair pass Blocker 1 closed a same-request variant
+of the same class of bug - a single request containing the same
+invoiceLineId twice (e.g. 7 + 7 against a 10-unit line) could each
+independently pass the cross-request cumulative check, since neither
+entry is yet committed to the DB when the other is validated. Now
+rejected outright as a duplicate invoiceLineId within one request -
+see `services/commerce-api/src/modules/tax/invoice-service.ts` and its
+10 combined adversarial tests (4 cross-request + 6 same-request).
+The milestone's full Definition of Done —
 the **compliance-dependent acceptance** section — remains
 **BLOCKED_COMPLIANCE**: `TAX-001`–`005` still require a qualified
 tax/compliance professional's verification before real GSTIN/rate/HSN

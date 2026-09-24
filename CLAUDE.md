@@ -27,12 +27,22 @@ nine findings in the existing M08–M15 implementation - not a new
 build, not M16+. All nine findings now have a corresponding fix,
 adversarial test, and updated documentation, and the full clean-state
 suite (lint, typecheck, build, unit, integration, migration-from-zero,
-Playwright E2E desktop+mobile) is green. **This agent does not
-self-declare `PHASE_2_CERTIFIED`** - per the repair authorization's own
-instruction, that determination belongs to the independent reviewer,
-who has not yet re-reviewed this repaired state. This agent has
-stopped per that instruction and is awaiting independent human
-re-review before any M16+ work.
+Playwright E2E desktop+mobile) is green. A subsequent independent
+re-review of that repaired state returned two further findings
+(Blocker 1: same-request credit-note over-credit; Blocker 2: payment-
+event dedup could suppress recovery of a genuinely-failed webhook
+event). On 2026-09-24 this agent received a second, explicitly scoped
+**final certification repair pass** authorization covering ONLY those
+two blockers - again not a new build, not M16+. Both are now fixed
+with adversarial regression tests and updated documentation (see
+`acceptance/m08-tax-invoicing-foundation.md` and
+`acceptance/m14-payment.md`), and the full clean-state suite is green
+again. **This agent still does not self-declare `PHASE_2_CERTIFIED`** -
+that determination belongs to the independent reviewer, who has not
+yet re-reviewed this second repair. This agent has stopped per that
+instruction and is awaiting independent human re-review before any
+M16+ work. Status remains, more precisely: **`PHASE 2 BUILD COMPLETE —
+AWAITING INDEPENDENT CERTIFICATION`**.
 
 **M00–M07 remain the certified, protected baseline.** Phase 2 work
 MUST NOT regress: the STYLE→COLOUR→SIZE→SKU hierarchy, the inventory
