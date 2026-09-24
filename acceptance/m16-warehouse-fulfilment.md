@@ -116,6 +116,103 @@ throwing away the very `CANCELLED` marking it just wrote; fixed by
 committing the state change first and throwing only after the
 transaction returns.
 
+## Independent-review repair pass (2026-09-24): shipment concurrency / inventory integrity
+
+**Finding:** an independent reviewer of the pushed M16 implementation
+found that `OrderService.markFulfilmentShipped` (and, by the same
+pattern, `markFulfilmentPacked`/`markFulfilmentReadyToShip`/
+`markFulfilmentDelivered`) read the target `OrderFulfilment` via a plain
+`findUniqueOrThrow`, not a row lock, before checking its eligibility
+status. Two genuinely concurrent SHIP requests on the same fulfilment
+could both observe `READY_TO_SHIP` before either transaction committed.
+`InventoryService.recordSale()`'s own reservation/balance locking does
+not by itself prove exactly-once SALE posting for an `OrderLine`: a
+`CONVERTED` reservation continues to satisfy `recordSale`'s quantity
+check on a second call, and if aggregate reserved stock for the same
+SKU/location exists from *other* orders, a naive test could pass by
+coincidence rather than by genuine exactly-once semantics.
+
+**Root cause:** the fulfilment's own status field — the actual
+eligibility gate every transition method checks — was never locked
+before being read, so the read-check-write sequence was not atomic
+across concurrent callers.
+
+**Repair (primary):** a new `OrderService.lockFulfilment` private helper
+(`SELECT ... FOR UPDATE` on `order_fulfilments`, the same idiom
+`InventoryService.lockReservation`/`lockBalance` and
+`WarehouseService.lockPickTask` already use) is now the FIRST thing all
+four fulfilment transition methods do, before reading `status`. A second
+concurrent caller's lock acquisition genuinely blocks until the first
+transaction commits, then re-reads the now-advanced status through the
+same lock and takes its own pre-existing "not eligible from this status"
+rejection branch — never a blind concurrent double-transition. This
+closes the race at every one of PENDING→PACKED, PACKED→READY_TO_SHIP,
+READY_TO_SHIP→SHIPPED, and SHIPPED→DELIVERED, not just the SHIP step the
+review specifically flagged (M16 build instruction §5's own explicit
+request to review adjacent transitions).
+
+**Repair (defence-in-depth, exactly-once SALE):** a new partial unique
+index, `inventory_transactions_sale_orderline_once`
+(`CREATE UNIQUE INDEX ... ON inventory_transactions (referenceId) WHERE
+type = 'SALE' AND referenceType = 'ORDER_LINE'`, migration
+`20260924145356_add_sale_orderline_uniqueness`), makes it impossible at
+the database level for more than one legitimate SALE row to ever exist
+for a given `OrderLine` — enforced independently of whatever caller-side
+locking is or isn't in place. Deliberately scoped narrow (not a blanket
+constraint across every ledger reference) because a single multi-line
+GRN legitimately posts multiple `RECEIPT` transactions sharing the same
+`referenceId` (the GRN's own id) — a blanket constraint would have broken
+that unrelated, correct pattern. `InventoryService.recordSale()` catches
+the resulting unique-violation and rethrows it as an explicit
+`InventoryIntegrityError` (409 `INVENTORY_INTEGRITY_VIOLATION`), never a
+raw/opaque 500; the whole transaction rolls back, so a rejected duplicate
+leaves no partial trace. There is no "legitimate retry" concept for a
+sale (unlike a payment webhook redelivery) — a duplicate is always a
+bug/race and is never silently absorbed or re-applied.
+
+**Database constraint/migration:** yes — `20260924145356_add_sale_orderline_uniqueness`
+(a hand-written partial unique index, the same category as the
+hand-written `CHECK` constraints already in
+`20260922171222_add_integrity_constraints` — not representable in
+`schema.prisma`'s declarative DSL). Applied cleanly against a
+freshly-dropped-and-recreated database as part of the full 15-migration
+history from zero.
+
+**Adversarial tests added** (`test/integration/order.test.ts`, "Shipment
+inventory invariant hardening" and new "Adjacent fulfilment transition
+concurrency" describe blocks):
+- Test G: the exact scenario the review specified — Order A (reserved
+  quantity 1) and an unrelated Order B (reserved quantity 5) share the
+  same SKU/location, so aggregate reserved stock stays comfortably
+  positive even after Order A ships; two genuinely concurrent
+  (`Promise.allSettled`) SHIP requests on Order A's `READY_TO_SHIP`
+  fulfilment prove all nine required invariants: exactly one accepted
+  transition, `SHIPPED` fulfilment/line status, exactly one SALE ledger
+  row for Order A's line (zero for Order B's), `onHand`/`reserved`
+  decremented exactly once each, Order B's reservation fully intact,
+  no negative inventory value, and exactly one `ship` audit entry.
+- Test H: calls `InventoryService.recordSale()` directly, twice, for the
+  same `OrderLine` — bypassing `OrderService`/the fulfilment lock
+  entirely — proving the database-level uniqueness invariant stands on
+  its own, not merely as an artefact of the row-lock fix.
+- Two new tests in "Adjacent fulfilment transition concurrency": two
+  concurrent pack attempts on the same `PENDING` fulfilment, and two
+  concurrent deliver attempts on the same `SHIPPED` fulfilment — each
+  proving exactly one 200/one clean 400 and exactly one audit entry.
+- Test F's pre-existing concurrent-double-ship assertions were tightened
+  from `[400, 409]` (either outcome was previously possible depending on
+  timing) to a deterministic `400` for the loser, since the row lock now
+  makes the outcome deterministic rather than timing-dependent.
+
+No existing test was deleted, skipped, or weakened. Full regression
+(unit 8/8, integration 302/302 across 26 files — 298 pre-existing + 4
+new, zero regressions, warehouse.test.ts's 26 tests independently
+re-verified unaffected, order.test.ts's full 32-test suite stable across
+5 repeated runs, migration-from-zero with all 15 migrations, Playwright
+E2E 18/18 desktop+mobile) all green. Still `M16 BUILD COMPLETE —
+AWAITING INDEPENDENT REVIEW` — this repair pass does not self-certify
+M16 either.
+
 ## Test requirements
 
 - [x] E2E: `acceptance/e2e-commerce-flows.md` FLOW 8. Not re-exercised
@@ -129,13 +226,15 @@ transaction returns.
 ## Definition of Done
 
 All boxes above checked. **IMPLEMENTED, TESTED, ENGINEERING_VERIFIED**
-(M16 build, 2026-09-24): full clean-state suite (lint, typecheck, build,
-unit, integration — including the full pre-existing M00–M15 suite with
-zero regressions, migration-from-zero, seed, Playwright E2E) green. Per
-the M16 build instruction's own explicit stop condition, this agent does
-**not** self-certify M16 — status is **`M16 BUILD COMPLETE — AWAITING
-INDEPENDENT REVIEW`**, and **M17 and beyond remain unauthorized** until a
-new, separate, explicit START BUILD instruction. See
+(M16 build, 2026-09-24; independent-review repair pass, 2026-09-24 —
+see the dedicated section above): full clean-state suite (lint,
+typecheck, build, unit, integration — including the full pre-existing
+M00–M15 suite with zero regressions, migration-from-zero across all 15
+migrations, seed, Playwright E2E desktop+mobile) green after the repair.
+Per the M16 build instruction's own explicit stop condition, this agent
+does **not** self-certify M16 — status remains **`M16 BUILD COMPLETE —
+AWAITING INDEPENDENT REVIEW`**, and **M17 and beyond remain unauthorized**
+until a new, separate, explicit START BUILD instruction. See
 `blueprint/DECISION_REGISTER.md` `SEC-001` for the consolidated
 pre-production security & privacy gate this build instruction required
 be tracked, and `WH-003` for the full state-machine/data-model design

@@ -5,6 +5,7 @@ import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff, createAuthenticatedCustomer } from '../helpers/auth.js';
 import { OrderService } from '../../src/modules/order/service.js';
+import { InventoryService } from '../../src/modules/inventory/service.js';
 
 process.env.RAZORPAY_KEY_ID = 'test_key_id';
 process.env.RAZORPAY_KEY_SECRET = 'test_key_secret';
@@ -596,22 +597,225 @@ describe('Order Management (M15)', () => {
 
       const [resA, resB] = await Promise.all([shipFulfilment(fulfilmentId, warehouseToken), shipFulfilment(fulfilmentId, warehouseToken)]);
       const statuses = [resA.statusCode, resB.statusCode].sort();
-      // Exactly one wins (200). The loser's rejection code depends on
-      // exact timing: markFulfilmentShipped's own READY_TO_SHIP-status
-      // read is not itself row-locked, so both callers can occasionally pass it
-      // before either commits - but recordSale's own invariant checks
-      // (this finding) are the real backstop either way: the loser then
-      // either finds the fulfilment already SHIPPED (400) or, having
-      // raced past that check too, hits recordSale's now-insufficient
-      // reserved/onHand check directly (409) - never a silent double-sale.
+      // Deterministic since the independent-review repair pass
+      // (2026-09-24): markFulfilmentShipped now row-locks the fulfilment
+      // (SELECT ... FOR UPDATE) before reading its status, so the loser's
+      // read genuinely blocks until the winner commits, then always sees
+      // the now-SHIPPED status and always takes the same 400 rejection
+      // branch - recordSale's own invariant checks (independent-review
+      // finding #5) are no longer even reached by the loser in this
+      // same-fulfilment scenario, though they remain the correct backstop
+      // for any other path (see test G's dedicated proof).
       expect(statuses[0]).toBe(200);
-      expect([400, 409]).toContain(statuses[1]);
+      expect(statuses[1]).toBe(400);
 
       const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
       expect(saleTxns).toHaveLength(1);
       const balance = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
       expect(balance.onHand).toBe(9); // decremented exactly once, not twice
       expect(balance.reserved).toBe(0);
+    });
+
+    /**
+     * Independent-review repair pass (M16, 2026-09-24): the reviewer's
+     * own concern was that a simplistic version of test F above could
+     * accidentally pass because Order A alone owns ALL remaining reserved
+     * stock for the SKU - a duplicate SALE attempt could then coincidentally
+     * be caught by recordSale's "reserved < quantity" check rather than by
+     * genuinely exactly-once shipment semantics. This test closes that
+     * gap: a SECOND, unrelated order (Order B) holds its own separate
+     * reservation on the SAME SKU/location, sized so that aggregate
+     * reserved stock stays comfortably positive even after Order A's
+     * legitimate sale - a broken implementation relying on "reserved
+     * would go negative/insufficient" to reject the duplicate would
+     * silently let a second sale for Order A's own line through here,
+     * since 5 (Order B's own untouched reservation) still safely covers
+     * a second 1-unit "sale" quantity check. Only genuine per-fulfilment
+     * row-locking (or, as a backstop, the per-OrderLine SALE uniqueness
+     * constraint) can close this - not any aggregate-quantity heuristic.
+     */
+    it('G: a genuinely concurrent double-ship attempt on Order A cannot be masked by unrelated Order B holding its own separate, sufficient reservation on the same SKU/location', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const ctx = await seedContext();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      // 10 on hand (setupCheckoutableSku's default) comfortably covers
+      // Order A (1) + Order B (5) = 6 reserved, with headroom to spare.
+      const { orderId: orderAId } = await codOrder(skuId, 'guest-inv5-concurrent-ship-a', 'idem-inv5-concurrent-ship-a', 1);
+      const { orderId: orderBId } = await codOrder(skuId, 'guest-inv5-concurrent-ship-b', 'idem-inv5-concurrent-ship-b', 5);
+
+      const orderA = await testPrisma.order.findUniqueOrThrow({ where: { id: orderAId }, include: { lines: true } });
+      const orderB = await testPrisma.order.findUniqueOrThrow({ where: { id: orderBId }, include: { lines: true } });
+      const lineA = orderA.lines[0]!;
+      const lineB = orderB.lines[0]!;
+      expect(lineA.quantity).toBe(1);
+      expect(lineB.quantity).toBe(5);
+
+      const balanceBefore = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      expect(balanceBefore.reserved).toBe(6); // both reservations converted at order creation
+
+      const fulfilmentId = await packedFulfilment(orderAId, lineA.id, warehouseToken);
+
+      const [resA, resB] = await Promise.allSettled([
+        shipFulfilment(fulfilmentId, warehouseToken),
+        shipFulfilment(fulfilmentId, warehouseToken),
+      ]);
+      const responses = [resA, resB].map((r) => (r.status === 'fulfilled' ? r.value.statusCode : -1)).sort();
+      // 1. Exactly one shipment transition is accepted.
+      expect(responses[0]).toBe(200);
+      expect(responses[1]).toBe(400);
+
+      // 2. Fulfilment status is SHIPPED.
+      const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      expect(fulfilment.status).toBe('SHIPPED');
+
+      // 3. Order A's line status is SHIPPED.
+      const refreshedLineA = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: lineA.id } });
+      expect(refreshedLineA.status).toBe('SHIPPED');
+
+      // 4. Exactly ONE SALE ledger transaction exists for Order A's OrderLine.
+      const saleTxnsA = await testPrisma.inventoryTransaction.findMany({
+        where: { type: 'SALE', referenceType: 'ORDER_LINE', referenceId: lineA.id },
+      });
+      expect(saleTxnsA).toHaveLength(1);
+      expect(saleTxnsA[0]!.quantity).toBe(1);
+
+      // No SALE was ever posted for Order B's line (it never shipped).
+      const saleTxnsB = await testPrisma.inventoryTransaction.findMany({
+        where: { type: 'SALE', referenceType: 'ORDER_LINE', referenceId: lineB.id },
+      });
+      expect(saleTxnsB).toHaveLength(0);
+
+      // 5/6. onHand decreased exactly once (by Order A's 1 unit); reserved
+      // decreased exactly once for Order A's contribution (also 1 unit) -
+      // Order B's own 5-unit reservation is untouched, still fully
+      // present in the aggregate.
+      const balanceAfter = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      expect(balanceAfter.onHand).toBe(balanceBefore.onHand - 1);
+      expect(balanceAfter.reserved).toBe(balanceBefore.reserved - 1); // 6 -> 5, never 4 or lower
+
+      // 7. Order B's reservation/inventory remains intact.
+      const reservationB = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: lineB.reservationId! } });
+      expect(reservationB.status).toBe('CONVERTED');
+      expect(reservationB.quantity).toBe(5);
+
+      // 8. No inventory value becomes negative (also enforced by DB CHECK constraints).
+      expect(balanceAfter.onHand).toBeGreaterThanOrEqual(0);
+      expect(balanceAfter.reserved).toBeGreaterThanOrEqual(0);
+
+      // 9. No duplicate audit/event side effect is produced for the shipment.
+      const shipAuditEntries = await testPrisma.auditLog.findMany({
+        where: { action: 'order.fulfilment.ship', entityId: fulfilmentId },
+      });
+      expect(shipAuditEntries).toHaveLength(1);
+    });
+
+    /**
+     * Defence-in-depth proof, independent of the fulfilment-lock fix
+     * above: calls InventoryService.recordSale() directly, twice, for
+     * the SAME order line - bypassing OrderService/markFulfilmentShipped
+     * entirely - to prove the database-level uniqueness invariant
+     * (migration 20260924145356_add_sale_orderline_uniqueness) stands on
+     * its own, not merely as an artefact of the row lock above.
+     */
+    it('H: InventoryService.recordSale() itself refuses a second SALE for the same OrderLine, independent of any caller-side locking', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-inv5-direct-dup-sale', 'idem-inv5-direct-dup-sale');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+
+      const inventory = new InventoryService(app);
+
+      const first = await inventory.recordSale({
+        skuId,
+        locationId: line.locationId,
+        quantity: line.quantity,
+        referenceType: 'ORDER_LINE',
+        referenceId: line.id,
+        reservationId: line.reservationId ?? undefined,
+      });
+      expect(first).toBeTruthy();
+
+      await expect(
+        inventory.recordSale({
+          skuId,
+          locationId: line.locationId,
+          quantity: line.quantity,
+          referenceType: 'ORDER_LINE',
+          referenceId: line.id,
+          reservationId: line.reservationId ?? undefined,
+        }),
+      ).rejects.toMatchObject({ code: 'INVENTORY_INTEGRITY_VIOLATION' });
+
+      const saleTxns = await testPrisma.inventoryTransaction.findMany({
+        where: { type: 'SALE', referenceType: 'ORDER_LINE', referenceId: line.id },
+      });
+      expect(saleTxns).toHaveLength(1);
+      const balance = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      expect(balance.onHand).toBe(9); // decremented exactly once, not twice by the rejected second call
+    });
+  });
+
+  describe('Adjacent fulfilment transition concurrency (independent-review repair pass)', () => {
+    it('two concurrent pack attempts on the same PENDING fulfilment - exactly one succeeds', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-concurrent-pack', 'idem-concurrent-pack');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      await pickLine(line.id, warehouseToken);
+
+      const fulfilRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/fulfilments`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { lineIds: [line.id] },
+      });
+      const fulfilmentId = fulfilRes.json().id as string;
+
+      const pack = () =>
+        app.inject({
+          method: 'POST',
+          url: `/api/v1/orders/fulfilments/${fulfilmentId}/pack`,
+          headers: { authorization: `Bearer ${warehouseToken}` },
+        });
+      const [resA, resB] = await Promise.all([pack(), pack()]);
+      const statuses = [resA.statusCode, resB.statusCode].sort();
+      expect(statuses[0]).toBe(200);
+      expect(statuses[1]).toBe(400);
+
+      const packEntries = await testPrisma.auditLog.findMany({ where: { action: 'order.fulfilment.pack', entityId: fulfilmentId } });
+      expect(packEntries).toHaveLength(1);
+    });
+
+    it('two concurrent deliver attempts on the same SHIPPED fulfilment - exactly one succeeds', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-concurrent-deliver', 'idem-concurrent-deliver');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      const fulfilmentId = await readyToShipFulfilment(orderId, [line.id], warehouseToken);
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/fulfilments/${fulfilmentId}/ship`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+      });
+
+      const deliver = () =>
+        app.inject({
+          method: 'POST',
+          url: `/api/v1/orders/fulfilments/${fulfilmentId}/deliver`,
+          headers: { authorization: `Bearer ${warehouseToken}` },
+        });
+      const [resA, resB] = await Promise.all([deliver(), deliver()]);
+      const statuses = [resA.statusCode, resB.statusCode].sort();
+      expect(statuses[0]).toBe(200);
+      expect(statuses[1]).toBe(400);
+
+      const deliverEntries = await testPrisma.auditLog.findMany({ where: { action: 'order.fulfilment.deliver', entityId: fulfilmentId } });
+      expect(deliverEntries).toHaveLength(1);
     });
   });
 

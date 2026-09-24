@@ -614,14 +614,43 @@ export class InventoryService {
           reserved: balance.reserved - params.quantity,
         },
       });
-      return this.writeLedgerRow(tx, {
-        skuId: params.skuId,
-        locationId: params.locationId,
-        quantity: params.quantity,
-        referenceType: params.referenceType,
-        referenceId: params.referenceId,
-        type: 'SALE',
-      });
+
+      try {
+        return await this.writeLedgerRow(tx, {
+          skuId: params.skuId,
+          locationId: params.locationId,
+          quantity: params.quantity,
+          referenceType: params.referenceType,
+          referenceId: params.referenceId,
+          type: 'SALE',
+        });
+      } catch (err) {
+        // Defence-in-depth (independent-review repair pass, M16,
+        // 2026-09-24): a partial unique index
+        // (inventory_transactions_sale_orderline_once, migration
+        // 20260924145356) enforces at most one SALE row per
+        // (type='SALE', referenceType='ORDER_LINE', referenceId) at the
+        // database level - the true concurrency-safety backstop is
+        // OrderService.markFulfilmentShipped's own fulfilment row lock
+        // (which serializes concurrent ship attempts before they ever
+        // reach here), but this catches any OTHER path that might call
+        // recordSale twice for the same order line. There is no
+        // "legitimate retry" concept for a sale (unlike a payment
+        // webhook redelivery) - a duplicate is always a bug/race, never
+        // silently absorbed or re-applied; the balance decrement above
+        // rolls back with the rest of this transaction since the error
+        // propagates out uncaught.
+        if (
+          params.referenceType === 'ORDER_LINE' &&
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          throw new InventoryIntegrityError(
+            `A SALE has already been posted for order line '${params.referenceId}' - refusing to post a duplicate sale`,
+          );
+        }
+        throw err;
+      }
     };
     return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }

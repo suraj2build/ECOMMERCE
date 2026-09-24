@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { Prisma, type PrismaClient, type OrderStatus, type OrderLineStatus } from '@fcp/db';
+import { Prisma, type PrismaClient, type OrderStatus, type OrderLineStatus, type FulfilmentStatus } from '@fcp/db';
 import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { InvoiceService } from '../tax/invoice-service.js';
@@ -462,6 +462,45 @@ export class OrderService {
   }
 
   /**
+   * Row-locks and returns one OrderFulfilment by id (SELECT ... FOR
+   * UPDATE, the same idiom InventoryService.lockReservation/lockBalance
+   * and WarehouseService.lockPickTask already use). MUST run inside a
+   * transaction, and MUST be the first thing every fulfilment state-
+   * transition method below does, before reading `status` for its
+   * eligibility check.
+   *
+   * Independent-review finding (M16 repair pass, 2026-09-24): every
+   * fulfilment transition (pack/ready-to-ship/ship/deliver) previously
+   * read the fulfilment via a plain `findUniqueOrThrow` - two genuinely
+   * concurrent callers on the SAME fulfilment could both observe the
+   * same pre-transition status before either committed. For
+   * markFulfilmentShipped specifically this risked posting the SALE
+   * ledger transaction (and decrementing onHand/reserved) more than once
+   * for the same fulfilment's lines - InventoryService.recordSale()'s
+   * own reservation/balance locking does not by itself prevent this,
+   * since a CONVERTED reservation continues to satisfy recordSale's
+   * quantity check on a second call. This lock closes the race at its
+   * true source: the fulfilment's own status field. Whichever
+   * transaction's SELECT ... FOR UPDATE acquires the row first proceeds;
+   * the other blocks until the first commits, then re-reads the now-
+   * advanced status through this same lock and takes its own pre-
+   * existing "not eligible from this status" rejection branch - never a
+   * blind concurrent double-transition.
+   */
+  private async lockFulfilment(
+    tx: Prisma.TransactionClient,
+    fulfilmentId: string,
+  ): Promise<{ id: string; orderId: string; status: FulfilmentStatus } | null> {
+    const rows = await tx.$queryRaw<
+      { id: string; orderId: string; status: FulfilmentStatus }[]
+    >`SELECT "id", "orderId", "status"
+      FROM "order_fulfilments"
+      WHERE "id" = ${fulfilmentId}
+      FOR UPDATE`;
+    return rows[0] ?? null;
+  }
+
+  /**
    * Groups a set of already-PICKED lines of the same order into one
    * shipment/package record, proving the split-shipment data model
    * (ORD-001) - a second call with the order's remaining lines produces a
@@ -531,7 +570,8 @@ export class OrderService {
 
   async markFulfilmentPacked(fulfilmentId: string, staffId: string) {
     return this.prisma.$transaction(async (tx) => {
-      const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      const fulfilment = await this.lockFulfilment(tx, fulfilmentId);
+      if (!fulfilment) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (fulfilment.status !== 'PENDING') {
         throw new ValidationError(`Cannot pack a fulfilment in status '${fulfilment.status}'`);
       }
@@ -563,7 +603,8 @@ export class OrderService {
    */
   async markFulfilmentReadyToShip(fulfilmentId: string, staffId: string) {
     return this.prisma.$transaction(async (tx) => {
-      const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      const fulfilment = await this.lockFulfilment(tx, fulfilmentId);
+      if (!fulfilment) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (fulfilment.status !== 'PACKED') {
         throw new ValidationError(`Cannot mark a fulfilment ready to ship from status '${fulfilment.status}' - it must be PACKED first`);
       }
@@ -583,10 +624,17 @@ export class OrderService {
   /** SHIPPED: posts the SALE ledger transaction per line (FLOW 8's "inventory posts the sale/fulfilment transaction at the defined trigger point"). */
   async markFulfilmentShipped(fulfilmentId: string, staffId: string, opts?: { carrierName?: string; trackingRef?: string }) {
     return this.prisma.$transaction(async (tx) => {
-      const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { lines: true } });
-      if (fulfilment.status !== 'READY_TO_SHIP') {
-        throw new ValidationError(`Cannot ship a fulfilment in status '${fulfilment.status}' - it must be READY_TO_SHIP first`);
+      const locked = await this.lockFulfilment(tx, fulfilmentId);
+      if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
+      if (locked.status !== 'READY_TO_SHIP') {
+        throw new ValidationError(`Cannot ship a fulfilment in status '${locked.status}' - it must be READY_TO_SHIP first`);
       }
+
+      // Safe to read the lines only now that the fulfilment row lock is
+      // held: no concurrent transition on this fulfilmentId can be
+      // mid-flight (every transition method acquires this same lock
+      // first), so this read is guaranteed consistent with `locked`.
+      const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { lines: true } });
 
       for (const line of fulfilment.lines) {
         // reservationId lets InventoryService itself verify this line's
@@ -626,7 +674,8 @@ export class OrderService {
 
   async markFulfilmentDelivered(fulfilmentId: string, staffId: string) {
     return this.prisma.$transaction(async (tx) => {
-      const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      const fulfilment = await this.lockFulfilment(tx, fulfilmentId);
+      if (!fulfilment) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (fulfilment.status !== 'SHIPPED') {
         throw new ValidationError(`Cannot mark delivered a fulfilment in status '${fulfilment.status}'`);
       }
