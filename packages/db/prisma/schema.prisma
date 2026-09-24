@@ -74,6 +74,7 @@ model Location {
   transfersTo          InventoryTransfer[]    @relation("TransferTo")
   checkoutSessionLines CheckoutSessionLine[]
   orderLines           OrderLine[]
+  pickTasks            PickTask[]
 
   @@index([gstRegistrationId])
   @@map("locations")
@@ -155,6 +156,7 @@ model StaffUser {
   moderatedShoppableMedia ShoppableMedia[]        @relation("ShoppableMediaModeratedBy")
   moderatedReviews        Review[]                @relation("ReviewModeratedBy")
   crossSellOverrides      CrossSellOverride[]
+  pickedPickTasks         PickTask[]              @relation("PickTaskPickedBy")
 
   @@map("staff_users")
 }
@@ -424,6 +426,7 @@ model Sku {
   wishlistItems        WishlistItem[]
   checkoutSessionLines CheckoutSessionLine[]
   orderLines           OrderLine[]
+  pickTasks            PickTask[]
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -1431,27 +1434,27 @@ enum CheckoutPaymentMethod {
 }
 
 model CheckoutSession {
-  id                 String                @id @default(uuid())
-  customerId         String?
-  guestSessionId     String?
-  contactName        String
-  contactMobile      String
-  contactEmail       String?
-  billingAddress     Json
-  shippingAddress    Json
-  shippingStateCode  String
-  shippingMethodCode String                @default("STANDARD")
-  shippingCost       Decimal               @db.Decimal(10, 2)
-  subtotal           Decimal               @db.Decimal(10, 2) // tax-inclusive sum of lines
-  taxAmount          Decimal               @db.Decimal(10, 2) // informational - already included within subtotal
-  grandTotal         Decimal               @db.Decimal(10, 2)
-  currency           String                @default("INR")
-  paymentMethod      CheckoutPaymentMethod
-  status             CheckoutSessionStatus @default(STARTED)
-  idempotencyKey     String                @unique
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
-  confirmedAt        DateTime?
+  id                   String                @id @default(uuid())
+  customerId           String?
+  guestSessionId       String?
+  contactName          String
+  contactMobile        String
+  contactEmail         String?
+  billingAddress       Json
+  shippingAddress      Json
+  shippingStateCode    String
+  shippingMethodCode   String                @default("STANDARD")
+  shippingCost         Decimal               @db.Decimal(10, 2)
+  subtotal             Decimal               @db.Decimal(10, 2) // tax-inclusive sum of lines
+  taxAmount            Decimal               @db.Decimal(10, 2) // informational - already included within subtotal
+  grandTotal           Decimal               @db.Decimal(10, 2)
+  currency             String                @default("INR")
+  paymentMethod        CheckoutPaymentMethod
+  status               CheckoutSessionStatus @default(STARTED)
+  idempotencyKey       String                @unique
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  confirmedAt          DateTime?
   // Set only when status = CAPTURE_RECONCILIATION_REQUIRED (independent-
   // review finding #3) - the operator-facing explanation of why a
   // genuinely-captured payment did not result in an order.
@@ -1559,16 +1562,16 @@ enum PaymentEventStatus {
 }
 
 model PaymentEvent {
-  id               String              @id @default(uuid())
-  provider         PaymentProviderType
-  providerEventId  String
-  eventType        String
-  paymentId        String?
-  payload          Json
-  receivedAt       DateTime            @default(now())
-  status           PaymentEventStatus  @default(RECEIVED)
-  processedAt      DateTime?
-  processingError  String?
+  id              String              @id @default(uuid())
+  provider        PaymentProviderType
+  providerEventId String
+  eventType       String
+  paymentId       String?
+  payload         Json
+  receivedAt      DateTime            @default(now())
+  status          PaymentEventStatus  @default(RECEIVED)
+  processedAt     DateTime?
+  processingError String?
 
   payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
@@ -1610,8 +1613,13 @@ enum OrderStatus {
 
 // Line-level status carries the real granularity (partial cancellation,
 // split shipment) - ORD-001's "line-item-level state" requirement.
+// M16 (specs/15-warehouse-fulfilment.md) inserts PICKED between ALLOCATED
+// and PACKED - a line MUST be fully picked (its PickTask reaches PICKED)
+// before it is eligible for OrderService.assignLinesToFulfilment (the
+// "only legitimately picked quantities may be packed" invariant).
 enum OrderLineStatus {
   ALLOCATED
+  PICKED
   PACKED
   SHIPPED
   DELIVERED
@@ -1619,11 +1627,107 @@ enum OrderLineStatus {
   EXCEPTION
 }
 
+// M16 inserts READY_TO_SHIP between PACKED and SHIPPED - the explicit
+// warehouse/shipping hand-off boundary the M16 build instruction requires
+// ("create only the explicit adapter/handoff boundary required by M16").
+// OrderService.markFulfilmentShipped (M15, unchanged in its own logic -
+// still posts the SALE ledger transaction) now requires READY_TO_SHIP
+// rather than PACKED, so a fulfilment cannot be shipped without an
+// explicit staff confirmation that packing is complete and the package is
+// staged for carrier pickup - real carrier integration itself remains
+// M17's own, separately-authorized scope.
 enum FulfilmentStatus {
   PENDING
   PACKED
+  READY_TO_SHIP
   SHIPPED
   DELIVERED
+}
+
+enum PickTaskStatus {
+  PENDING
+  PICKED
+  SHORT_PICKED
+  EXCEPTION
+  CANCELLED
+}
+
+// The physical-stock-vs-system-record mismatch types a picker can report
+// at pick time (specs/15-warehouse-fulfilment.md: "a pick exception MUST
+// post an authorized/audited inventory adjustment and trigger the order-
+// exception path"). Deliberately a closed, small set rather than a free-
+// text-only reason - lets operations dashboards and NFR queries group/
+// count exceptions by cause without parsing prose.
+enum PickExceptionType {
+  STOCK_NOT_FOUND
+  INSUFFICIENT_STOCK
+  DAMAGED
+  WRONG_SKU_FOUND
+  OTHER
+}
+
+// M16 — Warehouse & Fulfilment (specs/15-warehouse-fulfilment.md, WH-001,
+// WH-002). The actionable unit of pick work: exactly one per OrderLine
+// (1:1, enforced by orderLineId's unique constraint), auto-created inside
+// the SAME transaction as OrderLine creation (OrderService.
+// createOrderFromCheckoutSession -> WarehouseService.createPickTasksForOrder)
+// - "warehouse work creation" in the M16 build instruction's flow diagram
+// is therefore never a separate, forgettable manual step; it happens the
+// instant a line becomes ALLOCATED, exactly like M08's invoice generation
+// happens the instant an order is confirmed.
+//
+// Deliberately a single-call, single-terminal-transition design (PENDING
+// -> one of PICKED/SHORT_PICKED/EXCEPTION/CANCELLED) rather than adding a
+// separate "IN_PROGRESS/claimed-by" state: this platform's pick/pack
+// actions are synchronous HTTP calls (a scanner or UI submits one outcome
+// per task), not a long-running async job a worker could crash mid-way
+// through leaving an unobserved intermediate state. Concurrency safety
+// (two pickers racing the same task) is provided by row-locking the task
+// row (SELECT ... FOR UPDATE, the same idiom InventoryService.
+// lockReservation/lockBalance already use) inside one transaction, not by
+// an extra status value - the same reasoning already applied to
+// PaymentEventStatus's 3-state (not 4-state) design in the M14 payment
+// webhook rework.
+//
+// allocatedQuantity is a snapshot of OrderLine.quantity at task-creation
+// time (frozen-document discipline shared with CheckoutSessionLine/
+// InvoiceLine): OrderLine.quantity never changes post-order in this
+// platform, so today this is always equal to the live value, but snapshotting
+// costs nothing and removes any future ambiguity about which quantity a
+// historical pick task was actually working against.
+model PickTask {
+  id                String             @id @default(uuid())
+  orderId           String
+  orderLineId       String             @unique
+  skuId             String
+  locationId        String
+  allocatedQuantity Int
+  pickedQuantity    Int                @default(0)
+  status            PickTaskStatus     @default(PENDING)
+  exceptionType     PickExceptionType?
+  exceptionReason   String?
+  // Idempotency key for the one mutating action this resource supports
+  // (recording a pick outcome) - a network-level retry/replay of the
+  // exact same request is a safe no-op (same pattern as Payment.
+  // idempotencyKey / InventoryReservation.idempotencyKey), while a
+  // different key against an already-terminal task is a genuine conflict
+  // (either a second, distinct picker, or a client bug), not a replay.
+  idempotencyKey    String?
+  pickedByStaffId   String?
+  pickedAt          DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  order         Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderLine     OrderLine  @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  sku           Sku        @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location      Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  pickedByStaff StaffUser? @relation("PickTaskPickedBy", fields: [pickedByStaffId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([locationId, status])
+  @@map("pick_tasks")
 }
 
 // The formal Order (as distinct from CheckoutSession, the "order creation
@@ -1676,6 +1780,7 @@ model Order {
   checkoutSession CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
   lines           OrderLine[]
   fulfilments     OrderFulfilment[]
+  pickTasks       PickTask[]
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -1716,6 +1821,7 @@ model OrderLine {
   sku        Sku              @relation(fields: [skuId], references: [id], onDelete: Restrict)
   location   Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
   fulfilment OrderFulfilment? @relation(fields: [fulfilmentId], references: [id], onDelete: SetNull)
+  pickTask   PickTask?
 
   @@index([orderId])
   @@map("order_lines")
@@ -1723,10 +1829,11 @@ model OrderLine {
 
 // A single shipment/package (ORD-001: "one order MAY have multiple
 // fulfilments/packages"). Each OrderLine belongs to at most one
-// Fulfilment at a time - a line is assigned to a Fulfilment (the
-// engineering-level analogue of "generate a pick list" this milestone
-// provides, per the scope-boundary note above) and the two progress
-// through PACKED/SHIPPED/DELIVERED together.
+// Fulfilment at a time - a line is assigned to a Fulfilment once it has
+// been fully picked (M16 gate: OrderService.assignLinesToFulfilment now
+// requires OrderLineStatus.PICKED, the engineering-level analogue of
+// "generate a pick list" the M15 scope-boundary note anticipated) and the
+// two progress through PACKED/READY_TO_SHIP/SHIPPED/DELIVERED together.
 model OrderFulfilment {
   id          String           @id @default(uuid())
   orderId     String

@@ -76,6 +76,13 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await orderService.markFulfilmentPacked(fulfilmentId, request.staffUser!.id));
   });
 
+  // M16: the explicit warehouse/shipping hand-off boundary between
+  // "packed" and "shipped" - see OrderService.markFulfilmentReadyToShip.
+  fastify.post('/orders/fulfilments/:fulfilmentId/ready-to-ship', { preHandler: fulfilAuth }, async (request, reply) => {
+    const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
+    reply.status(200).send(await orderService.markFulfilmentReadyToShip(fulfilmentId, request.staffUser!.id));
+  });
+
   fastify.post('/orders/fulfilments/:fulfilmentId/ship', { preHandler: fulfilAuth }, async (request, reply) => {
     const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
     const body = shipSchema.parse(request.body ?? {});

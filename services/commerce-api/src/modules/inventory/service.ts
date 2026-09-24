@@ -633,14 +633,30 @@ export class InventoryService {
    * route layer, not here) - this service enforces only that the field is
    * present when required.
    */
-  async postAdjustment(params: {
-    skuId: string;
-    locationId: string;
-    quantityDelta: number; // signed: positive = increase onHand, negative = decrease
-    reason: string;
-    actorStaffId: string;
-    coApproverStaffId?: string;
-  }) {
+  /**
+   * Accepts an optional external transaction client (M16,
+   * specs/15-warehouse-fulfilment.md: "a pick exception MUST post an
+   * authorized/audited inventory adjustment") so WarehouseService can post
+   * the shortfall adjustment atomically alongside the same transaction
+   * that records the pick outcome and flags the order-exception - a
+   * pick-exception row must never exist without (or diverge from) the
+   * inventory correction it implies, the same atomicity discipline
+   * recordSale/convertReservation/etc. already apply. Every existing
+   * caller (the standalone `inventory:adjust` HTTP route) omits it and
+   * gets byte-for-byte the same behaviour as before - this is a pure,
+   * backward-compatible extension, not a behaviour change.
+   */
+  async postAdjustment(
+    params: {
+      skuId: string;
+      locationId: string;
+      quantityDelta: number; // signed: positive = increase onHand, negative = decrease
+      reason: string;
+      actorStaffId: string;
+      coApproverStaffId?: string;
+    },
+    externalTx?: Prisma.TransactionClient,
+  ) {
     if (!params.reason?.trim()) throw new ValidationError('Adjustment reason is required');
     if (params.quantityDelta === 0) throw new ValidationError('Adjustment quantity delta cannot be zero');
 
@@ -654,7 +670,7 @@ export class InventoryService {
       );
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient) => {
       await this.ensureBalanceRow(tx, params.skuId, params.locationId);
       const balance = await this.lockBalance(tx, params.skuId, params.locationId);
       const newOnHand = balance.onHand + params.quantityDelta;
@@ -667,7 +683,7 @@ export class InventoryService {
         data: { onHand: newOnHand },
       });
 
-      return this.writeLedgerRow(tx, {
+      const txnRow = await this.writeLedgerRow(tx, {
         skuId: params.skuId,
         locationId: params.locationId,
         type: 'ADJUSTMENT',
@@ -677,19 +693,21 @@ export class InventoryService {
         actorStaffId: params.actorStaffId,
         coApproverStaffId: params.coApproverStaffId,
       });
-    });
 
-    await recordAudit(this.prisma, {
-      actorType: 'STAFF',
-      actorStaffId: params.actorStaffId,
-      action: 'inventory.adjust',
-      entityType: 'InventoryBalance',
-      entityId: `${params.skuId}/${params.locationId}`,
-      newValue: { quantityDelta: params.quantityDelta, reason: params.reason },
-      reference: params.coApproverStaffId,
-    });
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: params.actorStaffId,
+        action: 'inventory.adjust',
+        entityType: 'InventoryBalance',
+        entityId: `${params.skuId}/${params.locationId}`,
+        newValue: { quantityDelta: params.quantityDelta, reason: params.reason },
+        reference: params.coApproverStaffId,
+      });
 
-    return result;
+      return txnRow;
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }
 
   /** TRANSFER_OUT at source (onHand -= qty), creates an IN_TRANSIT transfer record. Preserves total stock. */

@@ -69,6 +69,19 @@ export const PERMISSION_KEYS = [
   'order:cancel',
   'order:exception:manage',
   'order:rto',
+  // M16 (specs/15-warehouse-fulfilment.md): granular warehouse-floor
+  // permissions, distinct from order:fulfil's already-existing pack/ship/
+  // deliver scope. warehouse:read lets a picker see their queue without
+  // the broader order:read (customer contact/address) visibility;
+  // warehouse:pick/pack gate the two floor actions independently so a
+  // future role split (e.g. pickers who cannot also pack) needs no schema
+  // change; warehouse:exception:manage is deliberately separate from
+  // order:exception:manage (an order-level staff action) since a pick/pack
+  // exception is warehouse-floor-triggered, not CS-triggered.
+  'warehouse:read',
+  'warehouse:pick',
+  'warehouse:pack',
+  'warehouse:exception:manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

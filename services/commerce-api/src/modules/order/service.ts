@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient, type OrderStatus, type OrderLineStatus } fro
 import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { InvoiceService } from '../tax/invoice-service.js';
+import { WarehouseService } from '../warehouse/service.js';
 import { recordAudit } from '../audit/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
@@ -23,10 +24,12 @@ import type { CartOwnerIdentity } from '../cart/identity.js';
 export class OrderService {
   private readonly inventory: InventoryService;
   private readonly invoice: InvoiceService;
+  private readonly warehouse: WarehouseService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
     this.invoice = new InvoiceService(fastify);
+    this.warehouse = new WarehouseService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -122,6 +125,12 @@ export class OrderService {
           await this.inventory.convertReservation(line.reservationId, tx);
         }
       }
+
+      // M16 (specs/15-warehouse-fulfilment.md): "warehouse work creation"
+      // happens the instant a line becomes ALLOCATED, inside this SAME
+      // transaction - never a separate, forgettable manual step, and
+      // never at risk of existing without the order line it belongs to.
+      await this.warehouse.createPickTasksForOrder(tx, created.id, created.lines);
 
       await recordAudit(tx, {
         actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',
@@ -368,7 +377,7 @@ export class OrderService {
     const order = await this.prisma.order.findUniqueOrThrow({
       where: { id },
       include: {
-        lines: { include: { sku: { include: { style: true, colour: true, size: true } } } },
+        lines: { include: { sku: { include: { style: true, colour: true, size: true } }, pickTask: true } },
         fulfilments: true,
       },
     });
@@ -408,6 +417,16 @@ export class OrderService {
         cancelledAt: l.cancelledAt,
         cancelledReason: l.cancelledReason,
         exceptionReason: l.exceptionReason,
+        // M16 visibility: lets a warehouse dashboard/CS agent see pick
+        // progress without a second round-trip to /warehouse/pick-tasks.
+        pickTask: l.pickTask
+          ? {
+              id: l.pickTask.id,
+              status: l.pickTask.status,
+              pickedQuantity: l.pickTask.pickedQuantity,
+              exceptionType: l.pickTask.exceptionType,
+            }
+          : null,
       })),
       fulfilments: order.fulfilments.map((f) => ({
         id: f.id,
@@ -443,18 +462,42 @@ export class OrderService {
   }
 
   /**
-   * The engineering-level analogue of "generate a pick list" this
-   * milestone provides (see the scope-boundary note at the top of this
-   * file): groups a set of not-yet-fulfilled lines of the same order
-   * into one shipment record, proving the split-shipment data model
-   * (ORD-001) - a second call with the order's remaining lines produces
-   * a second, independently-tracked Fulfilment.
+   * Groups a set of already-PICKED lines of the same order into one
+   * shipment/package record, proving the split-shipment data model
+   * (ORD-001) - a second call with the order's remaining lines produces a
+   * second, independently-tracked Fulfilment/package (M16 §5: "do not
+   * force one order = one package").
+   *
+   * M16 gate (specs/15-warehouse-fulfilment.md: "only legitimately picked
+   * quantities may be packed"): requires OrderLineStatus.PICKED, not the
+   * M15-original ALLOCATED - a line whose PickTask is still PENDING (or
+   * SHORT_PICKED/EXCEPTION, which has already moved the line to
+   * EXCEPTION) is rejected here with a clean 400, never silently packed.
    */
   async assignLinesToFulfilment(orderId: string, lineIds: string[], staffId: string) {
     if (lineIds.length === 0) throw new ValidationError('At least one order line is required');
 
     return this.prisma.$transaction(async (tx) => {
-      const lines = await tx.orderLine.findMany({ where: { id: { in: lineIds }, orderId } });
+      // M16 concurrency hardening: row-locks every candidate line (SELECT
+      // ... FOR UPDATE, the same idiom InventoryService.lockReservation/
+      // lockBalance and WarehouseService.lockPickTask already use) before
+      // reading eligibility - a plain findMany here let two genuinely
+      // concurrent "pack this line" requests both read PICKED/unassigned
+      // before either committed, so both could proceed and race on the
+      // final fulfilmentId write (an "concurrent packing" adversarial
+      // scenario the M16 build instruction requires be made safe, not
+      // merely observed). Ordering by id avoids a deadlock if a future
+      // caller ever locks the same two lines in a different order.
+      const sortedIds = [...lineIds].sort();
+      const lockedRows = await tx.$queryRaw<
+        { id: string; orderId: string; fulfilmentId: string | null; status: string }[]
+      >`SELECT "id", "orderId", "fulfilmentId", "status"
+        FROM "order_lines"
+        WHERE "id" = ANY(${sortedIds})
+        ORDER BY "id"
+        FOR UPDATE`;
+
+      const lines = lockedRows.filter((l) => l.orderId === orderId);
       if (lines.length !== lineIds.length) {
         throw new NotFoundError('OrderLine', lineIds.join(','));
       }
@@ -462,8 +505,10 @@ export class OrderService {
         if (line.fulfilmentId) {
           throw new ConflictError(`Order line '${line.id}' is already assigned to a fulfilment`);
         }
-        if (line.status !== 'ALLOCATED') {
-          throw new ValidationError(`Order line '${line.id}' is not eligible for fulfilment (status '${line.status}')`);
+        if (line.status !== 'PICKED') {
+          throw new ValidationError(
+            `Order line '${line.id}' is not eligible for fulfilment (status '${line.status}') - it must be fully picked first`,
+          );
         }
       }
 
@@ -505,12 +550,42 @@ export class OrderService {
     });
   }
 
+  /**
+   * M16 (specs/15-warehouse-fulfilment.md): the explicit "shipment
+   * hand-off boundary" required by the M16 build instruction - a distinct
+   * staff confirmation between "packing is physically complete" (PACKED)
+   * and "this package is staged and ready for carrier pickup"
+   * (READY_TO_SHIP). markFulfilmentShipped below now requires this state
+   * rather than PACKED directly, so a fulfilment can never be shipped
+   * without it. Real carrier integration (dispatch scheduling, tracking
+   * updates) is M17's own, separately-authorized scope - this method
+   * creates only the adapter boundary M16 itself needs.
+   */
+  async markFulfilmentReadyToShip(fulfilmentId: string, staffId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      if (fulfilment.status !== 'PACKED') {
+        throw new ValidationError(`Cannot mark a fulfilment ready to ship from status '${fulfilment.status}' - it must be PACKED first`);
+      }
+      await tx.orderFulfilment.update({ where: { id: fulfilmentId }, data: { status: 'READY_TO_SHIP' } });
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: staffId,
+        action: 'order.fulfilment.ready_to_ship',
+        entityType: 'OrderFulfilment',
+        entityId: fulfilmentId,
+        reference: fulfilment.orderId,
+      });
+      return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+    });
+  }
+
   /** SHIPPED: posts the SALE ledger transaction per line (FLOW 8's "inventory posts the sale/fulfilment transaction at the defined trigger point"). */
   async markFulfilmentShipped(fulfilmentId: string, staffId: string, opts?: { carrierName?: string; trackingRef?: string }) {
     return this.prisma.$transaction(async (tx) => {
       const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { lines: true } });
-      if (fulfilment.status !== 'PACKED') {
-        throw new ValidationError(`Cannot ship a fulfilment in status '${fulfilment.status}'`);
+      if (fulfilment.status !== 'READY_TO_SHIP') {
+        throw new ValidationError(`Cannot ship a fulfilment in status '${fulfilment.status}' - it must be READY_TO_SHIP first`);
       }
 
       for (const line of fulfilment.lines) {
@@ -597,6 +672,15 @@ export class OrderService {
         data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: reason },
       });
 
+      // M16: a PickTask that hasn't started yet (still PENDING) is
+      // cancelled alongside its line, so a warehouse queue never shows
+      // phantom work for a cancelled line. A task that already completed
+      // (PICKED/SHORT_PICKED/EXCEPTION) is left as the historical record
+      // of the work that genuinely happened - recordPickOutcome's own
+      // "pick cancelled line" guard is what protects a NEW pick attempt,
+      // not a retroactive rewrite of one that already occurred.
+      await tx.pickTask.updateMany({ where: { orderLineId: lineId, status: 'PENDING' }, data: { status: 'CANCELLED' } });
+
       const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
       if (order.paymentMethod === 'PREPAID') {
         await tx.order.update({ where: { id: orderId }, data: { refundRequired: true } });
@@ -662,12 +746,29 @@ export class OrderService {
           where: { id: lineId },
           data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: reason, exceptionReason: null },
         });
+        await tx.pickTask.updateMany({ where: { orderLineId: lineId, status: 'PENDING' }, data: { status: 'CANCELLED' } });
         const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
         if (order.paymentMethod === 'PREPAID') {
           await tx.order.update({ where: { id: orderId }, data: { refundRequired: true } });
         }
       } else {
         await tx.orderLine.update({ where: { id: lineId }, data: { status: 'ALLOCATED', exceptionReason: null } });
+        // M16: reinstating (e.g. stock replenished, or a manually-flagged
+        // exception unrelated to picking) resets this line's PickTask
+        // back to PENDING for a fresh pick attempt - the SAME task row,
+        // never a second one (orderLineId stays unique).
+        await tx.pickTask.updateMany({
+          where: { orderLineId: lineId },
+          data: {
+            status: 'PENDING',
+            pickedQuantity: 0,
+            exceptionType: null,
+            exceptionReason: null,
+            idempotencyKey: null,
+            pickedByStaffId: null,
+            pickedAt: null,
+          },
+        });
       }
 
       await recordAudit(tx, {

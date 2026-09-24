@@ -253,6 +253,56 @@ describe('Order Management (M15)', () => {
     expect(res.statusCode).toBe(200);
   }
 
+  /**
+   * M16: OrderService.assignLinesToFulfilment now requires PICKED, not
+   * M15-original ALLOCATED - every pre-existing test that assigns lines
+   * to a fulfilment must first genuinely pick them through the real HTTP
+   * pick-task endpoint (not a direct DB write), proving the M16 gate
+   * itself works end to end for every one of M15's own scenarios, not
+   * just M16's own dedicated test file.
+   */
+  async function pickLine(lineId: string, warehouseToken: string) {
+    const line = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+    const task = await testPrisma.pickTask.findUniqueOrThrow({ where: { orderLineId: lineId } });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`,
+      headers: { authorization: `Bearer ${warehouseToken}` },
+      payload: { idempotencyKey: `pick-${lineId}`, outcome: 'FULL', pickedQuantity: line.quantity },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe('PICKED');
+  }
+
+  /** Full pick -> assign -> pack -> ready-to-ship chain, returns the fulfilment id (now READY_TO_SHIP). */
+  async function readyToShipFulfilment(orderId: string, lineIds: string[], warehouseToken: string): Promise<string> {
+    for (const lineId of lineIds) {
+      await pickLine(lineId, warehouseToken);
+    }
+    const fulfilRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/orders/${orderId}/fulfilments`,
+      headers: { authorization: `Bearer ${warehouseToken}` },
+      payload: { lineIds },
+    });
+    expect(fulfilRes.statusCode).toBe(201);
+    const fulfilmentId = fulfilRes.json().id as string;
+    const packRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/orders/fulfilments/${fulfilmentId}/pack`,
+      headers: { authorization: `Bearer ${warehouseToken}` },
+    });
+    expect(packRes.statusCode).toBe(200);
+    const readyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/orders/fulfilments/${fulfilmentId}/ready-to-ship`,
+      headers: { authorization: `Bearer ${warehouseToken}` },
+    });
+    expect(readyRes.statusCode).toBe(200);
+    expect(readyRes.json().status).toBe('READY_TO_SHIP');
+    return fulfilmentId;
+  }
+
   describe('Order creation trigger', () => {
     it('creates an Order + invoice when a COD checkout is accepted, converting the reservation to a committed allocation', async () => {
       const skuId = await setupCheckoutableSku(500);
@@ -286,7 +336,7 @@ describe('Order Management (M15)', () => {
 
   describe('Split shipment (FLOW 8)', () => {
     it('two lines of a multi-line order can be packed/shipped/delivered independently, posting a SALE transaction per shipment', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
 
       const ctx = await seedContext();
@@ -318,19 +368,10 @@ describe('Order Management (M15)', () => {
       const [lineA, lineB] = order.lines;
 
       // Ship line A immediately.
-      const fulfilARes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/orders/${order.id}/fulfilments`,
-        headers: { authorization: `Bearer ${warehouseToken}` },
-        payload: { lineIds: [lineA!.id] },
-      });
-      expect(fulfilARes.statusCode).toBe(201);
-      const fulfilmentA = fulfilARes.json();
-
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentA.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      const fulfilmentAId = await readyToShipFulfilment(order.id, [lineA!.id], warehouseToken);
       const shipARes = await app.inject({
         method: 'POST',
-        url: `/api/v1/orders/fulfilments/${fulfilmentA.id}/ship`,
+        url: `/api/v1/orders/fulfilments/${fulfilmentAId}/ship`,
         headers: { authorization: `Bearer ${warehouseToken}` },
         payload: { carrierName: 'BlueDart', trackingRef: 'BD123' },
       });
@@ -353,18 +394,11 @@ describe('Order Management (M15)', () => {
       expect(balanceA!.reserved).toBe(0);
 
       // Now line B ships as its own, independently-tracked second shipment.
-      const fulfilBRes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/orders/${order.id}/fulfilments`,
-        headers: { authorization: `Bearer ${warehouseToken}` },
-        payload: { lineIds: [lineB!.id] },
-      });
-      const fulfilmentB = fulfilBRes.json();
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentB.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentB.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      const fulfilmentBId = await readyToShipFulfilment(order.id, [lineB!.id], warehouseToken);
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentBId}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
 
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentA.id}/deliver`, headers: { authorization: `Bearer ${warehouseToken}` } });
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentB.id}/deliver`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentAId}/deliver`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentBId}/deliver`, headers: { authorization: `Bearer ${warehouseToken}` } });
 
       orderView = await app.inject({ method: 'GET', url: `/api/v1/orders/${order.id}`, headers: { authorization: `Bearer ${warehouseToken}` } });
       expect(orderView.json().status).toBe('DELIVERED');
@@ -397,22 +431,9 @@ describe('Order Management (M15)', () => {
    * and balances are byte-for-byte unchanged.
    */
   describe('Shipment inventory invariant hardening (independent-review finding #5)', () => {
+    /** Picks, packs, and advances to READY_TO_SHIP - the precondition markFulfilmentShipped now requires (M16). */
     async function packedFulfilment(orderId: string, lineId: string, warehouseToken: string) {
-      const fulfilRes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/orders/${orderId}/fulfilments`,
-        headers: { authorization: `Bearer ${warehouseToken}` },
-        payload: { lineIds: [lineId] },
-      });
-      expect(fulfilRes.statusCode).toBe(201);
-      const fulfilmentId = fulfilRes.json().id as string;
-      const packRes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/orders/fulfilments/${fulfilmentId}/pack`,
-        headers: { authorization: `Bearer ${warehouseToken}` },
-      });
-      expect(packRes.statusCode).toBe(200);
-      return fulfilmentId;
+      return readyToShipFulfilment(orderId, [lineId], warehouseToken);
     }
 
     async function shipFulfilment(fulfilmentId: string, warehouseToken: string) {
@@ -425,7 +446,7 @@ describe('Order Management (M15)', () => {
     }
 
     it('A: rejects shipment when on-hand stock is insufficient for the order line quantity, leaving no partial trace', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const skuId = await setupCheckoutableSku(500);
       const { orderId } = await codOrder(skuId, 'guest-inv5-onhand', 'idem-inv5-onhand');
@@ -448,7 +469,7 @@ describe('Order Management (M15)', () => {
       expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
 
       const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
-      expect(fulfilment.status).toBe('PACKED'); // never advanced to SHIPPED
+      expect(fulfilment.status).toBe('READY_TO_SHIP'); // never advanced to SHIPPED
       const refreshedLine = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } });
       expect(refreshedLine.status).toBe('PACKED');
       const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
@@ -461,7 +482,7 @@ describe('Order Management (M15)', () => {
     });
 
     it('B: rejects shipment when reserved stock is insufficient for the order line quantity, leaving no partial trace', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const skuId = await setupCheckoutableSku(500);
       const { orderId } = await codOrder(skuId, 'guest-inv5-reserved', 'idem-inv5-reserved');
@@ -483,7 +504,7 @@ describe('Order Management (M15)', () => {
       expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
 
       const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
-      expect(fulfilment.status).toBe('PACKED');
+      expect(fulfilment.status).toBe('READY_TO_SHIP');
       const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
       expect(saleTxns).toHaveLength(0);
       const balanceAfter = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
@@ -491,7 +512,7 @@ describe('Order Management (M15)', () => {
     });
 
     it('C: rejects shipment when the order line\'s backing reservation is missing (deleted/corrupted), leaving no partial trace', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const skuId = await setupCheckoutableSku(500);
       const { orderId } = await codOrder(skuId, 'guest-inv5-missing-res', 'idem-inv5-missing-res');
@@ -509,13 +530,13 @@ describe('Order Management (M15)', () => {
       expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
 
       const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
-      expect(fulfilment.status).toBe('PACKED');
+      expect(fulfilment.status).toBe('READY_TO_SHIP');
       const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
       expect(saleTxns).toHaveLength(0);
     });
 
     it('D: rejects shipment when the backing reservation was never actually converted into a firm allocation (still ACTIVE)', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const skuId = await setupCheckoutableSku(500);
       const { orderId } = await codOrder(skuId, 'guest-inv5-active-res', 'idem-inv5-active-res');
@@ -534,13 +555,13 @@ describe('Order Management (M15)', () => {
       expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
 
       const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
-      expect(fulfilment.status).toBe('PACKED');
+      expect(fulfilment.status).toBe('READY_TO_SHIP');
       const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
       expect(saleTxns).toHaveLength(0);
     });
 
     it('E: rejects shipment when the backing reservation allocated fewer units than this shipment claims', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const skuId = await setupCheckoutableSku(500);
       const { orderId } = await codOrder(skuId, 'guest-inv5-undersized', 'idem-inv5-undersized', 2);
@@ -561,11 +582,11 @@ describe('Order Management (M15)', () => {
       expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
 
       const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
-      expect(fulfilment.status).toBe('PACKED');
+      expect(fulfilment.status).toBe('READY_TO_SHIP');
     });
 
     it('F: a genuinely concurrent double-ship attempt on the same fulfilment posts exactly one SALE and decrements the balance exactly once', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const skuId = await setupCheckoutableSku(500);
       const { orderId } = await codOrder(skuId, 'guest-inv5-concurrent-ship', 'idem-inv5-concurrent-ship');
@@ -576,8 +597,8 @@ describe('Order Management (M15)', () => {
       const [resA, resB] = await Promise.all([shipFulfilment(fulfilmentId, warehouseToken), shipFulfilment(fulfilmentId, warehouseToken)]);
       const statuses = [resA.statusCode, resB.statusCode].sort();
       // Exactly one wins (200). The loser's rejection code depends on
-      // exact timing: markFulfilmentShipped's own PACKED-status read is
-      // not itself row-locked, so both callers can occasionally pass it
+      // exact timing: markFulfilmentShipped's own READY_TO_SHIP-status
+      // read is not itself row-locked, so both callers can occasionally pass it
       // before either commits - but recordSale's own invariant checks
       // (this finding) are the real backstop either way: the loser then
       // either finds the fulfilment already SHIPPED (400) or, having
@@ -691,7 +712,7 @@ describe('Order Management (M15)', () => {
 
   describe('Negative scenario #1: cannot cancel a shipped line', () => {
     it('blocks cancellation once a line has shipped - routes to return instead', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:cancel']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
@@ -701,15 +722,8 @@ describe('Order Management (M15)', () => {
       const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
       const line = order.lines[0]!;
 
-      const fulfilRes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/orders/${orderId}/fulfilments`,
-        headers: { authorization: `Bearer ${warehouseToken}` },
-        payload: { lineIds: [line.id] },
-      });
-      const fulfilment = fulfilRes.json();
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      const fulfilmentId = await readyToShipFulfilment(orderId, [line.id], warehouseToken);
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
 
       const cancelRes = await app.inject({
         method: 'POST',
@@ -759,7 +773,7 @@ describe('Order Management (M15)', () => {
 
   describe('RTO (FLOW 15)', () => {
     it('closes a COD order with no refund on RTO', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:rto']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
@@ -769,15 +783,8 @@ describe('Order Management (M15)', () => {
       const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
       const line = order.lines[0]!;
 
-      const fulfilRes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/orders/${orderId}/fulfilments`,
-        headers: { authorization: `Bearer ${warehouseToken}` },
-        payload: { lineIds: [line.id] },
-      });
-      const fulfilment = fulfilRes.json();
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      const fulfilmentId = await readyToShipFulfilment(orderId, [line.id], warehouseToken);
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
 
       const rtoRes = await app.inject({
         method: 'POST',
@@ -791,7 +798,7 @@ describe('Order Management (M15)', () => {
     });
 
     it('flags refund required on RTO for a PREPAID order', async () => {
-      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick']);
       await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:rto']);
       const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
       const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
@@ -801,15 +808,8 @@ describe('Order Management (M15)', () => {
       const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
       const line = order.lines[0]!;
 
-      const fulfilRes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/orders/${orderId}/fulfilments`,
-        headers: { authorization: `Bearer ${warehouseToken}` },
-        payload: { lineIds: [line.id] },
-      });
-      const fulfilment = fulfilRes.json();
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/pack`, headers: { authorization: `Bearer ${warehouseToken}` } });
-      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilment.id}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
+      const fulfilmentId = await readyToShipFulfilment(orderId, [line.id], warehouseToken);
+      await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/ship`, headers: { authorization: `Bearer ${warehouseToken}` } });
 
       const rtoRes = await app.inject({
         method: 'POST',

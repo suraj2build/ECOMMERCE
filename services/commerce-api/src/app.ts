@@ -26,6 +26,7 @@ import cartRoutes from './modules/cart/routes.js';
 import checkoutRoutes from './modules/checkout/routes.js';
 import paymentRoutes from './modules/payment/routes.js';
 import orderRoutes from './modules/order/routes.js';
+import warehouseRoutes from './modules/warehouse/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -125,6 +126,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(checkoutRoutes, { prefix: '/api/v1' });
   await app.register(paymentRoutes, { prefix: '/api/v1' });
   await app.register(orderRoutes, { prefix: '/api/v1' });
+  await app.register(warehouseRoutes, { prefix: '/api/v1' });
 
   return app;
 }
