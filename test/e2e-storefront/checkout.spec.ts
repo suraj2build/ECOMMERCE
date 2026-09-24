@@ -1,4 +1,4 @@
-import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse, type Locator } from '@playwright/test';
 import { PrismaClient } from '@fcp/db';
 
 const API_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
@@ -208,5 +208,142 @@ test.describe('Checkout', () => {
     const order = await prisma.order.findFirst({ where: { checkoutSession: { lines: { some: { sku: { styleId } } } } } });
     expect(order).not.toBeNull();
     expect(order!.status).toBe('CONFIRMED');
+  });
+
+  /**
+   * Mobile checkout browser E2E (independent-review finding #6): the
+   * same full PDP -> bag -> checkout -> confirmation flow as the
+   * desktop test above, but at a genuine mobile viewport (390x844,
+   * same convention as home/PDP/cart-wishlist's own mobile tests) -
+   * this milestone had desktop-only checkout E2E coverage before this
+   * repair pass, despite the storefront's stated mobile-first
+   * requirement (ARCHITECTURE.md SS2). Verifies usable touch targets on
+   * the flow's key interactive controls, no blocking horizontal
+   * overflow at any step, that the reservation is created only at
+   * checkout submission (not earlier), and that the UI's own
+   * submit-button disable-while-submitting guards against a
+   * double-click producing a duplicate order (on top of the backend's
+   * own idempotency-key protection, already proven in the desktop
+   * "double-submission" checkout test).
+   */
+  test('completes a COD order end to end on a genuine mobile viewport: PDP -> bag -> checkout -> confirmation, with usable touch targets and no horizontal overflow at every step', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    async function expectNoHorizontalOverflow(label: string) {
+      const [scrollWidth, clientWidth] = await page.evaluate(() => [
+        document.documentElement.scrollWidth,
+        document.documentElement.clientWidth,
+      ]);
+      expect(scrollWidth, `${label}: page overflows horizontally at mobile width`).toBeLessThanOrEqual(clientWidth + 1);
+    }
+
+    const MIN_TOUCH_TARGET_PX = 40;
+    async function expectUsableTouchTarget(locator: Locator, label: string) {
+      const box = await locator.first().boundingBox();
+      expect(box, `${label}: no bounding box (not visible/rendered)`).not.toBeNull();
+      expect(box!.height, `${label}: touch target too short for reliable mobile tapping`).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX);
+    }
+
+    // Baseline BEFORE this test's own actions - the desktop COD test
+    // above reuses the same styleId/SKU and already left one CONVERTED
+    // reservation behind, so every assertion below must compare against
+    // this baseline delta, never an absolute count.
+    const reservationsBaseline = await prisma.inventoryReservation.count({ where: { sku: { styleId } } });
+
+    // --- PDP ---
+    await page.goto(`/product/${styleId}`);
+    await expect(page.getByRole('heading', { name: 'E2E Checkout Jacket' })).toBeVisible();
+    await expectNoHorizontalOverflow('PDP');
+
+    const sizeButton = page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first();
+    await expectUsableTouchTarget(sizeButton, 'PDP size selector');
+    await sizeButton.click();
+
+    // The mobile sticky add-to-bag bar (acceptance/m11-pdp.md) is the
+    // control actually reachable/tappable at this viewport - not
+    // covered by any other fixed element.
+    const addToBagButton = page.getByRole('button', { name: 'Add to Bag' }).first();
+    await expectUsableTouchTarget(addToBagButton, 'PDP Add to Bag');
+    await addToBagButton.click();
+    // The desktop-only "Added to bag." confirmation (hidden md:block)
+    // and the mobile sticky bar's own copy of it share the same DOM
+    // text and both exist in the tree regardless of viewport - only the
+    // one belonging to the visible layout must actually be visible here.
+    await expect(page.getByText('Added to bag.').last()).toBeVisible();
+
+    // Reservation begins only at checkout submission (INV-002/CHK
+    // reservation timing) - never merely from adding to bag, on mobile
+    // any more than on desktop.
+    const reservationsAfterAddToBag = await prisma.inventoryReservation.count({ where: { sku: { styleId } } });
+    expect(reservationsAfterAddToBag).toBe(reservationsBaseline);
+
+    // --- Bag ---
+    await page.goto('/bag');
+    await expectNoHorizontalOverflow('Bag');
+    const checkoutLink = page.getByRole('link', { name: 'Checkout' });
+    await expectUsableTouchTarget(checkoutLink, 'Bag Checkout link');
+    await checkoutLink.click();
+    await expect(page).toHaveURL(/\/checkout$/);
+
+    // --- Checkout: address + shipping/tax review + COD ---
+    await expectNoHorizontalOverflow('Checkout (address form)');
+    await page.getByPlaceholder('Full name').fill('E2E Mobile Buyer');
+    await page.getByPlaceholder('10-digit mobile number').fill('9876543211');
+    await page.getByPlaceholder('House / Flat, Building, Street').first().fill('42 Mobile Test Lane');
+    await page.getByPlaceholder('City').first().fill('New Delhi');
+    await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
+    await page.locator('select').first().selectOption('Delhi');
+
+    // Shipping/tax review renders and is genuinely reachable (not
+    // clipped/hidden) before payment method selection.
+    await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
+    await expectNoHorizontalOverflow('Checkout (order review)');
+
+    const codRadio = page.getByLabel('Cash on Delivery');
+    // getByLabel resolves to the bare <input> (a native radio is ~20px
+    // regardless of styling) - the actual tappable region a thumb hits
+    // is the wrapping <label>, which the checkout page deliberately
+    // sizes to min-h-[44px] for this exact reason. Measure that.
+    const codLabel = page.locator('label', { hasText: 'Cash on Delivery' });
+    await expectUsableTouchTarget(codLabel, 'Checkout COD selector (tappable label area)');
+    await codRadio.check();
+
+    // Still no NEW reservation before the actual submit click.
+    const reservationsBeforeSubmit = await prisma.inventoryReservation.count({ where: { sku: { styleId } } });
+    expect(reservationsBeforeSubmit).toBe(reservationsBaseline);
+
+    const placeOrderButton = page.getByRole('button', { name: 'Place Order' });
+    await expectUsableTouchTarget(placeOrderButton, 'Checkout Place Order button');
+
+    // Double-tap the submit control the way a real thumb on a small
+    // screen plausibly could - the button disables itself immediately
+    // on the first click (apps/storefront/src/app/checkout/page.tsx),
+    // so Playwright's own actionability check makes the second click a
+    // no-op against a disabled/gone element rather than a second
+    // submission; this proves that guard actually holds in a real
+    // browser, not just in unit-level reasoning about the code.
+    await placeOrderButton.click();
+    await placeOrderButton.click({ force: true }).catch(() => undefined);
+
+    // --- Confirmation ---
+    await expect(page).toHaveURL(/\/checkout\/[0-9a-f-]+$/, { timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible();
+    await expect(page.getByText(/Cash on Delivery order is confirmed/)).toBeVisible();
+    await expectNoHorizontalOverflow('Confirmation');
+
+    // Exactly one NEW reservation (CONVERTED, same as the desktop
+    // test's own assertion) and exactly one order for this mobile
+    // flow's distinct contact - the double-tap above never produced a
+    // duplicate of either.
+    const reservationsAfterCheckout = await prisma.inventoryReservation.count({ where: { sku: { styleId } } });
+    expect(reservationsAfterCheckout).toBe(reservationsBaseline + 1);
+
+    const orders = await prisma.order.findMany({
+      where: { checkoutSession: { lines: { some: { sku: { styleId } } } }, contactMobile: '9876543211' },
+    });
+    expect(orders).toHaveLength(1);
+    expect(orders[0]!.status).toBe('CONFIRMED');
   });
 });
