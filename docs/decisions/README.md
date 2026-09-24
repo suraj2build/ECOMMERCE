@@ -10,7 +10,7 @@ itself.
 |---|---|---|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-modular-monolith.md) | Modular monolith architecture | Accepted |
-| [0003](0003-medusa-v2-commerce-kernel.md) | Medusa v2 as commerce kernel | Accepted |
+| [0003](0003-medusa-v2-commerce-kernel.md) | Medusa v2 as commerce kernel | Superseded by [0019](0019-custom-platform-sole-commerce-system-of-record.md) |
 | [0004](0004-postgresql-primary-database.md) | PostgreSQL as primary database | Accepted |
 | [0005](0005-redis-cache-and-jobs.md) | Redis for caching and background jobs | Accepted |
 | [0006](0006-meilisearch-search.md) | Meilisearch for search and discovery (initial) | Accepted |
@@ -23,8 +23,10 @@ itself.
 | [0013](0013-loyalty-ledger-principle.md) | Loyalty as an auditable transaction/ledger | Accepted |
 | [0014](0014-remote-first-development.md) | Remote-first development via Claude Code Web | Accepted |
 | [0015](0015-human-approval-for-production-actions.md) | Human approval required for production/destructive operations | Accepted |
-| [0016](0016-medusa-v2-integration-sequencing.md) | Medusa v2 integration deferred to storefront/commerce milestones | Accepted |
-| [0017](0017-medusa-custom-domain-ownership-boundary.md) | Medusa v2 ↔ custom-domain ownership boundary | Accepted |
+| [0016](0016-medusa-v2-integration-sequencing.md) | Medusa v2 integration deferred to storefront/commerce milestones | Superseded by [0019](0019-custom-platform-sole-commerce-system-of-record.md) |
+| [0017](0017-medusa-custom-domain-ownership-boundary.md) | Medusa v2 ↔ custom-domain ownership boundary | Superseded by [0019](0019-custom-platform-sole-commerce-system-of-record.md) |
+| [0018](0018-fastify-v5-cve-migration.md) | Fastify v4 → v5 migration (CVE remediation) | Accepted |
+| [0019](0019-custom-platform-sole-commerce-system-of-record.md) | Custom commerce-api is the sole system of record for every commerce domain; Medusa v2 is not adopted | Accepted |
 
 New ADRs should be added sequentially and listed here. See
 `CONTRIBUTING.md` §5 for the process.

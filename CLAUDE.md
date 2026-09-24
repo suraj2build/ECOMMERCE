@@ -58,6 +58,16 @@ Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
   before other M09 work proceeds. If the spike shows the ownership
   model is not technically workable, stop and raise
   `DECISION_REQUIRED` rather than quietly changing ownership.
+  **Historical note (2026-09-24, Phase 2 independent-certification
+  repair, finding #4):** the spike was carried out and found the split
+  workable, but M09-M15 were then actually built entirely on the
+  custom platform - Medusa was never bootstrapped, and
+  Cart/Checkout/Payment/Order are custom `services/commerce-api`
+  domains like every other row in the ownership table.
+  `docs/decisions/0019-custom-platform-sole-commerce-system-of-record.md`
+  supersedes ADR-0003/0016/0017 and is now the live ownership decision;
+  treat it, not ADR-0017, as authoritative for any future work touching
+  this question.
 
 If you are unsure whether implementation is authorized for a given
 milestone, **stop and ask** rather than proceeding.

@@ -1,7 +1,14 @@
 # ADR-0017: Medusa v2 ↔ custom-domain ownership boundary
 
 ## Status
-Accepted
+Superseded by [ADR-0019](0019-custom-platform-sole-commerce-system-of-record.md)
+(2026-09-24, independent Phase 2 certification review finding #4) —
+the Cart/Checkout/Order/Payment-orchestration/Fulfillment split to
+Medusa this ADR planned was never carried out: M09–M15 shipped those
+domains entirely on the custom platform, with no `@medusajs/*`
+dependency ever installed. This ADR's spike findings (below) remain
+accurate and are preserved for reference; its ownership table and
+"M09 proceeds under Medusa" conclusion are superseded.
 
 ## Context
 

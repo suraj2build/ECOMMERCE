@@ -1,7 +1,11 @@
 # ADR-0016: Medusa v2 integration deferred to storefront/commerce milestones
 
 ## Status
-Accepted
+Superseded by [ADR-0019](0019-custom-platform-sole-commerce-system-of-record.md)
+(2026-09-24) — the deferred integration described here never happened;
+M09+ shipped entirely on the custom platform. Kept for historical
+context (its Phase 1 "no Medusa dependency during M00–M07" decision
+remains accurate history).
 
 ## Context
 ADR-0003 established Medusa v2 as the commerce kernel, extended by

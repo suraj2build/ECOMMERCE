@@ -35,8 +35,8 @@ source of truth for *why*.
 | Layer | Choice | Notes |
 |---|---|---|
 | Frontend (storefront) | Next.js + React + TypeScript | Mobile-first, responsive. Separate admin experience where appropriate. |
-| Commerce kernel | Medusa v2 | See ADR-0002. |
-| Custom app/business services | Node.js + TypeScript | Domain services not covered by the commerce kernel. |
+| Commerce kernel | `services/commerce-api` (custom, Node.js + TypeScript + Prisma) | Medusa v2 was evaluated (ADR-0003) but never adopted; every commerce domain — including Cart/Checkout/Payment/Order, shipped at M09-M15 — is owned by this custom platform. See ADR-0019 (supersedes ADR-0003, ADR-0016, ADR-0017). |
+| Custom app/business services | Node.js + TypeScript | Same service (`services/commerce-api`) as the commerce kernel above - there is no separate "custom services extend the kernel" split; see ADR-0019. |
 | Primary database | PostgreSQL | See ADR-0003. |
 | Cache / jobs | Redis | Where appropriate (caching, queues/jobs). |
 | Search | Meilisearch | Initial choice; see ADR-0005. |
