@@ -53,12 +53,17 @@ milestone's.
 ## Performance expectations
 
 - [ ] Initial page load meets the `NFR-001` LCP target on a
-      representative 4G mobile profile. **Not yet measured** - Home
-      currently has minimal real imagery (no seeded product/media data
-      in any environment this was built in); a meaningful LCP
-      measurement needs representative content and is deferred to the
-      Phase 2 end-to-end certification round (M08-M15 §29), not this
-      foundation layer.
+      representative 4G mobile profile. **PRODUCTION_VERIFICATION_REQUIRED**
+      - Home currently has minimal real imagery (no seeded product/media
+      data in any environment this was built in); a meaningful LCP
+      measurement needs representative content. **Honesty correction
+      (2026-09-24 certification repair, finding #7):** this was
+      originally deferred to "the Phase 2 end-to-end certification
+      round," which subsequently ran and did not measure it either - no
+      LCP measurement of any kind has been taken for this milestone.
+      See `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md` for the honest
+      status of every performance target and M32 (Performance/Load,
+      not yet authorized) as the actual milestone responsible for this.
 
 ## Observability
 
@@ -80,7 +85,9 @@ milestone's.
 
 ## Definition of Done
 
-Foundation-layer boxes above are checked. Full milestone Definition of
-Done (including performance) completes at the Phase 2 certification
-round, once PLP/PDP exist to measure a representative page. See
+Foundation-layer boxes above are checked. The LCP measurement this
+document originally deferred to "the Phase 2 certification round" was
+not performed there either (2026-09-24 certification repair, finding
+#7) - it now genuinely awaits M32 (Performance/Load), not yet
+authorized. See `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md` and
 `acceptance/README.md`.

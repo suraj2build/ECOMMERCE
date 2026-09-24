@@ -83,11 +83,18 @@ browser E2E tests against a real Chromium instance).
 
 ## Performance expectations
 
-- [ ] PDP LCP meets the `NFR-001` target. **Not yet measured** - same
-      reasoning as M09/M10: no representative production imagery/CDN
-      exists in any environment this was built in; deferred to the
-      Phase 2 end-to-end certification round (§29), which is also when
-      full-catalog-scale conditions exist to measure against.
+- [ ] PDP LCP meets the `NFR-001` target. **PRODUCTION_VERIFICATION_REQUIRED**
+      - same reasoning as M09/M10: no representative production
+      imagery/CDN exists in any environment this was built in.
+      **Honesty correction (2026-09-24 certification repair, finding
+      #7):** this was originally deferred to "the Phase 2 end-to-end
+      certification round," which subsequently ran and did not measure
+      it either - no LCP measurement of any kind has been taken for
+      this milestone. See `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`
+      for the honest status of every performance target (including the
+      one real, non-LCP proxy data point this repair pass does have:
+      production-build First Load JS bundle size) and M32 (Performance/
+      Load, not yet authorized) as the actual milestone responsible.
 
 ## Test requirements
 
@@ -154,6 +161,10 @@ browser E2E tests against a real Chromium instance).
 
 ## Definition of Done
 
-All boxes above checked except PDP-scale LCP measurement, which is
-explicitly and consistently deferred (matching M09/M10) to the Phase 2
-end-to-end certification round - tracked here, not silently dropped.
+All boxes above checked except PDP-scale LCP measurement, which was
+originally deferred (matching M09/M10) to the Phase 2 end-to-end
+certification round; that round did not measure it either
+(2026-09-24 certification repair, finding #7) - genuinely
+PRODUCTION_VERIFICATION_REQUIRED now, tracked here and in
+`blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`, not silently re-deferred
+again.

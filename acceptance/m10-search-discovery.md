@@ -66,11 +66,17 @@ tests against a real Meilisearch instance — never a mock).
       ADR-0006 (Meilisearch is a derived index, PostgreSQL is the
       source of truth).
 - [ ] Search API responds within the `NFR-001` 300ms target "even at
-      full catalog scale (10,000–50,000 SKUs)". Verified functionally
-      correct at test scale; load-testing at full catalog scale is
-      deferred to the Phase 2 end-to-end certification round (§29) -
-      no seed/synthetic dataset at that scale exists in any environment
-      this was built in yet.
+      full catalog scale (10,000–50,000 SKUs)".
+      **PRODUCTION_VERIFICATION_REQUIRED.** Verified functionally
+      correct at test scale (13 passing integration tests against a
+      real Meilisearch instance); no latency measurement of any kind
+      has been taken. **Honesty correction (2026-09-24 certification
+      repair, finding #7):** this was originally deferred to "the
+      Phase 2 end-to-end certification round," which subsequently ran
+      and did not perform this load test either - see
+      `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md` for the honest status
+      of every performance target and M32 (Performance/Load, not yet
+      authorized) as the actual milestone responsible.
 
 ## Staff / operational surface (not in the original acceptance draft,
 ## added because the approved spec requires it - SRCH-001 "manual
@@ -102,7 +108,9 @@ tests against a real Meilisearch instance — never a mock).
 ## Definition of Done
 
 Backend/indexing-pipeline boxes are checked. The PLP UI itself
-(mobile/desktop filter patterns, E2E against a real browser) and full-
-catalog-scale load testing are carried forward - tracked here, not
-silently dropped - to land alongside M11 (PDP) and the Phase 2
-certification round respectively.
+(mobile/desktop filter patterns, E2E against a real browser) landed
+alongside M11 (PDP) as planned. Full-catalog-scale load testing did
+not land with the Phase 2 certification round as this document
+originally said it would (2026-09-24 certification repair, finding
+#7) - it genuinely awaits M32 (Performance/Load, not yet authorized),
+tracked in `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`.

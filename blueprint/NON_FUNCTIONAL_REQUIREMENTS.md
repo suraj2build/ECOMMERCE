@@ -18,12 +18,66 @@ into the full structured checklist referenced by `TESTING.md` and
 ## Performance — `NFR-001` DECIDED (initial targets, revisable at M32)
 
 - Storefront page-load: PDP LCP < 2.5s on a representative 4G mobile
-  profile. **DECIDED.**
-- Checkout/payment API p95 latency: < 500ms. **DECIDED.**
-- Search query response time: < 300ms. **DECIDED.**
+  profile. **DECIDED (target), PRODUCTION_VERIFICATION_REQUIRED
+  (measurement).** See the honesty-correction note below - this has
+  never actually been measured, despite M09/M10/M11's acceptance docs
+  each deferring it to "the Phase 2 end-to-end certification round,"
+  which then did not measure it either.
+- Checkout/payment API p95 latency: < 500ms. **DECIDED (target),
+  PRODUCTION_VERIFICATION_REQUIRED (measurement).** No load-testing
+  tool has been run against this codebase at any point; the
+  integration-test suite proves correctness under a handful of
+  genuinely concurrent requests (M06/M13/M14/M15's own concurrency
+  tests), which is a correctness guarantee, not a latency/throughput
+  measurement.
+- Search query response time: < 300ms. **DECIDED (target),
+  PRODUCTION_VERIFICATION_REQUIRED (measurement).** Same gap as above.
 - Admin screen load time: `TARGET_REQUIRED` (not covered by the initial
   decision; not launch-blocking).
 - INP/CLS Core Web Vitals thresholds beyond LCP: `TARGET_REQUIRED`.
+
+**Honesty-correction note (2026-09-24, Phase 2 independent-certification
+repair pass, finding #7):** `acceptance/m09-storefront-foundation.md`
+and `acceptance/m11-pdp.md` each state PDP/Home LCP is "Not yet
+measured... deferred to the Phase 2 end-to-end certification round."
+That round (`BUILD_PLAN.md`'s "Phase 2 end-to-end proof + certification
+round" entry, 2026-09-23) came and went without performing this
+measurement, and none of the three documents were updated to say so -
+the promise was silently re-deferred rather than honestly corrected.
+No LCP, API-latency, or search-latency measurement tool (Lighthouse,
+k6, autocannon, or otherwise) exists anywhere in this repository or its
+CI workflow as of this pass. This repair pass does not build one either
+(that is explicitly M32's own scope, and building new performance-
+testing infrastructure is out of scope for a defect-repair pass) - it
+only corrects the record: **all three targets above remain
+PRODUCTION_VERIFICATION_REQUIRED, full stop, with no partial or
+sandbox-approximated measurement to report for LCP or API/search
+latency specifically.**
+
+The one concrete, reproducible, ENGINEERING_VERIFIED data point this
+pass *does* have, taken directly from a real `npm run build --workspace=
+apps/storefront` production build output (2026-09-24, this sandbox) -
+offered as a proxy signal for mobile parse/execute cost, explicitly
+**not** an LCP or Core Web Vitals measurement and **not**
+production-representative (single-container sandbox build, no CDN, no
+real network):
+
+| Route | First Load JS |
+|---|---|
+| `/` (Home) | 111 kB |
+| `/product/[styleId]` (PDP) | 117 kB |
+| `/bag` | 114 kB |
+| `/checkout` | 106 kB |
+| `/wishlist` | 114 kB |
+
+These are within the range commonly considered reasonable for a
+mobile-first storefront, but bundle size is not a substitute for a real
+LCP measurement (network/server/image-loading time dominates LCP, not
+JS payload alone) - do not cite this table as NFR-001 compliance
+evidence. M32 remains the milestone responsible for an actual
+Lighthouse/WebPageTest-class LCP measurement and a real load test
+against representative catalog scale and concurrency, and M32 is
+sequence-blocked and **not authorized** (`BUILD_PLAN.md`).
 
 ## Availability — `NFR-002` DECIDED (initial targets)
 

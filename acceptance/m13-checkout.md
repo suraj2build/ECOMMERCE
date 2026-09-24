@@ -117,11 +117,16 @@ interface (ADR-0011), never a specific provider directly:
 
 ## Performance expectations
 
-- [ ] Checkout API responses meet the `NFR-001` p95 target — **not yet
-      measured**, same reasoning as every earlier milestone's deferred
-      performance measurement (no representative production data/scale
-      exists in any environment this was built in); deferred to the
-      Phase 2 end-to-end certification round.
+- [ ] Checkout API responses meet the `NFR-001` p95 target —
+      **PRODUCTION_VERIFICATION_REQUIRED**, same reasoning as every
+      earlier milestone (no representative production data/scale
+      exists in any environment this was built in). **Honesty
+      correction (2026-09-24 certification repair, finding #7):** this
+      was originally deferred to "the Phase 2 end-to-end certification
+      round," which subsequently ran and did not measure it either -
+      no API latency measurement of any kind has been taken. See
+      `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md` and M32 (Performance/
+      Load, not yet authorized).
 
 ## Test requirements
 
@@ -165,8 +170,11 @@ interface (ADR-0011), never a specific provider directly:
 
 ## Definition of Done
 
-All boxes above checked except mobile E2E coverage and NFR-001
-performance measurement, both explicitly and consistently deferred
-(matching every earlier milestone's own honest deferrals) to the
-Phase 2 end-to-end certification round - tracked here, not silently
-dropped.
+Mobile E2E coverage was added during the 2026-09-24 certification
+repair pass (finding #6; see `test/e2e-storefront/checkout.spec.ts`'s
+mobile-viewport test). NFR-001 performance measurement remains
+PRODUCTION_VERIFICATION_REQUIRED - it was originally deferred to "the
+Phase 2 end-to-end certification round," which subsequently ran and
+did not measure it either (finding #7) - tracked honestly in
+`blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`, not silently re-deferred
+again.
