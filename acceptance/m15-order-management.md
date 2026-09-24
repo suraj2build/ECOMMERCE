@@ -102,4 +102,27 @@ All boxes above checked. 15 new backend integration tests
 (`test/integration/order.test.ts`) plus 1 new browser E2E test
 (`test/e2e-storefront/orders.spec.ts`) — 245 total backend tests and 17
 total browser E2E tests, all genuinely green locally against the
-CI-mirroring `fcp_test` database.
+CI-mirroring `fcp_test` database. **IMPLEMENTED, TESTED,
+ENGINEERING_VERIFIED** (2026-09-23 Phase 2 build).
+
+**2026-09-24 certification repair pass** fixed three findings in this
+milestone's own code:
+- **Finding #2 (BLOCKER):** a confirmed/paid order could exist
+  permanently without its required invoice (the original design logged
+  and swallowed the failure). `OrderService` now durably records
+  invoice status (`invoiceStatus`/`invoiceFailureReason`/
+  `invoiceAttempts` on `Order`) and provides an idempotent recovery
+  path (`retryOrderInvoice`, `reconcilePendingInvoices`, a staff
+  `POST /orders/:id/retry-invoice` route) - 7 new adversarial tests.
+- **Finding #3 (BLOCKER, shared with M14):** see `m14-payment.md`'s own
+  repair-pass note - the reconciliation state machine spans both
+  milestones' code.
+- **Finding #5 (BLOCKER/HIGH):** `InventoryService.recordSale()`
+  (called from this milestone's `markFulfilmentShipped`) previously
+  clamped negative balance decrements instead of rejecting them.
+  `OrderService` now passes the shipping line's `reservationId` so
+  `recordSale()` can verify a genuine, sufficient, already-CONVERTED
+  allocation before posting a SALE - 6 new adversarial tests.
+
+The test counts above (245/17) predate this repair pass's own new
+tests; see each finding's commit for the exact counts it added.

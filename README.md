@@ -1,15 +1,19 @@
 # Fashion Commerce Platform
 
-> **Project stage: BLUEPRINT V2 COMPLETE — AWAITING START BUILD.**
-> Documentation, specification, and business-decision infrastructure
-> is complete: 105 of 112 registered decisions are `DECIDED`, 7 remain
-> `UNDER_REVIEW` pending external compliance/legal verification, and 0
-> remain genuinely `OPEN`. **No application code, frameworks, or
-> database migrations have been implemented yet.** Implementation
-> requires a separate, explicit human **START BUILD** authorization
-> that has not yet been given — see [`CLAUDE.md`](CLAUDE.md) §0 and
-> [`blueprint/READINESS.md`](blueprint/READINESS.md) for the full
-> readiness hierarchy.
+> **Project stage (2026-09-24): PHASE 2 CERTIFICATION REPAIRS COMPLETE,
+> AWAITING INDEPENDENT RE-REVIEW. M16+ NOT AUTHORIZED.** Phase 1
+> (M00–M07) is `PHASE_1_CERTIFIED`. Phase 2 (M08–M15: Tax & Invoicing
+> through Order Management) shipped CI-green, was independently
+> reviewed, and had all nine findings from that review fixed with
+> adversarial tests in a certification-repair pass — this agent does
+> not self-declare `PHASE_2_CERTIFIED`; that determination is the
+> independent reviewer's. M08's compliance-dependent scope
+> (`TAX-001`–`005`) remains genuinely `UNDER_REVIEW`, pending external
+> tax/legal verification. **No milestone beyond M15 is authorized** —
+> see [`CLAUDE.md`](CLAUDE.md) §0 and [`BUILD_PLAN.md`](BUILD_PLAN.md)
+> §5 (change log) for the full history and
+> [`blueprint/READINESS.md`](blueprint/READINESS.md) for the readiness
+> hierarchy.
 
 ## What this is
 
@@ -98,10 +102,11 @@ before it is considered real.
 | Documentation foundation | **COMPLETE** |
 | Product Blueprint V2 decision session | **COMPLETE** (2026-09-22) — 105 DECIDED / 7 UNDER_REVIEW / 0 OPEN |
 | Documentation consistency audit | **COMPLETE** (2026-09-22) |
-| Application implementation | **NOT STARTED** — awaiting explicit **START BUILD** authorization |
-| M00 Project Foundation | `READY_FOR_IMPLEMENTATION` (decision-level) — see `blueprint/READINESS.md` |
-| M01 Authentication / RBAC | `READY_FOR_IMPLEMENTATION` (decision-level) — see `blueprint/READINESS.md` |
-| M08 Tax & Invoicing Foundation | `BLOCKED` — pending external GST/tax compliance verification |
+| Application implementation | Phase 1 (M00–M07) `PHASE_1_CERTIFIED`; Phase 2 (M08–M15) implemented, CI-green, certification-repair pass complete — see `BUILD_PLAN.md` |
+| M00–M07 | `IMPLEMENTED, PHASE_1_CERTIFIED` — see `BUILD_PLAN.md` |
+| M08–M15 | `IMPLEMENTED`, certification-repair pass complete (2026-09-24), **AWAITING INDEPENDENT RE-REVIEW** — see `BUILD_PLAN.md` |
+| M08 Tax & Invoicing Foundation (compliance-dependent scope) | `BLOCKED_COMPLIANCE` — engineering scaffolding done; `TAX-001`–`005` pending external GST/tax compliance verification |
+| M16 and beyond | **NOT AUTHORIZED** |
 
 **Decision-level readiness is not implementation authorization.** See
 `CLAUDE.md` §0 and `blueprint/READINESS.md`'s six-layer hierarchy

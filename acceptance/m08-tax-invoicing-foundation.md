@@ -90,9 +90,16 @@ completes.
 
 ## Definition of Done
 
-The **engineering-scaffolding acceptance** section above is DONE
-(2026-09-23, Phase 2 build). The milestone's full Definition of Done —
-the **compliance-dependent acceptance** section — is **not achievable
-until external compliance verification completes.**
+The **engineering-scaffolding acceptance** section above is
+**IMPLEMENTED, TESTED, ENGINEERING_VERIFIED** (2026-09-23 Phase 2
+build; 2026-09-24 certification repair pass finding #1 additionally
+closed a cumulative over-credit gap in `issueCreditNote()` - see
+`services/commerce-api/src/modules/tax/invoice-service.ts` and its
+4 new adversarial tests). The milestone's full Definition of Done —
+the **compliance-dependent acceptance** section — remains
+**BLOCKED_COMPLIANCE**: `TAX-001`–`005` still require a qualified
+tax/compliance professional's verification before real GSTIN/rate/HSN
+values are entered as production configuration; nothing in this repair
+pass changes that.
 See `blueprint/README.md` for the recommended next step (engage a
 qualified tax/GST professional).

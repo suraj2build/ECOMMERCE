@@ -119,4 +119,16 @@ reservation - only the `Payment` row is retried):
 
 All boxes above checked, plus `acceptance/README.md`. This milestone is
 not done without the financial-integrity tests passing under automated,
-repeatable test conditions.
+repeatable test conditions. **IMPLEMENTED, TESTED, ENGINEERING_VERIFIED**
+(2026-09-23 Phase 2 build). **2026-09-24 certification repair pass,
+finding #3 (BLOCKER):** an independent reviewer identified that a
+genuine Razorpay capture webhook could race the payment-expiry/
+reservation-TTL sweep and either silently lose the captured payment or
+fabricate an allocation for stock that was already released. Fixed with
+an explicit capture/expiry reconciliation state machine (row-locked
+Payment/InventoryReservation transitions, a new
+`CAPTURE_RECONCILIATION_REQUIRED` CheckoutSession terminal state for
+the case where inventory genuinely cannot be re-derived safely) and 5
+new adversarial tests proving each race outcome - see
+`services/commerce-api/src/modules/payment/service.ts` and
+`test/integration/payment.test.ts`.
