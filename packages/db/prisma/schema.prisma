@@ -157,6 +157,7 @@ model StaffUser {
   moderatedReviews        Review[]                @relation("ReviewModeratedBy")
   crossSellOverrides      CrossSellOverride[]
   pickedPickTasks         PickTask[]              @relation("PickTaskPickedBy")
+  createdShipments        Shipment[]              @relation("ShipmentCreatedBy")
 
   @@map("staff_users")
 }
@@ -1781,6 +1782,7 @@ model Order {
   lines           OrderLine[]
   fulfilments     OrderFulfilment[]
   pickTasks       PickTask[]
+  shipments       Shipment[]
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -1846,9 +1848,138 @@ model OrderFulfilment {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  order Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  lines OrderLine[]
+  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lines    OrderLine[]
+  shipment Shipment?
 
   @@index([orderId])
   @@map("order_fulfilments")
+}
+
+// ---------------------------------------------------------------------------
+// M17: Shipping / Tracking (specs/16-shipping-tracking.md, SHIP-001-004,
+// ADR-0020)
+// ---------------------------------------------------------------------------
+//
+// Owns the lifecycle FROM the M16 READY_TO_SHIP hand-off onward: carrier
+// booking, tracking-status progression, delivery-attempt counting, and RTO
+// progression. Deliberately does NOT duplicate what OrderFulfilment
+// already owns (carrierName/trackingRef/shippedAt/deliveredAt stay there -
+// they are the authoritative business-lifecycle fields SALE-posting and
+// order-status recompute already depend on); Shipment adds only what M17
+// needs beyond that: provider identity, the provider's own shipment/AWB
+// references, a platform-normalized tracking status finer-grained than
+// FulfilmentStatus, delivery-attempt/RTO counters, and idempotent carrier-
+// booking intent. One Shipment per OrderFulfilment (1:1, `fulfilmentId`
+// unique) - split shipments are OrderFulfilment's existing data model
+// (M15/M16), so "one order -> many independently-tracked shipments" falls
+// out of "one order -> many OrderFulfilments -> one Shipment each" for
+// free, no new one-to-many modelling needed here.
+enum ShipmentTrackingStatus {
+  // Local durable intent, recorded BEFORE the carrier is ever called -
+  // the write-ahead half of the create-shipment failure-window design
+  // (SHIP §7): a crash between this row committing and the carrier call
+  // returning is recoverable by retry, never a lost or duplicated booking.
+  CREATED
+  BOOKED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERY_FAILED
+  DELIVERED
+  RTO_INITIATED
+  RTO_DELIVERED
+}
+
+enum ShipmentEventSource {
+  WEBHOOK
+  POLL
+  MANUAL
+}
+
+// Mirrors PaymentEventStatus exactly (ADR-0011/PaymentService's durable
+// RECEIVED -> PROCESSED|FAILED pattern) - the "durable lesson already
+// learned" for webhook processing this milestone reuses rather than
+// reinventing: a webhook event is durably recorded BEFORE it is applied,
+// and is marked PROCESSED only once the resulting tracking transition has
+// actually committed, so a transient failure leaves it retryable
+// (redelivery resumes against the SAME row) rather than silently lost.
+enum ShipmentEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+model Shipment {
+  id                  String                 @id @default(uuid())
+  fulfilmentId        String                 @unique
+  orderId             String
+  provider            String
+  providerShipmentRef String?
+  trackingRef         String?
+  status              ShipmentTrackingStatus @default(CREATED)
+  deliveryAttempts    Int                    @default(0)
+  // Snapshot of the configured SHIPPING_MAX_REDELIVERY_ATTEMPTS at
+  // creation time (SHIP-004: "configurable, engineering default 2") - a
+  // later config change must never retroactively alter the attempt
+  // budget of a shipment already in flight.
+  maxDeliveryAttempts Int
+  // Carrier-call idempotency key (SHIP §7) - the local Shipment.id itself
+  // is already unique per fulfilment, but this column lets a retried
+  // create-shipment HTTP request (same client idempotency key) resolve to
+  // the SAME shipment row rather than a second one, mirroring Payment.
+  // idempotencyKey / InventoryReservation.idempotencyKey / PickTask.
+  // idempotencyKey.
+  idempotencyKey      String                 @unique
+  createdByStaffId    String?
+  bookedAt            DateTime?
+  deliveredAt         DateTime?
+  rtoInitiatedAt      DateTime?
+  rtoDeliveredAt      DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  fulfilment     OrderFulfilment         @relation(fields: [fulfilmentId], references: [id], onDelete: Restrict)
+  order          Order                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  createdByStaff StaffUser?              @relation("ShipmentCreatedBy", fields: [createdByStaffId], references: [id], onDelete: SetNull)
+  events         ShipmentTrackingEvent[]
+
+  @@index([orderId])
+  @@index([status])
+  @@map("shipments")
+}
+
+// Append-only. Serves two roles at once (deliberately, to avoid a second
+// dedup-table proliferation alongside PaymentEvent): the durable webhook-
+// processing-state record (source=WEBHOOK rows use it exactly like
+// PaymentEvent) AND the customer/audit-visible tracking history ledger
+// (source=POLL/MANUAL rows have no provider event to dedup on and simply
+// append). `providerEventId` is nullable specifically so POLL/MANUAL rows
+// - which have no carrier event id - never collide with each other or
+// with genuine webhook deliveries under the unique constraint below
+// (Postgres treats each NULL as distinct).
+model ShipmentTrackingEvent {
+  id               String                  @id @default(uuid())
+  // Nullable (mirrors PaymentEvent.paymentId): a webhook can arrive for a
+  // providerShipmentRef this platform does not (yet, or ever) recognize -
+  // the event is still durably recorded/deduped, never dropped, even
+  // though it cannot yet be correlated to a Shipment row.
+  shipmentId       String?
+  provider         String
+  providerEventId  String?
+  source           ShipmentEventSource
+  rawStatus        String?
+  normalizedStatus ShipmentTrackingStatus?
+  payload          Json
+  status           ShipmentEventStatus     @default(RECEIVED)
+  occurredAt       DateTime
+  receivedAt       DateTime                @default(now())
+  processedAt      DateTime?
+  processingError  String?
+
+  shipment Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([shipmentId])
+  @@index([status])
+  @@map("shipment_tracking_events")
 }

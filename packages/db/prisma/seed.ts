@@ -78,6 +78,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'warehouse:pick',
     'warehouse:pack',
     'warehouse:exception:manage',
+    // M17: warehouse staff create/manage shipments at the READY_TO_SHIP
+    // hand-off they themselves confirm - not restricted to BUSINESS_ADMIN
+    // alone (specs/16-shipping-tracking.md).
+    'shipping:manage',
   ],
   WAREHOUSE_OPERATOR: [
     'grn:create',
@@ -90,6 +94,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'warehouse:read',
     'warehouse:pick',
     'warehouse:pack',
+    'shipping:manage',
   ],
   CUSTOMER_SERVICE: [
     'customer_service:manage',

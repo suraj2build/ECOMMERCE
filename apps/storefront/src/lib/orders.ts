@@ -60,13 +60,43 @@ export interface OrderLineView {
   cancelledReason: string | null;
 }
 
+/**
+ * M17 (specs/16-shipping-tracking.md): last-known platform tracking
+ * status, sourced from ShippingService's carrier-adapter-normalized
+ * state machine - never carrier-specific vocabulary. `null` when no
+ * shipment has been booked yet for this fulfilment (an expected,
+ * pre-shipping state, not an error).
+ */
+export interface ShipmentView {
+  id: string;
+  provider: string;
+  trackingRef: string | null;
+  status:
+    | 'CREATED'
+    | 'BOOKED'
+    | 'IN_TRANSIT'
+    | 'OUT_FOR_DELIVERY'
+    | 'DELIVERY_FAILED'
+    | 'DELIVERED'
+    | 'RTO_INITIATED'
+    | 'RTO_DELIVERED';
+  deliveryAttempts: number;
+  maxDeliveryAttempts: number;
+  bookedAt: string | null;
+  deliveredAt: string | null;
+  rtoInitiatedAt: string | null;
+  rtoDeliveredAt: string | null;
+  updatedAt: string;
+}
+
 export interface OrderFulfilmentView {
   id: string;
-  status: 'PENDING' | 'PACKED' | 'SHIPPED' | 'DELIVERED';
+  status: 'PENDING' | 'PACKED' | 'READY_TO_SHIP' | 'SHIPPED' | 'DELIVERED';
   carrierName: string | null;
   trackingRef: string | null;
   shippedAt: string | null;
   deliveredAt: string | null;
+  shipment: ShipmentView | null;
 }
 
 export interface OrderView {

@@ -83,6 +83,15 @@ const envSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().default(''),
   PAYMENT_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900), // 15 min, matches the reservation TTL default (PAY-005)
   PAYMENT_MAX_RETRY_ATTEMPTS: z.coerce.number().int().positive().default(3),
+
+  // --- Shipping / Tracking (M17, ADR-0020, specs/16-shipping-tracking.md) ---
+  // No launch carrier is selected yet (SHIP-001) - MOCK is the only
+  // registered provider until a real carrier integration is built; see
+  // ShippingProvider/resolveShippingProvider. SHIP-004: configurable
+  // redelivery-attempt count before a shipment is marked RTO, engineering
+  // default 2 - business behaviour, never hard-coded.
+  SHIPPING_PROVIDER: z.string().default('MOCK'),
+  SHIPPING_MAX_REDELIVERY_ATTEMPTS: z.coerce.number().int().nonnegative().default(2),
 });
 
 export type Env = z.infer<typeof envSchema>;

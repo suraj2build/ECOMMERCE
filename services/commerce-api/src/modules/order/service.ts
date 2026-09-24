@@ -378,7 +378,10 @@ export class OrderService {
       where: { id },
       include: {
         lines: { include: { sku: { include: { style: true, colour: true, size: true } }, pickTask: true } },
-        fulfilments: true,
+        // M17: shipment tracking, joined for storefront/staff visibility
+        // (specs/16-shipping-tracking.md: "customer shipment tracking
+        // required, degrading gracefully to last-known platform status").
+        fulfilments: { include: { shipment: true } },
       },
     });
     return {
@@ -436,6 +439,26 @@ export class OrderService {
         packedAt: f.packedAt,
         shippedAt: f.shippedAt,
         deliveredAt: f.deliveredAt,
+        // M17: last-known platform tracking status - never the carrier's
+        // raw vocabulary (see ShippingProvider's adapter-boundary
+        // normalization). null (no Shipment yet) is a legitimate,
+        // expected state, not an error - the storefront shows it as
+        // "not yet shipped", never a broken/error tile.
+        shipment: f.shipment
+          ? {
+              id: f.shipment.id,
+              provider: f.shipment.provider,
+              trackingRef: f.shipment.trackingRef,
+              status: f.shipment.status,
+              deliveryAttempts: f.shipment.deliveryAttempts,
+              maxDeliveryAttempts: f.shipment.maxDeliveryAttempts,
+              bookedAt: f.shipment.bookedAt,
+              deliveredAt: f.shipment.deliveredAt,
+              rtoInitiatedAt: f.shipment.rtoInitiatedAt,
+              rtoDeliveredAt: f.shipment.rtoDeliveredAt,
+              updatedAt: f.shipment.updatedAt,
+            }
+          : null,
       })),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
@@ -621,9 +644,33 @@ export class OrderService {
     });
   }
 
-  /** SHIPPED: posts the SALE ledger transaction per line (FLOW 8's "inventory posts the sale/fulfilment transaction at the defined trigger point"). */
-  async markFulfilmentShipped(fulfilmentId: string, staffId: string, opts?: { carrierName?: string; trackingRef?: string }) {
-    return this.prisma.$transaction(async (tx) => {
+  /**
+   * SHIPPED: posts the SALE ledger transaction per line (FLOW 8's
+   * "inventory posts the sale/fulfilment transaction at the defined
+   * trigger point"). This remains the ONE authoritative point SALE is
+   * ever posted from (M16 certification invariant) - M17's
+   * `ShippingService.createShipment` reuses this method (via
+   * `externalTx`) rather than duplicating any of its logic, so a
+   * shipment's booking and its fulfilment's READY_TO_SHIP->SHIPPED
+   * transition commit atomically together, and there is still exactly
+   * one code path that can ever call `InventoryService.recordSale` for
+   * an order line.
+   *
+   * `externalTx` (M17): when provided, this method runs entirely inside
+   * the CALLER's already-open transaction instead of opening its own -
+   * lets `ShippingService.createShipment` include this transition in
+   * the same atomic unit as its own `Shipment` row update, without this
+   * method ever being duplicated or reimplemented. Omitted, it behaves
+   * exactly as before (M15/M16 callers - the staff `/ship` route -
+   * unchanged).
+   */
+  async markFulfilmentShipped(
+    fulfilmentId: string,
+    staffId: string,
+    opts?: { carrierName?: string; trackingRef?: string },
+    externalTx?: Prisma.TransactionClient,
+  ) {
+    const run = async (tx: Prisma.TransactionClient) => {
       const locked = await this.lockFulfilment(tx, fulfilmentId);
       if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (locked.status !== 'READY_TO_SHIP') {
@@ -669,11 +716,22 @@ export class OrderService {
       });
       await this.recomputeOrderStatus(tx, fulfilment.orderId);
       return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
-    });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }
 
-  async markFulfilmentDelivered(fulfilmentId: string, staffId: string) {
-    return this.prisma.$transaction(async (tx) => {
+  /**
+   * `staffId: null` (M17): a SYSTEM-attributed transition - a carrier
+   * webhook/poll reporting genuine delivery, not a staff action. Uses
+   * the same `actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM'`-
+   * style convention `createOrderFromCheckoutSession` already
+   * established for non-staff-triggered audit entries. Existing
+   * staff-triggered callers (the `/deliver` route) are unaffected -
+   * passing a real staffId behaves exactly as before.
+   */
+  async markFulfilmentDelivered(fulfilmentId: string, staffId: string | null, externalTx?: Prisma.TransactionClient) {
+    const run = async (tx: Prisma.TransactionClient) => {
       const fulfilment = await this.lockFulfilment(tx, fulfilmentId);
       if (!fulfilment) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (fulfilment.status !== 'SHIPPED') {
@@ -682,8 +740,8 @@ export class OrderService {
       await tx.orderFulfilment.update({ where: { id: fulfilmentId }, data: { status: 'DELIVERED', deliveredAt: new Date() } });
       await tx.orderLine.updateMany({ where: { fulfilmentId }, data: { status: 'DELIVERED' } });
       await recordAudit(tx, {
-        actorType: 'STAFF',
-        actorStaffId: staffId,
+        actorType: staffId ? 'STAFF' : 'SYSTEM',
+        actorStaffId: staffId ?? undefined,
         action: 'order.fulfilment.deliver',
         entityType: 'OrderFulfilment',
         entityId: fulfilmentId,
@@ -691,7 +749,9 @@ export class OrderService {
       });
       await this.recomputeOrderStatus(tx, fulfilment.orderId);
       return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
-    });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }
 
   /**
@@ -847,10 +907,26 @@ export class OrderService {
    * back at the warehouse (subject to QC disposition) is a GRN-style
    * receiving event - specs/18-returns.md's own scope, not posted here.
    */
-  async markRTO(orderId: string, staffId: string, reason: string) {
+  /**
+   * `staffId: null` (M17): a SYSTEM-attributed RTO - the platform's own
+   * automatic "redelivery attempts exhausted" determination
+   * (`ShippingService.applyTrackingUpdate`), not a staff action. Same
+   * convention as `markFulfilmentDelivered`.
+   *
+   * Guard unchanged from M15/M16 ("every active line SHIPPED") - this
+   * is deliberately still the only trigger for `Order.status = RTO`
+   * (single authoritative posting point, same discipline as SALE). For
+   * a split-shipment order, that guard is only satisfiable once EVERY
+   * fulfilment's lines are still sitting at SHIPPED (none delivered
+   * yet) - `ShippingService` only calls this when the order's shipments
+   * are consistent with that (see its own docblock for the documented
+   * limitation on mixed-state multi-shipment orders, a genuine open
+   * business question for M18+, not guessed here).
+   */
+  async markRTO(orderId: string, staffId: string | null, reason: string, externalTx?: Prisma.TransactionClient) {
     if (!reason.trim()) throw new ValidationError('An RTO reason is required');
 
-    return this.prisma.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient) => {
       const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
       if (order.status === 'RTO') return order;
 
@@ -866,8 +942,8 @@ export class OrderService {
       });
 
       await recordAudit(tx, {
-        actorType: 'STAFF',
-        actorStaffId: staffId,
+        actorType: staffId ? 'STAFF' : 'SYSTEM',
+        actorStaffId: staffId ?? undefined,
         action: 'order.rto',
         entityType: 'Order',
         entityId: orderId,
@@ -875,6 +951,8 @@ export class OrderService {
       });
 
       return updated;
-    });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }
 }

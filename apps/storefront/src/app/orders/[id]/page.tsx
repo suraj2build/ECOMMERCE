@@ -25,6 +25,23 @@ const LINE_STATUS_LABEL: Record<string, string> = {
   EXCEPTION: 'Needs attention',
 };
 
+/**
+ * M17 (specs/16-shipping-tracking.md): the platform's own normalized
+ * tracking status, never a carrier's raw vocabulary (see
+ * ShippingProvider's adapter-boundary normalization) - the same
+ * "customer shipment tracking" this label set is required to display.
+ */
+const SHIPMENT_STATUS_LABEL: Record<string, string> = {
+  CREATED: 'Preparing to ship',
+  BOOKED: 'Booked with carrier',
+  IN_TRANSIT: 'In transit',
+  OUT_FOR_DELIVERY: 'Out for delivery',
+  DELIVERY_FAILED: 'Delivery attempt failed - retrying',
+  DELIVERED: 'Delivered',
+  RTO_INITIATED: 'Returning to origin',
+  RTO_DELIVERED: 'Returned to origin',
+};
+
 /** Order detail (M15). Honestly reflects the real fulfilment/cancellation state per line - never a single fake "order status" that hides a split shipment or a cancelled item. */
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
@@ -89,6 +106,11 @@ export default function OrderDetailPage() {
                 {f.status === 'DELIVERED' ? 'Delivered' : f.status === 'SHIPPED' ? 'Shipped' : f.status === 'PACKED' ? 'Packed' : 'Preparing'}
                 {f.carrierName ? ` via ${f.carrierName}` : ''}
                 {f.trackingRef ? ` (${f.trackingRef})` : ''}
+                {/* M17: last-known platform tracking status - shown only
+                    once a shipment exists; gracefully omitted otherwise
+                    rather than showing an error (acceptance negative
+                    scenario #1). */}
+                {f.shipment ? ` — ${SHIPMENT_STATUS_LABEL[f.shipment.status] ?? f.shipment.status}` : ''}
               </p>
             ))}
           </div>
