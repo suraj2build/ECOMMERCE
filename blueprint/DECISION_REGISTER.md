@@ -436,6 +436,74 @@ of what is still needed from anyone, and from whom.
 - **Final decision:** Not launch scope — **FUTURE_CONSIDERATION**.
 - **Affected specs:** `specs/11-wishlist-cart.md`
 
+#### CART-004 — Guest session identifier security hardening · **P1**
+- **Question:** Is the `x-guest-session-id` header, in its current
+  form, safe to ship to production as-is, or does it need hardening
+  first?
+- **Dependencies:** CART-001, CHK-001
+- **Status:** `UNDER_REVIEW` (identified 2026-09-24, Phase 2
+  independent-certification repair pass, finding #8) · genuine,
+  pre-production security follow-up - not resolved here, not to be
+  treated as settled.
+- **Risk, as found:** `resolveCartIdentity()`
+  (`services/commerce-api/src/modules/cart/identity.ts`) accepts the
+  `x-guest-session-id` header as-is with no format, length, or entropy
+  validation - it functions as a bearer credential (whoever presents a
+  given value gets that guest's cart/wishlist/checkout-session access,
+  per the cross-identity isolation this header is the sole gate for),
+  but the server does not enforce that it actually has bearer-credential-
+  grade strength. The shipped storefront client
+  (`apps/storefront/src/lib/cart.ts`) already generates it correctly
+  (`crypto.randomUUID()`, persisted in `localStorage`, 122 bits of
+  entropy) - the gap is that a non-storefront API caller could instead
+  present a short, predictable, or reused value and the server would
+  accept it identically. There is also no server-side expiration or
+  rotation of the identifier itself (distinct from `CART-001`'s cart-
+  *content* TTL, `CART_GUEST_TTL_DAYS`, which already clears stale line
+  items but never rejects the identifier that presents them).
+- **Why not fixed directly in this repair pass:** the disciplined,
+  correct server-side fix (reject any guest session id that doesn't
+  look like a genuine high-entropy token, e.g. canonical UUIDv4 format)
+  would immediately break every existing test fixture across the
+  storefront milestones that uses a short, human-readable guest id for
+  readability (`'guest-a'`, `'guest-ord-cod'`, `'guest-race-a'`, etc. -
+  dozens of call sites across `cart-wishlist.test.ts`, `checkout.test.ts`,
+  `order.test.ts`, `payment.test.ts`, `pdp.test.ts`, and this repair
+  pass's own new tests). Retrofitting strict validation now would mean
+  rewriting guest-id fixtures across every Phase 2 milestone's test
+  suite in a pass whose authorization is explicitly scoped to repairing
+  the nine named defects, not a general test-suite migration - and
+  would risk introducing exactly the kind of large, unreviewed diff the
+  certification-repair instruction warns against. This is also
+  explicitly not authorization to redesign M01 authentication or the
+  cart/guest identity model more broadly.
+- **Recommended production hardening (not yet implemented):**
+  1. Server-side format validation: reject any `x-guest-session-id`
+     that is not a canonical UUID (or an equivalent fixed-format,
+     high-entropy token) before it reaches `resolveCartIdentity()`'s
+     callers, closing the "attacker picks a weak identifier" gap
+     without touching the storefront client (which already sends
+     genuine UUIDs).
+  2. A server-side maximum length guard (independent of full format
+     validation, and safe to add without touching existing test
+     fixtures) - see the fix already landed alongside this decision
+     entry.
+  3. Consider signing the guest session id (e.g. an HMAC'd cookie or
+     a short-lived server-issued token exchanged for the client's
+     locally-generated id) so possession of the raw value alone is
+     insufficient - a larger design change, out of scope here.
+  4. A rotation/expiration policy for the identifier's *authority*
+     itself, not just the cart content it points at.
+  5. Whichever of the above is chosen, it must preserve the existing
+     account-merge-on-login behavior (`CART-001`) and must not regress
+     the existing cross-identity isolation tests (verified still green
+     as part of this repair pass - `cart-wishlist.test.ts`'s "keeps a
+     guest cart isolated from a different guest session" and
+     `checkout.test.ts`'s "does not let one identity read another
+     identity's checkout session").
+- **Affected specs:** `specs/11-wishlist-cart.md`, `specs/12-checkout.md`,
+  `specs/13-payment.md`
+
 ---
 
 ## CHK — Checkout

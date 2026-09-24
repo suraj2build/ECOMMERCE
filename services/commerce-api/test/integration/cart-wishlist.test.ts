@@ -201,6 +201,15 @@ describe('Wishlist / Cart (M12)', () => {
       expect(customerCart.json().items).toHaveLength(0);
     });
 
+    it('rejects an oversized x-guest-session-id header instead of treating it as a valid identity (CART-004)', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/storefront/cart',
+        headers: { [GUEST_HEADER]: 'x'.repeat(300) },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
     it('merges a guest cart into the account cart on login, summing quantities and capping at the max (CART-001)', async () => {
       const ctx = await seedCatalogContext();
       const { skuId: skuA } = await publishStyle(ctx, { styleCode: 'CART-007', name: 'Socks', sellingPrice: 199 });

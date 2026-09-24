@@ -33,7 +33,17 @@ but not including checkout.
 
 ## Remaining open items
 
-None.
+`CART-004` (guest session identifier security hardening) is
+`UNDER_REVIEW` - see `blueprint/DECISION_REGISTER.md`. The
+`x-guest-session-id` header functions as a bearer credential for guest
+cart/wishlist/checkout access; the shipped storefront client already
+generates it with genuine entropy (`crypto.randomUUID()`), but the
+server does not yet enforce that format, and the identifier itself has
+no expiration/rotation (distinct from this spec's own cart-content TTL
+above, which already ages out stale line items). A maximum-length guard
+was added as a contained interim hardening; full format/entropy
+validation and identifier rotation are a documented pre-production
+follow-up, not yet implemented.
 
 ## Acceptance criteria
 
