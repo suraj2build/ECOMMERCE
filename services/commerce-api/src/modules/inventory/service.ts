@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type PrismaClient, type InventoryTxnType } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
-import { ConflictError, InsufficientStockError, NotFoundError, ValidationError } from '@fcp/shared';
+import { ConflictError, InsufficientStockError, InventoryIntegrityError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 
 export interface InventoryBalanceSnapshot {
@@ -531,22 +531,97 @@ export class InventoryService {
    * decrement (unlike ALLOCATION, which only changes the reservation's
    * status). The trigger point FLOW 8 asks for ("inventory posts the
    * sale/fulfilment transaction at the defined trigger point").
+   *
+   * Independent-review finding #5 (BLOCKER/HIGH): the previous version
+   * clamped both decrements with `Math.max(0, ...)`, which prevents a
+   * negative column value but silently MASKS corruption instead of
+   * rejecting it - a fulfilment that (through some upstream defect)
+   * expects to ship more than is actually on hand or reserved would
+   * still "succeed", quietly writing a SALE row and a
+   * smaller-than-requested decrement, with no signal anything was
+   * wrong. InventoryService does not merely trust that OrderService
+   * produced correct data - it is itself a financial/inventory
+   * integrity boundary, so this now REQUIRES, under the same row lock
+   * used everywhere else in this ledger:
+   *  - `onHand >= quantity` and `reserved >= quantity` for the balance
+   *    row, checked before any mutation - a shortfall throws
+   *    InventoryIntegrityError instead of silently clamping;
+   *  - when a `reservationId` is supplied (the order line's own backing
+   *    allocation), it is a genuine, already-CONVERTED reservation, for
+   *    at least this quantity, against this exact SKU/location - not
+   *    ACTIVE (payment never actually converted it), not
+   *    RELEASED/EXPIRED (already given back), and not undersized (a
+   *    caller cannot ship more than its own allocation covers).
+   * Any violation throws before the balance update or ledger write, so
+   * the calling transaction (OrderService.markFulfilmentShipped) rolls
+   * back atomically - no SALE row, no SHIPPED status, balances
+   * unchanged - surfacing an explicit, typed exception rather than a
+   * quietly-wrong success.
    */
   async recordSale(
-    params: { skuId: string; locationId: string; quantity: number; referenceType?: string; referenceId?: string },
+    params: {
+      skuId: string;
+      locationId: string;
+      quantity: number;
+      referenceType?: string;
+      referenceId?: string;
+      reservationId?: string;
+    },
     externalTx?: Prisma.TransactionClient,
   ) {
     if (params.quantity <= 0) throw new ValidationError('Sale quantity must be positive');
     const run = async (tx: Prisma.TransactionClient) => {
+      if (params.reservationId) {
+        const reservation = await this.lockReservation(tx, params.reservationId);
+        if (!reservation) {
+          throw new InventoryIntegrityError(
+            `Cannot record a sale: reservation '${params.reservationId}' does not exist`,
+          );
+        }
+        if (reservation.skuId !== params.skuId || reservation.locationId !== params.locationId) {
+          throw new InventoryIntegrityError(
+            `Cannot record a sale: reservation '${params.reservationId}' is for a different SKU/location than this sale`,
+          );
+        }
+        if (reservation.status !== 'CONVERTED') {
+          throw new InventoryIntegrityError(
+            `Cannot record a sale against reservation '${params.reservationId}' in status '${reservation.status}' - a sale requires an already-converted (firm order) allocation`,
+          );
+        }
+        if (reservation.quantity < params.quantity) {
+          throw new InventoryIntegrityError(
+            `Cannot record a sale of ${params.quantity} units against reservation '${params.reservationId}', which only allocated ${reservation.quantity}`,
+          );
+        }
+      }
+
       const balance = await this.lockBalance(tx, params.skuId, params.locationId);
+      if (balance.onHand < params.quantity) {
+        throw new InventoryIntegrityError(
+          `Cannot record a sale of ${params.quantity} units for SKU '${params.skuId}' at location '${params.locationId}' - only ${balance.onHand} on hand`,
+        );
+      }
+      if (balance.reserved < params.quantity) {
+        throw new InventoryIntegrityError(
+          `Cannot record a sale of ${params.quantity} units for SKU '${params.skuId}' at location '${params.locationId}' - only ${balance.reserved} reserved`,
+        );
+      }
+
       await tx.inventoryBalance.update({
         where: { skuId_locationId: { skuId: params.skuId, locationId: params.locationId } },
         data: {
-          onHand: Math.max(0, balance.onHand - params.quantity),
-          reserved: Math.max(0, balance.reserved - params.quantity),
+          onHand: balance.onHand - params.quantity,
+          reserved: balance.reserved - params.quantity,
         },
       });
-      return this.writeLedgerRow(tx, { ...params, type: 'SALE' });
+      return this.writeLedgerRow(tx, {
+        skuId: params.skuId,
+        locationId: params.locationId,
+        quantity: params.quantity,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
+        type: 'SALE',
+      });
     };
     return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }

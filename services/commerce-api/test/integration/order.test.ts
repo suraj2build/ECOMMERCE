@@ -157,9 +157,9 @@ describe('Order Management (M15)', () => {
   }
 
   /** COD checkout - genuinely CONFIRMED at submission, so an Order exists immediately. */
-  async function codOrder(skuId: string, guestId: string, idempotencyKey: string) {
+  async function codOrder(skuId: string, guestId: string, idempotencyKey: string, quantity = 1) {
     const headers = { [GUEST_HEADER]: guestId };
-    await addToCart(skuId, headers);
+    await addToCart(skuId, headers, quantity);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/storefront/checkout',
@@ -379,6 +379,218 @@ describe('Order Management (M15)', () => {
         headers: { authorization: `Bearer ${token}` },
       });
       expect(res.statusCode).toBe(403);
+    });
+  });
+
+  /**
+   * Independent-review finding #5 (BLOCKER/HIGH): InventoryService.
+   * recordSale() previously clamped its onHand/reserved decrements with
+   * `Math.max(0, ...)`, which prevents a negative column value but
+   * silently MASKS a shipment that expects to move more stock than is
+   * genuinely on hand/reserved/allocated - it would still "succeed",
+   * quietly writing a SALE row for less than the requested quantity.
+   * These tests force each corruption/mismatch scenario directly (not
+   * relying on OrderService ever actually producing bad data - the
+   * review's own point is that InventoryService must not assume it
+   * will) and prove the whole shipment transaction is rejected
+   * atomically: no SALE row, fulfilment/line stay PACKED (not SHIPPED),
+   * and balances are byte-for-byte unchanged.
+   */
+  describe('Shipment inventory invariant hardening (independent-review finding #5)', () => {
+    async function packedFulfilment(orderId: string, lineId: string, warehouseToken: string) {
+      const fulfilRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${orderId}/fulfilments`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: { lineIds: [lineId] },
+      });
+      expect(fulfilRes.statusCode).toBe(201);
+      const fulfilmentId = fulfilRes.json().id as string;
+      const packRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/fulfilments/${fulfilmentId}/pack`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+      });
+      expect(packRes.statusCode).toBe(200);
+      return fulfilmentId;
+    }
+
+    async function shipFulfilment(fulfilmentId: string, warehouseToken: string) {
+      return app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/fulfilments/${fulfilmentId}/ship`,
+        headers: { authorization: `Bearer ${warehouseToken}` },
+        payload: {},
+      });
+    }
+
+    it('A: rejects shipment when on-hand stock is insufficient for the order line quantity, leaving no partial trace', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-inv5-onhand', 'idem-inv5-onhand');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      const fulfilmentId = await packedFulfilment(orderId, line.id, warehouseToken);
+
+      // Simulate onHand having been corrupted/drawn down by something
+      // else to below what this shipment expects to move - InventoryService
+      // must catch this itself, not trust the caller. reserved must drop
+      // with it (reserved <= onHand is a DB CHECK constraint) - the
+      // reserved-insufficient case is covered separately by test B.
+      await testPrisma.inventoryBalance.update({
+        where: { skuId_locationId: { skuId, locationId: line.locationId } },
+        data: { onHand: 0, reserved: 0 },
+      });
+
+      const shipRes = await shipFulfilment(fulfilmentId, warehouseToken);
+      expect(shipRes.statusCode).toBe(409);
+      expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
+
+      const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      expect(fulfilment.status).toBe('PACKED'); // never advanced to SHIPPED
+      const refreshedLine = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(refreshedLine.status).toBe('PACKED');
+      const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
+      expect(saleTxns).toHaveLength(0);
+      const balanceAfter = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      // Untouched by the shipment attempt itself - still exactly the
+      // (corrupted, pre-attempt) values, not further mutated.
+      expect(balanceAfter.onHand).toBe(0);
+      expect(balanceAfter.reserved).toBe(0);
+    });
+
+    it('B: rejects shipment when reserved stock is insufficient for the order line quantity, leaving no partial trace', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-inv5-reserved', 'idem-inv5-reserved');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      const fulfilmentId = await packedFulfilment(orderId, line.id, warehouseToken);
+
+      const balanceBefore = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      // onHand is plenty, but reserved has been corrupted down to zero -
+      // this line's allocation is no longer backed by a real reservation
+      // count, even though physical stock exists.
+      await testPrisma.inventoryBalance.update({
+        where: { skuId_locationId: { skuId, locationId: line.locationId } },
+        data: { reserved: 0 },
+      });
+
+      const shipRes = await shipFulfilment(fulfilmentId, warehouseToken);
+      expect(shipRes.statusCode).toBe(409);
+      expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
+
+      const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      expect(fulfilment.status).toBe('PACKED');
+      const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
+      expect(saleTxns).toHaveLength(0);
+      const balanceAfter = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      expect(balanceAfter.onHand).toBe(balanceBefore.onHand); // untouched
+    });
+
+    it('C: rejects shipment when the order line\'s backing reservation is missing (deleted/corrupted), leaving no partial trace', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-inv5-missing-res', 'idem-inv5-missing-res');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      const fulfilmentId = await packedFulfilment(orderId, line.id, warehouseToken);
+
+      // Corrupt the order line to point at a reservation id that does
+      // not exist - the allocation this shipment claims to fulfil is
+      // not real.
+      await testPrisma.orderLine.update({ where: { id: line.id }, data: { reservationId: '00000000-0000-0000-0000-000000000000' } });
+
+      const shipRes = await shipFulfilment(fulfilmentId, warehouseToken);
+      expect(shipRes.statusCode).toBe(409);
+      expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
+
+      const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      expect(fulfilment.status).toBe('PACKED');
+      const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
+      expect(saleTxns).toHaveLength(0);
+    });
+
+    it('D: rejects shipment when the backing reservation was never actually converted into a firm allocation (still ACTIVE)', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-inv5-active-res', 'idem-inv5-active-res');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      const fulfilmentId = await packedFulfilment(orderId, line.id, warehouseToken);
+
+      // Corrupt the reservation's status back to ACTIVE, as if it had
+      // never genuinely been converted into a firm order allocation -
+      // InventoryService must not trust the order line's ALLOCATED/
+      // PACKED status alone.
+      await testPrisma.inventoryReservation.update({ where: { id: line.reservationId! }, data: { status: 'ACTIVE' } });
+
+      const shipRes = await shipFulfilment(fulfilmentId, warehouseToken);
+      expect(shipRes.statusCode).toBe(409);
+      expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
+
+      const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      expect(fulfilment.status).toBe('PACKED');
+      const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
+      expect(saleTxns).toHaveLength(0);
+    });
+
+    it('E: rejects shipment when the backing reservation allocated fewer units than this shipment claims', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-inv5-undersized', 'idem-inv5-undersized', 2);
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      expect(line.quantity).toBe(2);
+      const fulfilmentId = await packedFulfilment(orderId, line.id, warehouseToken);
+
+      // The reservation genuinely allocated fewer units (1) than the
+      // order line claims to ship (2) - a data-integrity mismatch, not
+      // a normal state (still a valid positive reservation quantity, so
+      // this exercises the undersized-allocation check specifically,
+      // distinct from test C's "no reservation at all").
+      await testPrisma.inventoryReservation.update({ where: { id: line.reservationId! }, data: { quantity: 1 } });
+
+      const shipRes = await shipFulfilment(fulfilmentId, warehouseToken);
+      expect(shipRes.statusCode).toBe(409);
+      expect(shipRes.json().error.code).toBe('INVENTORY_INTEGRITY_VIOLATION');
+
+      const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      expect(fulfilment.status).toBe('PACKED');
+    });
+
+    it('F: a genuinely concurrent double-ship attempt on the same fulfilment posts exactly one SALE and decrements the balance exactly once', async () => {
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil']);
+      const { token: warehouseToken } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId } = await codOrder(skuId, 'guest-inv5-concurrent-ship', 'idem-inv5-concurrent-ship');
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+      const line = order.lines[0]!;
+      const fulfilmentId = await packedFulfilment(orderId, line.id, warehouseToken);
+
+      const [resA, resB] = await Promise.all([shipFulfilment(fulfilmentId, warehouseToken), shipFulfilment(fulfilmentId, warehouseToken)]);
+      const statuses = [resA.statusCode, resB.statusCode].sort();
+      // Exactly one wins (200). The loser's rejection code depends on
+      // exact timing: markFulfilmentShipped's own PACKED-status read is
+      // not itself row-locked, so both callers can occasionally pass it
+      // before either commits - but recordSale's own invariant checks
+      // (this finding) are the real backstop either way: the loser then
+      // either finds the fulfilment already SHIPPED (400) or, having
+      // raced past that check too, hits recordSale's now-insufficient
+      // reserved/onHand check directly (409) - never a silent double-sale.
+      expect(statuses[0]).toBe(200);
+      expect([400, 409]).toContain(statuses[1]);
+
+      const saleTxns = await testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', skuId } });
+      expect(saleTxns).toHaveLength(1);
+      const balance = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      expect(balance.onHand).toBe(9); // decremented exactly once, not twice
+      expect(balance.reserved).toBe(0);
     });
   });
 

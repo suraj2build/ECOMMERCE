@@ -514,8 +514,18 @@ export class OrderService {
       }
 
       for (const line of fulfilment.lines) {
+        // reservationId lets InventoryService itself verify this line's
+        // allocation is genuine (CONVERTED, sufficient quantity) rather
+        // than trusting this call blindly (independent-review finding #5).
         await this.inventory.recordSale(
-          { skuId: line.skuId, locationId: line.locationId, quantity: line.quantity, referenceType: 'ORDER_LINE', referenceId: line.id },
+          {
+            skuId: line.skuId,
+            locationId: line.locationId,
+            quantity: line.quantity,
+            referenceType: 'ORDER_LINE',
+            referenceId: line.id,
+            reservationId: line.reservationId ?? undefined,
+          },
           tx,
         );
       }

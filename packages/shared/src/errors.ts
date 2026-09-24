@@ -61,6 +61,24 @@ export class InsufficientStockError extends AppError {
 }
 
 /**
+ * Raised when a requested inventory mutation would violate a physical
+ * or allocation invariant InventoryService itself is responsible for
+ * guarding (independent-review finding #5) - e.g. a SALE that would
+ * decrement onHand/reserved below zero, or that references an
+ * allocation which is not a genuine, sufficient, already-CONVERTED
+ * reservation. Distinct from InsufficientStockError (a reservation
+ * request that legitimately can't be granted): this means the caller's
+ * own data is inconsistent with what the ledger actually holds, which
+ * must never be silently clamped/masked - the whole mutation is
+ * rejected so the caller can surface it as an operational exception.
+ */
+export class InventoryIntegrityError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, 409, 'INVENTORY_INTEGRITY_VIOLATION', details);
+  }
+}
+
+/**
  * Raised when a request is well-formed but cannot be processed because
  * required compliance configuration (GST registration, tax rate/HSN
  * reference data, etc. - specs/32-india-tax-invoicing.md) is absent.
