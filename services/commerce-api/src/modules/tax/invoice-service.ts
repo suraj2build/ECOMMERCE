@@ -296,6 +296,28 @@ export class InvoiceService {
     return invoice;
   }
 
+  /**
+   * Cumulative-over-credit prevention (independent-review finding #1,
+   * binding): SUM(all committed CreditNoteLine.quantity referencing an
+   * InvoiceLine) + requested quantity MUST NEVER exceed
+   * InvoiceLine.quantity. Every CreditNoteLine row that exists represents
+   * a committed credit - this system has no draft/pending credit-note
+   * state - so a plain SUM is exactly "already credited."
+   *
+   * The check-then-insert is safe under CONCURRENT credit-note creation
+   * because it runs entirely inside one transaction, and the InvoiceLine
+   * rows being credited are locked (`SELECT ... FOR UPDATE`) BEFORE the
+   * SUM is read - the same row-lock-before-aggregate-check discipline
+   * `InventoryService.lockBalance` already uses for the oversell
+   * invariant (M06). A second concurrent transaction attempting to lock
+   * the same InvoiceLine rows blocks until the first commits or rolls
+   * back, then re-reads the SUM fresh (including whatever the first
+   * transaction just committed) before making its own decision - true
+   * DB-level serialization, not an application-level pre-read with a
+   * race window. Lines are locked in a stable sorted order to avoid
+   * deadlocking against another concurrent multi-line request touching
+   * an overlapping but differently-ordered set of lines.
+   */
   async issueCreditNote(input: IssueCreditNoteInput, actorStaffId: string) {
     if (input.lines.length === 0) throw new ValidationError('A credit note must have at least one line');
     const atDate = new Date();
@@ -309,82 +331,104 @@ export class InvoiceService {
 
     const invoiceLineById = new Map(originalInvoice.lines.map((l) => [l.id, l]));
 
-    const preparedLines: Array<{
-      invoiceLineId: string;
-      descriptionSnapshot: string;
-      hsnCodeSnapshot: string;
-      quantity: number;
-      taxableValueReduction: number;
-      gstRatePercent: number;
-      cgstReduction: number;
-      sgstReduction: number;
-      igstReduction: number;
-      cessReduction: number;
-      lineTotalReduction: number;
-    }> = [];
-
+    // Shape validation (line belongs to this invoice, positive quantity)
+    // can happen before opening the transaction - only the cumulative
+    // over-credit check needs the lock.
     for (const line of input.lines) {
-      const original = invoiceLineById.get(line.invoiceLineId);
-      if (!original) {
+      if (!invoiceLineById.has(line.invoiceLineId)) {
         throw new ValidationError(
           `Invoice line '${line.invoiceLineId}' does not belong to invoice '${input.originalInvoiceId}'`,
         );
       }
       if (line.quantity <= 0) throw new ValidationError('Credit note line quantity must be positive');
-      if (line.quantity > original.quantity) {
-        throw new ValidationError(
-          `Cannot credit ${line.quantity} units against invoice line '${line.invoiceLineId}' which only has ${original.quantity} units`,
-        );
-      }
-
-      // Credits use the ORIGINAL invoice line's frozen amounts, prorated
-      // by quantity - never re-resolved against current tax reference
-      // data (spec 32: "later reference-data changes must not rewrite
-      // historical orders"). Proration, not re-computation, is what keeps
-      // this consistent with whatever rounding the original invoice used.
-      const proportion = line.quantity / original.quantity;
-      const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-      const taxableValueReduction = round2(Number(original.taxableValue) * proportion);
-      const cgstReduction = round2(Number(original.cgstAmount) * proportion);
-      const sgstReduction = round2(Number(original.sgstAmount) * proportion);
-      const igstReduction = round2(Number(original.igstAmount) * proportion);
-      const cessReduction = round2(Number(original.cessAmount) * proportion);
-
-      preparedLines.push({
-        invoiceLineId: original.id,
-        descriptionSnapshot: original.descriptionSnapshot,
-        hsnCodeSnapshot: original.hsnCodeSnapshot,
-        quantity: line.quantity,
-        taxableValueReduction,
-        gstRatePercent: Number(original.gstRatePercent),
-        cgstReduction,
-        sgstReduction,
-        igstReduction,
-        cessReduction,
-        lineTotalReduction: round2(taxableValueReduction + cgstReduction + sgstReduction + igstReduction + cessReduction),
-      });
     }
 
-    const totals = preparedLines.reduce(
-      (acc, l) => ({
-        totalTaxableValueReduction: acc.totalTaxableValueReduction + l.taxableValueReduction,
-        totalCgstReduction: acc.totalCgstReduction + l.cgstReduction,
-        totalSgstReduction: acc.totalSgstReduction + l.sgstReduction,
-        totalIgstReduction: acc.totalIgstReduction + l.igstReduction,
-        totalCessReduction: acc.totalCessReduction + l.cessReduction,
-        totalValueReduction: acc.totalValueReduction + l.lineTotalReduction,
-      }),
-      {
-        totalTaxableValueReduction: 0,
-        totalCgstReduction: 0,
-        totalSgstReduction: 0,
-        totalIgstReduction: 0,
-        totalCessReduction: 0,
-        totalValueReduction: 0,
-      },
-    );
-
     return this.prisma.$transaction(async (tx) => {
+      const lineIds = [...new Set(input.lines.map((l) => l.invoiceLineId))].sort();
+      const lockedLines = await tx.$queryRaw<{ id: string; quantity: number }[]>`
+        SELECT "id", "quantity" FROM "invoice_lines" WHERE "id" = ANY(${lineIds}) FOR UPDATE`;
+      const lockedById = new Map(lockedLines.map((l) => [l.id, l]));
+
+      const preparedLines: Array<{
+        invoiceLineId: string;
+        descriptionSnapshot: string;
+        hsnCodeSnapshot: string;
+        quantity: number;
+        taxableValueReduction: number;
+        gstRatePercent: number;
+        cgstReduction: number;
+        sgstReduction: number;
+        igstReduction: number;
+        cessReduction: number;
+        lineTotalReduction: number;
+      }> = [];
+
+      for (const line of input.lines) {
+        const original = invoiceLineById.get(line.invoiceLineId)!; // presence already validated above
+        const locked = lockedById.get(line.invoiceLineId);
+        if (!locked) throw new NotFoundError('InvoiceLine', line.invoiceLineId);
+
+        const alreadyCredited = await tx.creditNoteLine.aggregate({
+          where: { invoiceLineId: line.invoiceLineId },
+          _sum: { quantity: true },
+        });
+        const committedSoFar = alreadyCredited._sum.quantity ?? 0;
+        const remaining = original.quantity - committedSoFar;
+        if (line.quantity > remaining) {
+          throw new ValidationError(
+            `Cannot credit ${line.quantity} units against invoice line '${line.invoiceLineId}' - ${committedSoFar} of ${original.quantity} already credited, only ${Math.max(0, remaining)} remain`,
+          );
+        }
+
+        // Credits use the ORIGINAL invoice line's frozen amounts, prorated
+        // by quantity - never re-resolved against current tax reference
+        // data (spec 32: "later reference-data changes must not rewrite
+        // historical orders"). Proration, not re-computation, is what keeps
+        // this consistent with whatever rounding the original invoice used.
+        const proportion = line.quantity / original.quantity;
+        const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+        const taxableValueReduction = round2(Number(original.taxableValue) * proportion);
+        const cgstReduction = round2(Number(original.cgstAmount) * proportion);
+        const sgstReduction = round2(Number(original.sgstAmount) * proportion);
+        const igstReduction = round2(Number(original.igstAmount) * proportion);
+        const cessReduction = round2(Number(original.cessAmount) * proportion);
+
+        preparedLines.push({
+          invoiceLineId: original.id,
+          descriptionSnapshot: original.descriptionSnapshot,
+          hsnCodeSnapshot: original.hsnCodeSnapshot,
+          quantity: line.quantity,
+          taxableValueReduction,
+          gstRatePercent: Number(original.gstRatePercent),
+          cgstReduction,
+          sgstReduction,
+          igstReduction,
+          cessReduction,
+          lineTotalReduction: round2(
+            taxableValueReduction + cgstReduction + sgstReduction + igstReduction + cessReduction,
+          ),
+        });
+      }
+
+      const totals = preparedLines.reduce(
+        (acc, l) => ({
+          totalTaxableValueReduction: acc.totalTaxableValueReduction + l.taxableValueReduction,
+          totalCgstReduction: acc.totalCgstReduction + l.cgstReduction,
+          totalSgstReduction: acc.totalSgstReduction + l.sgstReduction,
+          totalIgstReduction: acc.totalIgstReduction + l.igstReduction,
+          totalCessReduction: acc.totalCessReduction + l.cessReduction,
+          totalValueReduction: acc.totalValueReduction + l.lineTotalReduction,
+        }),
+        {
+          totalTaxableValueReduction: 0,
+          totalCgstReduction: 0,
+          totalSgstReduction: 0,
+          totalIgstReduction: 0,
+          totalCessReduction: 0,
+          totalValueReduction: 0,
+        },
+      );
+
       const { number, sequence } = await this.nextDocumentNumber(tx, 'CN', financialYear);
 
       const created = await tx.creditNote.create({

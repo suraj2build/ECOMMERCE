@@ -518,6 +518,139 @@ describe('Tax & Invoicing Foundation certification (M08)', () => {
       const numbers = results.map((r) => r.creditNoteNumber);
       expect(new Set(numbers).size).toBe(concurrency);
     });
+
+    /**
+     * Independent-review finding #1 (BLOCKER): cumulative over-credit.
+     * The original bug validated each credit-note request against the
+     * invoice line's ORIGINAL quantity only, never against how much had
+     * already been credited - two individually-valid requests (7 + 7
+     * against a 10-unit line) could together credit 14. These four tests
+     * (A-D per the review) prove the fix: SUM(committed credits) +
+     * requested <= original quantity, enforced under real concurrency.
+     */
+    describe('Cumulative over-credit prevention (independent-review finding #1)', () => {
+      it('A: rejects a second credit that would push cumulative credited quantity over the original line quantity', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-cumulative-a', 10);
+
+        const first = await invoiceService.issueCreditNote(
+          { originalInvoiceId: invoice.id, reason: 'First partial credit', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 7 }] },
+          actorStaffId,
+        );
+        expect(first.lines[0]!.quantity).toBe(7);
+
+        await expect(
+          invoiceService.issueCreditNote(
+            { originalInvoiceId: invoice.id, reason: 'Second credit exceeding remainder', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 4 }] },
+            actorStaffId,
+          ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        // Only the first, valid credit note exists - the rejected attempt committed nothing.
+        const creditNotes = await invoiceService.listCreditNotesForInvoice(invoice.id);
+        expect(creditNotes).toHaveLength(1);
+        const totalCredited = await testPrisma.creditNoteLine.aggregate({
+          where: { invoiceLineId: invoice.lines[0]!.id },
+          _sum: { quantity: true },
+        });
+        expect(totalCredited._sum.quantity).toBe(7);
+      });
+
+      it('B: allows crediting exactly up to the original line quantity across multiple credit notes', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-cumulative-b', 10);
+
+        await invoiceService.issueCreditNote(
+          { originalInvoiceId: invoice.id, reason: 'First partial credit', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 7 }] },
+          actorStaffId,
+        );
+        const second = await invoiceService.issueCreditNote(
+          { originalInvoiceId: invoice.id, reason: 'Second credit completing the line exactly', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 3 }] },
+          actorStaffId,
+        );
+        expect(second.lines[0]!.quantity).toBe(3);
+
+        const totalCredited = await testPrisma.creditNoteLine.aggregate({
+          where: { invoiceLineId: invoice.lines[0]!.id },
+          _sum: { quantity: true },
+        });
+        expect(totalCredited._sum.quantity).toBe(10);
+
+        // Now fully credited - even a 1-unit request must be rejected.
+        await expect(
+          invoiceService.issueCreditNote(
+            { originalInvoiceId: invoice.id, reason: 'Attempt beyond fully-credited line', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 1 }] },
+            actorStaffId,
+          ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+      });
+
+      it('C: two genuinely concurrent requests that individually look valid cannot together over-credit the line', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-cumulative-c', 10);
+
+        // Each request alone (7 of 10) looks valid at read time - only
+        // real DB-level serialization (row lock before the SUM check)
+        // can prevent both from committing.
+        const results = await Promise.allSettled([
+          invoiceService.issueCreditNote(
+            { originalInvoiceId: invoice.id, reason: 'Concurrent credit A', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 7 }] },
+            actorStaffId,
+          ),
+          invoiceService.issueCreditNote(
+            { originalInvoiceId: invoice.id, reason: 'Concurrent credit B', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 7 }] },
+            actorStaffId,
+          ),
+        ]);
+
+        const fulfilled = results.filter((r) => r.status === 'fulfilled');
+        const rejected = results.filter((r) => r.status === 'rejected');
+        // Exactly one of the two 7-unit requests can win against a 10-unit line.
+        expect(fulfilled).toHaveLength(1);
+        expect(rejected).toHaveLength(1);
+
+        const totalCredited = await testPrisma.creditNoteLine.aggregate({
+          where: { invoiceLineId: invoice.lines[0]!.id },
+          _sum: { quantity: true },
+        });
+        expect(totalCredited._sum.quantity).toBeLessThanOrEqual(10);
+        expect(totalCredited._sum.quantity).toBe(7);
+
+        const creditNotes = await invoiceService.listCreditNotesForInvoice(invoice.id);
+        expect(creditNotes).toHaveLength(1);
+      });
+
+      it('D: a failed (over-limit) credit-note attempt leaves no partial document, no orphaned lines, and no sequence-number corruption', async () => {
+        const invoiceService = new InvoiceService(app);
+        const invoice = await issueBaseInvoice(invoiceService, 'order-cn-cumulative-d', 5);
+
+        const first = await invoiceService.issueCreditNote(
+          { originalInvoiceId: invoice.id, reason: 'Valid first credit', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 3 }] },
+          actorStaffId,
+        );
+        expect(first.sequenceNumber).toBe(1);
+
+        await expect(
+          invoiceService.issueCreditNote(
+            { originalInvoiceId: invoice.id, reason: 'Over-limit attempt', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 4 }] },
+            actorStaffId,
+          ),
+        ).rejects.toMatchObject({ statusCode: 400 });
+
+        // No CreditNote/CreditNoteLine row was created for the failed attempt.
+        const allCreditNotes = await testPrisma.creditNote.findMany({ where: { originalInvoiceId: invoice.id } });
+        expect(allCreditNotes).toHaveLength(1);
+        expect(allCreditNotes[0]!.id).toBe(first.id);
+
+        // The document-number sequence was never consumed by the failed
+        // attempt - the next legitimate credit note gets sequence 2, not 3.
+        const second = await invoiceService.issueCreditNote(
+          { originalInvoiceId: invoice.id, reason: 'Valid second credit for the remainder', lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 2 }] },
+          actorStaffId,
+        );
+        expect(second.sequenceNumber).toBe(2);
+      });
+    });
   });
 
   describe('HTTP-layer authorization', () => {
