@@ -24,6 +24,10 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
   const cancelAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:cancel')];
   const exceptionAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:exception:manage')];
   const rtoAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:rto')];
+  // invoice:create - same permission FINANCE already holds for the M08
+  // HTTP invoice-issuance entry point; retrying a failed invoice is the
+  // same operation, just re-triggered (independent-review finding #2).
+  const invoiceRetryAuth = [fastify.requireStaffAuth, fastify.requirePermission('invoice:create')];
   const identityAuth = { preHandler: fastify.tryCustomerAuth };
 
   // --- Storefront (customer/guest) ---
@@ -45,6 +49,10 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     const query = z
       .object({
         status: z.enum(['CONFIRMED', 'PROCESSING', 'DELIVERED', 'CANCELLED', 'RTO', 'EXCEPTION']).optional(),
+        // Lets Finance/operators find orders whose required invoice failed
+        // to generate (independent-review finding #2 - "operators can
+        // identify invoice-generation failures").
+        invoiceStatus: z.enum(['PENDING', 'ISSUED', 'FAILED']).optional(),
         take: z.coerce.number().int().positive().max(200).optional(),
         skip: z.coerce.number().int().nonnegative().optional(),
       })
@@ -103,6 +111,15 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = reasonSchema.parse(request.body);
     reply.status(200).send(await orderService.markRTO(id, request.staffUser!.id, body.reason));
+  });
+
+  // Durable invoice-recovery retry (independent-review finding #2):
+  // manually re-triggers issuance for one order whose invoice previously
+  // failed. Fully idempotent - see OrderService.retryOrderInvoice.
+  fastify.post('/orders/:id/retry-invoice', { preHandler: invoiceRetryAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    await orderService.retryOrderInvoice(id);
+    reply.status(200).send(await orderService.getOrder(id));
   });
 };
 

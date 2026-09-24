@@ -1592,31 +1592,42 @@ enum FulfilmentStatus {
 // "M15 calls issueInvoice() in-process... once the Order model exists"
 // pattern the M08 InvoiceService docblock already anticipated.
 model Order {
-  id                String                @id @default(uuid())
-  orderNumber       String                @unique
-  checkoutSessionId String                @unique
-  customerId        String?
-  guestSessionId    String?
-  contactName       String
-  contactMobile     String
-  contactEmail      String?
-  billingAddress    Json
-  shippingAddress   Json
-  shippingCost      Decimal               @db.Decimal(10, 2)
-  subtotal          Decimal               @db.Decimal(10, 2)
-  taxAmount         Decimal               @db.Decimal(10, 2)
-  grandTotal        Decimal               @db.Decimal(10, 2)
-  currency          String                @default("INR")
-  paymentMethod     CheckoutPaymentMethod
-  status            OrderStatus           @default(CONFIRMED)
+  id                   String                @id @default(uuid())
+  orderNumber          String                @unique
+  checkoutSessionId    String                @unique
+  customerId           String?
+  guestSessionId       String?
+  contactName          String
+  contactMobile        String
+  contactEmail         String?
+  billingAddress       Json
+  shippingAddress      Json
+  shippingCost         Decimal               @db.Decimal(10, 2)
+  subtotal             Decimal               @db.Decimal(10, 2)
+  taxAmount            Decimal               @db.Decimal(10, 2)
+  grandTotal           Decimal               @db.Decimal(10, 2)
+  currency             String                @default("INR")
+  paymentMethod        CheckoutPaymentMethod
+  status               OrderStatus           @default(CONFIRMED)
   // Set true when a cancellation/RTO on a PREPAID order requires a
   // refund that this milestone deliberately does not execute (M19's own
   // scope) - an honest marker for Finance/CS to action, never silently
   // dropped.
-  refundRequired    Boolean               @default(false)
-  invoiceId         String?               @unique
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
+  refundRequired       Boolean               @default(false)
+  invoiceId            String?               @unique
+  // Durable invoice-generation recovery state (independent-review
+  // finding #2, binding): "an invoice document is generated at order
+  // confirmation" MUST hold even after a transient failure, without
+  // ever risking the legitimately-paid order itself. This state lives
+  // in the database, not in memory, so recovery survives a process
+  // restart - a fresh process just queries `invoiceId IS NULL AND
+  // invoiceStatus IN (PENDING, FAILED)` and retries, no in-memory
+  // queue/timer required. See OrderService.reconcilePendingInvoices().
+  invoiceStatus        OrderInvoiceStatus    @default(PENDING)
+  invoiceFailureReason String?
+  invoiceAttempts      Int                   @default(0)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   customer        Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
   checkoutSession CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
@@ -1625,7 +1636,14 @@ model Order {
 
   @@index([customerId])
   @@index([guestSessionId])
+  @@index([invoiceStatus, invoiceId])
   @@map("orders")
+}
+
+enum OrderInvoiceStatus {
+  PENDING
+  ISSUED
+  FAILED
 }
 
 // Frozen line-item snapshot (same discipline as CheckoutSessionLine/

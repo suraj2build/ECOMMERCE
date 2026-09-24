@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff, createAuthenticatedCustomer } from '../helpers/auth.js';
+import { OrderService } from '../../src/modules/order/service.js';
 
 process.env.RAZORPAY_KEY_ID = 'test_key_id';
 process.env.RAZORPAY_KEY_SECRET = 'test_key_secret';
@@ -209,6 +210,47 @@ describe('Order Management (M15)', () => {
 
     const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
     return { sessionId, orderId: order.id, headers };
+  }
+
+  /**
+   * Same PREPAID checkout as prepaidCapturedOrder, but stops BEFORE
+   * sending the capture webhook - gives tests a real window between "a
+   * legitimate payment/order trigger is about to fire" and "it fires",
+   * in which to simulate a transient invoicing failure (e.g. a GST
+   * registration briefly deactivated) without touching
+   * OrderService/InvoiceService internals directly.
+   */
+  async function startPrepaidCheckoutPendingCapture(skuId: string, guestId: string, idempotencyKey: string) {
+    const headers = { [GUEST_HEADER]: guestId };
+    await addToCart(skuId, headers);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: {
+        contactName: 'Jane Doe',
+        contactMobile: '9876543210',
+        billingAddress: validAddress(),
+        shippingAddress: validAddress(),
+        paymentMethod: 'PREPAID',
+        idempotencyKey,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const sessionId = res.json().id as string;
+    const payment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+    return { sessionId, headers, providerReferenceId: payment.providerReferenceId! };
+  }
+
+  async function sendCaptureWebhook(providerReferenceId: string, idempotencyKey: string) {
+    const body = JSON.stringify(capturedEvent(providerReferenceId, `pay_${idempotencyKey}`));
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/webhooks/razorpay',
+      headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) },
+      payload: body,
+    });
+    expect(res.statusCode).toBe(200);
   }
 
   describe('Order creation trigger', () => {
@@ -651,6 +693,181 @@ describe('Order Management (M15)', () => {
         headers: { authorization: `Bearer ${customerToken}` },
       });
       expect(customerRes.statusCode).toBe(404);
+    });
+  });
+
+  /**
+   * Independent-review finding #2 (BLOCKER): a confirmed/paid order must
+   * never exist permanently without its required invoice. The original
+   * design logged-and-swallowed a transient invoice-issuance failure,
+   * leaving Order.invoiceId null with no durable trace to recover from.
+   * These six tests (A-F per the review) inject a REAL, deterministic
+   * failure - deactivating the GST registration in the real gap between
+   * "checkout confirms payment" and "the capture webhook triggers order
+   * creation" (see startPrepaidCheckoutPendingCapture/sendCaptureWebhook
+   * above) - then prove the durable recovery path.
+   */
+  describe('Durable invoice recovery (independent-review finding #2)', () => {
+    async function seedContextWithGstRegistrationId() {
+      const ctx = await seedContext();
+      const location = await testPrisma.location.findUniqueOrThrow({ where: { id: ctx.locationId } });
+      return { ...ctx, gstRegistrationId: location.gstRegistrationId! };
+    }
+
+    it('A: a normal order results in exactly one linked, ISSUED invoice', async () => {
+      const ctx = await seedContextWithGstRegistrationId();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      const { orderId } = await codOrder(skuId, 'guest-inv-normal', 'idem-inv-normal');
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } });
+      expect(order.invoiceStatus).toBe('ISSUED');
+      expect(order.invoiceId).not.toBeNull();
+      const invoices = await testPrisma.invoice.findMany({ where: { orderId } });
+      expect(invoices).toHaveLength(1);
+      expect(invoices[0]!.id).toBe(order.invoiceId);
+    });
+
+    it('B: a forced invoice failure leaves the order valid, with a durable failure record (not just a log line)', async () => {
+      const ctx = await seedContextWithGstRegistrationId();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      const { sessionId, providerReferenceId } = await startPrepaidCheckoutPendingCapture(skuId, 'guest-inv-fail', 'idem-inv-fail');
+
+      // Simulate a transient invoicing failure in the real gap between
+      // checkout confirming payment intent and the capture webhook
+      // triggering order+invoice creation.
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'PENDING' } });
+
+      await sendCaptureWebhook(providerReferenceId, 'idem-inv-fail');
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+      // The order itself is NOT lost or rolled back - payment was genuinely captured.
+      expect(order.status).toBe('CONFIRMED');
+      expect(order.invoiceId).toBeNull();
+      expect(order.invoiceStatus).toBe('FAILED');
+      expect(order.invoiceFailureReason).toBeTruthy();
+      expect(order.invoiceAttempts).toBe(1);
+
+      const invoices = await testPrisma.invoice.findMany({ where: { orderId: order.id } });
+      expect(invoices).toHaveLength(0);
+    });
+
+    it('C: retrying after the transient condition clears creates and links exactly one invoice', async () => {
+      const ctx = await seedContextWithGstRegistrationId();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      const { sessionId, providerReferenceId } = await startPrepaidCheckoutPendingCapture(skuId, 'guest-inv-retry', 'idem-inv-retry');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'PENDING' } });
+      await sendCaptureWebhook(providerReferenceId, 'idem-inv-retry');
+
+      let order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+      expect(order.invoiceStatus).toBe('FAILED');
+
+      // The transient condition clears.
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'ACTIVE' } });
+
+      const orderService = new OrderService(app);
+      await orderService.retryOrderInvoice(order.id);
+
+      order = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(order.invoiceStatus).toBe('ISSUED');
+      expect(order.invoiceId).not.toBeNull();
+      const invoices = await testPrisma.invoice.findMany({ where: { orderId: order.id } });
+      expect(invoices).toHaveLength(1);
+    });
+
+    it('D: retrying an already-recovered order repeatedly still produces exactly one invoice', async () => {
+      const ctx = await seedContextWithGstRegistrationId();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      const { sessionId, providerReferenceId } = await startPrepaidCheckoutPendingCapture(skuId, 'guest-inv-repeat', 'idem-inv-repeat');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'PENDING' } });
+      await sendCaptureWebhook(providerReferenceId, 'idem-inv-repeat');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'ACTIVE' } });
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+      const orderService = new OrderService(app);
+      await orderService.retryOrderInvoice(order.id);
+      await orderService.retryOrderInvoice(order.id);
+      await orderService.retryOrderInvoice(order.id);
+
+      const invoices = await testPrisma.invoice.findMany({ where: { orderId: order.id } });
+      expect(invoices).toHaveLength(1);
+      const finalOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(finalOrder.invoiceId).toBe(invoices[0]!.id);
+    });
+
+    it('E: two genuinely concurrent recovery attempts for the same order still produce exactly one invoice', async () => {
+      const ctx = await seedContextWithGstRegistrationId();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      const { sessionId, providerReferenceId } = await startPrepaidCheckoutPendingCapture(skuId, 'guest-inv-concurrent', 'idem-inv-concurrent');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'PENDING' } });
+      await sendCaptureWebhook(providerReferenceId, 'idem-inv-concurrent');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'ACTIVE' } });
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+      const serviceA = new OrderService(app);
+      const serviceB = new OrderService(app);
+      await Promise.all([serviceA.retryOrderInvoice(order.id), serviceB.retryOrderInvoice(order.id)]);
+
+      const invoices = await testPrisma.invoice.findMany({ where: { orderId: order.id } });
+      expect(invoices).toHaveLength(1);
+      const finalOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(finalOrder.invoiceStatus).toBe('ISSUED');
+      expect(finalOrder.invoiceId).toBe(invoices[0]!.id);
+    });
+
+    it('F: recovery is driven entirely by durable database state, not in-memory state - proven with a fresh OrderService instance (process-restart simulation)', async () => {
+      const ctx = await seedContextWithGstRegistrationId();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      const { sessionId, providerReferenceId } = await startPrepaidCheckoutPendingCapture(skuId, 'guest-inv-restart', 'idem-inv-restart');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'PENDING' } });
+      await sendCaptureWebhook(providerReferenceId, 'idem-inv-restart');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'ACTIVE' } });
+
+      const failedOrder = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+      expect(failedOrder.invoiceStatus).toBe('FAILED');
+
+      // A brand-new OrderService instance, with no reference to (or
+      // memory of) the original request/webhook that caused the
+      // failure - the only thing driving recovery is the order row's
+      // own invoiceStatus/invoiceId columns.
+      const freshProcessOrderService = new OrderService(app);
+      const result = await freshProcessOrderService.reconcilePendingInvoices();
+      expect(result.attempted).toBeGreaterThanOrEqual(1);
+      expect(result.succeeded).toBeGreaterThanOrEqual(1);
+
+      const recovered = await testPrisma.order.findUniqueOrThrow({ where: { id: failedOrder.id } });
+      expect(recovered.invoiceStatus).toBe('ISSUED');
+      expect(recovered.invoiceId).not.toBeNull();
+    });
+
+    it('lists orders with a failed invoice via the staff query filter, and lets staff manually retry via the route', async () => {
+      await grantPermissions('FINANCE', ['order:read', 'invoice:create']);
+      const { token } = await createAuthenticatedStaff(app, ['FINANCE']);
+
+      const ctx = await seedContextWithGstRegistrationId();
+      const skuId = await setupCheckoutableSku(500, ctx);
+      const { sessionId, providerReferenceId } = await startPrepaidCheckoutPendingCapture(skuId, 'guest-inv-route', 'idem-inv-route');
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'PENDING' } });
+      await sendCaptureWebhook(providerReferenceId, 'idem-inv-route');
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+
+      const listRes = await app.inject({
+        method: 'GET',
+        url: '/api/v1/orders?invoiceStatus=FAILED',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json().items.map((o: { id: string }) => o.id)).toContain(order.id);
+
+      await testPrisma.gstRegistration.update({ where: { id: ctx.gstRegistrationId }, data: { status: 'ACTIVE' } });
+
+      const retryRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${order.id}/retry-invoice`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(retryRes.statusCode).toBe(200);
+      expect(retryRes.json().invoiceStatus).toBe('ISSUED');
     });
   });
 });

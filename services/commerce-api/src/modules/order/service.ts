@@ -140,18 +140,113 @@ export class OrderService {
     // confirmation (spec, binding). Issued after the order's own
     // transaction commits (InvoiceService manages its own transaction)
     // - a transient invoice-issuance failure must never roll back an
-    // already-accepted, already-paid order. Logged, not silently
-    // swallowed, if it does fail; invoiceId simply stays null for
-    // manual follow-up (no automated retry queue built in this
-    // milestone).
-    try {
-      const invoiceId = await this.issueOrderInvoice(order.id);
-      await this.prisma.order.update({ where: { id: order.id }, data: { invoiceId } });
-    } catch (err) {
-      this.fastify.log.error({ err, orderId: order.id }, 'Failed to issue invoice at order confirmation');
-    }
+    // already-accepted, already-paid order, and must never surface as a
+    // failure of THIS call (the checkout submission / webhook delivery
+    // that triggered it) - the order and payment are genuinely valid
+    // regardless of invoicing's outcome. Failure is recorded DURABLY on
+    // the order row itself (invoiceStatus/invoiceFailureReason/
+    // invoiceAttempts) by retryOrderInvoice() itself, not just logged -
+    // see reconcilePendingInvoices() for the recovery path
+    // (independent-review finding #2). Deliberately swallowed here: a
+    // caller that needs the error (the manual retry route,
+    // reconcilePendingInvoices) calls retryOrderInvoice() directly.
+    await this.retryOrderInvoice(order.id).catch(() => undefined);
 
     return this.prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+  }
+
+  /**
+   * Attempts (or re-attempts) invoice issuance for one order and durably
+   * records the outcome on the order row. Fully idempotent: if an
+   * invoice already exists for this order - whether from a prior
+   * successful attempt whose `invoiceId` link failed to save, or from a
+   * concurrent attempt that just won - it is reused rather than
+   * duplicated, and `Order.invoiceId` ends up pointing at it either way.
+   * Never throws to a caller that doesn't ask for the error (see
+   * `createOrderFromCheckoutSession`'s call site, which must not fail
+   * order creation over this); `reconcilePendingInvoices()` and the
+   * staff retry route do want the error, so it's rethrown after the
+   * failure is durably recorded.
+   */
+  async retryOrderInvoice(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    if (order.invoiceId) return; // already linked - nothing to do, safe no-op
+
+    try {
+      const invoiceId = await this.issueOrderInvoiceIdempotent(orderId);
+      await this.prisma.order.update({
+        where: { id: orderId },
+        data: { invoiceId, invoiceStatus: 'ISSUED', invoiceFailureReason: null },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.fastify.log.error({ err, orderId }, 'Failed to issue invoice for order');
+      // Best-effort durability write: if even this update fails (e.g. a
+      // transient DB blip), the order simply stays at its previous
+      // invoiceStatus/invoiceAttempts and reconcilePendingInvoices()
+      // will pick it up again on its next sweep - never silently lost.
+      await this.prisma.order
+        .update({
+          where: { id: orderId },
+          data: { invoiceStatus: 'FAILED', invoiceFailureReason: message, invoiceAttempts: { increment: 1 } },
+        })
+        .catch((updateErr) => this.fastify.log.error({ updateErr, orderId }, 'Failed to durably record invoice failure'));
+      throw err;
+    }
+  }
+
+  /**
+   * Callable directly or by a future scheduler (same shape as
+   * InventoryService.expireStaleReservations()) - driven entirely by
+   * durable database state (`invoiceId IS NULL AND invoiceStatus IN
+   * (PENDING, FAILED)`), so recovery survives a process restart with no
+   * in-memory queue/timer dependency. Each order is retried independently;
+   * one order's failure never blocks another's recovery.
+   */
+  async reconcilePendingInvoices(): Promise<{ attempted: number; succeeded: number; failed: number }> {
+    const pending = await this.prisma.order.findMany({
+      where: { invoiceId: null, invoiceStatus: { in: ['PENDING', 'FAILED'] } },
+    });
+
+    let succeeded = 0;
+    let failed = 0;
+    for (const order of pending) {
+      try {
+        await this.retryOrderInvoice(order.id);
+        succeeded += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    return { attempted: pending.length, succeeded, failed };
+  }
+
+  /**
+   * Idempotent against a prior attempt that created the Invoice but
+   * crashed/failed before `retryOrderInvoice` could link
+   * `Order.invoiceId` to it - reuses the existing invoice rather than
+   * attempting (and failing against `Invoice.orderId`'s own unique
+   * constraint) to create a second one. Also handles the genuinely
+   * concurrent case: if two callers race past this existence check at
+   * the same time, the loser's `InvoiceService.issueInvoice()` call
+   * hits that same unique constraint as a raw P2002, and is resolved
+   * the same "return the winner's row" way every other idempotency race
+   * in this codebase is (InventoryService.reserve,
+   * CheckoutService.startCheckout, OrderService.createOrderFromCheckoutSession).
+   */
+  private async issueOrderInvoiceIdempotent(orderId: string): Promise<string> {
+    const existingInvoice = await this.prisma.invoice.findUnique({ where: { orderId } });
+    if (existingInvoice) return existingInvoice.id;
+
+    try {
+      return await this.issueOrderInvoice(orderId);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const winner = await this.prisma.invoice.findUnique({ where: { orderId } });
+        if (winner) return winner.id;
+      }
+      throw err;
+    }
   }
 
   private async issueOrderInvoice(orderId: string): Promise<string> {
@@ -211,15 +306,19 @@ export class OrderService {
     return this.toView(id);
   }
 
-  async listOrders(query: { status?: OrderStatus; take?: number; skip?: number }) {
+  async listOrders(query: { status?: OrderStatus; invoiceStatus?: 'PENDING' | 'ISSUED' | 'FAILED'; take?: number; skip?: number }) {
+    const where = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.invoiceStatus ? { invoiceStatus: query.invoiceStatus } : {}),
+    };
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
-        where: query.status ? { status: query.status } : undefined,
+        where,
         orderBy: { createdAt: 'desc' },
         take: query.take ?? 50,
         skip: query.skip ?? 0,
       }),
-      this.prisma.order.count({ where: query.status ? { status: query.status } : undefined }),
+      this.prisma.order.count({ where }),
     ]);
     return { items, total };
   }
@@ -248,6 +347,12 @@ export class OrderService {
       grandTotal: Number(order.grandTotal),
       currency: order.currency,
       invoiceId: order.invoiceId,
+      // Durable invoice-recovery state (independent-review finding #2) -
+      // "operators can identify invoice-generation failures" without
+      // reading server logs.
+      invoiceStatus: order.invoiceStatus,
+      invoiceFailureReason: order.invoiceFailureReason,
+      invoiceAttempts: order.invoiceAttempts,
       lines: order.lines.map((l) => ({
         id: l.id,
         skuId: l.skuId,
