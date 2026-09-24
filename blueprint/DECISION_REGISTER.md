@@ -716,6 +716,66 @@ of what is still needed from anyone, and from whom.
 - **Final decision:** Configurable attempt count (engineering default: 2) before RTO triggers.
 - **Affected specs:** `specs/16-shipping-tracking.md`
 
+#### SHIP-005 — M17 shipment/tracking state-machine/data-model shape · **P1**
+- **Question:** How do SHIP-001–004's engineering defaults map onto
+  concrete states, tables, and the carrier-adapter boundary, without
+  duplicating what the already-certified M15/M16 Order/OrderFulfilment
+  model owns or introducing a second SALE/RTO-posting path?
+- **Dependencies:** SHIP-001, SHIP-002, SHIP-003, SHIP-004, WH-003 (M16)
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-24
+  (M17 build)
+- **Final decision:** A new `Shipment` table, exactly one per
+  `OrderFulfilment` (1:1, unique on `fulfilmentId`) — split shipments
+  fall out of M15/M16's existing "one order, many OrderFulfilments"
+  model for free, no new one-to-many modelling needed. `Shipment` owns
+  only what M16's `OrderFulfilment` does not already: provider identity,
+  the provider's own shipment/AWB references, a platform-normalized
+  `ShipmentTrackingStatus` (`CREATED → BOOKED → IN_TRANSIT →
+  OUT_FOR_DELIVERY → {DELIVERED, DELIVERY_FAILED}`; `DELIVERY_FAILED →
+  OUT_FOR_DELIVERY` (retry) or `→ RTO_INITIATED` once the configured
+  `maxDeliveryAttempts` snapshot is exhausted; `RTO_INITIATED →
+  RTO_DELIVERED`), delivery-attempt/RTO counters, and carrier-booking
+  idempotency (`idempotencyKey`, unique). A second table,
+  `ShipmentTrackingEvent`, deliberately serves two roles at once (never
+  a second dedup-table pattern): the durable webhook-processing state
+  record (RECEIVED/PROCESSED/FAILED, exactly mirroring `PaymentEvent`'s
+  M14 design, dedup on `(provider, providerEventId)` with a nullable
+  `providerEventId` so POLL/MANUAL rows never collide) AND the
+  customer/audit-visible tracking-history ledger. Carrier integration
+  goes through a new `ShippingProvider` interface (ADR-0020, mirroring
+  `PaymentProvider`/ADR-0011 exactly) — `initiateShipment`/
+  `verifyWebhookSignature`/`parseWebhookEvent`/`trackShipment`; only
+  `MockCarrierProvider` ships in this milestone (SHIP-001 - no launch
+  carrier selected), a genuine deterministic test/reference double, not
+  a production integration. Shipment creation uses a two-phase durable-
+  intent design for the distributed-system failure window: the
+  `Shipment` row is written in status `CREATED` BEFORE the carrier is
+  ever called, and the adapter itself is idempotent-by-shipment-id, so a
+  crash between a successful carrier call and the local commit is
+  recoverable by simply retrying — never a lost or duplicated booking.
+  `OrderService.markFulfilmentShipped`/`markFulfilmentDelivered`/
+  `markRTO` gained an optional `externalTx` parameter (mirroring the
+  extension pattern M16 already used for `InventoryService.postAdjustment`)
+  so `ShippingService` reuses them atomically rather than duplicating any
+  SALE-posting or status-transition logic — M16's certified "exactly one
+  authoritative SALE posting point" invariant is unchanged; RTO remains
+  singly-posted through `markRTO` for the same reason.
+  **Documented limitation (not guessed):** `markRTO`'s existing M15/M16
+  guard ("every active order line SHIPPED, none delivered yet") only
+  allows the order-level RTO transition once the WHOLE order is
+  consistent with that — for a genuinely mixed-state multi-shipment
+  order (a sibling fulfilment already delivered), `ShippingService`
+  leaves the Shipment's own `RTO_INITIATED` fact standing and flags an
+  explicit `SYSTEM` audit entry for human reconciliation rather than
+  forcing the whole order to RTO or inventing a new business rule for
+  that case. Full design rationale:
+  `services/commerce-api/src/modules/shipping/service.ts`,
+  `services/commerce-api/src/modules/shipping/provider.ts`, and the
+  `Shipment`/`ShipmentTrackingEvent`/`ShipmentTrackingStatus` schema
+  comments in `packages/db/prisma/schema.prisma`.
+- **Affected specs:** `specs/16-shipping-tracking.md`,
+  `specs/14-order-management.md`, `specs/15-warehouse-fulfilment.md`
+
 ---
 
 ## CAN — Cancellation

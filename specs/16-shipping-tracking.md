@@ -1,6 +1,9 @@
 # 16. Shipping / Tracking
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SHIP-001`–`004`)
+**Status:** IMPLEMENTED (M17 build, 2026-09-24 — see
+`acceptance/m17-shipping-tracking.md`, `SHIP-005` in
+`blueprint/DECISION_REGISTER.md`, and ADR-0020. Originally APPROVED
+2026-09-22 — see `blueprint/DECISION_REGISTER.md` `SHIP-001`–`004`)
 
 ## Purpose
 

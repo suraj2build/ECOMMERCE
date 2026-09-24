@@ -6,8 +6,41 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-24: `M16 BUILD COMPLETE — AWAITING INDEPENDENT
-REVIEW. M17+ NOT AUTHORIZED.`** Phase 1 (M00–M07) completed an
+**Status as of 2026-09-24: `M17 BUILD COMPLETE — AWAITING INDEPENDENT
+REVIEW. M18+ NOT AUTHORIZED.`** An independent reviewer examined the
+M16 (Warehouse & Fulfilment) build — adversarial concurrency/
+idempotency/IDOR/BOLA/transactional-rollback testing, the full
+clean-state suite green, zero regressions to M00–M15 — and certified
+it at commit `97c575c9052148c5a48df82feffde8cf496cf97e` as
+**`M16_ENGINEERING_CERTIFIED`**. As with `PHASE_2_CERTIFIED`, this is
+**engineering-implementation scope only, not production-readiness** —
+`TAX-001`–`005`, `CUST-001`, `AUD-002`, `CART-004`, `SEC-001`,
+production performance verification, and qualified privacy/DPDP and
+tax/GST review all remain open pre-production gates (see
+`blueprint/DECISION_REGISTER.md`); none of them are resolved by this
+certification. The human project owner then gave explicit **"START
+BUILD — M17 SHIPPING / TRACKING"** authorization, scoped specifically
+and only to milestone **M17**, building on the `M16_ENGINEERING_CERTIFIED`
+baseline above, again with an explicit instruction not to continue
+automatically into M18+. M17 is now implemented and adversarially
+tested (carrier-adapter substitution, shipment-creation idempotency/
+concurrency/crash-retry, webhook dedup/resume, illegal-transition
+rejection, redelivery-exhaustion → automatic RTO, the exactly-one-SALE
+invariant, polling-fallback graceful degradation, split-shipment
+independent tracking, IDOR — see `test/integration/shipping.test.ts`
+and `acceptance/m17-shipping-tracking.md`), and the full clean-state
+suite (lint, typecheck, build, unit, integration — the complete
+pre-existing M00–M16 suite included, zero regressions: 320 passing
+backend tests across 27 files — migration-from-zero, seed) is green.
+**This agent does not self-declare M17 certified** — per the M16 build
+instruction's own stop condition and this same discipline applied
+consistently, that determination belongs to the independent reviewer.
+This agent has stopped and is awaiting independent human review before
+any M18+ work. See `acceptance/m17-shipping-tracking.md` for its
+Definition of Done and `SHIP-005` in `blueprint/DECISION_REGISTER.md`
+for its state-machine/data-model design record.
+
+Phase 1 (M00–M07) completed an
 expanded engineering certification pass and was accepted by the human
 project owner as **`PHASE_1_CERTIFIED`** at commit
 `240debca8179df0b05db07216cfce64d0b10d0ae`. On 2026-09-23 the human
@@ -65,27 +98,35 @@ reconciliation, order-invoice recovery). Every Phase 1 and Phase 2
 test remains mandatory and must stay green — M16's own build kept all
 of them green throughout.
 
-**This authorization does NOT extend beyond M16.**
+**This authorization does NOT extend beyond M17.**
 Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
 1–3) remains a separate thing from implementation authorization
 (Layer 4):
 
-- **M17 and every later milestone remain unauthorized.** No
-  application code for M17+ should be added until the human project
+- **M18 and every later milestone remain unauthorized.** No
+  application code for M18+ should be added until the human project
   owner gives a new, separate, explicit **START BUILD** authorization
-  for that phase — neither the Phase 2 authorization nor the M16
-  authorization carries forward automatically, regardless of how
-  cleanly M08–M16 land.
-- Do **not** interpret "M16 shipped cleanly" as authorization for the
+  for that phase — neither the Phase 2 authorization, the M16
+  authorization, nor the M17 authorization carries forward
+  automatically, regardless of how cleanly M08–M17 land.
+- Do **not** interpret "M17 shipped cleanly" as authorization for the
   next milestone. Authorization must be explicit and human-given for
   each milestone.
 - M16 (Warehouse & Fulfilment) was explicitly authorized on
   2026-09-24, scoped only to that milestone, building on the
   `PHASE_2_CERTIFIED` baseline at commit
-  `e1143994cd103e5fdabae9a779fbda56428a2164`. See `WH-003` in
-  `blueprint/DECISION_REGISTER.md` for the full state-machine/
-  data-model design record and `acceptance/m16-warehouse-fulfilment.md`
-  for the Definition of Done.
+  `e1143994cd103e5fdabae9a779fbda56428a2164`. It was independently
+  reviewed and certified `M16_ENGINEERING_CERTIFIED` at commit
+  `97c575c9052148c5a48df82feffde8cf496cf97e` (see §0 above). See
+  `WH-003` in `blueprint/DECISION_REGISTER.md` for the full state-
+  machine/data-model design record and
+  `acceptance/m16-warehouse-fulfilment.md` for the Definition of Done.
+- M17 (Shipping / Tracking) was explicitly authorized on 2026-09-24,
+  scoped only to that milestone, building on the
+  `M16_ENGINEERING_CERTIFIED` baseline above. See `SHIP-005` in
+  `blueprint/DECISION_REGISTER.md` for the state-machine/data-model
+  design record and `acceptance/m17-shipping-tracking.md` for the
+  Definition of Done.
 - M08 is explicitly authorized to proceed now as a **configurable
   compliance architecture** — GST registrations, HSN/rate reference
   data, and e-invoice applicability are all engineering-configurable,

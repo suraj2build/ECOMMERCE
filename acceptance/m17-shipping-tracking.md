@@ -1,36 +1,86 @@
 # M17 — Shipping / Tracking Acceptance Criteria
 
 **Spec(s):** `specs/16-shipping-tracking.md`
-**Status:** READY_FOR_IMPLEMENTATION
+**Status:** IMPLEMENTED (M17 build, 2026-09-24)
 
 ## Business acceptance
 
-- [ ] Carrier integration goes through the provider-abstraction layer
+- [x] Carrier integration goes through the provider-abstraction layer
       — no carrier-specific logic exists in core fulfilment/order code.
-- [ ] Customer can view shipment tracking status from their account.
+      `ShippingProvider` (`services/commerce-api/src/modules/shipping/provider.ts`,
+      ADR-0020) is the only interface `ShippingService`/routes depend
+      on; carrier-specific vocabulary (raw status strings, webhook
+      shapes) is normalized at the adapter boundary only. No launch
+      carrier is selected (`SHIP-001`) — `MockCarrierProvider` is a
+      genuine, deterministic test/reference double, honestly not
+      presented as a production integration.
+- [x] Customer can view shipment tracking status from their account.
+      `GET /api/v1/storefront/orders/:id` (`OrderService.toView`) embeds
+      a `shipment` summary (platform-normalized status, tracking ref,
+      delivery attempts) per fulfilment; the storefront order-detail
+      page (`apps/storefront/src/app/orders/[id]/page.tsx`) renders it.
 
 ## Functional acceptance
 
-- [ ] Tracking status updates via webhook where supported, with
-      polling fallback.
-- [ ] Failed delivery triggers configurable redelivery attempts before
-      RTO.
-- [ ] Split shipments are independently tracked and both visible to
-      the customer against the same order.
+- [x] Tracking status updates via webhook where supported, with
+      polling fallback. `ShippingService.handleCarrierWebhook`
+      (durable RECEIVED/PROCESSED/FAILED dedup, mirroring
+      `PaymentEvent`) and `ShippingService.pollPendingShipments`
+      (`POST /api/v1/shipments/poll`, callable directly or by a future
+      scheduler — no cron scheduler exists in this codebase yet, same
+      shape as `InventoryService.expireStaleReservations`).
+- [x] Failed delivery triggers configurable redelivery attempts before
+      RTO. `SHIPPING_MAX_REDELIVERY_ATTEMPTS` (default 2, `SHIP-004`),
+      snapshotted per shipment at creation (`Shipment.maxDeliveryAttempts`)
+      so a later config change never retroactively alters an in-flight
+      shipment's budget. Exhaustion auto-transitions to `RTO_INITIATED`
+      and reuses `OrderService.markRTO` (SYSTEM-attributed) — the one
+      authoritative RTO-posting point, never duplicated.
+- [x] Split shipments are independently tracked and both visible to
+      the customer against the same order. One `Shipment` per
+      `OrderFulfilment` (1:1, `fulfilmentId` unique); proven by an
+      integration test advancing one shipment to DELIVERED while a
+      sibling stays IN_TRANSIT and both show correctly via the
+      storefront order-detail API.
 
 ## Negative scenarios / edge cases
 
 1. Carrier tracking data temporarily unavailable → storefront shows
-   last-known platform status, not an error.
+   last-known platform status, not an error. `MockCarrierProvider.trackShipment`
+   returning `null` (its honest "nothing new") is a no-op in
+   `pollPendingShipments` — proven by an integration test.
 2. Redelivery attempts exhausted → order correctly transitions to RTO
-   (`acceptance/m15-order-management.md`).
+   (`acceptance/m15-order-management.md`). Proven end to end
+   (`test/integration/shipping.test.ts`), including the COD
+   `refundRequired: false` branch `OrderService.markRTO` already
+   defines. **Documented limitation, not guessed:** for a genuinely
+   mixed-state multi-shipment order (a sibling fulfilment already
+   DELIVERED), `markRTO`'s existing M15/M16 guard correctly refuses
+   the order-level transition — the Shipment's own `RTO_INITIATED` fact
+   still commits, and an explicit `SYSTEM` audit entry flags the
+   order-level rollup for human reconciliation. What order-level RTO
+   should mean for that specific mixed state is a genuine open business
+   question (`blueprint/DECISION_REGISTER.md`), not resolved here.
 
 ## Test requirements
 
-- [ ] Integration tests: carrier adapter interface swap (proves
+- [x] Integration tests: carrier adapter interface swap (proves
       abstraction works — a mock carrier can be substituted without
-      touching fulfilment logic).
-- [ ] E2E: `acceptance/e2e-commerce-flows.md` FLOW 15 (RTO).
+      touching fulfilment logic). `test/integration/shipping.test.ts`
+      "Carrier adapter substitution (SHIP-002)" registers two
+      differently-configured `MockCarrierProvider` instances against
+      the same `ShippingService` code, unmodified.
+- [x] E2E: `acceptance/e2e-commerce-flows.md` FLOW 15 (RTO). Covered by
+      backend integration tests (repeated failed-delivery-attempt
+      webhooks → automatic RTO, COD closure without refund) — honestly
+      not a new Playwright browser spec: the storefront order-detail
+      page change here is a display-only addition to the already-
+      E2E-tested M15 `/orders/[id]` page (`test/e2e-storefront/orders.spec.ts`),
+      and FLOW 15's own assertions (state transition, refund branching)
+      are server-side business logic, not new browser interaction
+      surface — the same "backend integration coverage, not a new
+      browser click-path" scoping call M15/M16 already made for their
+      own server-triggered transitions (RTO, exceptions).
 
 ## Definition of Done
 
