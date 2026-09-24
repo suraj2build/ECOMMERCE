@@ -4,6 +4,8 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
+import { PaymentService } from '../../src/modules/payment/service.js';
+import { InventoryService } from '../../src/modules/inventory/service.js';
 
 // RazorpayPaymentProvider only fails safe to UNAVAILABLE when these are
 // unset (@fcp/config's own default) - set before the first loadEnv()
@@ -71,10 +73,18 @@ describe('Payment (M14)', () => {
     });
 
     orderCounter += 1;
+    // A distinct Razorpay order id per call, not per test (real Razorpay
+    // never issues the same order id for two independent order-creation
+    // requests, e.g. the original attempt and a later retry-payment
+    // attempt on the same checkout session) - required for the webhook
+    // handler's providerReferenceId correlation to unambiguously resolve
+    // to the correct Payment row when a session has more than one.
+    let callCounter = 0;
     fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const href = url.toString();
       if (href.endsWith('/orders') && init?.method === 'POST') {
-        return new Response(JSON.stringify({ id: `order_mock_${orderCounter}` }), { status: 200 });
+        callCounter += 1;
+        return new Response(JSON.stringify({ id: `order_mock_${orderCounter}_${callCounter}` }), { status: 200 });
       }
       throw new Error(`Unexpected fetch in test: ${href}`);
     });
@@ -380,7 +390,6 @@ describe('Payment (M14)', () => {
         data: { createdAt: new Date(Date.now() - 1_000_000) },
       });
 
-      const { PaymentService } = await import('../../src/modules/payment/service.js');
       const paymentService = new PaymentService(app);
       const count = await paymentService.expireStalePayments();
       expect(count).toBe(1);
@@ -392,6 +401,239 @@ describe('Payment (M14)', () => {
 
       const reservation = await testPrisma.inventoryReservation.findFirstOrThrow({ where: { skuId } });
       expect(reservation.status).toBe('RELEASED');
+    });
+  });
+
+  /**
+   * Independent-review finding #3 (BLOCKER): a genuine Razorpay capture
+   * can arrive at (or after) the same moment `expireStalePayments`/
+   * `InventoryService.expireStaleReservations` releases this same
+   * payment's reservation for real abandonment/timeout - both are
+   * legitimate, concurrently-running processes reacting to real events,
+   * not a client bug. These tests force each side of that race
+   * deterministically (forging `createdAt`/`expiresAt` into the past,
+   * same technique as the expiry-sweep test above) and prove the
+   * resulting payment/reservation/session state machine never (a)
+   * silently loses a captured payment, (b) fabricates an allocation the
+   * physical stock no longer backs, (c) oversells, (d) releases
+   * inventory out from under a capture that legitimately won the race,
+   * or (e) produces more than one terminal outcome for the same event.
+   */
+  describe('Payment capture / reservation-expiry reconciliation (independent-review finding #3)', () => {
+    it('A: expiry wins the race - a payment expired before its capture webhook arrives is recorded as CAPTURED but flagged for manual reconciliation, never fake-allocated', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-race-a', 'idem-race-a');
+      const payment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+
+      // Force the payment stale and run the expiry sweep to completion
+      // FIRST - it legitimately wins, releasing the reservation - before
+      // the (genuinely real, just slow-to-arrive) capture webhook shows up.
+      await testPrisma.payment.updateMany({ where: { checkoutSessionId: sessionId }, data: { createdAt: new Date(Date.now() - 1_000_000) } });
+      const paymentService = new PaymentService(app);
+      expect(await paymentService.expireStalePayments()).toBe(1);
+
+      const expiredReservation = await testPrisma.inventoryReservation.findFirstOrThrow({ where: { skuId } });
+      expect(expiredReservation.status).toBe('RELEASED');
+
+      const captureBody = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_race_a_1'));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/razorpay',
+        headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(captureBody) },
+        payload: captureBody,
+      });
+      // The webhook delivery itself still succeeds (200) - Razorpay must
+      // never see a failure for an event we handled and recorded.
+      expect(res.statusCode).toBe(200);
+
+      const finalPayment = await testPrisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
+      expect(finalPayment.status).toBe('CAPTURED'); // money is never silently dropped
+
+      const finalSession = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(finalSession.status).toBe('CAPTURE_RECONCILIATION_REQUIRED');
+      expect(finalSession.reconciliationReason).toBeTruthy();
+
+      // Never fake-allocated: no order, reservation stays released, not
+      // silently re-converted.
+      const order = await testPrisma.order.findUnique({ where: { checkoutSessionId: sessionId } });
+      expect(order).toBeNull();
+      const reservation = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: expiredReservation.id } });
+      expect(reservation.status).toBe('RELEASED');
+
+      // Financial event is auditable, not just a log line.
+      const auditEntry = await testPrisma.auditLog.findFirst({ where: { action: 'payment.captured.reconciliation_required', entityId: payment.id } });
+      expect(auditEntry).not.toBeNull();
+    });
+
+    it('B: capture wins the race - a normal, already-confirmed capture is never undone by a stale-payment sweep that runs afterward', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-race-b', 'idem-race-b');
+
+      const captureBody = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_race_b_1'));
+      const captureRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/razorpay',
+        headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(captureBody) },
+        payload: captureBody,
+      });
+      expect(captureRes.statusCode).toBe(200);
+
+      const capturedPayment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+      expect(capturedPayment.status).toBe('CAPTURED');
+      const convertedReservation = await testPrisma.inventoryReservation.findFirstOrThrow({ where: { skuId } });
+      expect(convertedReservation.status).toBe('CONVERTED');
+
+      // Now force the (already-captured) payment to LOOK stale by
+      // createdAt, and run the sweep - it must find nothing to expire,
+      // since `expireStalePayments` only ever selects `status: 'INITIATED'`.
+      await testPrisma.payment.updateMany({ where: { checkoutSessionId: sessionId }, data: { createdAt: new Date(Date.now() - 1_000_000) } });
+      const paymentService = new PaymentService(app);
+      expect(await paymentService.expireStalePayments()).toBe(0);
+
+      const finalPayment = await testPrisma.payment.findUniqueOrThrow({ where: { id: capturedPayment.id } });
+      expect(finalPayment.status).toBe('CAPTURED');
+      const finalSession = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(finalSession.status).toBe('CONFIRMED');
+      const finalReservation = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: convertedReservation.id } });
+      expect(finalReservation.status).toBe('CONVERTED'); // never released out from under the capture
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+      expect(order.status).toBe('CONFIRMED');
+    });
+
+    it('C: a genuinely concurrent capture and expiry-sweep on the same payment reach exactly one consistent terminal outcome, never a mixed/inconsistent state', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-race-c', 'idem-race-c');
+      const payment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+      const originalReservation = await testPrisma.inventoryReservation.findFirstOrThrow({ where: { skuId } });
+
+      await testPrisma.payment.updateMany({ where: { checkoutSessionId: sessionId }, data: { createdAt: new Date(Date.now() - 1_000_000) } });
+
+      const paymentService = new PaymentService(app);
+      const captureBody = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_race_c_1'));
+
+      // Genuinely concurrent: both transactions race to lock the same
+      // Payment row (and, if the capture reaches it, the same
+      // InventoryReservation row) at the same instant.
+      const [webhookRes] = await Promise.all([
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/webhooks/razorpay',
+          headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(captureBody) },
+          payload: captureBody,
+        }),
+        paymentService.expireStalePayments(),
+      ]);
+      expect(webhookRes.statusCode).toBe(200);
+
+      const finalPayment = await testPrisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
+      // Exactly one terminal outcome, and money is never lost regardless
+      // of which side won.
+      expect(finalPayment.status).toBe('CAPTURED');
+
+      const finalSession = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      const finalReservation = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: originalReservation.id } });
+      const order = await testPrisma.order.findUnique({ where: { checkoutSessionId: sessionId } });
+
+      if (finalSession.status === 'CONFIRMED') {
+        // Capture won: a real order exists, the reservation converted
+        // into a firm allocation - never released.
+        expect(order).not.toBeNull();
+        expect(finalReservation.status).toBe('CONVERTED');
+      } else {
+        // Expiry won: no fake allocation was fabricated for a reservation
+        // that is genuinely gone - flagged for reconciliation instead.
+        expect(finalSession.status).toBe('CAPTURE_RECONCILIATION_REQUIRED');
+        expect(order).toBeNull();
+        expect(finalReservation.status).toBe('RELEASED');
+      }
+
+      // Never oversell/double-account while reconciling: `reserved`
+      // reflects the ONE reservation exactly once, whichever side won -
+      // never double-released (negative-clamped away) and never left
+      // reserved for a session that also got a fresh reservation.
+      const location = await testPrisma.location.findFirst({ where: { isActive: true } });
+      const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({
+        where: { skuId_locationId: { skuId, locationId: location!.id } },
+      });
+      expect(balance.reserved).toBe(finalReservation.status === 'CONVERTED' ? originalReservation.quantity : 0);
+    });
+
+    it('D: a capture arriving for a reservation already released by some other path (not the expiry sweep) is flagged for reconciliation, not force-allocated, and creates no order', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-race-d', 'idem-race-d');
+      const reservation = await testPrisma.inventoryReservation.findFirstOrThrow({ where: { skuId } });
+
+      // Simulate the reservation having already been given up on through
+      // a path other than the payment-expiry sweep (e.g. its own
+      // independent TTL sweep, InventoryService.expireStaleReservations)
+      // - directly, deterministically, without needing to also force the
+      // Payment's own timeout.
+      const inventory = new InventoryService(app);
+      await inventory.releaseReservation(reservation.id, 'reservation TTL expired');
+
+      const captureBody = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_race_d_1'));
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/razorpay',
+        headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(captureBody) },
+        payload: captureBody,
+      });
+      expect(res.statusCode).toBe(200);
+
+      const payment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: sessionId } });
+      expect(payment.status).toBe('CAPTURED');
+      const session = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(session.status).toBe('CAPTURE_RECONCILIATION_REQUIRED');
+      const order = await testPrisma.order.findUnique({ where: { checkoutSessionId: sessionId } });
+      expect(order).toBeNull();
+    });
+
+    it('E: two different webhook deliveries reporting the same late capture are idempotent - still exactly one payment, one reconciliation record, one audit entry', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId } = await startPrepaidCheckout(skuId, 'guest-race-e', 'idem-race-e');
+      const reservation = await testPrisma.inventoryReservation.findFirstOrThrow({ where: { skuId } });
+      const inventory = new InventoryService(app);
+      await inventory.releaseReservation(reservation.id, 'reservation TTL expired');
+
+      // Two DISTINCT Razorpay event ids, both reporting the same
+      // underlying capture - not merely the same event id retried
+      // (already covered by the PaymentEvent-level dedup test above).
+      const firstBody = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_race_e_1'));
+      const firstRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/razorpay',
+        headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(firstBody) },
+        payload: firstBody,
+      });
+      expect(firstRes.statusCode).toBe(200);
+
+      const secondBody = JSON.stringify(razorpayOrderCapturedEvent(orderId, 'pay_race_e_1'));
+      const secondEvent = JSON.parse(secondBody);
+      secondEvent.id = 'evt_pay_race_e_1_captured_retry';
+      const secondBodyStr = JSON.stringify(secondEvent);
+      const secondRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/razorpay',
+        headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(secondBodyStr) },
+        payload: secondBodyStr,
+      });
+      expect(secondRes.statusCode).toBe(200);
+
+      const payments = await testPrisma.payment.findMany({ where: { checkoutSessionId: sessionId } });
+      expect(payments).toHaveLength(1);
+      expect(payments[0]!.status).toBe('CAPTURED');
+
+      const session = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
+      expect(session.status).toBe('CAPTURE_RECONCILIATION_REQUIRED');
+
+      const order = await testPrisma.order.findUnique({ where: { checkoutSessionId: sessionId } });
+      expect(order).toBeNull(); // still no duplicate/fabricated order
+
+      const auditEntries = await testPrisma.auditLog.findMany({
+        where: { action: 'payment.captured.reconciliation_required', entityId: payments[0]!.id },
+      });
+      expect(auditEntries).toHaveLength(1); // the second delivery was a true no-op, not a second flag
     });
   });
 });

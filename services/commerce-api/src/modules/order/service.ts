@@ -47,12 +47,25 @@ export class OrderService {
    * `payment.captured` webhook. Idempotent on checkoutSessionId - a
    * duplicate call (defense in depth on top of PaymentEvent's own
    * webhook dedup) returns the existing order rather than erroring.
+   *
+   * Accepts an optional `externalTx` (independent-review finding #3):
+   * PaymentService's capture path runs this INSIDE the same transaction
+   * that flips Payment to CAPTURED and CheckoutSession to CONFIRMED, so
+   * that if reservation conversion below fails (the reservation was
+   * already lost to a genuinely concurrent expiry/release sweep), the
+   * WHOLE transaction - payment/session state included - rolls back
+   * atomically instead of leaving a captured payment permanently
+   * confirmed with no order. CheckoutService's COD path still calls
+   * this at the top level (no race to guard against: COD has no
+   * separate async capture step).
    */
-  async createOrderFromCheckoutSession(checkoutSessionId: string) {
-    const existing = await this.prisma.order.findUnique({ where: { checkoutSessionId } });
+  async createOrderFromCheckoutSession(checkoutSessionId: string, externalTx?: Prisma.TransactionClient) {
+    const db = externalTx ?? this.prisma;
+
+    const existing = await db.order.findUnique({ where: { checkoutSessionId } });
     if (existing) return existing;
 
-    const session = await this.prisma.checkoutSession.findUniqueOrThrow({
+    const session = await db.checkoutSession.findUniqueOrThrow({
       where: { id: checkoutSessionId },
       include: { lines: true },
     });
@@ -60,66 +73,71 @@ export class OrderService {
       throw new ValidationError(`Cannot create an order from a CheckoutSession in status '${session.status}'`);
     }
 
+    const run = async (tx: Prisma.TransactionClient) => {
+      const orderNumber = await this.nextOrderNumber(tx);
+
+      const created = await tx.order.create({
+        data: {
+          orderNumber,
+          checkoutSessionId: session.id,
+          customerId: session.customerId,
+          guestSessionId: session.guestSessionId,
+          contactName: session.contactName,
+          contactMobile: session.contactMobile,
+          contactEmail: session.contactEmail,
+          billingAddress: session.billingAddress as object,
+          shippingAddress: session.shippingAddress as object,
+          shippingCost: session.shippingCost,
+          subtotal: session.subtotal,
+          taxAmount: session.taxAmount,
+          grandTotal: session.grandTotal,
+          currency: session.currency,
+          paymentMethod: session.paymentMethod,
+          status: 'CONFIRMED',
+          lines: {
+            create: session.lines.map((l) => ({
+              skuId: l.skuId,
+              locationId: l.locationId,
+              quantity: l.quantity,
+              unitPriceInclusive: l.unitPriceInclusive,
+              taxableValueSnapshot: l.taxableValueSnapshot,
+              gstRatePercent: l.gstRatePercent,
+              taxAmountSnapshot: l.taxAmountSnapshot,
+              lineTotalInclusive: l.lineTotalInclusive,
+              reservationId: l.reservationId,
+              status: 'ALLOCATED',
+            })),
+          },
+        },
+        include: { lines: true },
+      });
+
+      // Reservation -> committed allocation (specs/13-payment.md: "on
+      // successful payment capture / successful COD order acceptance").
+      // Throws if a reservation is no longer ACTIVE (already released
+      // by a concurrent expiry sweep) - deliberately left uncaught here
+      // so the whole transaction rolls back (see docblock above).
+      for (const line of created.lines) {
+        if (line.reservationId) {
+          await this.inventory.convertReservation(line.reservationId, tx);
+        }
+      }
+
+      await recordAudit(tx, {
+        actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',
+        action: 'order.create',
+        entityType: 'Order',
+        entityId: created.id,
+        newValue: { orderNumber, status: created.status, grandTotal: Number(created.grandTotal) },
+        reference: checkoutSessionId,
+      });
+
+      return created;
+    };
+
     let order;
     try {
-      order = await this.prisma.$transaction(async (tx) => {
-        const orderNumber = await this.nextOrderNumber(tx);
-
-        const created = await tx.order.create({
-          data: {
-            orderNumber,
-            checkoutSessionId: session.id,
-            customerId: session.customerId,
-            guestSessionId: session.guestSessionId,
-            contactName: session.contactName,
-            contactMobile: session.contactMobile,
-            contactEmail: session.contactEmail,
-            billingAddress: session.billingAddress as object,
-            shippingAddress: session.shippingAddress as object,
-            shippingCost: session.shippingCost,
-            subtotal: session.subtotal,
-            taxAmount: session.taxAmount,
-            grandTotal: session.grandTotal,
-            currency: session.currency,
-            paymentMethod: session.paymentMethod,
-            status: 'CONFIRMED',
-            lines: {
-              create: session.lines.map((l) => ({
-                skuId: l.skuId,
-                locationId: l.locationId,
-                quantity: l.quantity,
-                unitPriceInclusive: l.unitPriceInclusive,
-                taxableValueSnapshot: l.taxableValueSnapshot,
-                gstRatePercent: l.gstRatePercent,
-                taxAmountSnapshot: l.taxAmountSnapshot,
-                lineTotalInclusive: l.lineTotalInclusive,
-                reservationId: l.reservationId,
-                status: 'ALLOCATED',
-              })),
-            },
-          },
-          include: { lines: true },
-        });
-
-        // Reservation -> committed allocation (specs/13-payment.md: "on
-        // successful payment capture / successful COD order acceptance").
-        for (const line of created.lines) {
-          if (line.reservationId) {
-            await this.inventory.convertReservation(line.reservationId, tx);
-          }
-        }
-
-        await recordAudit(tx, {
-          actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',
-          action: 'order.create',
-          entityType: 'Order',
-          entityId: created.id,
-          newValue: { orderNumber, status: created.status, grandTotal: Number(created.grandTotal) },
-          reference: checkoutSessionId,
-        });
-
-        return created;
-      });
+      order = externalTx ? await run(externalTx) : await this.prisma.$transaction(run);
     } catch (err) {
       // Two concurrent callers (e.g. the checkout idempotency-race
       // "winner" path and this same method invoked defensively a
@@ -130,10 +148,25 @@ export class OrderService {
       // own idempotency races. The loser returns the winner's order
       // rather than surfacing a raw P2002 as an opaque 500.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        const winner = await this.prisma.order.findUnique({ where: { checkoutSessionId } });
-        if (winner) return winner;
+        try {
+          const winner = await db.order.findUnique({ where: { checkoutSessionId } });
+          if (winner) return winner;
+        } catch {
+          // externalTx may already be aborted by the constraint
+          // violation above - fall through to rethrow the original
+          // error, which the caller (PaymentService.applyCaptureOutcome)
+          // routes to explicit reconciliation rather than losing it.
+        }
       }
       throw err;
+    }
+
+    if (externalTx) {
+      // The caller owns its own outer transaction (and, per finding #2,
+      // owns issuing this order's invoice AFTER that transaction
+      // commits) - issueInvoice must never run nested inside another
+      // transaction, so don't attempt it here.
+      return order;
     }
 
     // Every order MUST generate an invoice-equivalent document at
@@ -227,12 +260,18 @@ export class OrderService {
    * `Order.invoiceId` to it - reuses the existing invoice rather than
    * attempting (and failing against `Invoice.orderId`'s own unique
    * constraint) to create a second one. Also handles the genuinely
-   * concurrent case: if two callers race past this existence check at
-   * the same time, the loser's `InvoiceService.issueInvoice()` call
-   * hits that same unique constraint as a raw P2002, and is resolved
-   * the same "return the winner's row" way every other idempotency race
-   * in this codebase is (InventoryService.reserve,
-   * CheckoutService.startCheckout, OrderService.createOrderFromCheckoutSession).
+   * concurrent case: two callers can race past this existence check at
+   * the same time and both call `InvoiceService.issueInvoice()` - the
+   * loser observes the DB's own unique constraint on `Invoice.orderId`
+   * one of two ways depending on exact timing, and both are treated the
+   * same "return the winner's row" way every other idempotency race in
+   * this codebase is (InventoryService.reserve, CheckoutService.
+   * startCheckout, OrderService.createOrderFromCheckoutSession):
+   *  - a raw P2002 if the loser's own INSERT loses the race, or
+   *  - `issueInvoice()`'s own ConflictError if the loser's pre-insert
+   *    existence check happens to run just after the winner committed
+   *    (a real race exposed under load, not merely theoretical - seen
+   *    directly in test E's genuinely concurrent retry scenario).
    */
   private async issueOrderInvoiceIdempotent(orderId: string): Promise<string> {
     const existingInvoice = await this.prisma.invoice.findUnique({ where: { orderId } });
@@ -241,7 +280,9 @@ export class OrderService {
     try {
       return await this.issueOrderInvoice(orderId);
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const isRaceLoss =
+        (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') || err instanceof ConflictError;
+      if (isRaceLoss) {
         const winner = await this.prisma.invoice.findUnique({ where: { orderId } });
         if (winner) return winner.id;
       }

@@ -1410,6 +1410,19 @@ enum CheckoutSessionStatus {
   PAYMENT_FAILED
   CANCELLED
   EXPIRED
+  // Independent-review finding #3: a genuine Razorpay capture arrived
+  // after this session's own attempt had already reached a terminal
+  // non-success state (EXPIRED/FAILED) - most plausibly because its
+  // inventory reservation was already released by the payment-expiry
+  // or reservation-TTL sweep. The payment is real and is recorded as
+  // CAPTURED regardless (see Payment.status) - inventory is never
+  // auto-reallocated here (that would risk oversell/a fake allocation
+  // that ships nothing) and no order is created. This is a terminal
+  // state requiring manual operator reconciliation (manually fulfil
+  // once stock is confirmed available, or a refund - the refund
+  // workflow itself is specs/19-refunds.md, M20, out of this
+  // milestone's scope).
+  CAPTURE_RECONCILIATION_REQUIRED
 }
 
 enum CheckoutPaymentMethod {
@@ -1439,12 +1452,17 @@ model CheckoutSession {
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   confirmedAt        DateTime?
+  // Set only when status = CAPTURE_RECONCILIATION_REQUIRED (independent-
+  // review finding #3) - the operator-facing explanation of why a
+  // genuinely-captured payment did not result in an order.
+  reconciliationReason String?
 
   customer Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines    CheckoutSessionLine[]
   payments Payment[]
   order    Order?
 
+  @@index([status])
   @@map("checkout_sessions")
 }
 

@@ -67,6 +67,42 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Row-locks and returns one InventoryReservation by id. MUST run
+   * inside a transaction. Every state transition on a reservation
+   * (convert/release/cancel/expire) reads it through this lock instead
+   * of a plain findUnique, so two concurrent transitions on the SAME
+   * reservation (e.g. a Razorpay capture converting it into an order
+   * allocation, racing a TTL sweep releasing it as stale) genuinely
+   * serialize on the database, rather than both reading "ACTIVE" before
+   * either commits and one silently clobbering the other's outcome
+   * (independent-review finding #3). Whichever transaction's UPDATE
+   * commits first wins; the other, once unblocked, re-reads the
+   * now-current status through this same lock and takes its own
+   * pre-existing idempotent-guard branch (a no-op if the winner already
+   * did the same thing, or an explicit rejection/reconciliation path if
+   * the two outcomes conflict) - never a blind overwrite.
+   */
+  private async lockReservation(
+    tx: Prisma.TransactionClient,
+    reservationId: string,
+  ): Promise<{
+    id: string;
+    skuId: string;
+    locationId: string;
+    quantity: number;
+    status: 'ACTIVE' | 'CONVERTED' | 'RELEASED' | 'EXPIRED';
+    expiresAt: Date;
+  } | null> {
+    const rows = await tx.$queryRaw<
+      { id: string; skuId: string; locationId: string; quantity: number; status: 'ACTIVE' | 'CONVERTED' | 'RELEASED' | 'EXPIRED'; expiresAt: Date }[]
+    >`SELECT "id", "skuId", "locationId", "quantity", "status", "expiresAt"
+      FROM "inventory_reservations"
+      WHERE "id" = ${reservationId}
+      FOR UPDATE`;
+    return rows[0] ?? null;
+  }
+
   /** Row-locks and returns the current balance for (skuId, locationId). MUST run inside a transaction. */
   private async lockBalance(
     tx: Prisma.TransactionClient,
@@ -342,9 +378,9 @@ export class InventoryService {
   }
 
   /** RESERVATION_RELEASE: reserved -= quantity. Idempotent - releasing an already-released reservation is a safe no-op. */
-  async releaseReservation(reservationId: string, reason?: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const reservation = await tx.inventoryReservation.findUnique({ where: { id: reservationId } });
+  async releaseReservation(reservationId: string, reason?: string, externalTx?: Prisma.TransactionClient) {
+    const run = async (tx: Prisma.TransactionClient) => {
+      const reservation = await this.lockReservation(tx, reservationId);
       if (!reservation) throw new NotFoundError('InventoryReservation', reservationId);
       if (reservation.status !== 'ACTIVE') return reservation; // already released/converted/expired - no-op
 
@@ -368,7 +404,8 @@ export class InventoryService {
         where: { id: reservationId },
         data: { status: 'RELEASED' },
       });
-    });
+    };
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }
 
   /** Releases every ACTIVE reservation past its expiresAt. Callable directly or by a future scheduler. */
@@ -379,7 +416,15 @@ export class InventoryService {
 
     for (const reservation of stale) {
       await this.prisma.$transaction(async (tx) => {
-        const fresh = await tx.inventoryReservation.findUnique({ where: { id: reservation.id } });
+        // Locked read (independent-review finding #3): serializes this
+        // TTL-driven release against a concurrent convertReservation()
+        // call (e.g. a Razorpay capture that is, at this same instant,
+        // converting this very reservation into a firm order
+        // allocation). Whichever transaction commits first wins; if
+        // conversion already won, this re-read sees CONVERTED (not
+        // ACTIVE) and correctly skips - never releasing inventory out
+        // from under a legitimately-completed capture.
+        const fresh = await this.lockReservation(tx, reservation.id);
         if (!fresh || fresh.status !== 'ACTIVE') return;
 
         const balance = await this.lockBalance(tx, fresh.skuId, fresh.locationId);
@@ -417,7 +462,14 @@ export class InventoryService {
    */
   async convertReservation(reservationId: string, externalTx?: Prisma.TransactionClient) {
     const run = async (tx: Prisma.TransactionClient) => {
-      const reservation = await tx.inventoryReservation.findUnique({ where: { id: reservationId } });
+      // Locked read (independent-review finding #3) - see the comment
+      // on lockReservation()/expireStaleReservations(). If a concurrent
+      // expiry/release sweep already won this reservation, this throws
+      // rather than fabricating an allocation the physical stock no
+      // longer backs; the caller (a payment capture, in practice) is
+      // responsible for routing that failure to explicit reconciliation
+      // rather than silently losing the captured payment.
+      const reservation = await this.lockReservation(tx, reservationId);
       if (!reservation) throw new NotFoundError('InventoryReservation', reservationId);
       if (reservation.status === 'CONVERTED') return reservation;
       if (reservation.status !== 'ACTIVE') {
@@ -448,7 +500,7 @@ export class InventoryService {
    */
   async cancelAllocation(reservationId: string, reason: string, externalTx?: Prisma.TransactionClient) {
     const run = async (tx: Prisma.TransactionClient) => {
-      const reservation = await tx.inventoryReservation.findUnique({ where: { id: reservationId } });
+      const reservation = await this.lockReservation(tx, reservationId);
       if (!reservation) throw new NotFoundError('InventoryReservation', reservationId);
       if (reservation.status !== 'CONVERTED') return reservation;
 

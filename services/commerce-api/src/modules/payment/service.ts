@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { Prisma, type PrismaClient } from '@fcp/db';
+import { Prisma, type PrismaClient, type PaymentStatus } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
+import { NotFoundError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { resolvePaymentProvider, type WebhookEvent } from '../checkout/payment-provider.js';
 import { recordAudit } from '../audit/service.js';
@@ -95,20 +96,47 @@ export class PaymentService {
       return { ok: true };
     }
 
-    await this.applyOutcome(payment.id, event);
-
     // "successful payment capture" is the PREPAID order-creation trigger
-    // (specs/13-payment.md) - mirrors CheckoutService's own call to the
-    // same method on COD acceptance. Idempotent on checkoutSessionId, so
-    // a captured/already-CONFIRMED session (a genuine capture just now,
-    // or a replayed/duplicate-outcome webhook that was a no-op above) is
-    // always safe to call - it only ever throws if the session were
-    // somehow still not CONFIRMED, which capture guarantees it now is.
-    if (event.outcome === 'CAPTURED') {
-      await this.order.createOrderFromCheckoutSession(payment.checkoutSessionId);
+    // (specs/13-payment.md). Order creation (and the checkout-time
+    // reservation's conversion into a firm allocation) now happens
+    // INSIDE applyOutcome's own capture transaction, not as a separate
+    // call after it commits (independent-review finding #3) - see
+    // applyCaptureOutcome for why: a late/lost-race reservation must
+    // roll back the payment/session state atomically with it, never
+    // leave a CAPTURED payment linked to no order.
+    const outcome = await this.applyOutcome(payment.id, event);
+
+    if (event.outcome === 'CAPTURED' && outcome.orderId) {
+      // Invoice issuance is deliberately decoupled from the order-
+      // creation transaction (independent-review finding #2) - a
+      // transient invoice failure must never resurface as a webhook
+      // failure to Razorpay.
+      await this.order.retryOrderInvoice(outcome.orderId).catch(() => undefined);
     }
 
     return { ok: true };
+  }
+
+  /**
+   * Row-locks and returns one Payment by id. MUST run inside a
+   * transaction. Same rationale as InventoryService.lockReservation
+   * (independent-review finding #3): every transition that can race
+   * against another (a capture webhook vs. the expiry sweep both acting
+   * on the same Payment) reads it through this lock, so the two
+   * genuinely serialize on the database instead of both reading a stale
+   * status before either commits.
+   */
+  private async lockPayment(
+    tx: Prisma.TransactionClient,
+    paymentId: string,
+  ): Promise<{ id: string; checkoutSessionId: string; status: PaymentStatus; providerReferenceId: string | null } | null> {
+    const rows = await tx.$queryRaw<
+      { id: string; checkoutSessionId: string; status: PaymentStatus; providerReferenceId: string | null }[]
+    >`SELECT "id", "checkoutSessionId", "status", "providerReferenceId"
+      FROM "payments"
+      WHERE "id" = ${paymentId}
+      FOR UPDATE`;
+    return rows[0] ?? null;
   }
 
   /**
@@ -116,39 +144,27 @@ export class PaymentService {
    * just recorded blindly - the same discipline that makes the dedup
    * above belt-and-braces rather than the only defence: even if two
    * distinct provider event ids somehow described the same outcome
-   * twice, applying it twice would still be a no-op.
+   * twice, applying it twice would still be a no-op. Returns the order
+   * id a CAPTURED outcome resulted in (if any), so the caller can issue
+   * its invoice outside this transaction (finding #2).
    */
-  private async applyOutcome(paymentId: string, event: WebhookEvent): Promise<void> {
-    const outcome = event.outcome;
+  private async applyOutcome(paymentId: string, event: WebhookEvent): Promise<{ orderId?: string }> {
+    if (event.outcome === 'CAPTURED') {
+      return this.applyCaptureOutcome(paymentId, event);
+    }
 
     await this.prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      const payment = await this.lockPayment(tx, paymentId);
+      if (!payment) throw new NotFoundError('Payment', paymentId);
 
-      if (outcome === 'CAPTURED') {
-        if (payment.status === 'CAPTURED' || payment.status === 'CONFIRMED') return;
-        await tx.payment.update({
-          where: { id: paymentId },
-          data: {
-            status: 'CAPTURED',
-            // Swap the correlation id from the order id to the actual
-            // payment id now that one exists - see the comment above
-            // handleRazorpayWebhook's lookup.
-            providerReferenceId: event.paymentEntityId ?? payment.providerReferenceId,
-          },
-        });
-        await tx.checkoutSession.update({
-          where: { id: payment.checkoutSessionId },
-          data: { status: 'CONFIRMED', confirmedAt: new Date() },
-        });
-        await recordAudit(tx, {
-          actorType: 'SYSTEM',
-          action: 'payment.captured',
-          entityType: 'Payment',
-          entityId: paymentId,
-          newValue: { providerReferenceId: payment.providerReferenceId },
-        });
-      } else if (outcome === 'FAILED') {
-        if (payment.status === 'FAILED' || payment.status === 'CAPTURED' || payment.status === 'CONFIRMED') return;
+      if (event.outcome === 'FAILED') {
+        // EXPIRED is included alongside FAILED/CAPTURED/CONFIRMED
+        // (independent-review finding #3, invariant "exactly one
+        // terminal outcome"): once the payment-expiry sweep has already
+        // moved this attempt to EXPIRED, a late FAILED delivery must not
+        // resurrect it back to FAILED and flap the checkout session's
+        // status - EXPIRED already is this attempt's final word.
+        if (['FAILED', 'CAPTURED', 'CONFIRMED', 'EXPIRED'].includes(payment.status)) return;
         await tx.payment.update({ where: { id: paymentId }, data: { status: 'FAILED' } });
         // Deliberately does NOT release the reservation here - a failed
         // attempt (e.g. card declined) is not yet "final failure"
@@ -169,7 +185,7 @@ export class PaymentService {
           entityId: paymentId,
           newValue: { providerReferenceId: payment.providerReferenceId },
         });
-      } else if (outcome === 'REFUNDED') {
+      } else if (event.outcome === 'REFUNDED') {
         if (payment.status === 'REFUNDED') return;
         await tx.payment.update({ where: { id: paymentId }, data: { status: 'REFUNDED' } });
         await recordAudit(tx, {
@@ -184,18 +200,143 @@ export class PaymentService {
       // order.paid) - already recorded in PaymentEvent above for
       // reconciliation, deliberately no state transition here.
     });
+
+    return {};
   }
 
-  private async releaseSessionReservations(paymentId: string, reason: string): Promise<void> {
-    const payment = await this.prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
-    const lines = await this.prisma.checkoutSessionLine.findMany({
-      where: { checkoutSessionId: payment.checkoutSessionId },
-    });
-    for (const line of lines) {
-      if (line.reservationId) {
-        await this.inventory.releaseReservation(line.reservationId, reason);
-      }
+  /**
+   * Independent-review finding #3 (BLOCKER): a Razorpay `payment.captured`
+   * webhook can legitimately arrive at the same moment this payment's
+   * reservation is being released by `expireStalePayments`/
+   * `InventoryService.expireStaleReservations` (genuine abandonment/
+   * timeout, not a client bug) - both are real, concurrently-running
+   * processes reacting to real events. Capturing payment status,
+   * confirming the checkout session, AND converting the reservation
+   * into a firm order allocation all happen in ONE transaction here, so
+   * either:
+   *  - this transaction's `lockReservation`/`lockPayment` acquires its
+   *    row locks first and the whole thing commits atomically (payment
+   *    CAPTURED, session CONFIRMED, order created, reservation
+   *    CONVERTED) - the losing expiry sweep then re-reads the
+   *    now-CONVERTED reservation / now-CAPTURED payment under its own
+   *    lock and correctly backs off (no release, no re-expiry); or
+   *  - the expiry sweep committed first, so this transaction's own
+   *    `convertReservation` throws (reservation no longer ACTIVE) and
+   *    the WHOLE transaction rolls back, including the payment/session
+   *    update - Payment ends up back at its pre-attempt status, never
+   *    stuck "confirmed" with no allocation.
+   * In the second case, the catch block below applies the capture as an
+   * explicit, separate, honest fact (money was genuinely captured) and
+   * routes to CAPTURE_RECONCILIATION_REQUIRED instead of ever
+   * fabricating an allocation or silently losing the payment.
+   */
+  private async applyCaptureOutcome(paymentId: string, event: WebhookEvent): Promise<{ orderId?: string }> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const payment = await this.lockPayment(tx, paymentId);
+        if (!payment) throw new NotFoundError('Payment', paymentId);
+
+        if (payment.status === 'CAPTURED' || payment.status === 'CONFIRMED') {
+          // Idempotent no-op (duplicate/replayed capture outcome) - the
+          // order this payment already produced, if any, is unaffected.
+          const existingOrder = await tx.order.findUnique({ where: { checkoutSessionId: payment.checkoutSessionId } });
+          return { orderId: existingOrder?.id };
+        }
+
+        if (payment.status === 'FAILED' || payment.status === 'EXPIRED') {
+          // A late capture arriving for an attempt our own system had
+          // already given up on. Never attempt inventory re-derivation
+          // here (would risk oversell/a fake allocation) - flag for
+          // explicit reconciliation instead.
+          return this.applyCaptureReconciliation(tx, payment, event);
+        }
+
+        const newReferenceId = event.paymentEntityId ?? payment.providerReferenceId;
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'CAPTURED', providerReferenceId: newReferenceId },
+        });
+        await tx.checkoutSession.update({
+          where: { id: payment.checkoutSessionId },
+          data: { status: 'CONFIRMED', confirmedAt: new Date() },
+        });
+        await recordAudit(tx, {
+          actorType: 'SYSTEM',
+          action: 'payment.captured',
+          entityType: 'Payment',
+          entityId: payment.id,
+          newValue: { providerReferenceId: newReferenceId },
+        });
+
+        const order = await this.order.createOrderFromCheckoutSession(payment.checkoutSessionId, tx);
+        return { orderId: order.id };
+      });
+    } catch (err) {
+      this.fastify.log.error(
+        { err, paymentId },
+        'Payment capture could not be atomically allocated to an order - flagging for reconciliation',
+      );
+      return this.prisma.$transaction((tx) => this.applyCaptureReconciliationById(tx, paymentId, event));
     }
+  }
+
+  private async applyCaptureReconciliationById(
+    tx: Prisma.TransactionClient,
+    paymentId: string,
+    event: WebhookEvent,
+  ): Promise<{ orderId?: string }> {
+    const payment = await this.lockPayment(tx, paymentId);
+    if (!payment) throw new NotFoundError('Payment', paymentId);
+    return this.applyCaptureReconciliation(tx, payment, event);
+  }
+
+  /**
+   * Records a genuine Razorpay capture as CAPTURED (the payment is real
+   * and must never be silently dropped) while explicitly declining to
+   * fabricate an order/allocation for it - the checkout session moves
+   * to CAPTURE_RECONCILIATION_REQUIRED, a terminal state an operator
+   * must resolve by hand (manually fulfil once stock is confirmed
+   * available, or process a refund - refund execution itself is
+   * specs/19-refunds.md, M20, deliberately out of this milestone).
+   * Idempotent against a payment that reached CAPTURED/CONFIRMED by
+   * some other path in the meantime (a genuinely concurrent duplicate
+   * webhook that raced this one to the same reconciliation call).
+   */
+  private async applyCaptureReconciliation(
+    tx: Prisma.TransactionClient,
+    payment: { id: string; checkoutSessionId: string; status: PaymentStatus; providerReferenceId: string | null },
+    event: WebhookEvent,
+  ): Promise<{ orderId?: string }> {
+    if (payment.status === 'CAPTURED' || payment.status === 'CONFIRMED') {
+      const existingOrder = await tx.order.findUnique({ where: { checkoutSessionId: payment.checkoutSessionId } });
+      return { orderId: existingOrder?.id };
+    }
+
+    const newReferenceId = event.paymentEntityId ?? payment.providerReferenceId;
+    await tx.payment.update({
+      where: { id: payment.id },
+      data: { status: 'CAPTURED', providerReferenceId: newReferenceId },
+    });
+    await tx.checkoutSession.update({
+      where: { id: payment.checkoutSessionId },
+      data: {
+        status: 'CAPTURE_RECONCILIATION_REQUIRED',
+        reconciliationReason:
+          `Razorpay reported this payment as captured, but it could not be automatically linked to a firm order ` +
+          `allocation (this attempt had already reached status '${payment.status}', so its checkout session's ` +
+          `inventory reservation may already have been released). The payment is genuinely captured - flagged for ` +
+          `manual reconciliation (confirm stock and fulfil manually, or process a refund) rather than risking a ` +
+          `false allocation or an oversell.`,
+      },
+    });
+    await recordAudit(tx, {
+      actorType: 'SYSTEM',
+      action: 'payment.captured.reconciliation_required',
+      entityType: 'Payment',
+      entityId: payment.id,
+      newValue: { providerReferenceId: newReferenceId, previousStatus: payment.status },
+    });
+    return {};
   }
 
   /**
@@ -204,6 +345,17 @@ export class PaymentService {
    * EXPIRED, distinct from FAILED (different customer messaging/retry
    * eligibility, acceptance/m14-payment.md). Same "callable directly or
    * by a future scheduler" shape as InventoryService.expireStaleReservations.
+   *
+   * Independent-review finding #3: the guarded status check, the
+   * session update, AND the reservation release now all happen inside
+   * ONE transaction that row-locks the Payment first (lockPayment). This
+   * closes the race the previous two-phase version had (commit the
+   * expiry, THEN release reservations in separate, later transactions):
+   * a capture webhook racing this sweep will block on the same Payment
+   * row lock and, whichever commits first, the other reliably observes
+   * the committed outcome under its own lock rather than blindly
+   * overwriting it - see applyCaptureOutcome's docblock for the other
+   * side of this same guarantee.
    */
   async expireStalePayments(): Promise<number> {
     const env = loadEnv();
@@ -213,10 +365,16 @@ export class PaymentService {
       where: { status: 'INITIATED', createdAt: { lt: cutoff } },
     });
 
+    let expiredCount = 0;
     for (const payment of stale) {
-      await this.prisma.$transaction(async (tx) => {
-        const fresh = await tx.payment.findUnique({ where: { id: payment.id } });
-        if (!fresh || fresh.status !== 'INITIATED') return;
+      const didExpire = await this.prisma.$transaction(async (tx) => {
+        const fresh = await this.lockPayment(tx, payment.id);
+        if (!fresh || fresh.status !== 'INITIATED') return false;
+        // Re-check the timeout under the lock too - a plain read taken
+        // before the lock could otherwise expire a payment that was
+        // genuinely re-created/retried in the meantime.
+        const current = await tx.payment.findUniqueOrThrow({ where: { id: fresh.id }, select: { createdAt: true } });
+        if (current.createdAt >= cutoff) return false;
 
         await tx.payment.update({ where: { id: fresh.id }, data: { status: 'EXPIRED' } });
 
@@ -235,11 +393,20 @@ export class PaymentService {
           entityId: fresh.id,
           newValue: { providerReferenceId: fresh.providerReferenceId },
         });
+
+        const lines = await tx.checkoutSessionLine.findMany({ where: { checkoutSessionId: fresh.checkoutSessionId } });
+        for (const line of lines) {
+          if (line.reservationId) {
+            await this.inventory.releaseReservation(line.reservationId, 'payment expired', tx);
+          }
+        }
+
+        return true;
       });
 
-      await this.releaseSessionReservations(payment.id, 'payment expired');
+      if (didExpire) expiredCount += 1;
     }
 
-    return stale.length;
+    return expiredCount;
   }
 }
