@@ -8,7 +8,70 @@ including future sessions that have no memory of this one.
 
 **Status as of 2026-09-25: `M18_ENGINEERING_CERTIFIED — POST-PURCHASE
 PHASE (M19 RETURNS / M20 REFUNDS & STORE CREDIT / M21 EXCHANGES) BUILD
-IN PROGRESS. M22+ NOT AUTHORIZED.`** M17 (Shipping /
+COMPLETE, AWAITING INDEPENDENT REVIEW. M22+ NOT AUTHORIZED.`** M19
+(Returns), M20 (Refunds & Store Credit), and M21 (Exchanges) were all
+implemented and adversarially tested sequentially, with per-milestone
+validation and commit, exactly as authorized (commits `9e7b7f2`,
+`e716fd3`, `ba46b39` on `claude/loving-fermat-cyucke`). M19 built a
+self-contained `Return`/`ReturnLine`/`ReturnPickup` state machine,
+genuinely reusing M17's own reverse-pickup pattern for the logistics
+leg and enforcing INV-006's QC-gated disposition rule; this build's own
+clean-state validation caught and fixed a genuine pre-existing bug in
+`InventoryService.reconcileBalance` (the SALE replay case never
+decremented `reserved`, only `onHand`, undetected until M19's own
+receipt→QC→disposition lifecycle first exercised a reconciliation
+check after a genuine SALE). M20 settles the durable refund handoffs
+M18 (`Order.refundRequired`) and M19 (`ReturnLine.refundEligible`)
+deliberately left unexecuted — one `Refund` row per `OrderLine` (never
+per-order, so partial refunds are correct by construction), PREPAID via
+the M14 `RazorpayPaymentProvider.refund()` method (fully implemented in
+M14 but never called until this build wired it up), COD via a new
+`StoreCreditAccount`/`StoreCreditEntry` ledger kept structurally
+separate from loyalty (which does not exist in this codebase); this
+build's own adversarial concurrency tests caught and fixed two genuine
+races — concurrent refund-processing on the same order line each
+independently attempting credit-note issuance before either committed,
+and two different order lines refunded concurrently for the same
+guest/customer racing on first-ever `StoreCreditAccount` creation (the
+first fix attempt tried to catch-and-recover mid-transaction, which is
+invalid in Postgres since a failed statement aborts the whole
+transaction; properly fixed by retrying the whole transaction once on
+that specific race). M21 built a first-class `Exchange` entity —
+genuinely reusing M19's own eligibility/reverse-logistics/QC machinery
+(a shared `resolveReturnPolicy` extracted into
+`modules/returns/policy.ts`) rather than duplicating it, with
+settlement direction derived once, at request time, from the
+replacement's price difference alone; a `CUSTOMER_PAYS` settlement
+collects the difference through a NEW, fully separate dispatch branch
+in `PaymentService.handleRazorpayWebhook` that never touches M14's own
+independently-reviewed `applyOutcome`/`applyCaptureOutcome` capture-
+atomicity guarantees for real checkout payments. This build's own
+testing caught a genuine cross-domain gap — nothing previously stopped
+an order line from having both an active Return and an active Exchange
+simultaneously — fixed with a mutual-exclusion check added to both
+`ReturnService` and `ExchangeService` (a cancelled record on either
+side does not permanently block the other, since it represents nothing
+having actually happened). Two scope boundaries were documented rather
+than guessed or silently skipped: M19's mobile photo/evidence capture
+for return condition was not built (no photo-upload flow exists
+anywhere in this codebase), and M21's physical forward fulfilment
+(pick/pack/ship/tracking) of an allocated replacement item is
+explicitly out of this pass — `Exchange.replacementAllocatedAt` marks
+inventory commitment only, the actual warehouse shipment of that unit
+is a manual/follow-on process not tracked by this build. Combined: 70
+new adversarial integration tests (31 for M19, 20 for M20, 19 for M21)
+plus 3 new browser E2E tests, with zero regressions to the entire
+M00–M18 baseline confirmed across every regression run performed
+throughout this phase. See `RET-005`, `REF-005`, and `EXC-004` in
+`blueprint/DECISION_REGISTER.md` for the complete design record of each
+milestone, and `acceptance/m19-returns.md`, `m20-refunds-store-credit.md`,
+`m21-exchanges.md` for each milestone's Definition of Done.
+**This agent does not self-declare M19/M20/M21 certified** — per the
+same discipline applied at every milestone since Phase 1, that
+determination belongs to the independent reviewer. This agent has
+stopped and is awaiting independent review before any M22+ work.
+
+M17 (Shipping /
 Tracking) was implemented and adversarially tested (carrier-adapter
 substitution, shipment-creation idempotency/concurrency/crash-retry,
 webhook dedup/resume, illegal-transition rejection, redelivery-
@@ -180,10 +243,12 @@ Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
   `M18_ENGINEERING_CERTIFIED` baseline at commit
   `4a616b3cefa8e4e1879dd8c62b293682ea6bc206`, worked sequentially with
   per-milestone validation and no self-authorized continuation into
-  M22+. See `acceptance/m19-returns.md`, `acceptance/m20-refunds-store-credit.md`,
+  M22+. All three milestones were implemented, adversarially tested,
+  and committed as authorized (see §0 above). See
+  `acceptance/m19-returns.md`, `acceptance/m20-refunds-store-credit.md`,
   `acceptance/m21-exchanges.md` for the Definitions of Done, and
   `RET-005`/`REF-005`/`EXC-004` in `blueprint/DECISION_REGISTER.md` for
-  the design records once written.
+  the full design records.
 - M16 (Warehouse & Fulfilment) was explicitly authorized on
   2026-09-24, scoped only to that milestone, building on the
   `PHASE_2_CERTIFIED` baseline at commit

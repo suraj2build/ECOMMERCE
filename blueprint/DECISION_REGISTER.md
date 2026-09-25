@@ -955,6 +955,70 @@ of what is still needed from anyone, and from whom.
 - **Final decision:** Carrier pickup from the customer address (via the `SHIP-001`/`SHIP-002` carrier abstraction) as the default; customer drop-off supported as a configurable alternative where available.
 - **Affected specs:** `specs/18-returns.md`
 
+#### RET-005 — M19 returns data model/failed-QC financial boundary · **P1**
+- **Question:** How do RET-001–004's engineering defaults map onto a new
+  data model without overloading `OrderLine.status` or M15/M16/M17's
+  certified lock ordering, and what is the honest financial consequence
+  of a failed-QC return when the approved spec never actually defines
+  one?
+- **Dependencies:** RET-001, RET-002, RET-004, INV-006, SHIP-005 (M17)
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-25
+  (M19 build)
+- **Final decision:** A new, self-contained `Return`/`ReturnLine`/
+  `ReturnPickup` state machine (`ReturnService`, its own module) —
+  deliberately NOT reusing `Return` as a return-flavoured `Order`, and
+  deliberately never touching `OrderLine.status` (a delivered line stays
+  `DELIVERED` forever as history). `ReturnLine.orderLineId` is
+  `@unique` — a line can be returned at most once, the same
+  "no sub-quantity, one line at a time" simplification `CAN-004`
+  already established for cancellation.
+  - **Eligibility:** `ReturnPolicy` resolves style-override →
+    category-override → the configurable platform default
+    (`RETURN_WINDOW_DEFAULT_DAYS`, default 7), enforced by a raw-SQL XOR
+    `CHECK` constraint mirroring `Sku.hsnCode`'s own style-then-fallback
+    idiom. The eligibility clock is day-granularity
+    (`Math.floor(msSinceDelivery / 86_400_000) <= windowDays`), not
+    millisecond-precise — a 7-day window means 7 full inclusive days,
+    not 7×86400000ms to the millisecond; this was a genuine off-by-one
+    this build's own boundary test caught and fixed.
+  - **Locking:** Return/ReturnLine/ReturnPickup form their own,
+    fully self-contained lock domain — Return operations never touch
+    `OrderLine`/`OrderFulfilment`/`PickTask` rows at all, so there is no
+    lock-ordering interaction with any M15–M18 transition to reason
+    about, unlike `CAN-004`'s own fulfilment-lock dance.
+  - **Reverse logistics:** reuses the SAME `ShippingProvider.
+    initiateReversePickup` two-phase durable-intent pattern
+    `SHIP-005`/M17 established for forward shipments — the
+    `ReturnPickup` row commits `SCHEDULED` before the carrier is ever
+    called.
+  - **Inventory:** a new `RETURN_DISPOSED` ledger type (write-off/
+    return-to-supplier) alongside the existing `RETURN_QC_PASS`/
+    `RETURN_QC_FAIL` types (already present in the schema before this
+    build). Physical arrival never auto-increments sellable stock
+    (`INV-006`): `postReturnReceipt` posts `returnPending += quantity`
+    only; disposition (`postReturnDisposition`) is the ONLY path that
+    can move stock to `onHand`/`damaged`, and only after the QC gate.
+  - **Failed-QC financial boundary (the open question this entry
+    exists to resolve):** the approved spec defines the INVENTORY
+    disposition rule for a failed-QC return (`INV-006`) but never
+    defines its FINANCIAL consequence. Guessing either "always refund"
+    or "never refund" would silently invent an unapproved business
+    rule with real money at stake. The engineering default: physical
+    disposition still posts unconditionally (a real warehouse
+    requirement), but `ReturnLine.refundEligible` is set `true` ONLY on
+    a `PASS` outcome — a `FAIL` outcome leaves it `false`, requiring an
+    explicit human (Finance/CS) decision before any money moves. M20's
+    `RefundService` never processes a line this flag leaves ineligible.
+  - **Scope boundary — M19→M20 handoff:** `ReturnService` never
+    executes refund/store-credit logic itself — `refundEligible`/
+    `refundEligibleAt` are a durable, auditable, traceable handoff only,
+    consumed later by M20's `RefundService` (see `REF-005`).
+  - Full design rationale and the 31-point adversarial matrix:
+    `ReturnService`'s own docblock in
+    `services/commerce-api/src/modules/returns/service.ts`, and
+    `services/commerce-api/test/integration/returns.test.ts`.
+- **Affected specs:** `specs/18-returns.md`, `specs/06-inventory.md`
+
 ---
 
 ## REF — Refunds
@@ -987,6 +1051,73 @@ of what is still needed from anyone, and from whom.
 - **Final decision:** Inherited from return reason by default for return-triggered refunds; separately captured for non-return-triggered refunds (e.g., cancellation, goodwill).
 - **Affected specs:** `specs/19-refunds.md`
 
+#### REF-005 — M20 refund settlement/idempotency data model · **P1**
+- **Question:** How does a new `RefundService` settle the two durable
+  handoffs M18 (`Order.refundRequired`) and M19
+  (`ReturnLine.refundEligible`) deliberately left unexecuted, without
+  collapsing Cancellation/Return/Refund/StoreCredit into one generic
+  "reverse order" workflow, and without re-litigating M14's certified
+  payment-webhook transaction guarantees?
+- **Dependencies:** REF-001, REF-002, REF-003, CAN-004, RET-005, PAY-001
+  (M14)
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-25
+  (M20 build)
+- **Final decision:** One `Refund` row per `OrderLine` (`orderLineId`
+  `@unique`) — never per-order, so a partial refund of a multi-line
+  order/return naturally refunds only the qualifying line's own
+  original value (`REF-003`). `orderLineId` uniqueness is the sole
+  idempotency anchor, sound because a given line's lifecycle is
+  CANCELLATION-refund XOR RETURN-refund, never both (`CAN-004`'s
+  pre-shipment-only cancellation window and `RET-005`'s
+  delivered-only return eligibility are already mutually exclusive).
+  - **Settlement rail:** derived purely from `Order.paymentMethod`
+    (`REF-001`) — PREPAID → `RazorpayPaymentProvider.refund()` (fully
+    implemented in M14 but never called until this build wired it up;
+    extended with a deterministic idempotency key, the local `Refund`
+    row's own id, threaded to Razorpay's own idempotency-key header).
+    COD → `StoreCreditService.issue()`. Never derived from trigger
+    type.
+  - **Two-phase durable-intent pattern** (the same idiom `SHIP-005`/M17
+    and `RET-005`/M19 already established): a `PENDING` `Refund` row
+    commits before any external call; settlement then claims it to
+    `COMPLETED`/`FAILED` via a conditional update. A `FAILED` refund is
+    retryable (`POST /refunds/:id/retry`) and recoverable via a
+    reconciliation sweep (`POST /refunds/reconcile`, mirroring
+    `OrderService.reconcilePendingInvoices`) — deliberately explicit/
+    staff-triggerable rather than an automatic side effect wired into
+    M18/M19's own certified `performCancellation`/
+    `recordQcAndDisposition` code, keeping this milestone's change
+    surface additive.
+  - **Credit note:** reuses the credit note M18's own cancellation flow
+    already issues in-transaction when one exists; issues a fresh one
+    through the same M08 `InvoiceService` engine for a return-triggered
+    refund (none existed yet). Falls back to `OrderLine.lineTotalInclusive`
+    directly, without a credit-note document, only when no invoice/
+    `InvoiceLine` correlation exists yet (mirrors `CAN-004`'s own
+    honest-skip precedent).
+  - **Store credit:** a separate financial/customer-balance ledger
+    (`REF-002`) — `StoreCreditAccount`/`StoreCreditEntry`, structurally
+    distinct from loyalty (which doesn't exist in this codebase; M23
+    remains unauthorized). Owned by the same `customerId`-XOR-
+    `guestSessionId` identity every order/return already uses. No
+    expiry job anywhere in this codebase (`REF-002`: does not expire).
+  - **Two genuine concurrency bugs** this build's own adversarial tests
+    caught and fixed, both documented inline and covered by regression
+    tests: (1) several concurrent refund-processing calls for the SAME
+    line could each independently attempt credit-note issuance before
+    any of them committed — fixed by locking the `OrderLine` row before
+    any other work in the refund-intent transaction; (2) two DIFFERENT
+    lines refunded concurrently for the same guest/customer could race
+    on first-ever `StoreCreditAccount` creation — a first fix attempted
+    to catch-and-recover mid-transaction, which is invalid in Postgres
+    (a failed statement aborts the whole transaction); properly fixed
+    by retrying the whole transaction once on that specific race.
+  - Full design rationale and the 20-point adversarial matrix:
+    `RefundService`'s own docblock in
+    `services/commerce-api/src/modules/refunds/service.ts`, and
+    `services/commerce-api/test/integration/refunds.test.ts`.
+- **Affected specs:** `specs/19-refunds.md`, `specs/33-store-credit-gift-cards.md`
+
 ---
 
 ## EXC — Exchanges
@@ -1011,6 +1142,100 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** Same window as returns (`RET-001`), configured together for consistency and simplicity.
 - **Affected specs:** `specs/20-exchanges.md`
+
+#### EXC-004 — M21 exchange data model, payment integration, and scope boundaries · **P1**
+- **Question:** How does a first-class `Exchange` entity (`EXC-001`)
+  collect an up-front price-difference payment through M14's certified,
+  checkout-session-coupled payment/webhook machinery without modifying
+  it, and what happens where the approved spec's requirements outrun
+  what can honestly be built in this pass?
+- **Dependencies:** EXC-001, EXC-002, EXC-003, RET-005, REF-005, PAY-001
+  (M14), INV-002
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-25
+  (M21 build)
+- **Final decision:** A single `Exchange` model (not a linked Return +
+  new Order, per `EXC-001`) carrying the original order/line, the
+  replacement SKU, reverse-logistics fields, QC/disposition fields, and
+  payment/credit settlement fields all on one row — one original item
+  ↔ one replacement item per `Exchange` (`orderLineId` `@unique`, the
+  same "no sub-quantity, one line at a time" simplification `CAN-004`/
+  `RET-005` already established), genuinely reusing `RET-005`'s own
+  eligibility resolver (`resolveReturnPolicy`, extracted into a shared
+  `modules/returns/policy.ts` used by both `ReturnService` and
+  `ExchangeService` — `EXC-003`'s "configured together"), reverse
+  pickup (`ShippingProvider.initiateReversePickup`), and QC/disposition
+  (`InventoryService.postReturnReceipt`/`postReturnDisposition`)
+  machinery rather than duplicating any of it.
+  - **Settlement direction** (`EXC-002`) is derived once, at request
+    time, from `priceDifference` (replacement SKU's current selling
+    price vs. the original line's own frozen value) alone — never from
+    any other signal. `>0` → `CUSTOMER_PAYS` (collected immediately,
+    since this is economically an incremental purchase, not a
+    refund-like consequence needing the QC safeguard). `<0` →
+    `STORE_CREDIT`, issued only after the original item's QC passes —
+    mirrors `REF-005`'s "never fire a financial consequence before the
+    QC gate" discipline applied to a downgrade. `=0` → `EVEN`, nothing
+    to settle.
+  - **Payment integration without touching M14:** `CUSTOMER_PAYS`
+    reuses `RazorpayPaymentProvider.initiate`/webhook end to end, but
+    through a NEW, fully separate branch in
+    `PaymentService.handleRazorpayWebhook` — checked only when no
+    checkout-session `Payment` row matches the incoming event, and
+    dispatching entirely to `ExchangeService`'s own transaction/state
+    machine. `PaymentService.applyOutcome`/`applyCaptureOutcome` —
+    M14's own independently-reviewed capture-atomicity guarantees for
+    real checkout payments — are completely untouched. `PaymentEvent`
+    gained a nullable `exchangeId` column (alongside the existing
+    nullable `paymentId`) so this reuses the SAME event-dedup table/
+    discipline as checkout payments, per the acceptance criteria's own
+    "same idempotency discipline as M14" requirement. A failed payment
+    leaves the exchange retryable (re-uses the SAME stored Razorpay
+    order id) without re-initiating the whole exchange (negative
+    scenario #3).
+  - **Replacement reservation:** `InventoryService.reserve` with a new
+    `EXCHANGE_REPLACEMENT_HOLD_DAYS` config (default 14 days — far
+    longer than checkout's short-lived default), checked/reserved in
+    the SAME request as initiation (negative scenario #1: a genuine
+    out-of-stock replacement fails the whole call). If that reservation
+    is lost (expired, or otherwise no longer `ACTIVE`) before the
+    original item comes back, the `Exchange` durably transitions to a
+    `REPLACEMENT_UNAVAILABLE` terminal status with an audit row — never
+    a silently lost hold (negative scenario #2).
+  - **Completion** (`InventoryService.convertReservation`, firm
+    allocation) waits for BOTH the QC-pass gate and payment/credit
+    settlement, whichever arrives last — proven under both orderings by
+    this build's own adversarial tests. A QC `FAIL` on the original
+    moves the `Exchange` to its own `QC_FAILED` terminal status:
+    disposition still posts (a real physical-inventory requirement),
+    but the replacement is never allocated, and if a `CUSTOMER_PAYS`
+    payment was already captured up-front, it is never auto-refunded —
+    both require an explicit human (Finance/CS) decision, the same
+    "neither silently benefits nor silently harms the customer"
+    discipline `RET-005` established for a failed-QC return.
+  - **Cross-domain guard (a genuine gap this build's own testing
+    caught):** nothing previously stopped a line from having BOTH an
+    active `Return` and an active `Exchange` at once. `ReturnService`
+    and `ExchangeService` now each check for the other's existing
+    NON-CANCELLED record before initiating — a cancelled record on
+    either side does not permanently block the other, since it
+    represents nothing having actually happened.
+  - **Scope boundary — replacement forward fulfilment:** physical
+    pick/pack/ship/tracking of the allocated replacement is explicitly
+    OUT of this pass. `Exchange.replacementAllocatedAt` marks the
+    replacement as inventory-committed (a firm allocation, no longer
+    available for other orders); the warehouse's own physical pick/
+    pack/ship of that allocated unit is a manual/follow-on process, not
+    tracked by this build. Building a full parallel shipment pipeline
+    for the replacement, without creating a second `Order`/`OrderLine`
+    the way `EXC-001` explicitly forbids, is a genuine, non-trivial
+    design question left for a dedicated follow-up rather than guessed
+    here.
+  - Full design rationale and the 19-point adversarial matrix:
+    `ExchangeService`'s own docblock in
+    `services/commerce-api/src/modules/exchanges/service.ts`, and
+    `services/commerce-api/test/integration/exchanges.test.ts`.
+- **Affected specs:** `specs/20-exchanges.md`, `specs/18-returns.md`,
+  `specs/13-payment.md`
 
 ---
 

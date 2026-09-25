@@ -1,6 +1,8 @@
 # 18. Returns
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `RET-001`–`004`, `EXC-001`)
+**Status:** IMPLEMENTED (M19 build complete 2026-09-25, engineering
+scope — see `blueprint/DECISION_REGISTER.md` `RET-001`–`005`, `EXC-001`;
+`VERIFIED` pending independent review, not self-declared)
 
 ## Purpose
 

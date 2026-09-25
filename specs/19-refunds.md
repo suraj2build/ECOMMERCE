@@ -1,6 +1,8 @@
 # 19. Refunds
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `REF-001`–`004`)
+**Status:** IMPLEMENTED (M20 build complete 2026-09-25, engineering
+scope — see `blueprint/DECISION_REGISTER.md` `REF-001`–`005`;
+`VERIFIED` pending independent review, not self-declared)
 
 ## Purpose
 

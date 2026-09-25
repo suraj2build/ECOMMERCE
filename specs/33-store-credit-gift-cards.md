@@ -1,8 +1,11 @@
 # 33. Store Credit & Gift Cards
 
-**Status:** DRAFT (store credit ledger model APPROVED direction per
-`REF-002`; gift cards scoped but scheduled later — see milestone
-ownership below)
+**Status:** PARTIALLY IMPLEMENTED — the store-credit ledger foundation
+section is IMPLEMENTED (M20 build complete 2026-09-25, engineering
+scope — see `blueprint/DECISION_REGISTER.md` `REF-002`, `REF-005`;
+`VERIFIED` pending independent review, not self-declared). The gift
+cards section remains DRAFT, scoped but scheduled later — see milestone
+ownership below; M30 remains unauthorized and unbuilt.
 
 ## Purpose
 

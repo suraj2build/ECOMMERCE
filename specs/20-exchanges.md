@@ -1,6 +1,8 @@
 # 20. Exchanges
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `EXC-001`–`003`)
+**Status:** IMPLEMENTED (M21 build complete 2026-09-25, engineering
+scope — see `blueprint/DECISION_REGISTER.md` `EXC-001`–`004`;
+`VERIFIED` pending independent review, not self-declared)
 
 ## Purpose
 
