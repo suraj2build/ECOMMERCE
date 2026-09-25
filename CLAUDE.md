@@ -6,9 +6,9 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-25: `M17_ENGINEERING_CERTIFIED — M18 BUILD
-COMPLETE, AWAITING INDEPENDENT REVIEW (CANCELLATION). M19+ NOT
-AUTHORIZED.`** M17 (Shipping /
+**Status as of 2026-09-25: `M18_ENGINEERING_CERTIFIED — POST-PURCHASE
+PHASE (M19 RETURNS / M20 REFUNDS & STORE CREDIT / M21 EXCHANGES) BUILD
+IN PROGRESS. M22+ NOT AUTHORIZED.`** M17 (Shipping /
 Tracking) was implemented and adversarially tested (carrier-adapter
 substitution, shipment-creation idempotency/concurrency/crash-retry,
 webhook dedup/resume, illegal-transition rejection, redelivery-
@@ -76,13 +76,22 @@ M23 remains unauthorized and unbuilt). The captured-payment (PREPAID)
 credit-note integration reuses the existing M08 `InvoiceService`
 engine and is engineering-integration scope only — `TAX-005` remains
 `UNDER_REVIEW` and is not resolved or claimed compliant by this build.
-**This agent does not self-declare M18 certified** — per the same
-discipline applied at every milestone since Phase 1, that determination
-belongs to the independent reviewer. This agent has stopped and is
-awaiting independent review before any M19+ work. See
-`acceptance/m18-cancellation.md` for its Definition of Done and
+**On 2026-09-25 the human project owner recorded this state —
+commit `4a616b3cefa8e4e1879dd8c62b293682ea6bc206` — as
+`M18_ENGINEERING_CERTIFIED`** (engineering-implementation scope; not
+production-readiness — the same open pre-production gates listed above
+remain open, none resolved by this certification) and gave explicit
+**"START BUILD — POST-PURCHASE PHASE"** authorization, a single bounded
+pass covering **M19 (Returns), M20 (Refunds & Store Credit), and M21
+(Exchanges) only**, to be worked sequentially with per-milestone
+validation, without stopping for approval between those three
+milestones — **M22 and everything after M21 remains unauthorized**.
+See `acceptance/m18-cancellation.md` for M18's Definition of Done and
 `CAN-004` in `blueprint/DECISION_REGISTER.md` for its state-machine/
-lock-ordering/data-model design record.
+lock-ordering/data-model design record; both are preserved unchanged by
+this certification recording, including the cancel-vs-pick deadlock
+history, the sub-quantity-cancellation scope boundary, the loyalty N/A
+boundary, and the `TAX-005` limitation.
 
 The full history of M17's original build, its independent-review
 blocker, and the two repairs is preserved above and in
@@ -148,21 +157,33 @@ reconciliation, order-invoice recovery). Every Phase 1 and Phase 2
 test remains mandatory and must stay green — M16's own build kept all
 of them green throughout.
 
-**This authorization does NOT extend beyond M18.**
+**This authorization does NOT extend beyond M21.**
 Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
 1–3) remains a separate thing from implementation authorization
 (Layer 4):
 
-- **M19 and every later milestone remain unauthorized.** No
-  application code for M19+ should be added until the human project
-  owner gives a new, separate, explicit **START BUILD** authorization
-  for that phase — neither the Phase 2 authorization, the M16
-  authorization, the M17 authorization, nor the M18 authorization
-  carries forward automatically, regardless of how cleanly M08–M18
-  land.
-- Do **not** interpret "M18 shipped cleanly" as authorization for the
-  next milestone. Authorization must be explicit and human-given for
-  each milestone.
+- **M22 and every later milestone remain unauthorized.** No
+  application code for M22+ (Customer 360, Loyalty, Promotions,
+  Marketing, Channels, SEO, Analytics, Admin/CMS, Gift Cards, Security
+  Hardening, Performance, Final Certification) should be added until
+  the human project owner gives a new, separate, explicit **START
+  BUILD** authorization for that phase — neither the Phase 2
+  authorization, nor the M16/M17/M18 authorizations, nor the
+  Post-Purchase Phase (M19–M21) authorization carries forward
+  automatically, regardless of how cleanly M08–M21 land.
+- Do **not** interpret "the Post-Purchase Phase shipped cleanly" as
+  authorization for the next milestone. Authorization must be explicit
+  and human-given for each milestone/phase.
+- The Post-Purchase Phase (M19 Returns, M20 Refunds & Store Credit,
+  M21 Exchanges) was explicitly authorized on 2026-09-25 as a single
+  bounded pass, scoped only to those three milestones, building on the
+  `M18_ENGINEERING_CERTIFIED` baseline at commit
+  `4a616b3cefa8e4e1879dd8c62b293682ea6bc206`, worked sequentially with
+  per-milestone validation and no self-authorized continuation into
+  M22+. See `acceptance/m19-returns.md`, `acceptance/m20-refunds-store-credit.md`,
+  `acceptance/m21-exchanges.md` for the Definitions of Done, and
+  `RET-005`/`REF-005`/`EXC-004` in `blueprint/DECISION_REGISTER.md` for
+  the design records once written.
 - M16 (Warehouse & Fulfilment) was explicitly authorized on
   2026-09-24, scoped only to that milestone, building on the
   `PHASE_2_CERTIFIED` baseline at commit
