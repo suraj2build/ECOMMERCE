@@ -174,6 +174,23 @@ export class ShippingService {
       return byKey;
     }
 
+    // CI-caught race (independent-review repair follow-up, 2026-09-25):
+    // `fulfilment` is a plain snapshot read by the caller BEFORE this
+    // method runs, never re-read under a lock. Two genuinely concurrent
+    // createShipment calls using DIFFERENT idempotency keys can race such
+    // that the FIRST one completes its entire flow - including
+    // OrderService.markFulfilmentShipped, which moves the real
+    // OrderFulfilment row to SHIPPED - before the SECOND one even reaches
+    // this method. The second call's own snapshot may then already be
+    // stale-but-accurate (genuinely READY_TO_SHIP at the moment it was
+    // read, genuinely SHIPPED by now) and would otherwise fail the status
+    // check below with a false "not READY_TO_SHIP" rejection, even though
+    // a Shipment for this fulfilment already legitimately exists. Check
+    // for that FIRST and converge to it - the same idempotent-no-op path
+    // `createShipment` already takes for a shipment found via `byKey`.
+    const existingForFulfilment = await this.prisma.shipment.findUnique({ where: { fulfilmentId: fulfilment.id } });
+    if (existingForFulfilment) return existingForFulfilment;
+
     if (fulfilment.status !== 'READY_TO_SHIP') {
       throw new ValidationError(
         `Cannot create a shipment for a fulfilment in status '${fulfilment.status}' - it must be READY_TO_SHIP first`,
