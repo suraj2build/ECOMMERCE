@@ -99,6 +99,16 @@ const envSchema = z.object({
   // one global hard-coded policy" (RET-001); this is the configurable
   // baseline, never hard-coded into ReturnService's own logic.
   RETURN_WINDOW_DEFAULT_DAYS: z.coerce.number().int().positive().default(7),
+
+  // --- Exchanges (M21, specs/20-exchanges.md, EXC-002) ---
+  // How long a replacement SKU's reservation is held awaiting the
+  // original item's receipt+QC before ExchangeService treats it as
+  // REPLACEMENT_UNAVAILABLE (acceptance/m21-exchanges.md negative
+  // scenario #2: "hold reservation for a bounded window") - deliberately
+  // far longer than INVENTORY_RESERVATION_TTL_SECONDS's checkout-session
+  // default, since an exchange's original item genuinely takes days to
+  // travel back, not minutes.
+  EXCHANGE_REPLACEMENT_HOLD_DAYS: z.coerce.number().int().positive().default(14),
 });
 
 export type Env = z.infer<typeof envSchema>;

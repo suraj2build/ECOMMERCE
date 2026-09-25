@@ -94,6 +94,16 @@ export const PERMISSION_KEYS = [
   'return:initiate',
   'return:receive',
   'return:qc',
+  // M21 (specs/20-exchanges.md): mirrors return:*'s own granularity
+  // exactly - exchange:initiate is CS-assisted initiation (the
+  // customer's own self-service path is ownership-checked, no
+  // permission needed); exchange:receive/qc are warehouse-floor actions
+  // on the returned original item; qc is WAREHOUSE_MANAGER-only, same
+  // manager-signoff precedent as return:qc/grn:qc:manager_signoff.
+  'exchange:read',
+  'exchange:initiate',
+  'exchange:receive',
+  'exchange:qc',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

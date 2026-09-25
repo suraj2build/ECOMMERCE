@@ -7,6 +7,7 @@ import { OrderService } from '../order/service.js';
 import { InventoryService } from '../inventory/service.js';
 import { resolveShippingProvider, type ShippingProvider } from '../shipping/provider.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
+import { resolveReturnPolicy, isWithinWindow } from './policy.js';
 
 export interface InitiateReturnLineInput {
   orderLineId: string;
@@ -53,31 +54,6 @@ export class ReturnService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`return_seq:${year}`}))`;
     const count = await tx.return.count({ where: { returnNumber: { startsWith: `RET-${year}-` } } });
     return `RET-${year}-${String(count + 1).padStart(6, '0')}`;
-  }
-
-  /**
-   * RET-001 resolution order (most to least specific, mirroring
-   * Style.hsnCode's own style-then-fallback pattern): a styleId-scoped
-   * ReturnPolicy row, else a categoryId-scoped row, else the platform
-   * default (RETURN_WINDOW_DEFAULT_DAYS, always returnable=true when no
-   * row exists - "MUST be configurable... not one global hard-coded
-   * policy" is satisfied by the override rows below, not by inventing a
-   * restrictive default).
-   */
-  private async resolveReturnPolicy(skuId: string): Promise<{ windowDays: number; returnable: boolean }> {
-    const sku = await this.prisma.sku.findUnique({
-      where: { id: skuId },
-      select: { styleId: true, style: { select: { categoryId: true } } },
-    });
-    if (!sku) throw new NotFoundError('Sku', skuId);
-
-    const styleRow = await this.prisma.returnPolicy.findUnique({ where: { styleId: sku.styleId } });
-    if (styleRow) return { windowDays: styleRow.windowDays, returnable: styleRow.returnable };
-
-    const categoryRow = await this.prisma.returnPolicy.findUnique({ where: { categoryId: sku.style.categoryId } });
-    if (categoryRow) return { windowDays: categoryRow.windowDays, returnable: categoryRow.returnable };
-
-    return { windowDays: loadEnv().RETURN_WINDOW_DEFAULT_DAYS, returnable: true };
   }
 
   /** Row-locks and returns one Return by id. MUST run inside a transaction - same idiom as OrderService.lockFulfilment/InventoryService.lockReservation. */
@@ -185,11 +161,18 @@ export class ReturnService {
         for (const input of lines) {
           const line = await tx.orderLine.findUnique({
             where: { id: input.orderLineId },
-            include: { fulfilment: true, returnLine: true },
+            include: { fulfilment: true, returnLine: true, exchange: true },
           });
           if (!line || line.orderId !== orderId) throw new NotFoundError('OrderLine', input.orderLineId);
           if (line.returnLine) {
             throw new ConflictError(`Order line '${input.orderLineId}' already has an existing return`);
+          }
+          // M21: a line already committed to an Exchange (a first-class,
+          // distinct operation - EXC-001) can't also be independently
+          // returned - the same physical item can only travel back once,
+          // toward one outcome.
+          if (line.exchange && line.exchange.status !== 'CANCELLED') {
+            throw new ConflictError(`Order line '${input.orderLineId}' already has an existing exchange`);
           }
           if (line.status !== 'DELIVERED') {
             throw new ValidationError(
@@ -201,18 +184,11 @@ export class ReturnService {
             throw new ValidationError(`Order line '${input.orderLineId}' has no recorded delivery date - cannot compute return eligibility`);
           }
 
-          const policy = await this.resolveReturnPolicy(line.skuId);
+          const policy = await resolveReturnPolicy(this.prisma, line.skuId);
           if (!policy.returnable) {
             throw new ValidationError(`Order line '${input.orderLineId}' belongs to a non-returnable category/product`);
           }
-          // Day-granularity, not millisecond-precise: a delivery from
-          // "exactly windowDays ago plus a few seconds of request
-          // latency" must still count as within the window (a 7-day
-          // window is understood as 7 full days, not 7*86400000ms to the
-          // millisecond) - Math.floor keeps day N inclusive all the way
-          // through, only day N+1 onward is rejected.
-          const daysSinceDelivery = Math.floor((Date.now() - deliveredAt.getTime()) / 86_400_000);
-          if (daysSinceDelivery > policy.windowDays) {
+          if (!isWithinWindow(deliveredAt, policy.windowDays)) {
             throw new ValidationError(
               `The return window (${policy.windowDays} day(s) from delivery) has expired for order line '${input.orderLineId}'`,
             );

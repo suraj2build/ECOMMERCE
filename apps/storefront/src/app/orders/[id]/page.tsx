@@ -8,6 +8,16 @@ import { Button, buttonClassName } from '@/components/ui/Button';
 import { getMyOrder, cancelMyOrderLine, type OrderView } from '@/lib/orders';
 import { listMyReturns, initiateMyReturn, cancelMyReturn, type ReturnView } from '@/lib/returns';
 import { listMyOrderRefunds, type RefundView } from '@/lib/refunds';
+import {
+  listMyExchanges,
+  initiateMyExchange,
+  cancelMyExchange,
+  initiateMyExchangePayment,
+  listReplacementOptions,
+  type ExchangeView,
+  type ReplacementOption,
+} from '@/lib/exchanges';
+import { openRazorpayCheckout } from '@/lib/razorpay';
 
 // M18 (specs/17-cancellation.md, CAN-001): "before shipment" - convenience
 // display only, the server (OrderService.performCancellation) is the sole
@@ -34,6 +44,21 @@ const REFUND_STATUS_LABEL: Record<RefundView['status'], string> = {
   PENDING: 'Refund pending',
   COMPLETED: 'Refunded',
   FAILED: 'Refund pending (retrying)',
+};
+
+// M21 (specs/20-exchanges.md): same "delivered" convenience gating as
+// returns - ExchangeService re-validates eligibility server-side.
+const EXCHANGEABLE_LINE_STATUSES = new Set(['DELIVERED']);
+
+const EXCHANGE_STATUS_LABEL: Record<ExchangeView['status'], string> = {
+  REQUESTED: 'Exchange requested',
+  PICKUP_SCHEDULED: 'Pickup scheduled',
+  PICKED_UP: 'Picked up - awaiting warehouse receipt',
+  RECEIVED: 'Received - under inspection',
+  COMPLETED: 'Exchange completed',
+  QC_FAILED: 'Under review',
+  REPLACEMENT_UNAVAILABLE: 'Replacement unavailable - we will contact you',
+  CANCELLED: 'Exchange cancelled',
 };
 
 const STATUS_LABEL: Record<OrderView['status'], string> = {
@@ -87,12 +112,23 @@ export default function OrderDetailPage() {
   const [returnMethod, setReturnMethod] = useState<'PICKUP' | 'DROP_OFF'>('PICKUP');
   const [returnError, setReturnError] = useState<string | null>(null);
   const [returnInFlight, setReturnInFlight] = useState(false);
+  const [exchanges, setExchanges] = useState<ExchangeView[]>([]);
+  const [exchangingLineId, setExchangingLineId] = useState<string | null>(null);
+  const [exchangeOptions, setExchangeOptions] = useState<ReplacementOption[]>([]);
+  const [exchangeReplacementSkuId, setExchangeReplacementSkuId] = useState('');
+  const [exchangeReason, setExchangeReason] = useState('');
+  const [exchangeMethod, setExchangeMethod] = useState<'PICKUP' | 'DROP_OFF'>('PICKUP');
+  const [exchangeError, setExchangeError] = useState<string | null>(null);
+  const [exchangeInFlight, setExchangeInFlight] = useState(false);
 
   const refresh = () =>
     Promise.all([
       getMyOrder(params.id).then(setOrder),
       listMyReturns().then((all) => setReturns(all.filter((r) => r.orderId === params.id))),
       listMyOrderRefunds(params.id).then(setRefunds).catch(() => setRefunds([])),
+      listMyExchanges()
+        .then((all) => setExchanges(all.filter((e) => e.orderId === params.id)))
+        .catch(() => setExchanges([])),
     ]);
 
   useEffect(() => {
@@ -109,6 +145,81 @@ export default function OrderDetailPage() {
       if (line) return { ret, line };
     }
     return null;
+  }
+
+  function exchangeForLine(lineId: string): ExchangeView | undefined {
+    return exchanges.find((e) => e.orderLineId === lineId);
+  }
+
+  async function openExchangeForm(styleId: string, currentSkuId: string, lineId: string) {
+    setExchangingLineId(lineId);
+    setExchangeReason('');
+    setExchangeError(null);
+    setExchangeReplacementSkuId('');
+    setExchangeOptions([]);
+    try {
+      const variants = await listReplacementOptions(styleId);
+      const options = variants.filter((v) => v.skuId !== currentSkuId && v.inStock);
+      setExchangeOptions(options);
+      if (options.length > 0) setExchangeReplacementSkuId(options[0]!.skuId);
+    } catch (err) {
+      setExchangeError(err instanceof Error ? err.message : 'Could not load replacement options.');
+    }
+  }
+
+  async function confirmExchange(lineId: string) {
+    setExchangeError(null);
+    if (!exchangeReason.trim()) {
+      setExchangeError('Please tell us why you are exchanging this item.');
+      return;
+    }
+    if (!exchangeReplacementSkuId) {
+      setExchangeError('Please choose a replacement.');
+      return;
+    }
+    setExchangeInFlight(true);
+    try {
+      const created = await initiateMyExchange(order!.id, lineId, exchangeReplacementSkuId, exchangeReason.trim(), exchangeMethod);
+      setExchangingLineId(null);
+      setExchangeReason('');
+      await refresh();
+
+      // If the replacement costs more, collect the difference right
+      // away via the same Checkout.js widget the checkout flow uses -
+      // the webhook (server-to-server) remains the authoritative
+      // confirmation, this is only the customer-facing payment step.
+      if (created.paymentDirection === 'CUSTOMER_PAYS' && created.paymentStatus === 'PENDING') {
+        const payment = await initiateMyExchangePayment(created.id);
+        if (payment.publicKeyId) {
+          await openRazorpayCheckout({
+            orderId: payment.providerOrderId,
+            publicKeyId: payment.publicKeyId,
+            amountInclusive: payment.amount,
+            contactName: order?.contactName ?? '',
+            contactMobile: order?.contactMobile ?? '',
+            onSuccess: () => refresh(),
+            onDismiss: () => refresh(),
+          });
+        }
+      }
+    } catch (err) {
+      setExchangeError(err instanceof Error ? err.message : 'Could not start this exchange - please try again.');
+    } finally {
+      setExchangeInFlight(false);
+    }
+  }
+
+  async function withdrawExchange(exchangeId: string) {
+    setExchangeError(null);
+    setExchangeInFlight(true);
+    try {
+      await cancelMyExchange(exchangeId);
+      await refresh();
+    } catch (err) {
+      setExchangeError(err instanceof Error ? err.message : 'Could not cancel this exchange - please try again.');
+    } finally {
+      setExchangeInFlight(false);
+    }
   }
 
   async function confirmCancel(lineId: string) {
@@ -352,6 +463,129 @@ export default function OrderDetailPage() {
                         {returnInFlight ? 'Submitting...' : 'Start return'}
                       </Button>
                       <Button type="button" variant="ghost" disabled={returnInFlight} onClick={() => setReturningLineId(null)}>
+                        Never mind
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* M21 (specs/20-exchanges.md): mutually exclusive with an
+                  active return on the same line - the server is the
+                  authoritative check; this UI just doesn't offer both at
+                  once for a line that already shows one. */}
+              {(() => {
+                const existing = exchangeForLine(line.id);
+                if (existing) {
+                  return (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <p className="text-xs text-ink-muted">
+                        {EXCHANGE_STATUS_LABEL[existing.status]}
+                        {existing.paymentDirection === 'CUSTOMER_PAYS' && existing.paymentStatus === 'PENDING' && (
+                          <>
+                            {' - '}
+                            <button
+                              type="button"
+                              className="underline underline-offset-2"
+                              onClick={async () => {
+                                const payment = await initiateMyExchangePayment(existing.id);
+                                if (payment.publicKeyId) {
+                                  await openRazorpayCheckout({
+                                    orderId: payment.providerOrderId,
+                                    publicKeyId: payment.publicKeyId,
+                                    amountInclusive: payment.amount,
+                                    contactName: order?.contactName ?? '',
+                                    contactMobile: order?.contactMobile ?? '',
+                                    onSuccess: () => refresh(),
+                                    onDismiss: () => refresh(),
+                                  });
+                                }
+                              }}
+                            >
+                              Complete payment
+                            </button>
+                          </>
+                        )}
+                      </p>
+                      {(existing.status === 'REQUESTED' || existing.status === 'PICKUP_SCHEDULED') && (
+                        <button
+                          type="button"
+                          disabled={exchangeInFlight}
+                          onClick={() => withdrawExchange(existing.id)}
+                          className="min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                        >
+                          Cancel exchange
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (returnForLine(line.id)) return null; // mutually exclusive - see server-side guard
+                if (!EXCHANGEABLE_LINE_STATUSES.has(line.status)) return null;
+
+                if (exchangingLineId !== line.id) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => openExchangeForm(line.styleId, line.skuId, line.id)}
+                      className="mt-2 min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                    >
+                      Exchange this item
+                    </button>
+                  );
+                }
+
+                return (
+                  <div className="mt-3 space-y-2 rounded-sm border border-border p-3">
+                    <label htmlFor={`exchange-replacement-${line.id}`} className="block text-xs text-ink-muted">
+                      Replacement (required)
+                    </label>
+                    <select
+                      id={`exchange-replacement-${line.id}`}
+                      value={exchangeReplacementSkuId}
+                      onChange={(e) => setExchangeReplacementSkuId(e.target.value)}
+                      className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                    >
+                      {exchangeOptions.length === 0 && <option value="">No other sizes/colours currently in stock</option>}
+                      {exchangeOptions.map((opt) => (
+                        <option key={opt.skuId} value={opt.skuId}>
+                          {opt.colourName} - {opt.sizeLabel}
+                        </option>
+                      ))}
+                    </select>
+                    <label htmlFor={`exchange-reason-${line.id}`} className="block text-xs text-ink-muted">
+                      Reason (required)
+                    </label>
+                    <textarea
+                      id={`exchange-reason-${line.id}`}
+                      value={exchangeReason}
+                      onChange={(e) => setExchangeReason(e.target.value)}
+                      className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                      rows={2}
+                      required
+                    />
+                    <fieldset className="flex gap-4">
+                      <legend className="text-xs text-ink-muted">How would you like to send the original back?</legend>
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                        <input type="radio" name={`exchange-method-${line.id}`} checked={exchangeMethod === 'PICKUP'} onChange={() => setExchangeMethod('PICKUP')} />
+                        Carrier pickup
+                      </label>
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                        <input type="radio" name={`exchange-method-${line.id}`} checked={exchangeMethod === 'DROP_OFF'} onChange={() => setExchangeMethod('DROP_OFF')} />
+                        Drop-off
+                      </label>
+                    </fieldset>
+                    {exchangeError && (
+                      <p role="alert" className="text-xs text-danger">
+                        {exchangeError}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <Button type="button" variant="primary" disabled={exchangeInFlight || exchangeOptions.length === 0} onClick={() => confirmExchange(line.id)}>
+                        {exchangeInFlight ? 'Submitting...' : 'Start exchange'}
+                      </Button>
+                      <Button type="button" variant="ghost" disabled={exchangeInFlight} onClick={() => setExchangingLineId(null)}>
                         Never mind
                       </Button>
                     </div>

@@ -52,6 +52,7 @@ async function ordersFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export interface OrderLineView {
   id: string;
   skuId: string;
+  styleId: string;
   styleName: string;
   colourName: string;
   sizeLabel: string;
@@ -108,6 +109,8 @@ export interface OrderView {
   status: 'CONFIRMED' | 'PROCESSING' | 'DELIVERED' | 'CANCELLED' | 'RTO' | 'EXCEPTION';
   paymentMethod: 'PREPAID' | 'COD';
   refundRequired: boolean;
+  contactName: string;
+  contactMobile: string;
   grandTotal: number;
   currency: string;
   lines: OrderLineView[];

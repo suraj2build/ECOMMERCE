@@ -76,6 +76,7 @@ model Location {
   orderLines           OrderLine[]
   pickTasks            PickTask[]
   returnLines          ReturnLine[]
+  exchanges            Exchange[]
 
   @@index([gstRegistrationId])
   @@map("locations")
@@ -165,6 +166,8 @@ model StaffUser {
   createdReturnPickups    ReturnPickup[]          @relation("ReturnPickupCreatedBy")
   initiatedRefunds        Refund[]                @relation("RefundInitiatedBy")
   storeCreditEntriesActed StoreCreditEntry[]      @relation("StoreCreditEntryActor")
+  initiatedExchanges      Exchange[]              @relation("ExchangeInitiatedBy")
+  qcExchanges             Exchange[]              @relation("ExchangeQcBy")
 
   @@map("staff_users")
 }
@@ -424,20 +427,22 @@ model Sku {
   size      Size       @relation(fields: [sizeId], references: [id])
   sizeChart SizeChart? @relation(fields: [sizeChartId], references: [id])
 
-  supplierSkus         SupplierSku[]
-  purchaseOrderLines   PurchaseOrderLine[]
-  goodsReceiptLines    GoodsReceiptLine[]
-  inventoryBalances    InventoryBalance[]
-  inventoryTxns        InventoryTransaction[]
-  reservations         InventoryReservation[]
-  transfers            InventoryTransfer[]
-  invoiceLines         InvoiceLine[]
-  cartItems            CartItem[]
-  wishlistItems        WishlistItem[]
-  checkoutSessionLines CheckoutSessionLine[]
-  orderLines           OrderLine[]
-  pickTasks            PickTask[]
-  returnLines          ReturnLine[]
+  supplierSkus           SupplierSku[]
+  purchaseOrderLines     PurchaseOrderLine[]
+  goodsReceiptLines      GoodsReceiptLine[]
+  inventoryBalances      InventoryBalance[]
+  inventoryTxns          InventoryTransaction[]
+  reservations           InventoryReservation[]
+  transfers              InventoryTransfer[]
+  invoiceLines           InvoiceLine[]
+  cartItems              CartItem[]
+  wishlistItems          WishlistItem[]
+  checkoutSessionLines   CheckoutSessionLine[]
+  orderLines             OrderLine[]
+  pickTasks              PickTask[]
+  returnLines            ReturnLine[]
+  exchangesAsOriginal    Exchange[]             @relation("ExchangeOriginalSku")
+  exchangesAsReplacement Exchange[]             @relation("ExchangeReplacementSku")
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -1598,13 +1603,23 @@ model PaymentEvent {
   providerEventId String
   eventType       String
   paymentId       String?
+  // M21: set instead of paymentId when this event correlates to an
+  // Exchange's own price-difference payment (a captured payment that was
+  // never a checkout-session Payment row) - ExchangeService owns its own
+  // dedup/processing against this event, entirely separate from
+  // PaymentService's own applyOutcome/applyCaptureOutcome transactions
+  // (M14-certified code, deliberately left untouched by M21 - see
+  // PaymentService.handleRazorpayWebhook's own docblock for why this
+  // dispatch is additive, not a modification to that logic).
+  exchangeId      String?
   payload         Json
   receivedAt      DateTime            @default(now())
   status          PaymentEventStatus  @default(RECEIVED)
   processedAt     DateTime?
   processingError String?
 
-  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  payment  Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  exchange Exchange? @relation(fields: [exchangeId], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerEventId])
   @@index([status])
@@ -1815,6 +1830,7 @@ model Order {
   shipments       Shipment[]
   returns         Return[]
   refunds         Refund[]
+  exchanges       Exchange[]
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -1873,6 +1889,7 @@ model OrderLine {
   pickTask   PickTask?
   returnLine ReturnLine?
   refund     Refund?
+  exchange   Exchange?
 
   @@index([orderId])
   @@map("order_lines")
@@ -2340,8 +2357,160 @@ model StoreCreditEntry {
 
   account    StoreCreditAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
   refund     Refund?
+  exchange   Exchange?
   actorStaff StaffUser?         @relation("StoreCreditEntryActor", fields: [actorStaffId], references: [id], onDelete: Restrict)
 
   @@index([accountId])
   @@map("store_credit_entries")
+}
+
+// --- M21 Exchanges (specs/20-exchanges.md, EXC-001-003) ---
+
+// No PAYMENT_METHOD_UNAVAILABLE/etc. terminal-failure branching here the
+// way M14's Payment has - a captured/failed outcome is expressed via
+// paymentStatus below, not this status, which tracks the EXCHANGE's own
+// physical/business lifecycle. REPLACEMENT_UNAVAILABLE is its own
+// terminal state (EXCHANGE_REPLACEMENT_HOLD_DAYS elapsed, or the
+// replacement SKU's reservation was otherwise lost, before the original
+// item came back) - never silently reused as CANCELLED, since the
+// customer never asked to cancel; a human must follow up.
+enum ExchangeStatus {
+  REQUESTED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  RECEIVED
+  COMPLETED
+  // The original item failed QC (INV-006's own gate, applied here
+  // exactly as RET-005 applies it to a Return): disposition still posts
+  // (a real physical-inventory requirement), but the replacement is
+  // never allocated and, if a price-difference payment was already
+  // captured (the CUSTOMER_PAYS direction, collected up-front), it is
+  // never auto-refunded - both require an explicit human (Finance/CS)
+  // decision, the same "neither silently benefits nor silently harms
+  // the customer" discipline as RET-005. See EXC-004 in
+  // blueprint/DECISION_REGISTER.md.
+  QC_FAILED
+  REPLACEMENT_UNAVAILABLE
+  CANCELLED
+}
+
+// EXC-002: derived once, at request time, from replacementValue vs
+// originalLineValue - never re-derived later (a subsequent catalog price
+// change must not retroactively change which rail this exchange settles
+// through).
+enum ExchangePaymentDirection {
+  CUSTOMER_PAYS
+  STORE_CREDIT
+  EVEN
+}
+
+enum ExchangePaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  CAPTURED
+  FAILED
+}
+
+// First-class entity (EXC-001): the original order/line, the replacement
+// SKU, and any payment/credit settlement all live on ONE record - never
+// reconstructed by joining a Return and an unrelated new Order. Single
+// original-item <-> single-replacement-item per Exchange (no separate
+// "ExchangeLine" collection the way Return/ReturnLine has one-to-many) -
+// the same "no sub-quantity, one line at a time" simplification already
+// documented for cancellation (CAN-004) and returns (this model's own
+// orderLineId is @unique, mirroring ReturnLine's).
+//
+// Scope boundary (EXC-004 in blueprint/DECISION_REGISTER.md): physical
+// FORWARD fulfilment (pick/pack/ship/tracking) of the replacement item is
+// explicitly out of this milestone's scope - `replacementAllocatedAt`
+// marks the replacement as inventory-committed (a firm allocation, no
+// longer available for other orders) once QC passes and payment/credit
+// settles; the warehouse's own pick/pack/ship of that allocated unit is
+// a manual/follow-on process, not tracked here. This mirrors RET-005's
+// own honestly-scoped boundary rather than silently pretending a full
+// parallel shipment pipeline exists.
+model Exchange {
+  id                 String         @id @default(uuid())
+  exchangeNumber     String         @unique
+  orderId            String
+  orderLineId        String         @unique
+  originalSkuId      String
+  originalLocationId String
+  quantity           Int
+  replacementSkuId   String
+  reason             String
+  status             ExchangeStatus @default(REQUESTED)
+  method             ReturnMethod
+  initiatedBy        AuditActorType
+  initiatedByStaffId String?
+  // Initiation idempotency (a retried "start an exchange" request must
+  // never create two Exchange rows, or reserve the replacement twice).
+  idempotencyKey     String         @unique
+
+  // Replacement reservation (INV-002 mechanics, held for
+  // EXCHANGE_REPLACEMENT_HOLD_DAYS - EXC-002/acceptance negative scenario
+  // #2). `replacementAllocatedAt` is set once the reservation is
+  // successfully converted to a firm allocation (QC pass + payment/credit
+  // settled) - see this model's own scope-boundary comment above.
+  replacementReservationId String?
+  replacementAllocatedAt   DateTime?
+
+  // Price-difference settlement (EXC-002). originalLineValue mirrors
+  // REF-003's "original transaction value" (the original line's own
+  // frozen lineTotalInclusive); replacementValue is the replacement
+  // SKU's selling price AT REQUEST TIME (necessarily current, since the
+  // replacement was never previously purchased in this order) - both
+  // frozen at request time, never re-derived from a later catalog price
+  // change.
+  originalLineValue        Decimal                  @db.Decimal(10, 2)
+  replacementValue         Decimal                  @db.Decimal(10, 2)
+  priceDifference          Decimal                  @db.Decimal(10, 2)
+  paymentDirection         ExchangePaymentDirection
+  paymentStatus            ExchangePaymentStatus    @default(NOT_REQUIRED)
+  paymentProviderOrderId   String?
+  paymentProviderPaymentId String?
+  storeCreditEntryId       String?                  @unique
+
+  // Reverse logistics for the ORIGINAL item (inlined rather than a
+  // separate ExchangePickup table - unlike Return, which can batch
+  // multiple lines into one parcel, an Exchange is always exactly one
+  // item, so a second table would add nothing). Uses the SAME
+  // ShippingProvider.initiateReversePickup method M19 established.
+  pickupStatus         ReturnPickupStatus?
+  pickupProvider       String?
+  pickupProviderRef    String?
+  pickupTrackingRef    String?
+  pickupIdempotencyKey String?             @unique
+  scheduledAt          DateTime?
+  pickedUpAt           DateTime?
+  receivedAt           DateTime?
+
+  // QC + disposition of the ORIGINAL item - reuses InventoryService's
+  // postReturnReceipt/postReturnDisposition exactly as ReturnLine does
+  // (same RETURN_RECEIVED/RETURN_QC_PASS/RETURN_QC_FAIL/RETURN_DISPOSED
+  // ledger types, same INV-006 "never auto-restock before QC" gate).
+  qcResult        QcResult?
+  disposition     ReturnDisposition?
+  qcNotes         String?
+  qcActorStaffId  String?
+  qcAt            DateTime?
+  dispositionedAt DateTime?
+
+  cancelledAt     DateTime?
+  cancelledReason String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  order            Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLine        OrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  originalSku      Sku               @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
+  originalLocation Location          @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
+  replacementSku   Sku               @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
+  initiatedStaff   StaffUser?        @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
+  qcActorStaff     StaffUser?        @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  storeCreditEntry StoreCreditEntry? @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
+  paymentEvents    PaymentEvent[]
+
+  @@index([orderId])
+  @@map("exchanges")
 }

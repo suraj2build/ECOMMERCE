@@ -6,6 +6,7 @@ import { InventoryService } from '../inventory/service.js';
 import { resolvePaymentProvider, type WebhookEvent } from '../checkout/payment-provider.js';
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
+import { ExchangeService } from '../exchanges/service.js';
 
 export interface WebhookResult {
   ok: boolean;
@@ -25,10 +26,12 @@ export interface WebhookResult {
 export class PaymentService {
   private readonly inventory: InventoryService;
   private readonly order: OrderService;
+  private readonly exchange: ExchangeService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
     this.order = new OrderService(fastify);
+    this.exchange = new ExchangeService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -81,9 +84,38 @@ export class PaymentService {
         ? await this.prisma.payment.findFirst({ where: { provider: 'RAZORPAY', providerReferenceId: event.paymentEntityId } })
         : null;
 
-    const eventRecord = await this.recordOrResumeEvent(event, payment?.id, payload);
+    // M21 (specs/20-exchanges.md): a price-difference payment for an
+    // Exchange is never a checkout-session Payment row, so it only ever
+    // reaches here once `payment` above is null. Dispatches to
+    // ExchangeService's OWN transaction/state-machine - deliberately
+    // never touches applyOutcome/applyCaptureOutcome below, which remain
+    // exactly the M14-certified checkout-payment logic they always were.
+    const exchangeMatch = !payment
+      ? event.orderId
+        ? await this.prisma.exchange.findFirst({ where: { paymentProviderOrderId: event.orderId } })
+        : event.paymentEntityId
+          ? await this.prisma.exchange.findFirst({ where: { paymentProviderPaymentId: event.paymentEntityId } })
+          : null
+      : null;
+
+    const eventRecord = await this.recordOrResumeEvent(event, payment?.id, exchangeMatch?.id, payload);
     if (eventRecord.status === 'PROCESSED') {
       return { ok: true, duplicate: true };
+    }
+
+    if (exchangeMatch) {
+      try {
+        await this.exchange.handlePaymentWebhookEvent(exchangeMatch.id, event);
+        await this.markEventProcessed(eventRecord.id);
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.fastify.log.error({ err, providerEventId: event.providerEventId, exchangeId: exchangeMatch.id }, 'Exchange payment event processing failed - will resume on redelivery');
+        await this.prisma.paymentEvent
+          .update({ where: { id: eventRecord.id }, data: { status: 'FAILED', processingError: message } })
+          .catch(() => undefined);
+        return { ok: false, reason: 'processing_failed' };
+      }
     }
 
     if (!payment) {
@@ -170,6 +202,7 @@ export class PaymentService {
   private async recordOrResumeEvent(
     event: WebhookEvent,
     paymentId: string | undefined,
+    exchangeId: string | undefined,
     payload: unknown,
   ): Promise<{ id: string; status: 'RECEIVED' | 'PROCESSED' | 'FAILED' }> {
     try {
@@ -179,6 +212,7 @@ export class PaymentService {
           providerEventId: event.providerEventId,
           eventType: event.eventType,
           paymentId,
+          exchangeId,
           payload: payload as Prisma.InputJsonValue,
           status: 'RECEIVED',
         },

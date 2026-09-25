@@ -418,6 +418,10 @@ export class OrderService {
       lines: order.lines.map((l) => ({
         id: l.id,
         skuId: l.skuId,
+        // M21: lets the storefront look up sibling SKUs (other sizes/
+        // colours of the same style) for an exchange, without a second
+        // order-detail round-trip.
+        styleId: l.sku.styleId,
         styleName: l.sku.style.name,
         colourName: l.sku.colour.name,
         sizeLabel: l.sku.size.label,

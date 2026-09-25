@@ -30,6 +30,7 @@ import warehouseRoutes from './modules/warehouse/routes.js';
 import shippingRoutes from './modules/shipping/routes.js';
 import returnRoutes from './modules/returns/routes.js';
 import refundRoutes from './modules/refunds/routes.js';
+import exchangeRoutes from './modules/exchanges/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -133,6 +134,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(shippingRoutes, { prefix: '/api/v1' });
   await app.register(returnRoutes, { prefix: '/api/v1' });
   await app.register(refundRoutes, { prefix: '/api/v1' });
+  await app.register(exchangeRoutes, { prefix: '/api/v1' });
 
   return app;
 }

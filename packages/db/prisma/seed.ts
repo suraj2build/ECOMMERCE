@@ -87,6 +87,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'return:read',
     'return:receive',
     'return:qc',
+    // M21: mirrors return:receive/qc exactly, for an exchange's original
+    // item.
+    'exchange:read',
+    'exchange:receive',
+    'exchange:qc',
   ],
   WAREHOUSE_OPERATOR: [
     'grn:create',
@@ -103,6 +108,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // M19: operators receive returned parcels but do not sign off QC.
     'return:read',
     'return:receive',
+    // M21: mirrors return:receive - operators receive but do not QC.
+    'exchange:read',
+    'exchange:receive',
   ],
   CUSTOMER_SERVICE: [
     'customer_service:manage',
@@ -116,6 +124,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // M19: CS-assisted return initiation.
     'return:read',
     'return:initiate',
+    // M21: CS-assisted exchange initiation.
+    'exchange:read',
+    'exchange:initiate',
   ],
   MARKETING: [
     'marketing:manage',
