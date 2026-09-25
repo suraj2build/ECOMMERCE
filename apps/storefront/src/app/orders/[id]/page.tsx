@@ -6,11 +6,26 @@ import Link from 'next/link';
 import { Container } from '@/components/ui/Container';
 import { Button, buttonClassName } from '@/components/ui/Button';
 import { getMyOrder, cancelMyOrderLine, type OrderView } from '@/lib/orders';
+import { listMyReturns, initiateMyReturn, cancelMyReturn, type ReturnView } from '@/lib/returns';
 
 // M18 (specs/17-cancellation.md, CAN-001): "before shipment" - convenience
 // display only, the server (OrderService.performCancellation) is the sole
 // authoritative eligibility check and re-validates against live state.
 const CANCELLABLE_LINE_STATUSES = new Set(['ALLOCATED', 'PICKED', 'PACKED']);
+
+// M19 (specs/18-returns.md, RET-001): "delivered" gating is convenience
+// display only - ReturnService re-validates window/non-returnable
+// eligibility server-side against live state on every initiate call.
+const RETURNABLE_LINE_STATUSES = new Set(['DELIVERED']);
+
+const RETURN_STATUS_LABEL: Record<ReturnView['status'], string> = {
+  REQUESTED: 'Return requested',
+  PICKUP_SCHEDULED: 'Pickup scheduled',
+  PICKED_UP: 'Picked up - awaiting warehouse receipt',
+  RECEIVED: 'Received - under inspection',
+  DISPOSITIONED: 'Return processed',
+  CANCELLED: 'Return cancelled',
+};
 
 const STATUS_LABEL: Record<OrderView['status'], string> = {
   CONFIRMED: 'Confirmed',
@@ -51,17 +66,35 @@ const SHIPMENT_STATUS_LABEL: Record<string, string> = {
 export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const [order, setOrder] = useState<OrderView | null>(null);
+  const [returns, setReturns] = useState<ReturnView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cancellingLineId, setCancellingLineId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelInFlight, setCancelInFlight] = useState(false);
+  const [returningLineId, setReturningLineId] = useState<string | null>(null);
+  const [returnReason, setReturnReason] = useState('');
+  const [returnMethod, setReturnMethod] = useState<'PICKUP' | 'DROP_OFF'>('PICKUP');
+  const [returnError, setReturnError] = useState<string | null>(null);
+  const [returnInFlight, setReturnInFlight] = useState(false);
 
-  const refresh = () => getMyOrder(params.id).then(setOrder);
+  const refresh = () =>
+    Promise.all([
+      getMyOrder(params.id).then(setOrder),
+      listMyReturns().then((all) => setReturns(all.filter((r) => r.orderId === params.id))),
+    ]);
 
   useEffect(() => {
     refresh().catch((err) => setError(err instanceof Error ? err.message : 'Could not load this order.'));
   }, [params.id]);
+
+  function returnForLine(lineId: string) {
+    for (const ret of returns) {
+      const line = ret.lines.find((l) => l.orderLineId === lineId);
+      if (line) return { ret, line };
+    }
+    return null;
+  }
 
   async function confirmCancel(lineId: string) {
     setCancelError(null);
@@ -75,6 +108,38 @@ export default function OrderDetailPage() {
       setCancelError(err instanceof Error ? err.message : 'Could not cancel this item - please try again.');
     } finally {
       setCancelInFlight(false);
+    }
+  }
+
+  async function confirmReturn(lineId: string) {
+    setReturnError(null);
+    if (!returnReason.trim()) {
+      setReturnError('Please tell us why you are returning this item.');
+      return;
+    }
+    setReturnInFlight(true);
+    try {
+      await initiateMyReturn(order!.id, [{ orderLineId: lineId, reason: returnReason.trim() }], returnMethod);
+      setReturningLineId(null);
+      setReturnReason('');
+      await refresh();
+    } catch (err) {
+      setReturnError(err instanceof Error ? err.message : 'Could not start this return - please try again.');
+    } finally {
+      setReturnInFlight(false);
+    }
+  }
+
+  async function withdrawReturn(returnId: string) {
+    setReturnError(null);
+    setReturnInFlight(true);
+    try {
+      await cancelMyReturn(returnId);
+      await refresh();
+    } catch (err) {
+      setReturnError(err instanceof Error ? err.message : 'Could not cancel this return - please try again.');
+    } finally {
+      setReturnInFlight(false);
     }
   }
 
@@ -174,6 +239,98 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               )}
+
+              {(() => {
+                const existing = returnForLine(line.id);
+                if (existing) {
+                  return (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <p className="text-xs text-ink-muted">
+                        {existing.ret.returnNumber}: {RETURN_STATUS_LABEL[existing.ret.status]}
+                        {existing.ret.status === 'CANCELLED' && existing.ret.cancelledReason ? ` (${existing.ret.cancelledReason})` : ''}
+                      </p>
+                      {(existing.ret.status === 'REQUESTED' || existing.ret.status === 'PICKUP_SCHEDULED') && (
+                        <button
+                          type="button"
+                          disabled={returnInFlight}
+                          onClick={() => withdrawReturn(existing.ret.id)}
+                          className="min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                        >
+                          Cancel return
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (!RETURNABLE_LINE_STATUSES.has(line.status)) return null;
+
+                if (returningLineId !== line.id) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReturningLineId(line.id);
+                        setReturnReason('');
+                        setReturnError(null);
+                      }}
+                      className="mt-2 min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                    >
+                      Return this item
+                    </button>
+                  );
+                }
+
+                return (
+                  <div className="mt-3 space-y-2 rounded-sm border border-border p-3">
+                    <label htmlFor={`return-reason-${line.id}`} className="block text-xs text-ink-muted">
+                      Reason (required)
+                    </label>
+                    <textarea
+                      id={`return-reason-${line.id}`}
+                      value={returnReason}
+                      onChange={(e) => setReturnReason(e.target.value)}
+                      className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                      rows={2}
+                      required
+                    />
+                    <fieldset className="flex gap-4">
+                      <legend className="text-xs text-ink-muted">How would you like to return it?</legend>
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                        <input
+                          type="radio"
+                          name={`return-method-${line.id}`}
+                          checked={returnMethod === 'PICKUP'}
+                          onChange={() => setReturnMethod('PICKUP')}
+                        />
+                        Carrier pickup
+                      </label>
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                        <input
+                          type="radio"
+                          name={`return-method-${line.id}`}
+                          checked={returnMethod === 'DROP_OFF'}
+                          onChange={() => setReturnMethod('DROP_OFF')}
+                        />
+                        Drop-off
+                      </label>
+                    </fieldset>
+                    {returnError && (
+                      <p role="alert" className="text-xs text-danger">
+                        {returnError}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <Button type="button" variant="primary" disabled={returnInFlight} onClick={() => confirmReturn(line.id)}>
+                        {returnInFlight ? 'Submitting...' : 'Start return'}
+                      </Button>
+                      <Button type="button" variant="ghost" disabled={returnInFlight} onClick={() => setReturningLineId(null)}>
+                        Never mind
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
             </li>
           ))}
         </ul>

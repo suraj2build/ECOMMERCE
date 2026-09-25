@@ -332,7 +332,15 @@ export class OrderService {
     return invoice.id;
   }
 
-  private async loadOwnedOrder(id: string, identity: CartOwnerIdentity) {
+  /**
+   * IDOR-safe ownership check (clean 404, never a distinguishable 403,
+   * both when the order doesn't exist and when it exists but isn't
+   * owned) - made accessible beyond OrderService itself (M19,
+   * specs/18-returns.md) so ReturnService can reuse the SAME mechanism
+   * for customer self-service return initiation, rather than a weaker
+   * M19-specific ownership check (CART-004 remains open regardless).
+   */
+  async loadOwnedOrder(id: string, identity: CartOwnerIdentity) {
     const order = await this.prisma.order.findUnique({ where: { id } });
     if (!order) throw new NotFoundError('Order', id);
     const owns =

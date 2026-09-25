@@ -270,6 +270,151 @@ export class InventoryService {
   }
 
   /**
+   * RETURN_RECEIVED (M19, specs/18-returns.md, RET-002): returnPending +=
+   * quantity when a returned parcel physically arrives at the warehouse -
+   * NEVER onHand or damaged directly (INV-006: "damaged/return-pending
+   * stock MUST NOT automatically become sellable ON_HAND inventory...
+   * re-entry requires passing QC first"). `returnPending` sits in its own
+   * bucket until `postReturnDisposition` below resolves it one way or the
+   * other. Same idempotency-key/external-transaction pattern as
+   * `postReceipt`.
+   */
+  async postReturnReceipt(
+    params: {
+      skuId: string;
+      locationId: string;
+      quantity: number;
+      referenceType: string;
+      referenceId: string;
+      idempotencyKey?: string;
+    },
+    externalTx?: Prisma.TransactionClient,
+  ) {
+    if (params.quantity <= 0) throw new ValidationError('Return receipt quantity must be positive');
+
+    const run = async (tx: Prisma.TransactionClient) => {
+      if (params.idempotencyKey) {
+        const existing = await tx.inventoryTransaction.findUnique({ where: { idempotencyKey: params.idempotencyKey } });
+        if (existing) {
+          if (existing.skuId !== params.skuId || existing.locationId !== params.locationId || existing.quantity !== params.quantity) {
+            throw new ConflictError(`Idempotency key '${params.idempotencyKey}' was already used for a different return-receipt request`);
+          }
+          return existing;
+        }
+      }
+
+      await this.ensureBalanceRow(tx, params.skuId, params.locationId);
+      const balance = await this.lockBalance(tx, params.skuId, params.locationId);
+
+      await tx.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: params.skuId, locationId: params.locationId } },
+        data: { returnPending: balance.returnPending + params.quantity },
+      });
+
+      return this.writeLedgerRow(tx, { ...params, type: 'RETURN_RECEIVED' });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
+   * RETURN_QC_PASS / RETURN_QC_FAIL (M19, RET-002/INV-006): resolves
+   * previously-received returnPending stock into its QC disposition -
+   * always decrements returnPending (the item leaves the "awaiting
+   * disposition" bucket exactly once), and, depending on `disposition`:
+   *  - RESTOCK_SELLABLE: onHand += quantity (RETURN_QC_PASS) - genuinely
+   *    resellable at normal price, the only disposition that makes stock
+   *    available for a fresh sale again.
+   *  - RESTOCK_DAMAGED: damaged += quantity (RETURN_QC_FAIL) - physically
+   *    still on site but not standard-sellable (mirrors GRN's own
+   *    QC_FAIL -> damaged semantics exactly); a markdown/clearance
+   *    re-listing is a separate M07 pricing action on that same damaged
+   *    stock, not an inventory-type concern.
+   *  - WRITE_OFF / RETURN_TO_SUPPLIER: neither onHand nor damaged changes
+   *    - the item physically leaves this location's tracked inventory
+   *    entirely (destroyed, or shipped back to the supplier), so it must
+   *    not reappear in any balance bucket; only the returnPending
+   *    decrement and the RETURN_QC_FAIL ledger row record that it was
+   *    resolved. The specific disposition (which of the two) is preserved
+   *    on the ReturnLine row itself, not distinguishable from the ledger
+   *    type alone - only two QC-outcome ledger types exist
+   *    (RETURN_QC_PASS/RETURN_QC_FAIL), matching GRN's own QC_FAIL
+   *    precedent, rather than inventing new ledger types this milestone
+   *    doesn't otherwise need.
+   *
+   * Requires `returnPending >= quantity` under the same row lock used
+   * throughout this ledger - a disposition can never resolve more stock
+   * than was actually received (mirrors `recordSale`'s own onHand/reserved
+   * sufficiency check, InventoryService's own integrity boundary, never
+   * merely trusting the caller).
+   */
+  async postReturnDisposition(
+    params: {
+      skuId: string;
+      locationId: string;
+      quantity: number;
+      disposition: 'RESTOCK_SELLABLE' | 'RESTOCK_DAMAGED' | 'WRITE_OFF' | 'RETURN_TO_SUPPLIER';
+      referenceType: string;
+      referenceId: string;
+      reason?: string;
+      idempotencyKey?: string;
+    },
+    externalTx?: Prisma.TransactionClient,
+  ) {
+    if (params.quantity <= 0) throw new ValidationError('Return disposition quantity must be positive');
+
+    const run = async (tx: Prisma.TransactionClient) => {
+      if (params.idempotencyKey) {
+        const existing = await tx.inventoryTransaction.findUnique({ where: { idempotencyKey: params.idempotencyKey } });
+        if (existing) {
+          if (existing.skuId !== params.skuId || existing.locationId !== params.locationId || existing.quantity !== params.quantity) {
+            throw new ConflictError(`Idempotency key '${params.idempotencyKey}' was already used for a different return-disposition request`);
+          }
+          return existing;
+        }
+      }
+
+      const balance = await this.lockBalance(tx, params.skuId, params.locationId);
+      if (balance.returnPending < params.quantity) {
+        throw new InventoryIntegrityError(
+          `Cannot resolve ${params.quantity} unit(s) of returnPending stock for SKU '${params.skuId}' at location ` +
+            `'${params.locationId}' - only ${balance.returnPending} is actually pending (returnPending < quantity).`,
+        );
+      }
+
+      const data: Prisma.InventoryBalanceUpdateInput = { returnPending: balance.returnPending - params.quantity };
+      if (params.disposition === 'RESTOCK_SELLABLE') data.onHand = balance.onHand + params.quantity;
+      if (params.disposition === 'RESTOCK_DAMAGED') data.damaged = balance.damaged + params.quantity;
+      // WRITE_OFF / RETURN_TO_SUPPLIER: returnPending decrement only - the item leaves tracked inventory entirely.
+
+      await tx.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: params.skuId, locationId: params.locationId } },
+        data,
+      });
+
+      const type: InventoryTxnType =
+        params.disposition === 'RESTOCK_SELLABLE'
+          ? 'RETURN_QC_PASS'
+          : params.disposition === 'RESTOCK_DAMAGED'
+            ? 'RETURN_QC_FAIL'
+            : 'RETURN_DISPOSED';
+
+      return this.writeLedgerRow(tx, {
+        skuId: params.skuId,
+        locationId: params.locationId,
+        type,
+        quantity: params.quantity,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
+        reason: params.reason ?? params.disposition,
+        idempotencyKey: params.idempotencyKey,
+      });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
    * RESERVATION: reserved += quantity, gated by available = onHand - reserved.
    * THE oversell-prevention choke point (INV-002/INV-003). Runs the
    * availability check and the balance mutation inside one row-locked
@@ -843,17 +988,48 @@ export class InventoryService {
     for (const txn of transactions) {
       switch (txn.type) {
         case 'RECEIPT':
-        case 'RETURN_QC_PASS':
         case 'TRANSFER_IN':
           onHand += txn.quantity;
           break;
+        case 'RETURN_QC_PASS':
+          // M19 (INV-006): resolves previously-received returnPending
+          // stock into sellable onHand - both effects fire from this one
+          // ledger row (see InventoryService.postReturnDisposition).
+          onHand += txn.quantity;
+          returnPending -= txn.quantity;
+          break;
         case 'SALE':
+          // M19 regression finding: recordSale decrements BOTH onHand and
+          // reserved (stock physically leaves AND its reservation/
+          // allocation hold is released in the same posting - see
+          // recordSale's own docblock) but this replay previously only
+          // accounted for the onHand side, silently under-counting
+          // `reserved` for any SKU/location whose ledger included a SALE.
+          // No pre-M19 test exercised reconcileBalance() past a genuine
+          // SALE to expose this - caught by returns.test.ts's own
+          // reconciliation proof (RESERVATION -> ALLOCATION -> SALE ->
+          // RETURN_RECEIVED -> RETURN_QC_PASS chain). TRANSFER_OUT stays
+          // onHand-only - a location transfer never touches reservations.
+          onHand -= txn.quantity;
+          reserved -= txn.quantity;
+          break;
         case 'TRANSFER_OUT':
           onHand -= txn.quantity;
           break;
         case 'QC_FAIL':
-        case 'RETURN_QC_FAIL':
           damaged += txn.quantity;
+          break;
+        case 'RETURN_QC_FAIL':
+          // M19: resolves returnPending stock into the damaged bucket
+          // (restock as marked-down/damaged) - both effects fire together.
+          damaged += txn.quantity;
+          returnPending -= txn.quantity;
+          break;
+        case 'RETURN_DISPOSED':
+          // M19: write-off or return-to-supplier - the item leaves
+          // tracked inventory entirely; only the returnPending decrement
+          // applies, never onHand or damaged.
+          returnPending -= txn.quantity;
           break;
         case 'RESERVATION':
         case 'EXCHANGE_RESERVE':

@@ -82,6 +82,18 @@ export const PERMISSION_KEYS = [
   'warehouse:pick',
   'warehouse:pack',
   'warehouse:exception:manage',
+  // M19 (specs/18-returns.md): return:initiate is CS-assisted initiation
+  // (distinct from the customer's own self-service path, which needs no
+  // staff permission at all - ownership-checked instead, same pattern as
+  // M18 cancellation). return:receive/qc are warehouse-floor actions,
+  // deliberately separate permissions (mirrors warehouse:pick/pack's own
+  // granularity) so a future role split needs no schema change; qc is
+  // WAREHOUSE_MANAGER-only, mirroring grn:qc:manager_signoff's own
+  // manager-signoff precedent for GRN QC.
+  'return:read',
+  'return:initiate',
+  'return:receive',
+  'return:qc',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

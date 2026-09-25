@@ -68,6 +68,30 @@ export interface ShipmentBookingResult {
   message?: string;
 }
 
+/**
+ * Reverse pickup (M19, specs/18-returns.md, RET-004): scheduling a
+ * carrier pickup FROM the customer's address TO the warehouse - the
+ * opposite direction of `initiateShipment`, and a genuinely distinct
+ * business operation, never modeled as a forward Shipment run backwards
+ * (M19 build instruction §12: "forward shipment and reverse shipment are
+ * different business operations"). `pickupId` is the platform's own
+ * ReturnPickup.id, used exactly like `shipmentId` above as the carrier-
+ * call idempotency key.
+ */
+export interface ReversePickupInput {
+  pickupId: string;
+  returnNumber: string;
+  originPincode: string;
+  weightGrams?: number;
+}
+
+export interface ReversePickupResult {
+  status: 'SCHEDULED' | 'UNAVAILABLE';
+  providerPickupRef?: string;
+  trackingRef?: string;
+  message?: string;
+}
+
 export interface CarrierTrackingEvent {
   /** Present for a genuine webhook delivery; absent for a poll-derived snapshot (no event to dedup on). */
   providerEventId?: string;
@@ -87,6 +111,8 @@ export interface ShippingProvider {
   parseWebhookEvent(rawBody: string): CarrierTrackingEvent;
   /** Polling fallback (SHIP-003): current known status for a shipment, or null if the carrier has nothing new to report. */
   trackShipment(providerShipmentRef: string): Promise<CarrierTrackingEvent | null>;
+  /** M19 (RET-004): schedules a reverse pickup from the customer's address. */
+  initiateReversePickup(input: ReversePickupInput): Promise<ReversePickupResult>;
 }
 
 const MOCK_RAW_STATUS_MAP: Record<string, NormalizedTrackingStatus> = {
@@ -179,6 +205,17 @@ export class MockCarrierProvider implements ShippingProvider {
     // last-known platform status untouched" (SHIP-003 polling fallback;
     // acceptance negative scenario #1's graceful degradation).
     return null;
+  }
+
+  /**
+   * Idempotent-by-pickupId, same reasoning as `initiateShipment` above -
+   * a pure function of its input, no randomness, so a crash-retry between
+   * "carrier call succeeded" and "local commit" never double-books.
+   */
+  async initiateReversePickup(input: ReversePickupInput): Promise<ReversePickupResult> {
+    const providerPickupRef = `MOCK-RPU-${input.pickupId}`;
+    const trackingRef = `MOCKRPU${input.pickupId.replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+    return { status: 'SCHEDULED', providerPickupRef, trackingRef };
   }
 }
 

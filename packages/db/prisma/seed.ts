@@ -82,6 +82,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // hand-off they themselves confirm - not restricted to BUSINESS_ADMIN
     // alone (specs/16-shipping-tracking.md).
     'shipping:manage',
+    // M19: warehouse receives and QCs returned parcels - qc is
+    // manager-only (mirrors grn:qc:manager_signoff).
+    'return:read',
+    'return:receive',
+    'return:qc',
   ],
   WAREHOUSE_OPERATOR: [
     'grn:create',
@@ -95,6 +100,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'warehouse:pick',
     'warehouse:pack',
     'shipping:manage',
+    // M19: operators receive returned parcels but do not sign off QC.
+    'return:read',
+    'return:receive',
   ],
   CUSTOMER_SERVICE: [
     'customer_service:manage',
@@ -105,6 +113,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'order:cancel',
     'order:exception:manage',
     'order:rto',
+    // M19: CS-assisted return initiation.
+    'return:read',
+    'return:initiate',
   ],
   MARKETING: [
     'marketing:manage',

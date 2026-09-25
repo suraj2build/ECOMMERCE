@@ -92,6 +92,13 @@ const envSchema = z.object({
   // default 2 - business behaviour, never hard-coded.
   SHIPPING_PROVIDER: z.string().default('MOCK'),
   SHIPPING_MAX_REDELIVERY_ATTEMPTS: z.coerce.number().int().nonnegative().default(2),
+
+  // --- Returns (M19, specs/18-returns.md, RET-001) ---
+  // Platform-wide fallback used only when no ReturnPolicy row overrides a
+  // given style/category - "MUST be configurable by category/product, not
+  // one global hard-coded policy" (RET-001); this is the configurable
+  // baseline, never hard-coded into ReturnService's own logic.
+  RETURN_WINDOW_DEFAULT_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -75,6 +75,7 @@ model Location {
   checkoutSessionLines CheckoutSessionLine[]
   orderLines           OrderLine[]
   pickTasks            PickTask[]
+  returnLines          ReturnLine[]
 
   @@index([gstRegistrationId])
   @@map("locations")
@@ -158,6 +159,9 @@ model StaffUser {
   crossSellOverrides      CrossSellOverride[]
   pickedPickTasks         PickTask[]              @relation("PickTaskPickedBy")
   createdShipments        Shipment[]              @relation("ShipmentCreatedBy")
+  initiatedReturns        Return[]                @relation("ReturnInitiatedBy")
+  qcReturnLines           ReturnLine[]            @relation("ReturnLineQcBy")
+  createdReturnPickups    ReturnPickup[]          @relation("ReturnPickupCreatedBy")
 
   @@map("staff_users")
 }
@@ -274,6 +278,7 @@ model Category {
   parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children Category[] @relation("CategoryTree")
   styles   Style[]
+  returnPolicy ReturnPolicy?
 
   @@map("categories")
 }
@@ -332,6 +337,7 @@ model Style {
   reviews            Review[]
   crossSellFrom      CrossSellOverride[] @relation("CrossSellFrom")
   crossSellTo        CrossSellOverride[] @relation("CrossSellTo")
+  returnPolicy       ReturnPolicy?
 
   @@index([lifecycleState])
   @@index([brandId])
@@ -428,6 +434,7 @@ model Sku {
   checkoutSessionLines CheckoutSessionLine[]
   orderLines           OrderLine[]
   pickTasks            PickTask[]
+  returnLines          ReturnLine[]
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -673,6 +680,15 @@ enum InventoryTxnType {
   RETURN_RECEIVED
   RETURN_QC_PASS
   RETURN_QC_FAIL
+  // M19 (specs/18-returns.md, INV-006): a WRITE_OFF or RETURN_TO_SUPPLIER
+  // disposition - the item leaves tracked inventory entirely (destroyed,
+  // or shipped back to the supplier), so it must never reappear in
+  // onHand/damaged. A distinct type from RETURN_QC_FAIL (which restocks
+  // as damaged/marked-down, still physically on site) is required so the
+  // ledger replay in InventoryService.reconcileBalance can reconstruct the
+  // correct balance from `type` alone, without needing to look up the
+  // originating ReturnLine's disposition.
+  RETURN_DISPOSED
   EXCHANGE_RELEASE
   EXCHANGE_RESERVE
   RTO
@@ -1792,6 +1808,7 @@ model Order {
   fulfilments     OrderFulfilment[]
   pickTasks       PickTask[]
   shipments       Shipment[]
+  returns         Return[]
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -1848,6 +1865,7 @@ model OrderLine {
   location   Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
   fulfilment OrderFulfilment? @relation(fields: [fulfilmentId], references: [id], onDelete: SetNull)
   pickTask   PickTask?
+  returnLine ReturnLine?
 
   @@index([orderId])
   @@map("order_lines")
@@ -2006,4 +2024,162 @@ model ShipmentTrackingEvent {
   @@index([shipmentId])
   @@index([status])
   @@map("shipment_tracking_events")
+}
+
+// ---------------------------------------------------------------------------
+// M19: Returns (specs/18-returns.md, RET-001-004, CAN-004's sibling record
+// RET-005 in blueprint/DECISION_REGISTER.md). Deliberately NOT overloading
+// OrderLineStatus with the return lifecycle (per the M19 build instruction's
+// own explicit boundary) - a delivered OrderLine's status stays DELIVERED
+// forever as the historical fact; the Return/ReturnLine state machine below
+// tracks the post-delivery lifecycle independently, linked by orderLineId.
+
+// RET-001: "MUST be configurable by category/product - not one global
+// hard-coded policy". Resolution order (most to least specific, mirroring
+// Style.hsnCode's own style-then-fallback pattern): a styleId-scoped row,
+// else a categoryId-scoped row, else the platform default
+// (RETURN_WINDOW_DEFAULT_DAYS env var, engineering default 7 - RET-001).
+// The XOR check constraint (return_policies_scope_xor_check, added in this
+// migration) requires exactly one of styleId/categoryId per row - the same
+// idiom orders_identity_xor_check already established for customerId/
+// guestSessionId.
+model ReturnPolicy {
+  id         String   @id @default(uuid())
+  styleId    String?  @unique
+  categoryId String?  @unique
+  windowDays Int
+  returnable Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  style    Style?    @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("return_policies")
+}
+
+enum ReturnMethod {
+  PICKUP
+  DROP_OFF
+}
+
+enum ReturnStatus {
+  REQUESTED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  RECEIVED
+  QC_PASSED
+  QC_FAILED
+  DISPOSITIONED
+  CANCELLED
+}
+
+// A first-class Return, one per initiation request, holding a subset of an
+// order's DELIVERED lines (subset-of-lines granularity - the same
+// deliberate boundary CAN-004 established for M18 cancellation; no
+// sub-quantity return of a single multi-unit line - see RET-005).
+model Return {
+  id                 String       @id @default(uuid())
+  returnNumber       String       @unique
+  orderId            String
+  status             ReturnStatus @default(REQUESTED)
+  method             ReturnMethod
+  initiatedBy        AuditActorType
+  initiatedByStaffId String?
+  // Initiation idempotency (a retried "start a return" request - browser
+  // retry, double-tap - must never create two Return rows for the same
+  // logical request).
+  idempotencyKey     String       @unique
+  cancelledAt        DateTime?
+  cancelledReason    String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  initiatedStaff StaffUser?    @relation("ReturnInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
+  lines          ReturnLine[]
+  pickup         ReturnPickup?
+
+  @@index([orderId])
+  @@map("returns")
+}
+
+enum ReturnDisposition {
+  RESTOCK_SELLABLE
+  RESTOCK_DAMAGED
+  WRITE_OFF
+  RETURN_TO_SUPPLIER
+}
+
+// One ReturnLine per returned OrderLine (unique - an OrderLine can only
+// ever be part of one Return, preventing a double-return attempt at the
+// schema level). reason is MANDATORY (RET-002) - unlike CAN-003's
+// deliberately optional cancellation reason, never inherit that laxer
+// convention here.
+model ReturnLine {
+  id                String              @id @default(uuid())
+  returnId          String
+  orderLineId       String              @unique
+  skuId             String
+  locationId        String
+  quantity          Int
+  reason            String
+  disposition       ReturnDisposition?
+  qcResult          QcResult?
+  qcNotes           String?
+  qcActorStaffId    String?
+  qcAt              DateTime?
+  receivedAt        DateTime?
+  dispositionedAt   DateTime?
+  // M19->M20 durable handoff (per the build instruction's own explicit
+  // "M19 must NOT execute financial refund logic" boundary): set true only
+  // once QC has passed and disposition has posted the inventory effect.
+  // M20's RefundService consumes lines where this is true and no Refund
+  // row yet references this ReturnLine - never the other way around.
+  refundEligible    Boolean             @default(false)
+  refundEligibleAt  DateTime?
+  createdAt         DateTime            @default(now())
+
+  return    Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderLine OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  sku       Sku       @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location  Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  qcActorStaff StaffUser? @relation("ReturnLineQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+
+  @@index([returnId])
+  @@map("return_lines")
+}
+
+enum ReturnPickupStatus {
+  SCHEDULED
+  PICKED_UP
+  FAILED
+}
+
+// Reverse logistics (RET-004): one pickup covers an entire Return (all its
+// lines travel back together in one parcel) - deliberately a SEPARATE
+// model from Shipment, never overwriting the original outbound AWB/
+// tracking history (M19 build instruction §12). Booked via the same
+// two-phase durable-intent pattern ShippingService.createShipment already
+// established for forward shipments (row committed in SCHEDULED status
+// BEFORE the carrier call; the carrier call is idempotent-by-id) - see
+// ShippingProvider.initiateReversePickup.
+model ReturnPickup {
+  id                String             @id @default(uuid())
+  returnId          String             @unique
+  provider          String
+  status            ReturnPickupStatus @default(SCHEDULED)
+  providerPickupRef String?
+  trackingRef       String?
+  idempotencyKey    String             @unique
+  scheduledAt       DateTime           @default(now())
+  pickedUpAt        DateTime?
+  createdByStaffId  String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  return         Return     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  createdByStaff StaffUser? @relation("ReturnPickupCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("return_pickups")
 }
