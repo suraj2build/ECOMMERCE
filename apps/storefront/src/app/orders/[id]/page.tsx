@@ -7,6 +7,7 @@ import { Container } from '@/components/ui/Container';
 import { Button, buttonClassName } from '@/components/ui/Button';
 import { getMyOrder, cancelMyOrderLine, type OrderView } from '@/lib/orders';
 import { listMyReturns, initiateMyReturn, cancelMyReturn, type ReturnView } from '@/lib/returns';
+import { listMyOrderRefunds, type RefundView } from '@/lib/refunds';
 
 // M18 (specs/17-cancellation.md, CAN-001): "before shipment" - convenience
 // display only, the server (OrderService.performCancellation) is the sole
@@ -25,6 +26,14 @@ const RETURN_STATUS_LABEL: Record<ReturnView['status'], string> = {
   RECEIVED: 'Received - under inspection',
   DISPOSITIONED: 'Return processed',
   CANCELLED: 'Return cancelled',
+};
+
+// M20 (specs/19-refunds.md): honest per-line settlement status - never
+// implies money moved before the server actually completed it.
+const REFUND_STATUS_LABEL: Record<RefundView['status'], string> = {
+  PENDING: 'Refund pending',
+  COMPLETED: 'Refunded',
+  FAILED: 'Refund pending (retrying)',
 };
 
 const STATUS_LABEL: Record<OrderView['status'], string> = {
@@ -67,6 +76,7 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const [order, setOrder] = useState<OrderView | null>(null);
   const [returns, setReturns] = useState<ReturnView[]>([]);
+  const [refunds, setRefunds] = useState<RefundView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cancellingLineId, setCancellingLineId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -82,11 +92,16 @@ export default function OrderDetailPage() {
     Promise.all([
       getMyOrder(params.id).then(setOrder),
       listMyReturns().then((all) => setReturns(all.filter((r) => r.orderId === params.id))),
+      listMyOrderRefunds(params.id).then(setRefunds).catch(() => setRefunds([])),
     ]);
 
   useEffect(() => {
     refresh().catch((err) => setError(err instanceof Error ? err.message : 'Could not load this order.'));
   }, [params.id]);
+
+  function refundForLine(lineId: string): RefundView | undefined {
+    return refunds.find((r) => r.orderLineId === lineId);
+  }
 
   function returnForLine(lineId: string) {
     for (const ret of returns) {
@@ -238,6 +253,18 @@ export default function OrderDetailPage() {
                     </Button>
                   </div>
                 </div>
+              )}
+
+              {/* M20 (specs/19-refunds.md): only ever shown once the server
+                  has actually created a Refund record for this line - never
+                  implies money is moving before it genuinely is. */}
+              {refundForLine(line.id) && (
+                <p className="mt-1 text-xs text-ink-muted">
+                  {REFUND_STATUS_LABEL[refundForLine(line.id)!.status]}
+                  {refundForLine(line.id)!.status === 'COMPLETED'
+                    ? ` - ₹${refundForLine(line.id)!.amount} ${refundForLine(line.id)!.method === 'STORE_CREDIT' ? 'as store credit' : 'to your original payment method'}`
+                    : ''}
+                </p>
               )}
 
               {(() => {

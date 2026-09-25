@@ -94,12 +94,13 @@ model Customer {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  refreshTokens    CustomerRefreshToken[]
-  reviews          Review[]
-  cart             Cart?
-  wishlist         Wishlist?
-  checkoutSessions CheckoutSession[]
-  orders           Order[]
+  refreshTokens      CustomerRefreshToken[]
+  reviews            Review[]
+  cart               Cart?
+  wishlist           Wishlist?
+  checkoutSessions   CheckoutSession[]
+  orders             Order[]
+  storeCreditAccount StoreCreditAccount?
 
   @@map("customers")
 }
@@ -162,6 +163,8 @@ model StaffUser {
   initiatedReturns        Return[]                @relation("ReturnInitiatedBy")
   qcReturnLines           ReturnLine[]            @relation("ReturnLineQcBy")
   createdReturnPickups    ReturnPickup[]          @relation("ReturnPickupCreatedBy")
+  initiatedRefunds        Refund[]                @relation("RefundInitiatedBy")
+  storeCreditEntriesActed StoreCreditEntry[]      @relation("StoreCreditEntryActor")
 
   @@map("staff_users")
 }
@@ -275,9 +278,9 @@ model Category {
   parentId String?
   isActive Boolean @default(true)
 
-  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryTree")
-  styles   Style[]
+  parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[]    @relation("CategoryTree")
+  styles       Style[]
   returnPolicy ReturnPolicy?
 
   @@map("categories")
@@ -1132,6 +1135,7 @@ model CreditNote {
 
   originalInvoice Invoice          @relation(fields: [originalInvoiceId], references: [id], onDelete: Restrict)
   lines           CreditNoteLine[]
+  refund          Refund?
 
   @@index([financialYear, sequenceNumber])
   @@index([originalInvoiceId])
@@ -1555,6 +1559,7 @@ model Payment {
 
   checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
   events          PaymentEvent[]
+  refunds         Refund[]
 
   @@index([checkoutSessionId, createdAt])
   @@map("payments")
@@ -1809,6 +1814,7 @@ model Order {
   pickTasks       PickTask[]
   shipments       Shipment[]
   returns         Return[]
+  refunds         Refund[]
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -1866,6 +1872,7 @@ model OrderLine {
   fulfilment OrderFulfilment? @relation(fields: [fulfilmentId], references: [id], onDelete: SetNull)
   pickTask   PickTask?
   returnLine ReturnLine?
+  refund     Refund?
 
   @@index([orderId])
   @@map("order_lines")
@@ -2079,21 +2086,21 @@ enum ReturnStatus {
 // deliberate boundary CAN-004 established for M18 cancellation; no
 // sub-quantity return of a single multi-unit line - see RET-005).
 model Return {
-  id                 String       @id @default(uuid())
-  returnNumber       String       @unique
+  id                 String         @id @default(uuid())
+  returnNumber       String         @unique
   orderId            String
-  status             ReturnStatus @default(REQUESTED)
+  status             ReturnStatus   @default(REQUESTED)
   method             ReturnMethod
   initiatedBy        AuditActorType
   initiatedByStaffId String?
   // Initiation idempotency (a retried "start a return" request - browser
   // retry, double-tap - must never create two Return rows for the same
   // logical request).
-  idempotencyKey     String       @unique
+  idempotencyKey     String         @unique
   cancelledAt        DateTime?
   cancelledReason    String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   order          Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
   initiatedStaff StaffUser?    @relation("ReturnInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
@@ -2117,34 +2124,35 @@ enum ReturnDisposition {
 // deliberately optional cancellation reason, never inherit that laxer
 // convention here.
 model ReturnLine {
-  id                String              @id @default(uuid())
-  returnId          String
-  orderLineId       String              @unique
-  skuId             String
-  locationId        String
-  quantity          Int
-  reason            String
-  disposition       ReturnDisposition?
-  qcResult          QcResult?
-  qcNotes           String?
-  qcActorStaffId    String?
-  qcAt              DateTime?
-  receivedAt        DateTime?
-  dispositionedAt   DateTime?
+  id               String             @id @default(uuid())
+  returnId         String
+  orderLineId      String             @unique
+  skuId            String
+  locationId       String
+  quantity         Int
+  reason           String
+  disposition      ReturnDisposition?
+  qcResult         QcResult?
+  qcNotes          String?
+  qcActorStaffId   String?
+  qcAt             DateTime?
+  receivedAt       DateTime?
+  dispositionedAt  DateTime?
   // M19->M20 durable handoff (per the build instruction's own explicit
   // "M19 must NOT execute financial refund logic" boundary): set true only
   // once QC has passed and disposition has posted the inventory effect.
   // M20's RefundService consumes lines where this is true and no Refund
   // row yet references this ReturnLine - never the other way around.
-  refundEligible    Boolean             @default(false)
-  refundEligibleAt  DateTime?
-  createdAt         DateTime            @default(now())
+  refundEligible   Boolean            @default(false)
+  refundEligibleAt DateTime?
+  createdAt        DateTime           @default(now())
 
-  return    Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  orderLine OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  sku       Sku       @relation(fields: [skuId], references: [id], onDelete: Restrict)
-  location  Location  @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  return       Return     @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderLine    OrderLine  @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  sku          Sku        @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location     Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
   qcActorStaff StaffUser? @relation("ReturnLineQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  refund       Refund?
 
   @@index([returnId])
   @@map("return_lines")
@@ -2182,4 +2190,158 @@ model ReturnPickup {
   createdByStaff StaffUser? @relation("ReturnPickupCreatedBy", fields: [createdByStaffId], references: [id], onDelete: Restrict)
 
   @@map("return_pickups")
+}
+
+// --- M20 Refunds & Store Credit (specs/19-refunds.md, specs/33-store-credit-gift-cards.md) ---
+
+enum RefundTriggerType {
+  CANCELLATION
+  RETURN
+}
+
+// REF-001: which financial rail a refund settles through - derived purely
+// from Order.paymentMethod (PREPAID -> the original payment method,
+// COD -> store credit), never from the trigger type. A COD return and a
+// PREPAID return settle differently even though both are RETURN-triggered.
+enum RefundMethod {
+  ORIGINAL_PAYMENT_METHOD
+  STORE_CREDIT
+}
+
+// Deliberately two terminal states, no in-flight "PROCESSING" state - see
+// RefundService's own docblock: the durable-intent row commits as PENDING
+// BEFORE the external Razorpay call (or, for STORE_CREDIT, before the
+// purely-internal ledger write) and is claimed via a conditional update
+// straight to COMPLETED or FAILED, the same two-phase pattern
+// ShippingService.createShipment/ReturnService's reverse-pickup booking
+// already established - an ambiguous third "in progress" status would
+// only invite two concurrent attempts to both think they own the retry.
+enum RefundStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// Only ISSUE exists in M20 - store credit is only ever created here as a
+// refund/exchange consequence (REF-001, EXC-002). REDEEM (checkout-time
+// spend) and REVERSE/manual ADJUST are real ledger operations spec/33
+// names conceptually but no code path produces them yet (no checkout
+// redemption flow exists yet - specs/33 milestone-ownership section
+// explicitly scopes only the ledger FOUNDATION to M20) - left out rather
+// than pre-declared unused, unlike M19's ReturnStatus.QC_PASSED/FAILED
+// (which were already applied to the dev/test databases before that
+// design was finalized and so were kept rather than reset).
+enum StoreCreditEntryType {
+  ISSUE
+}
+
+// One row per (orderId, orderLineId) that has ever qualified for a refund
+// - never per-order, so a partial refund of a multi-line order/return
+// naturally refunds only the qualifying lines' own original values
+// (REF-003, acceptance/m20 negative scenario #2). `orderLineId` is
+// @unique and is the sole idempotency anchor: a given OrderLine's
+// lifecycle is CANCELLATION-refund XOR RETURN-refund, never both (a
+// cancelled line can never reach DELIVERED, and only a DELIVERED line is
+// return-eligible - specs/17 and specs/18's own eligibility gates already
+// make these mutually exclusive, so one unique constraint safely covers
+// both trigger types without a compound key).
+model Refund {
+  id                 String            @id @default(uuid())
+  orderId            String
+  orderLineId        String            @unique
+  // Set only for a RETURN-triggered refund - the ReturnLine whose
+  // refundEligible=true handoff (see that model's own docblock) this
+  // Refund settles. Null for a CANCELLATION-triggered refund (M18's own
+  // Order.refundRequired flag is that trigger's handoff instead).
+  returnLineId       String?           @unique
+  // The specific captured Payment this refund was issued against - set
+  // only for method=ORIGINAL_PAYMENT_METHOD (a COD order's Payment is
+  // never refunded through the gateway, so left null for STORE_CREDIT).
+  paymentId          String?
+  triggerType        RefundTriggerType
+  method             RefundMethod
+  // The ORIGINAL transaction value (REF-003) - never recomputed from
+  // current catalog prices. Sourced from the linked CreditNote's
+  // lineTotalReduction (already correctly prorated against the frozen
+  // InvoiceLine amounts) when a credit note exists; falls back to
+  // OrderLine.lineTotalInclusive directly only in the honest-skip case
+  // where no invoice/InvoiceLine correlation exists yet (mirrors M18's
+  // own credit-note honest-skip precedent).
+  amount             Decimal           @db.Decimal(10, 2)
+  reason             String
+  status             RefundStatus      @default(PENDING)
+  providerRefundId   String?
+  creditNoteId       String?           @unique
+  storeCreditEntryId String?           @unique
+  failureReason      String?
+  // Caller-supplied idempotency key (a retried "process this refund"
+  // HTTP request must never double-refund) - defense-in-depth alongside
+  // the structural orderLineId uniqueness above, same two-layer
+  // discipline as every other mutating action in this codebase.
+  idempotencyKey     String            @unique
+  initiatedByStaffId String?
+  processedAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  order            Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLine        OrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  returnLine       ReturnLine?       @relation(fields: [returnLineId], references: [id], onDelete: Restrict)
+  payment          Payment?          @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  creditNote       CreditNote?       @relation(fields: [creditNoteId], references: [id], onDelete: Restrict)
+  storeCreditEntry StoreCreditEntry? @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
+  initiatedByStaff StaffUser?        @relation("RefundInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("refunds")
+}
+
+// REF-002/specs/33: a separate financial/customer-balance concept from
+// the loyalty-points ledger (specs/22-loyalty.md) - structurally distinct
+// tables, never a shared model. Owned by the SAME identity that owns the
+// underlying order (customerId XOR guestSessionId - identical XOR idiom
+// to orders_identity_xor_check/returns' own guest-ownership reuse), so a
+// guest COD order's refund resolves to a guest-scoped account exactly the
+// way a guest's order/return itself is looked up - no new, weaker
+// identity mechanism invented for store credit specifically.
+model StoreCreditAccount {
+  id             String   @id @default(uuid())
+  customerId     String?  @unique
+  guestSessionId String?  @unique
+  // Denormalized cache of SUM(entries), maintained transactionally
+  // alongside every StoreCreditEntry insert under a row lock (ADR-0012
+  // ledger discipline - the entries are the source of truth; this column
+  // is a read-optimization kept in lockstep with them, never mutated
+  // independently).
+  balance        Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  customer Customer?          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  entries  StoreCreditEntry[]
+
+  @@map("store_credit_accounts")
+}
+
+// Store credit does NOT expire (REF-002) - deliberately no `expiresAt`
+// column and no expiry job anywhere in this codebase; a balance issued
+// today remains exactly as redeemable a year from now.
+model StoreCreditEntry {
+  id             String               @id @default(uuid())
+  accountId      String
+  type           StoreCreditEntryType
+  amount         Decimal              @db.Decimal(10, 2)
+  reason         String
+  referenceType  String? // e.g. "REFUND"
+  referenceId    String? // e.g. the Refund.id that issued this entry
+  idempotencyKey String               @unique
+  actorStaffId   String?
+  createdAt      DateTime             @default(now())
+
+  account    StoreCreditAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  refund     Refund?
+  actorStaff StaffUser?         @relation("StoreCreditEntryActor", fields: [actorStaffId], references: [id], onDelete: Restrict)
+
+  @@index([accountId])
+  @@map("store_credit_entries")
 }

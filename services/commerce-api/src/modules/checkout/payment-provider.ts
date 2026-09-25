@@ -67,7 +67,17 @@ export interface PaymentProvider {
   verifyWebhookSignature(rawBody: string, signatureHeader: string): boolean;
   /** Parses an already-signature-verified raw webhook body into a provider-agnostic event. Throws on a shape it doesn't recognize. */
   parseWebhookEvent(rawBody: string): WebhookEvent;
-  refund(providerReferenceId: string, amount: number): Promise<RefundResult>;
+  /**
+   * `idempotencyKey` (M20, specs/19-refunds.md): a deterministic,
+   * caller-supplied key (RefundService always passes the local Refund
+   * row's own id - a pure function of local state, no randomness, same
+   * idiom as M17's carrier-call idempotency) so a genuinely concurrent
+   * duplicate call - or a crash-and-retry between a successful gateway
+   * refund and the local commit - can never create two refunds at the
+   * provider for the same local Refund row, even though the DB-level
+   * durable-intent row is never locked across this network call.
+   */
+  refund(providerReferenceId: string, amount: number, idempotencyKey: string): Promise<RefundResult>;
 }
 
 /**
@@ -97,7 +107,7 @@ export class CodPaymentProvider implements PaymentProvider {
 
   async refund(): Promise<RefundResult> {
     throw new Error(
-      'COD refund-to-bank/UPI is a distinct operational workflow (specs/19-refunds.md) not yet built - not supported here',
+      'COD has no gateway to refund through - a COD refund settles as store credit (REF-001), never a provider.refund() call',
     );
   }
 }
@@ -215,13 +225,17 @@ export class RazorpayPaymentProvider implements PaymentProvider {
     return { providerEventId, eventType: payload.event, orderId, paymentEntityId, outcome };
   }
 
-  async refund(providerReferenceId: string, amount: number): Promise<RefundResult> {
+  async refund(providerReferenceId: string, amount: number, idempotencyKey: string): Promise<RefundResult> {
     const creds = loadRazorpayCredentials();
     if (!creds) throw new Error('Razorpay is not configured - cannot issue a refund');
 
     const res = await fetch(`${RAZORPAY_API_BASE}/payments/${providerReferenceId}/refund`, {
       method: 'POST',
-      headers: { authorization: this.authHeader(creds), 'content-type': 'application/json' },
+      headers: {
+        authorization: this.authHeader(creds),
+        'content-type': 'application/json',
+        'x-razorpay-idempotency-key': idempotencyKey,
+      },
       body: JSON.stringify({ amount: Math.round(amount * 100) }),
     });
     if (!res.ok) {
