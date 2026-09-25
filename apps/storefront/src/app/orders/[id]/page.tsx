@@ -4,8 +4,13 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Container } from '@/components/ui/Container';
-import { buttonClassName } from '@/components/ui/Button';
-import { getMyOrder, type OrderView } from '@/lib/orders';
+import { Button, buttonClassName } from '@/components/ui/Button';
+import { getMyOrder, cancelMyOrderLine, type OrderView } from '@/lib/orders';
+
+// M18 (specs/17-cancellation.md, CAN-001): "before shipment" - convenience
+// display only, the server (OrderService.performCancellation) is the sole
+// authoritative eligibility check and re-validates against live state.
+const CANCELLABLE_LINE_STATUSES = new Set(['ALLOCATED', 'PICKED', 'PACKED']);
 
 const STATUS_LABEL: Record<OrderView['status'], string> = {
   CONFIRMED: 'Confirmed',
@@ -47,12 +52,31 @@ export default function OrderDetailPage() {
   const params = useParams<{ id: string }>();
   const [order, setOrder] = useState<OrderView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cancellingLineId, setCancellingLineId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelInFlight, setCancelInFlight] = useState(false);
+
+  const refresh = () => getMyOrder(params.id).then(setOrder);
 
   useEffect(() => {
-    getMyOrder(params.id)
-      .then(setOrder)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load this order.'));
+    refresh().catch((err) => setError(err instanceof Error ? err.message : 'Could not load this order.'));
   }, [params.id]);
+
+  async function confirmCancel(lineId: string) {
+    setCancelError(null);
+    setCancelInFlight(true);
+    try {
+      await cancelMyOrderLine(order!.id, lineId, cancelReason.trim() || undefined, crypto.randomUUID());
+      setCancellingLineId(null);
+      setCancelReason('');
+      await refresh();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Could not cancel this item - please try again.');
+    } finally {
+      setCancelInFlight(false);
+    }
+  }
 
   if (error) {
     return (
@@ -83,17 +107,73 @@ export default function OrderDetailPage() {
       <div className="mt-6 rounded-sm border border-border p-6">
         <ul className="space-y-4">
           {order.lines.map((line) => (
-            <li key={line.id} className="flex items-center justify-between border-b border-border pb-4 text-sm last:border-b-0 last:pb-0">
-              <div>
-                <p className="text-ink">
-                  {line.styleName} - {line.colourName} - {line.sizeLabel} x{line.quantity}
-                </p>
-                <p className="mt-1 text-xs text-ink-muted">
-                  {LINE_STATUS_LABEL[line.status] ?? line.status}
-                  {line.cancelledReason ? `: ${line.cancelledReason}` : ''}
-                </p>
+            <li key={line.id} className="border-b border-border pb-4 text-sm last:border-b-0 last:pb-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-ink">
+                    {line.styleName} - {line.colourName} - {line.sizeLabel} x{line.quantity}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    {LINE_STATUS_LABEL[line.status] ?? line.status}
+                    {line.cancelledReason ? `: ${line.cancelledReason}` : ''}
+                  </p>
+                </div>
+                <span className="text-ink">&#8377;{line.lineTotalInclusive}</span>
               </div>
-              <span className="text-ink">&#8377;{line.lineTotalInclusive}</span>
+
+              {/* M18 (CAN-001): convenience gating only - the server is
+                  the sole authoritative eligibility check. */}
+              {CANCELLABLE_LINE_STATUSES.has(line.status) && cancellingLineId !== line.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCancellingLineId(line.id);
+                    setCancelReason('');
+                    setCancelError(null);
+                  }}
+                  className="mt-2 min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                >
+                  Cancel this item
+                </button>
+              )}
+
+              {cancellingLineId === line.id && (
+                <div className="mt-3 space-y-2 rounded-sm border border-border p-3">
+                  <label htmlFor={`cancel-reason-${line.id}`} className="block text-xs text-ink-muted">
+                    Reason (optional)
+                  </label>
+                  <textarea
+                    id={`cancel-reason-${line.id}`}
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                    rows={2}
+                  />
+                  {cancelError && (
+                    <p role="alert" className="text-xs text-danger">
+                      {cancelError}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      disabled={cancelInFlight}
+                      onClick={() => confirmCancel(line.id)}
+                    >
+                      {cancelInFlight ? 'Cancelling...' : 'Confirm cancellation'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={cancelInFlight}
+                      onClick={() => setCancellingLineId(null)}
+                    >
+                      Never mind
+                    </Button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>

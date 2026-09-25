@@ -833,7 +833,7 @@ describe('Order Management (M15)', () => {
         method: 'POST',
         url: `/api/v1/orders/${orderId}/lines/${line.id}/cancel`,
         headers: { authorization: `Bearer ${csToken}` },
-        payload: { reason: 'Customer requested cancellation' },
+        payload: { reason: 'Customer requested cancellation', idempotencyKey: 'idem-cancel-prepaid-1' },
       });
       expect(res.statusCode).toBe(200);
       expect(res.json().status).toBe('CANCELLED');
@@ -861,7 +861,7 @@ describe('Order Management (M15)', () => {
         method: 'POST',
         url: `/api/v1/orders/${orderId}/lines/${order.lines[0]!.id}/cancel`,
         headers: { authorization: `Bearer ${csToken}` },
-        payload: { reason: 'Out of stock at pick time' },
+        payload: { reason: 'Out of stock at pick time', idempotencyKey: 'idem-cancel-cod-1' },
       });
       expect(res.statusCode).toBe(200);
 
@@ -902,7 +902,7 @@ describe('Order Management (M15)', () => {
         method: 'POST',
         url: `/api/v1/orders/${order.id}/lines/${order.lines[0]!.id}/cancel`,
         headers: { authorization: `Bearer ${csToken}` },
-        payload: { reason: 'Customer changed mind on one item' },
+        payload: { reason: 'Customer changed mind on one item', idempotencyKey: 'idem-cancel-partial-1' },
       });
 
       const updatedOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
@@ -933,7 +933,7 @@ describe('Order Management (M15)', () => {
         method: 'POST',
         url: `/api/v1/orders/${orderId}/lines/${line.id}/cancel`,
         headers: { authorization: `Bearer ${csToken}` },
-        payload: { reason: 'Too late attempt' },
+        payload: { reason: 'Too late attempt', idempotencyKey: 'idem-cancel-blocked-1' },
       });
       expect(cancelRes.statusCode).toBe(400);
     });
@@ -1069,7 +1069,7 @@ describe('Order Management (M15)', () => {
         method: 'POST',
         url: `/api/v1/orders/${orderId}/lines/${order.lines[0]!.id}/cancel`,
         headers: { authorization: `Bearer ${csToken}` },
-        payload: { reason: 'Audit trail check' },
+        payload: { reason: 'Audit trail check', idempotencyKey: 'idem-cancel-audit-1' },
       });
 
       const createEntry = await testPrisma.auditLog.findFirst({ where: { action: 'order.create', entityId: orderId } });

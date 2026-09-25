@@ -1053,9 +1053,18 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id        String @id @default(uuid())
-  invoiceId String
-  skuId     String
+  id          String  @id @default(uuid())
+  invoiceId   String
+  skuId       String
+  // M18 (specs/17-cancellation.md): nullable, additive correlation back
+  // to the OrderLine this invoice line was generated from - lets
+  // cancellation find the exact InvoiceLine to credit without a fragile
+  // skuId/quantity heuristic (an order can legitimately contain two
+  // lines for the same SKU). Populated going forward by
+  // OrderService.issueOrderInvoice; null on invoices issued before this
+  // migration - cancellation degrades gracefully (skips the automatic
+  // credit-note step) for those, never guesses a match.
+  orderLineId String? @unique
 
   // Frozen display snapshot - never re-derived from current product data
   skuCodeSnapshot     String
@@ -1802,22 +1811,37 @@ enum OrderInvoiceStatus {
 // (acceptance/m15-order-management.md "Data integrity") from this line
 // back to the exact InventoryReservation it converted from at checkout.
 model OrderLine {
-  id                   String          @id @default(uuid())
-  orderId              String
-  skuId                String
-  locationId           String
-  quantity             Int
-  unitPriceInclusive   Decimal         @db.Decimal(10, 2)
-  taxableValueSnapshot Decimal         @db.Decimal(10, 2)
-  gstRatePercent       Decimal         @db.Decimal(5, 2)
-  taxAmountSnapshot    Decimal         @db.Decimal(10, 2)
-  lineTotalInclusive   Decimal         @db.Decimal(10, 2)
-  reservationId        String?
-  fulfilmentId         String?
-  status               OrderLineStatus @default(ALLOCATED)
-  cancelledAt          DateTime?
-  cancelledReason      String?
-  exceptionReason      String?
+  id                         String          @id @default(uuid())
+  orderId                    String
+  skuId                      String
+  locationId                 String
+  quantity                   Int
+  unitPriceInclusive         Decimal         @db.Decimal(10, 2)
+  taxableValueSnapshot       Decimal         @db.Decimal(10, 2)
+  gstRatePercent             Decimal         @db.Decimal(5, 2)
+  taxAmountSnapshot          Decimal         @db.Decimal(10, 2)
+  lineTotalInclusive         Decimal         @db.Decimal(10, 2)
+  reservationId              String?
+  fulfilmentId               String?
+  status                     OrderLineStatus @default(ALLOCATED)
+  cancelledAt                DateTime?
+  // M18 (specs/17-cancellation.md, approved 2026-09-22): "Cancellation
+  // reason capture is optional (recommended, not mandatory)" - nullable
+  // even when status = CANCELLED. The DB check constraint
+  // order_lines_cancelled_fields_check (relaxed in migration
+  // 20260925090000) enforces only that cancelledAt is set iff CANCELLED
+  // and that cancelledReason is null on any non-cancelled line.
+  cancelledReason            String?
+  exceptionReason            String?
+  // M18 (specs/17-cancellation.md): durable idempotency key for the one
+  // mutating action this field guards (cancelling this line) - same
+  // discipline as Payment/Shipment/PickTask.idempotencyKey. Set only on
+  // a SUCCESSFUL cancellation commit, never on a rejected attempt, so a
+  // reused key always resolves to a genuinely-cancelled line. Global
+  // uniqueness (not scoped per-line) is deliberate: it is what lets a
+  // reused key against a DIFFERENT order line be detected and rejected
+  // as a genuine misuse rather than a legitimate retry.
+  cancellationIdempotencyKey String?         @unique
 
   order      Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
   sku        Sku              @relation(fields: [skuId], references: [id], onDelete: Restrict)

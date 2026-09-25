@@ -7,6 +7,11 @@ const assignFulfilmentSchema = z.object({ lineIds: z.array(z.string().uuid()).mi
 const shipSchema = z.object({ carrierName: z.string().optional(), trackingRef: z.string().optional() });
 const reasonSchema = z.object({ reason: z.string().min(1) });
 const resolveExceptionSchema = z.object({ resolution: z.enum(['REINSTATE', 'CANCEL']), reason: z.string().min(1) });
+// M18 (specs/17-cancellation.md, CAN-003): reason is optional
+// ("recommended, not mandatory"); idempotencyKey is required (M18 §7) -
+// same durable-idempotency discipline every other mutating M15/16/17
+// route already requires (Shipment/PickTask/Payment).
+const cancelLineSchema = z.object({ reason: z.string().max(2000).optional(), idempotencyKey: z.string().min(1).max(200) });
 
 /**
  * Order routes (M15): staff-facing fulfilment/cancellation/exception/RTO
@@ -41,6 +46,20 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     const identity = resolveCartIdentity(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await orderService.getOrderForCustomer(id, identity));
+  });
+
+  // M18 (specs/17-cancellation.md, CAN-002 "customer self-service"):
+  // ownership-checked via OrderService.cancelOrderLineForCustomer's own
+  // loadOwnedOrder call - a clean 404 (never a distinguishable 403) for
+  // an order that isn't this identity's own, same IDOR-safe pattern
+  // every other storefront order route already uses.
+  fastify.post('/storefront/orders/:id/lines/:lineId/cancel', identityAuth, async (request, reply) => {
+    const identity = resolveCartIdentity(request);
+    const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
+    const body = cancelLineSchema.parse(request.body);
+    reply
+      .status(200)
+      .send(await orderService.cancelOrderLineForCustomer(id, lineId, identity, body.reason, body.idempotencyKey));
   });
 
   // --- Staff ---
@@ -96,8 +115,10 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/orders/:id/lines/:lineId/cancel', { preHandler: cancelAuth }, async (request, reply) => {
     const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
-    const body = reasonSchema.parse(request.body);
-    reply.status(200).send(await orderService.cancelOrderLine(id, lineId, request.staffUser!.id, body.reason));
+    const body = cancelLineSchema.parse(request.body);
+    reply
+      .status(200)
+      .send(await orderService.cancelOrderLine(id, lineId, request.staffUser!.id, body.reason, body.idempotencyKey));
   });
 
   fastify.post('/orders/:id/lines/:lineId/exception', { preHandler: exceptionAuth }, async (request, reply) => {

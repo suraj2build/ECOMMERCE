@@ -13,6 +13,8 @@ export interface InvoiceLineInput {
   discountAmount?: number;
   /** TAX-006: configurable discount-application flag, defaults to pre-tax. */
   discountAppliedPreTax?: boolean;
+  /** M18 (specs/17-cancellation.md): the OrderLine this invoice line was generated from, when known - lets cancellation find the exact InvoiceLine to credit. Optional/nullable - not every InvoiceLine originates from an OrderLine. */
+  orderLineId?: string;
 }
 
 export interface IssueInvoiceInput {
@@ -112,6 +114,7 @@ export class InvoiceService {
 
     const preparedLines: Array<{
       skuId: string;
+      orderLineId?: string;
       skuCodeSnapshot: string;
       descriptionSnapshot: string;
       colourSnapshot: string | null;
@@ -164,6 +167,7 @@ export class InvoiceService {
 
       preparedLines.push({
         skuId: sku.id,
+        orderLineId: line.orderLineId,
         skuCodeSnapshot: sku.skuCode,
         descriptionSnapshot: `${sku.style.name} - ${sku.colour.name} - ${sku.size.label}`,
         colourSnapshot: sku.colour.name,
@@ -317,8 +321,22 @@ export class InvoiceService {
    * race window. Lines are locked in a stable sorted order to avoid
    * deadlocking against another concurrent multi-line request touching
    * an overlapping but differently-ordered set of lines.
+   *
+   * `actorStaffId: null` (M18): a SYSTEM-attributed credit note - e.g.
+   * automatically issued alongside a customer or staff cancellation,
+   * not a standalone Finance action. Same `actorType: actorStaffId ?
+   * 'STAFF' : 'SYSTEM'` convention already used by `issueInvoice`.
+   *
+   * `externalTx` (M18): when provided, runs entirely inside the
+   * caller's already-open transaction instead of opening its own - lets
+   * `OrderService`'s cancellation flow include credit-note issuance in
+   * the same atomic unit as the line-cancellation/inventory-release/
+   * refund-flag update (specs/17-cancellation.md §20 "failure
+   * atomicity": a cancelled line must never exist without, or diverge
+   * from, its credit note). Omitted, behaves exactly as before (the
+   * M08 HTTP route, unchanged).
    */
-  async issueCreditNote(input: IssueCreditNoteInput, actorStaffId: string) {
+  async issueCreditNote(input: IssueCreditNoteInput, actorStaffId: string | null, externalTx?: Prisma.TransactionClient) {
     if (input.lines.length === 0) throw new ValidationError('A credit note must have at least one line');
     const atDate = new Date();
     const financialYear = getIndianFinancialYear(atDate);
@@ -367,7 +385,7 @@ export class InvoiceService {
       seenLineIds.add(line.invoiceLineId);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient) => {
       const lineIds = [...new Set(input.lines.map((l) => l.invoiceLineId))].sort();
       const lockedLines = await tx.$queryRaw<{ id: string; quantity: number }[]>`
         SELECT "id", "quantity" FROM "invoice_lines" WHERE "id" = ANY(${lineIds}) FOR UPDATE`;
@@ -476,8 +494,8 @@ export class InvoiceService {
       });
 
       await recordAudit(tx, {
-        actorType: 'STAFF',
-        actorStaffId,
+        actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
+        actorStaffId: actorStaffId ?? undefined,
         action: 'credit_note.issue',
         entityType: 'CreditNote',
         entityId: created.id,
@@ -486,7 +504,9 @@ export class InvoiceService {
       });
 
       return created;
-    });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }
 
   async getCreditNote(id: string) {

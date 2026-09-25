@@ -323,6 +323,7 @@ export class OrderService {
       shippingStateCode: shippingAddress.stateCode,
       lines: order.lines.map((l) => ({
         skuId: l.skuId,
+        orderLineId: l.id,
         quantity: l.quantity,
         unitPrice: Number(l.taxableValueSnapshot) / l.quantity,
       })),
@@ -761,53 +762,280 @@ export class OrderService {
    * flagged honestly, not executed - see the Order.refundRequired
    * schema comment.
    */
-  async cancelOrderLine(orderId: string, lineId: string, staffId: string, reason: string) {
-    if (!reason.trim()) throw new ValidationError('A cancellation reason is required');
+  /**
+   * Row-locks and returns one OrderLine by id (SELECT ... FOR UPDATE),
+   * same idiom as `lockFulfilment`/`InventoryService.lockReservation`.
+   * MUST run inside a transaction. Used only for a line that has NOT
+   * yet been assigned to a fulfilment (`fulfilmentId IS NULL`) - once a
+   * fulfilment exists, `lockFulfilment` (acquired FIRST, matching the
+   * exact lock order `markFulfilmentPacked`/`ReadyToShip`/`Shipped`
+   * already use) is the correct - and sufficient - serialization point;
+   * see `cancelOrderLine`'s own docblock for why acquiring BOTH in the
+   * opposite order would deadlock.
+   */
+  private async lockOrderLine(
+    tx: Prisma.TransactionClient,
+    lineId: string,
+  ): Promise<{ id: string; orderId: string; fulfilmentId: string | null; status: OrderLineStatus; cancellationIdempotencyKey: string | null } | null> {
+    const rows = await tx.$queryRaw<
+      { id: string; orderId: string; fulfilmentId: string | null; status: OrderLineStatus; cancellationIdempotencyKey: string | null }[]
+    >`SELECT "id", "orderId", "fulfilmentId", "status", "cancellationIdempotencyKey"
+      FROM "order_lines"
+      WHERE "id" = ${lineId}
+      FOR UPDATE`;
+    return rows[0] ?? null;
+  }
 
-    return this.prisma.$transaction(async (tx) => {
-      const line = await tx.orderLine.findUnique({ where: { id: lineId } });
-      if (!line || line.orderId !== orderId) throw new NotFoundError('OrderLine', lineId);
-      if (line.status === 'CANCELLED') return line;
-      if (line.status === 'SHIPPED' || line.status === 'DELIVERED') {
-        throw new ValidationError(`Cannot cancel a line that has already ${line.status.toLowerCase()} - use a return instead`);
-      }
+  /**
+   * Row-locks any still-PENDING PickTask rows for this line (SELECT ...
+   * FOR UPDATE), in the SAME order `WarehouseService.recordPickOutcome`
+   * itself uses (its own `lockPickTask` FIRST, only then touching
+   * `order_lines`). MUST be called before `lockOrderLine` in the
+   * no-fulfilment-yet cancellation branch - CI caught the deadlock that
+   * results from getting this backwards: cancellation locking
+   * order_lines first, then pick_tasks via `updateMany`, while a
+   * concurrent pick locks pick_tasks first, then order_lines - two
+   * transactions acquiring the same two locks in opposite order is a
+   * textbook deadlock (Postgres error 40P01), not a genuine race outcome
+   * to tolerate. A task that already completed (PICKED/SHORT_PICKED/
+   * EXCEPTION) is never locked here because `recordPickOutcome` itself
+   * only ever locks/mutates a PENDING task.
+   */
+  private async lockPendingPickTasksForLine(tx: Prisma.TransactionClient, lineId: string): Promise<void> {
+    await tx.$queryRaw`SELECT "id" FROM "pick_tasks" WHERE "orderLineId" = ${lineId} AND "status" = 'PENDING' FOR UPDATE`;
+  }
 
-      if (line.reservationId) {
-        await this.inventory.cancelAllocation(line.reservationId, reason, tx);
-      }
+  /**
+   * Staff-triggered cancellation (M18, specs/17-cancellation.md,
+   * CAN-001-003). `reason` is optional (CAN-003: "recommended, not
+   * mandatory"). See `performCancellation` for the full design.
+   */
+  async cancelOrderLine(orderId: string, lineId: string, staffId: string, reason: string | undefined, idempotencyKey: string) {
+    return this.performCancellation(orderId, lineId, staffId, reason, idempotencyKey);
+  }
 
-      await tx.orderLine.update({
-        where: { id: lineId },
-        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: reason },
+  /**
+   * Customer self-service cancellation (CAN-002). Ownership-checked via
+   * `loadOwnedOrder` - the same IDOR-safe "clean 404, never a
+   * distinguishable 403" pattern `getOrderForCustomer` already uses, so
+   * knowing an orderId/lineId never lets one customer probe or mutate
+   * another's order (CART-004 remains open/unresolved regardless - this
+   * reuses the EXISTING guest-ownership mechanism, never a weaker
+   * M18-specific one).
+   */
+  async cancelOrderLineForCustomer(
+    orderId: string,
+    lineId: string,
+    identity: CartOwnerIdentity,
+    reason: string | undefined,
+    idempotencyKey: string,
+  ) {
+    await this.loadOwnedOrder(orderId, identity);
+    return this.performCancellation(orderId, lineId, null, reason, idempotencyKey);
+  }
+
+  /**
+   * Core cancellation logic (M18). `actorStaffId: null` means a
+   * customer-triggered cancellation - `actorType: 'CUSTOMER'` in audit
+   * (CAN-002: "customer self-service"), covering both an authenticated
+   * customer and a guest, since `AuditLog` has no `customerId` column
+   * to distinguish them further (the order's own customerId/
+   * guestSessionId, reachable via `reference: orderId`, remains the
+   * traceability link) - `cancelOrderLineForCustomer` is the only
+   * caller that ever passes `null` here.
+   *
+   * Idempotency (M18 §7): `idempotencyKey` is durably stored on the
+   * OrderLine itself (`cancellationIdempotencyKey`, globally unique) -
+   * a cheap pre-check rejects a key already bound to a DIFFERENT line
+   * outright; the real safety net is the DB unique constraint (a
+   * concurrent race on the SAME key still converges correctly - see
+   * below). A line already CANCELLED is always an idempotent no-op
+   * success, regardless of which key (if any) the retry supplies -
+   * covers both a genuine key replay and two genuinely concurrent
+   * requests (possibly with different client-generated keys, e.g. a
+   * double-click) converging on the same already-cancelled line.
+   *
+   * Concurrency (M18 §6) - lock ordering is the crux of this method's
+   * correctness: `markFulfilmentPacked`/`ReadyToShip`/`Shipped`/
+   * `Delivered` (M16/M17, unchanged) ALL acquire `lockFulfilment` FIRST
+   * and only then read/write the fulfilment's OrderLine rows (via
+   * `updateMany`, which implicitly locks them as part of that same
+   * transaction). If cancellation locked the order_line row before the
+   * fulfilment row, the two lock orders would conflict and a genuinely
+   * concurrent cancel-vs-ship could deadlock. So: when the line already
+   * has a `fulfilmentId`, this method acquires ONLY `lockFulfilment` -
+   * matching that exact order - which is sufficient (any transaction
+   * that later bulk-updates this line's status does so only after
+   * acquiring the SAME fulfilment lock, so the two genuinely serialize)
+   * and also closes cancel-vs-cancel/cancel-vs-pack/cancel-vs-
+   * ready-to-ship/cancel-vs-shipment-creation/cancel-vs-ship for a
+   * fulfilment-linked line, all through this one lock. When the line
+   * has NO fulfilment yet, `lockPendingPickTasksForLine` is acquired
+   * FIRST and `lockOrderLine` second - matching
+   * `WarehouseService.recordPickOutcome`'s own pick_task-then-order_line
+   * lock order (see that helper's docblock for the deadlock this
+   * ordering avoids), and also correctly serializes against
+   * `assignLinesToFulfilment`'s own line-locking (M16 repair pass) on
+   * the exact same order_lines row.
+   *
+   * This is also what makes "a shipment must never consume inventory a
+   * cancellation already released" and "a cancellation must never
+   * release inventory after a concurrent shipment has committed SALE"
+   * both hold: `InventoryService.recordSale` does NOT change
+   * `InventoryReservation.status` away from CONVERTED (SALE has no
+   * "consumed" state of its own - see its own docblock), so the ONLY
+   * thing preventing `cancelAllocation` from double-releasing a
+   * reservation `recordSale` already consumed is this method NEVER
+   * reaching `cancelAllocation` once the line's fulfilment has shipped
+   * - guaranteed by re-reading `line.status` fresh AFTER acquiring
+   * whichever lock applies, never trusting a pre-lock read.
+   */
+  private async performCancellation(
+    orderId: string,
+    lineId: string,
+    actorStaffId: string | null,
+    reason: string | undefined,
+    idempotencyKey: string,
+  ) {
+    if (!idempotencyKey || !idempotencyKey.trim()) throw new ValidationError('An idempotency key is required');
+
+    // Cheap, non-locking pre-check: a key already bound to a DIFFERENT
+    // line is a genuine misuse, not a legitimate retry - reject fast,
+    // before ever touching a lock. The DB's own unique constraint
+    // (surfaced as P2002 below) is the authoritative guard against the
+    // genuine race this pre-check alone cannot close.
+    const priorByKey = await this.prisma.orderLine.findUnique({ where: { cancellationIdempotencyKey: idempotencyKey } });
+    if (priorByKey && priorByKey.id !== lineId) {
+      throw new ConflictError(`Idempotency key '${idempotencyKey}' was already used for a different order line`);
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const preread = await tx.orderLine.findUnique({ where: { id: lineId }, select: { fulfilmentId: true } });
+        if (!preread) throw new NotFoundError('OrderLine', lineId);
+
+        let line: { id: string; orderId: string; fulfilmentId: string | null; status: OrderLineStatus };
+        if (preread.fulfilmentId) {
+          await this.lockFulfilment(tx, preread.fulfilmentId);
+          const fresh = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+          line = fresh;
+        } else {
+          await this.lockPendingPickTasksForLine(tx, lineId);
+          const locked = await this.lockOrderLine(tx, lineId);
+          if (!locked) throw new NotFoundError('OrderLine', lineId);
+          line = locked;
+        }
+
+        if (line.orderId !== orderId) throw new NotFoundError('OrderLine', lineId);
+
+        if (line.status === 'CANCELLED') {
+          // Idempotent no-op - see docblock. Never re-applies inventory
+          // release, refund flagging, credit-note issuance, or audit.
+          return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+        }
+        if (line.status === 'SHIPPED' || line.status === 'DELIVERED') {
+          throw new ValidationError(`Cannot cancel a line that has already ${line.status.toLowerCase()} - use a return instead`);
+        }
+
+        const fullLine = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+
+        if (fullLine.reservationId) {
+          await this.inventory.cancelAllocation(fullLine.reservationId, reason?.trim() || 'Order line cancelled', tx);
+        }
+
+        // A PickTask that hasn't started yet (still PENDING) is
+        // cancelled alongside its line, so a warehouse queue never shows
+        // phantom work for a cancelled line (M18 §9). A task that
+        // already completed (PICKED/SHORT_PICKED/EXCEPTION) is left as
+        // the historical record of the work that genuinely happened -
+        // recordPickOutcome's own "pick cancelled line" guard is what
+        // protects a NEW pick attempt, not a retroactive rewrite of one
+        // that already occurred.
+        await tx.pickTask.updateMany({ where: { orderLineId: lineId, status: 'PENDING' }, data: { status: 'CANCELLED' } });
+
+        await tx.orderLine.update({
+          where: { id: lineId },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledReason: reason?.trim() || null,
+            cancellationIdempotencyKey: idempotencyKey,
+            // Detach from its fulfilment (M18 §10 "shipping effects"):
+            // if this line still had a not-yet-shipped fulfilment, that
+            // fulfilment's OWN future ship transition iterates its
+            // `lines` relation to post SALE per line - leaving a
+            // cancelled line attached would let a SALE be posted (and
+            // inventory double-consumed) for stock this cancellation
+            // just released. Never touched for a line with no
+            // fulfilment yet (fulfilmentId already null).
+            ...(fullLine.fulfilmentId ? { fulfilmentId: null } : {}),
+          },
+        });
+
+        const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+        let refundRequired = order.refundRequired;
+        if (order.paymentMethod === 'PREPAID') {
+          refundRequired = true;
+          await tx.order.update({ where: { id: orderId }, data: { refundRequired: true } });
+        }
+
+        // M18 §12 (tax/invoice/credit-note integration): a captured-
+        // payment (PREPAID) order's cancelled line, when a matching
+        // invoice + InvoiceLine already exist, gets an automatic
+        // engineering credit note via the EXISTING, already-certified
+        // credit-note engine (M08) - no GST arithmetic reimplemented
+        // here. This is engineering-level automation only: TAX-005
+        // (credit-note format specifics) remains UNDER_REVIEW regardless
+        // - see specs/17-cancellation.md. COD cancellations never reach
+        // this branch (nothing was collected - CAN §11 "do not
+        // manufacture a refund"). If no invoice/InvoiceLine correlation
+        // exists yet (invoice issuance still pending/failed, or an
+        // invoice issued before the M18 orderLineId migration), this
+        // step is honestly skipped rather than guessed - the line is
+        // still correctly cancelled and refundRequired still flags the
+        // financial consequence for manual reconciliation.
+        if (order.paymentMethod === 'PREPAID' && order.invoiceId) {
+          const invoiceLine = await tx.invoiceLine.findUnique({ where: { orderLineId: lineId } });
+          if (invoiceLine) {
+            await this.invoice.issueCreditNote(
+              {
+                originalInvoiceId: order.invoiceId,
+                reason: reason?.trim() || 'Order line cancelled',
+                referenceNote: `Cancellation of order line '${lineId}' (order '${orderId}')`,
+                lines: [{ invoiceLineId: invoiceLine.id, quantity: invoiceLine.quantity }],
+              },
+              actorStaffId,
+              tx,
+            );
+          }
+        }
+
+        await recordAudit(tx, {
+          actorType: actorStaffId ? 'STAFF' : 'CUSTOMER',
+          actorStaffId: actorStaffId ?? undefined,
+          action: 'order.line.cancel',
+          entityType: 'OrderLine',
+          entityId: lineId,
+          newValue: { reason: reason?.trim() || null, refundRequired, idempotencyKey },
+          reference: orderId,
+        });
+
+        await this.recomputeOrderStatus(tx, orderId);
+        return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
       });
-
-      // M16: a PickTask that hasn't started yet (still PENDING) is
-      // cancelled alongside its line, so a warehouse queue never shows
-      // phantom work for a cancelled line. A task that already completed
-      // (PICKED/SHORT_PICKED/EXCEPTION) is left as the historical record
-      // of the work that genuinely happened - recordPickOutcome's own
-      // "pick cancelled line" guard is what protects a NEW pick attempt,
-      // not a retroactive rewrite of one that already occurred.
-      await tx.pickTask.updateMany({ where: { orderLineId: lineId, status: 'PENDING' }, data: { status: 'CANCELLED' } });
-
-      const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
-      if (order.paymentMethod === 'PREPAID') {
-        await tx.order.update({ where: { id: orderId }, data: { refundRequired: true } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Lost a genuine concurrent race on the idempotency key itself
+        // (two requests, same key, neither had committed at the earlier
+        // pre-check). Resolve to whichever row won rather than
+        // crashing - same discipline PaymentService/ShippingService use
+        // for their own unique-constraint races.
+        const winner = await this.prisma.orderLine.findUnique({ where: { cancellationIdempotencyKey: idempotencyKey } });
+        if (winner && winner.id === lineId) return winner;
+        throw new ConflictError(`Idempotency key '${idempotencyKey}' was already used for a different order line`);
       }
-
-      await recordAudit(tx, {
-        actorType: 'STAFF',
-        actorStaffId: staffId,
-        action: 'order.line.cancel',
-        entityType: 'OrderLine',
-        entityId: lineId,
-        newValue: { reason },
-        reference: orderId,
-      });
-
-      await this.recomputeOrderStatus(tx, orderId);
-      return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
-    });
+      throw err;
+    }
   }
 
   /** Order exception (ORD-001, negative scenario #2) - e.g. a pick shortfall discovered post-confirmation. */

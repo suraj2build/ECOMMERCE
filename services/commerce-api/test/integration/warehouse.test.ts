@@ -309,7 +309,7 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
         method: 'POST',
         url: `/api/v1/orders/${order.id}/lines/${order.lines[0]!.id}/cancel`,
         headers: { authorization: `Bearer ${csToken}` },
-        payload: { reason: 'Customer cancelled before pick' },
+        payload: { reason: 'Customer cancelled before pick', idempotencyKey: 'idem-wh-pick-cancel-1' },
       });
       expect(cancelRes.statusCode).toBe(200);
 

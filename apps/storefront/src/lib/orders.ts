@@ -37,8 +37,11 @@ function identityHeaders(): Record<string, string> {
   return guestSessionId ? { [GUEST_HEADER]: guestSessionId } : {};
 }
 
-async function ordersFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, { headers: identityHeaders() });
+async function ordersFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...identityHeaders(), ...init?.headers },
+  });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
     throw new Error(body?.error?.message ?? `Request failed (${res.status})`);
@@ -114,3 +117,15 @@ export interface OrderView {
 
 export const listMyOrders = () => ordersFetch<OrderView[]>('/api/v1/storefront/orders');
 export const getMyOrder = (id: string) => ordersFetch<OrderView>(`/api/v1/storefront/orders/${id}`);
+
+/**
+ * M18 (specs/17-cancellation.md, CAN-002 "customer self-service").
+ * `idempotencyKey` is client-generated (same `crypto.randomUUID()`
+ * pattern lib/checkout.ts's `retryPayment` already uses) so a network
+ * retry of this exact call never double-cancels.
+ */
+export const cancelMyOrderLine = (orderId: string, lineId: string, reason: string | undefined, idempotencyKey: string) =>
+  ordersFetch<OrderLineView>(`/api/v1/storefront/orders/${orderId}/lines/${lineId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason, idempotencyKey }),
+  });
