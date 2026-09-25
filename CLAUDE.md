@@ -6,54 +6,89 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-25: `M17 REPAIR COMPLETE — AWAITING INDEPENDENT
-RE-REVIEW. M18+ NOT AUTHORIZED.`** An independent reviewer examined the
-M16 (Warehouse & Fulfilment) build — adversarial concurrency/
-idempotency/IDOR/BOLA/transactional-rollback testing, the full
-clean-state suite green, zero regressions to M00–M15 — and certified
-it at commit `97c575c9052148c5a48df82feffde8cf496cf97e` as
-**`M16_ENGINEERING_CERTIFIED`**. As with `PHASE_2_CERTIFIED`, this is
-**engineering-implementation scope only, not production-readiness** —
-`TAX-001`–`005`, `CUST-001`, `AUD-002`, `CART-004`, `SEC-001`,
-production performance verification, and qualified privacy/DPDP and
-tax/GST review all remain open pre-production gates (see
-`blueprint/DECISION_REGISTER.md`); none of them are resolved by this
-certification. The human project owner then gave explicit **"START
-BUILD — M17 SHIPPING / TRACKING"** authorization, scoped specifically
-and only to milestone **M17**, building on the `M16_ENGINEERING_CERTIFIED`
-baseline above, again with an explicit instruction not to continue
-automatically into M18+. M17 was implemented and adversarially tested
-(carrier-adapter substitution, shipment-creation idempotency/
-concurrency/crash-retry, webhook dedup/resume, illegal-transition
-rejection, redelivery-exhaustion → automatic RTO, the exactly-one-SALE
-invariant, polling-fallback graceful degradation, split-shipment
-independent tracking, IDOR), CI-green at commit
+**Status as of 2026-09-25: `M17_ENGINEERING_CERTIFIED — M18 BUILD
+COMPLETE, AWAITING INDEPENDENT REVIEW (CANCELLATION). M19+ NOT
+AUTHORIZED.`** M17 (Shipping /
+Tracking) was implemented and adversarially tested (carrier-adapter
+substitution, shipment-creation idempotency/concurrency/crash-retry,
+webhook dedup/resume, illegal-transition rejection, redelivery-
+exhaustion → automatic RTO, the exactly-one-SALE invariant, polling-
+fallback graceful degradation, split-shipment independent tracking,
+IDOR), CI-green at commit
 `495dcfcede60e922ec251a17fd3dcbd2ea362047`. An independent review of
 that build found **one BLOCKER**: `POST /webhooks/shipping/:provider`
-declared a per-provider URL but never actually used `:provider` — every
-webhook was authenticated/parsed by whichever provider
+declared a per-provider URL but never actually used `:provider` —
+every webhook was authenticated/parsed by whichever provider
 `SHIPPING_PROVIDER` happened to be globally configured, regardless of
 the URL, breaking provider isolation once more than one provider
 identity (or an in-flight shipment from an earlier provider) existed.
-Fixed 2026-09-25: `ShippingService.handleCarrierWebhook` now resolves
-the SPECIFIC provider named in the URL for signature verification,
-event parsing, shipment lookup, and event dedup/recording — never a
-silent fallback to the globally configured default; an unknown/
-unconfigured provider name fails safely (400). A second registered test
-identity, `MOCK_SECONDARY`, was added specifically to prove genuine
-per-request provider dispatch/isolation (6 new adversarial tests,
-`test/integration/shipping.test.ts` "Webhook provider dispatch
-(independent-review repair)") — deliberately not a real carrier. The
-full clean-state suite (lint, typecheck, build, unit, integration —
-zero regressions: 326 passing backend tests across 27 files —
-migration-from-zero, seed) is green. **This agent does not self-declare
-M17 certified** — per the M16 build instruction's own stop condition
-and this same discipline applied consistently, that determination
+Fixed at commit `413f2dc`: `ShippingService.handleCarrierWebhook` now
+resolves the SPECIFIC provider named in the URL for signature
+verification, event parsing, shipment lookup, and event dedup/
+recording — never a silent fallback to the globally configured
+default; an unknown/unconfigured provider name fails safely (400). A
+second registered test identity, `MOCK_SECONDARY`, was added
+specifically to prove genuine per-request provider dispatch/isolation
+(6 adversarial tests, `test/integration/shipping.test.ts` "Webhook
+provider dispatch (independent-review repair)") — deliberately not a
+real carrier. CI then caught a second, genuine (not flaky) concurrency
+bug in the pre-existing `createShipment` idempotency path — two
+concurrent requests with different idempotency keys could race such
+that a late-arriving request read a stale fulfilment snapshot and
+falsely rejected instead of converging to the already-created
+shipment; fixed at commit `6e28e2b` by checking for an existing
+Shipment row before the status validation. Full clean-state suite
+green (lint, typecheck, build, unit, integration — zero regressions:
+326 passing backend tests across 27 files — migration-from-zero,
+seed), confirmed on GitHub Actions run
+[36109033095](https://github.com/suraj2build/ECOMMERCE/actions/runs/36109033095).
+**On 2026-09-25 the human project owner recorded this repaired
+state — commit `6e28e2bd3116c49641016f7a7ed5dd61427a5819` — as
+`M17_ENGINEERING_CERTIFIED`** (engineering-implementation scope; not
+production-readiness — `TAX-001`–`005`, `CUST-001`, `AUD-002`,
+`CART-004`, `SEC-001`, production performance verification, and
+qualified privacy/DPDP and tax/GST review all remain open
+pre-production gates, none resolved by this certification) and gave
+explicit **"START BUILD — M18 CANCELLATION"** authorization, scoped
+specifically and only to milestone **M18**, building on the
+`M17_ENGINEERING_CERTIFIED` baseline, again with an explicit
+instruction not to continue automatically into M19+. M18 was
+implemented and adversarially tested (partial/full/all-lines
+cancellation, the shipment eligibility boundary, durable idempotency
+including two-different-keys-racing-the-same-line convergence,
+concurrency against pick/pack/ready-to-ship/shipment-creation/ship,
+inventory-ledger exactness, warehouse-work invalidation, prepaid/COD
+financial branching, split-fulfilment isolation, customer/guest IDOR,
+staff RBAC/audit, and immutable-price credit-note integration),
+CI-equivalent clean-state suite green with zero regressions to the
+entire M00–M17 baseline. This build's own clean-state validation
+caught and fixed a genuine cancel-vs-pick deadlock (an inverted lock
+order against `WarehouseService.recordPickOutcome`) — investigated to
+its true root cause rather than dismissed as a flake, per this file's
+own binding discipline. Two honest scope boundaries were documented
+rather than guessed, both in `CAN-004` (`blueprint/DECISION_REGISTER.md`)
+and `acceptance/m18-cancellation.md`: partial cancellation is
+implemented as cancelling a subset of lines (no sub-quantity
+cancellation within one multi-unit line — the schema has no
+infrastructure for it), and the loyalty-points-reversal acceptance
+criterion is N/A (no loyalty ledger exists anywhere in this codebase;
+M23 remains unauthorized and unbuilt). The captured-payment (PREPAID)
+credit-note integration reuses the existing M08 `InvoiceService`
+engine and is engineering-integration scope only — `TAX-005` remains
+`UNDER_REVIEW` and is not resolved or claimed compliant by this build.
+**This agent does not self-declare M18 certified** — per the same
+discipline applied at every milestone since Phase 1, that determination
 belongs to the independent reviewer. This agent has stopped and is
-awaiting independent re-review before any M18+ work. See
-`acceptance/m17-shipping-tracking.md` for its Definition of Done and
-`SHIP-005` in `blueprint/DECISION_REGISTER.md` for its state-machine/
-data-model design record and the repair's full detail.
+awaiting independent review before any M19+ work. See
+`acceptance/m18-cancellation.md` for its Definition of Done and
+`CAN-004` in `blueprint/DECISION_REGISTER.md` for its state-machine/
+lock-ordering/data-model design record.
+
+The full history of M17's original build, its independent-review
+blocker, and the two repairs is preserved above and in
+`blueprint/DECISION_REGISTER.md`'s `SHIP-005` entry and is not
+rewritten by this M17_ENGINEERING_CERTIFIED recording — see that
+history for the complete narrative.
 
 Phase 1 (M00–M07) completed an
 expanded engineering certification pass and was accepted by the human
@@ -113,18 +148,19 @@ reconciliation, order-invoice recovery). Every Phase 1 and Phase 2
 test remains mandatory and must stay green — M16's own build kept all
 of them green throughout.
 
-**This authorization does NOT extend beyond M17.**
+**This authorization does NOT extend beyond M18.**
 Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
 1–3) remains a separate thing from implementation authorization
 (Layer 4):
 
-- **M18 and every later milestone remain unauthorized.** No
-  application code for M18+ should be added until the human project
+- **M19 and every later milestone remain unauthorized.** No
+  application code for M19+ should be added until the human project
   owner gives a new, separate, explicit **START BUILD** authorization
   for that phase — neither the Phase 2 authorization, the M16
-  authorization, nor the M17 authorization carries forward
-  automatically, regardless of how cleanly M08–M17 land.
-- Do **not** interpret "M17 shipped cleanly" as authorization for the
+  authorization, the M17 authorization, nor the M18 authorization
+  carries forward automatically, regardless of how cleanly M08–M18
+  land.
+- Do **not** interpret "M18 shipped cleanly" as authorization for the
   next milestone. Authorization must be explicit and human-given for
   each milestone.
 - M16 (Warehouse & Fulfilment) was explicitly authorized on
@@ -138,10 +174,23 @@ Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
   `acceptance/m16-warehouse-fulfilment.md` for the Definition of Done.
 - M17 (Shipping / Tracking) was explicitly authorized on 2026-09-24,
   scoped only to that milestone, building on the
-  `M16_ENGINEERING_CERTIFIED` baseline above. See `SHIP-005` in
-  `blueprint/DECISION_REGISTER.md` for the state-machine/data-model
-  design record and `acceptance/m17-shipping-tracking.md` for the
-  Definition of Done.
+  `M16_ENGINEERING_CERTIFIED` baseline above. It was independently
+  reviewed (one BLOCKER, fixed), CI caught a further genuine
+  concurrency bug (fixed), and was then certified
+  `M17_ENGINEERING_CERTIFIED` at commit
+  `6e28e2bd3116c49641016f7a7ed5dd61427a5819` (see §0 above). See
+  `SHIP-005` in `blueprint/DECISION_REGISTER.md` for the state-
+  machine/data-model design record and
+  `acceptance/m17-shipping-tracking.md` for the Definition of Done.
+- M18 (Cancellation) was explicitly authorized on 2026-09-25, scoped
+  only to that milestone, building on the `M17_ENGINEERING_CERTIFIED`
+  baseline above. It was implemented, adversarially tested (including a
+  genuine cancel-vs-pick deadlock caught and fixed by this build's own
+  clean-state validation), full clean-state suite green with zero
+  regressions to the entire M00–M17 baseline — see §0 above. See
+  `CAN-004` in `blueprint/DECISION_REGISTER.md` for the state-machine/
+  lock-ordering/data-model design record and
+  `acceptance/m18-cancellation.md` for the Definition of Done.
 - M08 is explicitly authorized to proceed now as a **configurable
   compliance architecture** — GST registrations, HSN/rate reference
   data, and e-invoice applicability are all engineering-configurable,

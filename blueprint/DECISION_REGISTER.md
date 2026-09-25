@@ -793,6 +793,27 @@ of what is still needed from anyone, and from whom.
   (`test/integration/shipping.test.ts`, "Webhook provider dispatch
   (independent-review repair)", 6 tests) — deliberately not a real
   carrier.
+  **CI-caught follow-up (2026-09-25, same day):** CI failed a
+  pre-existing test on the webhook-repair push — not a flake,
+  reproduced by inspection. `resolveOrCreateShipmentIntent` validated
+  fulfilment eligibility against a plain snapshot read once by
+  `createShipment` before any lock; two concurrent `createShipment`
+  calls with DIFFERENT idempotency keys could race such that the first
+  fully completed (through `markFulfilmentShipped`, moving the real
+  `OrderFulfilment` to SHIPPED) before the second even reached this
+  method — the second's own snapshot was genuinely stale by then, and
+  falsely rejected with "not READY_TO_SHIP" even though a Shipment for
+  this fulfilment already legitimately existed. Fixed by checking for
+  an existing Shipment row by `fulfilmentId` BEFORE the status
+  validation, converging the late-arriving request to the
+  already-created shipment via the same idempotent-no-op path
+  `createShipment` already takes for a `byKey` match. Verified with 5
+  repeated local runs plus a full clean-state suite pass, then
+  confirmed on GitHub Actions run
+  [36109033095](https://github.com/suraj2build/ECOMMERCE/actions/runs/36109033095)
+  (326/326 tests). This is the commit the Product Owner certified as
+  `M17_ENGINEERING_CERTIFIED` (`6e28e2bd3116c49641016f7a7ed5dd61427a5819`,
+  `CLAUDE.md` §0).
 - **Affected specs:** `specs/16-shipping-tracking.md`,
   `specs/14-order-management.md`, `specs/15-warehouse-fulfilment.md`
 
@@ -820,6 +841,87 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** Optional (recommended, not mandatory) — unlike return reason, which is explicitly mandatory (`RET-002`). Feeds analytics where captured.
 - **Affected specs:** `specs/17-cancellation.md`
+
+#### CAN-004 — M18 cancellation state-machine/data-model shape and scope boundaries · **P1**
+- **Question:** How do CAN-001–003's engineering defaults map onto the
+  already-certified M15/M16/M17 Order/OrderLine/OrderFulfilment/
+  PickTask/Shipment model, without inventing a competing cancellation
+  engine, and what happens where the approved spec's requirements
+  outrun what the current schema/certified milestones can honestly
+  support?
+- **Dependencies:** CAN-001, CAN-002, CAN-003, ORD-001 (M15), WH-003 (M16), SHIP-005 (M17)
+- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-25
+  (M18 build)
+- **Final decision:** `OrderService.cancelOrderLine`/`cancelOrderLineForCustomer`
+  evolve the SAME M15 method in place (no new `CancellationService`
+  module) via a shared private `performCancellation` core. No new
+  `OrderLineStatus` value — cancellation moves a line straight to the
+  existing `CANCELLED` state.
+  - **Locking/concurrency:** a line already assigned to a fulfilment is
+    serialized via the SAME `lockFulfilment` row lock (acquired FIRST)
+    that `markFulfilmentPacked`/`ReadyToShip`/`Shipped`/`Delivered`
+    already use — this single lock closes cancel-vs-cancel/pack/
+    ready-to-ship/shipment-creation/ship for that line. A line with no
+    fulfilment yet is serialized via a new `lockOrderLine` row lock,
+    with a new `lockPendingPickTasksForLine` lock acquired BEFORE it —
+    matching `WarehouseService.recordPickOutcome`'s own
+    pick-task-then-order-line lock order exactly. Getting this second
+    ordering backwards was caught as a genuine Postgres deadlock
+    (40P01) during this build's own clean-state validation and fixed
+    before certification was sought - not treated as a flake.
+  - **Idempotency:** a new globally-unique `OrderLine.cancellationIdempotencyKey`
+    column, set only on a successful commit; a line already `CANCELLED`
+    is always an idempotent no-op regardless of which key a retry
+    supplies.
+  - **Schema evolution:** the pre-existing M15 DB constraint
+    `order_lines_cancelled_fields_check` required a NOT NULL
+    `cancelledReason` whenever `status = CANCELLED`, which is stricter
+    than CAN-003's own approved "optional" decision. Relaxed via
+    migration `20260925090000_relax_order_line_cancelled_reason_optional`
+    to require only that `cancelledAt` is set iff `CANCELLED` — this is
+    the M18 spec superseding an M15 implementation detail that predates
+    CAN-003, not a regression of an M00–M17 correctness invariant.
+  - **Inventory:** reuses `InventoryService.cancelAllocation` unchanged
+    (never a direct `InventoryBalance` edit); a still-`PENDING` `PickTask`
+    for the cancelled line is marked `CANCELLED` in the same transaction
+    (never left actionable); a `PickTask` that already completed is left
+    as historical record, never rewritten.
+  - **Tax/credit-note:** a captured-payment (`PREPAID`) cancellation
+    sets `Order.refundRequired = true` (reusing the existing M14 field —
+    no competing flag) and, where an `InvoiceLine` correlates to the
+    cancelled line (via a new nullable, unique `InvoiceLine.orderLineId`
+    column, populated going forward by `OrderService.issueOrderInvoice`),
+    calls the EXISTING M08 `InvoiceService.issueCreditNote` engine
+    in-transaction. This is an **engineering integration only** — it
+    does not resolve `TAX-005` (GST credit-note legal/statutory
+    requirements remain `UNDER_REVIEW`) and must never be read as
+    `GST_COMPLIANT`. COD cancellation never sets `refundRequired` and
+    never issues a credit note (nothing was collected to refund). M20
+    refund *execution* is explicitly out of scope and not implemented —
+    only the `refundRequired` flag this build already reuses from M14.
+  - **Scope boundary — partial cancellation granularity:** the approved
+    spec's own wording ("Partial cancellation MUST be supported at the
+    line-item level") is satisfied by cancelling a SUBSET OF LINES; the
+    schema has no `cancelledQuantity`/sub-quantity infrastructure on
+    `OrderLine`, and none was added. Cancelling part of a single line's
+    quantity (e.g. 1 of 3 units on one line) is NOT supported by this
+    build and would require a genuine schema change plus a re-approved
+    spec — flagged here as a known, deliberate scope boundary rather
+    than invented or silently ignored.
+  - **Scope boundary — loyalty:** `acceptance/m18-cancellation.md`'s
+    "Integration test: loyalty-points reversal on cancellation"
+    requirement cannot be satisfied: no loyalty ledger/points system
+    exists anywhere in this codebase (M23 Loyalty is unauthorized and
+    unbuilt per `BUILD_PLAN.md`). Documented here as N/A rather than
+    fabricated, consistent with this build's own explicit instruction
+    not to start M23.
+  - Full design rationale and the complete lock-ordering/idempotency
+    proof: `OrderService.performCancellation`'s own docblock in
+    `services/commerce-api/src/modules/order/service.ts`, and the
+    30-point adversarial matrix in
+    `services/commerce-api/test/integration/cancellation.test.ts`.
+- **Affected specs:** `specs/17-cancellation.md`, `specs/14-order-management.md`,
+  `specs/32-india-tax-invoicing.md`
 
 ---
 

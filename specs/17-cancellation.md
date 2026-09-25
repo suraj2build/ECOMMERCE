@@ -1,6 +1,9 @@
 # 17. Cancellation
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `CAN-001`–`003`)
+**Status:** IMPLEMENTED (M18 build, 2026-09-25 — see
+`acceptance/m18-cancellation.md` and `CAN-004` in
+`blueprint/DECISION_REGISTER.md`. Originally APPROVED 2026-09-22 — see
+`blueprint/DECISION_REGISTER.md` `CAN-001`–`003`)
 
 ## Purpose
 
@@ -37,7 +40,17 @@ loyalty.
 ## Remaining open items
 
 Credit-note format specifics remain `UNDER_REVIEW` in
-`specs/32-india-tax-invoicing.md`.
+`specs/32-india-tax-invoicing.md`; the M18 build integrates with the
+existing M08 credit-note engine on a captured-payment cancellation but
+does **not** resolve `TAX-005` — see `CAN-004`.
+
+**M18 implementation scope boundaries** (see `CAN-004` for full
+detail): "partial cancellation at the line-item level" is implemented
+as cancelling a SUBSET OF LINES — sub-quantity cancellation of a single
+multi-unit line is not supported by the current schema and would need
+a re-approved spec change. The loyalty-reversal requirement below is
+N/A — no loyalty ledger exists in this codebase (M23 is unauthorized
+and unbuilt).
 
 ## Acceptance criteria
 
