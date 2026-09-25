@@ -222,11 +222,13 @@ export class ShippingService {
   }
 
   /**
-   * Verifies signature -> durably records (or resumes) the event ->
-   * applies the resulting tracking transition -> marks the event
-   * PROCESSED only once that transition has actually committed. This is
-   * the exact RECEIVED/PROCESSED/FAILED durable-webhook-processing
-   * pattern `PaymentService.handleRazorpayWebhook`/`recordOrResumeEvent`
+   * Resolves the ShippingProvider named in the webhook URL
+   * (`/webhooks/shipping/:provider`), verifies signature -> durably
+   * records (or resumes) the event -> applies the resulting tracking
+   * transition -> marks the event PROCESSED only once that transition
+   * has actually committed. This is the exact RECEIVED/PROCESSED/FAILED
+   * durable-webhook-processing pattern
+   * `PaymentService.handleRazorpayWebhook`/`recordOrResumeEvent`
    * established in M14 (and twice independently reviewed/repaired) -
    * reused here rather than reinvented: an invalid signature is
    * rejected with nothing persisted; a duplicate delivery of an
@@ -234,10 +236,34 @@ export class ShippingService {
    * event that was recorded but never successfully applied (a transient
    * failure between the two) resumes processing against the SAME row,
    * never a second insert and never silently dropped.
+   *
+   * Independent-review repair (M17, 2026-09-25): `providerName` (the
+   * URL's own `:provider` segment) - NOT `this.provider`, the instance's
+   * globally-configured default used only by `createShipment`/
+   * `pollPendingShipments` - decides which registered `ShippingProvider`
+   * authenticates and parses this request. Signature verification,
+   * event parsing, shipment lookup, and event dedup/recording all use
+   * THIS resolved provider's identity throughout, never a silent
+   * fallback to the globally configured one - a webhook claiming to be
+   * from provider A can never be authenticated (or have its events
+   * attributed) using provider B's secret/identity, and a shipment
+   * genuinely booked under a DIFFERENT provider is invisible to this
+   * lookup even given a genuinely valid signature for the URL's own
+   * provider (see the shipment-lookup `where` clause below). An
+   * unknown/unconfigured provider name fails safely (400,
+   * `unknown_provider`), never a crash or a silent fallback.
    */
-  async handleCarrierWebhook(rawBody: string, signatureHeader: string | undefined): Promise<ShippingWebhookResult> {
-    if (!signatureHeader || !this.provider.verifyWebhookSignature(rawBody, signatureHeader)) {
-      this.fastify.log.warn('Rejected shipping webhook: invalid or missing signature');
+  async handleCarrierWebhook(providerName: string, rawBody: string, signatureHeader: string | undefined): Promise<ShippingWebhookResult> {
+    let provider: ShippingProvider;
+    try {
+      provider = resolveShippingProvider(providerName);
+    } catch (err) {
+      this.fastify.log.warn({ err, providerName }, 'Rejected shipping webhook: unknown/unconfigured provider');
+      return { ok: false, reason: 'unknown_provider' };
+    }
+
+    if (!signatureHeader || !provider.verifyWebhookSignature(rawBody, signatureHeader)) {
+      this.fastify.log.warn({ providerName }, 'Rejected shipping webhook: invalid or missing signature');
       return { ok: false, reason: 'invalid_signature' };
     }
 
@@ -245,17 +271,22 @@ export class ShippingService {
     let payload: unknown;
     try {
       payload = JSON.parse(rawBody);
-      event = this.provider.parseWebhookEvent(rawBody);
+      event = provider.parseWebhookEvent(rawBody);
     } catch (err) {
-      this.fastify.log.warn({ err }, 'Rejected shipping webhook: unparseable payload');
+      this.fastify.log.warn({ err, providerName }, 'Rejected shipping webhook: unparseable payload');
       return { ok: false, reason: 'unparseable_payload' };
     }
 
+    // Scoped to THIS provider's identity - a shipment genuinely booked
+    // under a different provider is never found here, even if the raw
+    // providerShipmentRef string were somehow to collide, and even
+    // though the signature above already verified correctly for this
+    // provider (proves provider isolation, not just signature checking).
     const shipment = await this.prisma.shipment.findFirst({
-      where: { provider: this.provider.name, providerShipmentRef: event.providerShipmentRef },
+      where: { provider: provider.name, providerShipmentRef: event.providerShipmentRef },
     });
 
-    const eventRecord = await this.recordOrResumeEvent(event, shipment?.id, payload, 'WEBHOOK');
+    const eventRecord = await this.recordOrResumeEvent(event, shipment?.id, payload, 'WEBHOOK', provider.name);
     if (eventRecord.status === 'PROCESSED') {
       return { ok: true, duplicate: true };
     }
@@ -289,18 +320,29 @@ export class ShippingService {
     }
   }
 
-  /** Same insert-or-fetch-on-conflict shape as PaymentService.recordOrResumeEvent - see its docblock for the full rationale. */
+  /**
+   * Same insert-or-fetch-on-conflict shape as
+   * PaymentService.recordOrResumeEvent - see its docblock for the full
+   * rationale. `providerName` is caller-supplied (never `this.provider`
+   * implicitly) so a webhook's dedup/record identity always matches the
+   * provider that actually authenticated it (independent-review repair,
+   * M17, 2026-09-25) - `handleCarrierWebhook` passes the URL-resolved
+   * provider's name; `pollPendingShipments` passes the instance's own
+   * configured provider's name (polling has no per-request URL to route
+   * by).
+   */
   private async recordOrResumeEvent(
     event: CarrierTrackingEvent,
     shipmentId: string | undefined,
     payload: unknown,
     source: ShipmentEventSource,
+    providerName: string,
   ): Promise<{ id: string; status: 'RECEIVED' | 'PROCESSED' | 'FAILED' }> {
     try {
       return await this.prisma.shipmentTrackingEvent.create({
         data: {
           shipmentId,
-          provider: this.provider.name,
+          provider: providerName,
           providerEventId: event.providerEventId,
           source,
           rawStatus: event.rawStatus,
@@ -314,7 +356,7 @@ export class ShippingService {
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         return await this.prisma.shipmentTrackingEvent.findFirstOrThrow({
-          where: { provider: this.provider.name, providerEventId: event.providerEventId },
+          where: { provider: providerName, providerEventId: event.providerEventId },
           select: { id: true, status: true },
         });
       }
@@ -479,6 +521,7 @@ export class ShippingService {
         shipment.id,
         { source: 'poll', shipmentId: shipment.id, snapshot: { ...snapshot, occurredAt: snapshot.occurredAt.toISOString() } },
         'POLL',
+        this.provider.name,
       );
       if (eventRecord.status === 'PROCESSED') continue;
 

@@ -1,7 +1,46 @@
 # M17 — Shipping / Tracking Acceptance Criteria
 
 **Spec(s):** `specs/16-shipping-tracking.md`
-**Status:** IMPLEMENTED (M17 build, 2026-09-24)
+**Status:** IMPLEMENTED (M17 build, 2026-09-24; independent-review
+repair, 2026-09-25 — see §"Independent review" below)
+
+## Independent review
+
+An independent reviewer examined the 2026-09-24 M17 build (baseline
+commit `495dcfcede60e922ec251a17fd3dcbd2ea362047`) and found **one
+BLOCKER**: `POST /webhooks/shipping/:provider` declared a per-provider
+URL but never actually used `:provider` — every webhook was
+authenticated/parsed by whichever provider `SHIPPING_PROVIDER` happened
+to be globally configured, regardless of the URL. This broke provider
+isolation the moment more than one provider identity existed (or an
+in-flight shipment belonged to an earlier provider): a webhook claiming
+to be from provider A would in fact be verified/parsed as the globally
+active provider, never provider A specifically.
+
+**Fixed 2026-09-25:** `ShippingService.handleCarrierWebhook` now takes
+an explicit `providerName` (the route's own `:provider`, upper-cased),
+resolves that SPECIFIC provider via `resolveShippingProvider` for
+signature verification, event parsing, shipment lookup
+(`provider: <resolved>.name`), and event dedup/recording — never
+`this.provider` (the instance's globally-configured default, still used
+correctly by `createShipment`/`pollPendingShipments`, which are not
+per-request URL-routed). An unknown/unconfigured provider name fails
+safely (400, `unknown_provider`), never a crash or a silent fallback. A
+second registered test identity, `MOCK_SECONDARY` (still
+`MockCarrierProvider` underneath, its own distinct webhook secret,
+added specifically to prove the fix per the review's explicit
+guidance — deliberately not a real carrier), lets
+`test/integration/shipping.test.ts`'s new "Webhook provider dispatch
+(independent-review repair)" suite prove genuine per-request provider
+isolation: the configured provider's own webhook succeeds; an unknown
+provider name is rejected; a signature valid for one provider never
+verifies against a different provider's endpoint; a shipment booked
+under one provider can never be found (let alone mutated) via a
+different provider's endpoint even with a genuinely valid signature for
+that endpoint; events are persisted under the provider that actually
+authenticated them; and duplicate/resume dedup semantics are unchanged
+after routing by provider. See `SHIP-005` in
+`blueprint/DECISION_REGISTER.md` for the full repair record.
 
 ## Business acceptance
 
@@ -69,7 +108,10 @@
       touching fulfilment logic). `test/integration/shipping.test.ts`
       "Carrier adapter substitution (SHIP-002)" registers two
       differently-configured `MockCarrierProvider` instances against
-      the same `ShippingService` code, unmodified.
+      the same `ShippingService` code, unmodified, for booking; the
+      webhook side of substitution/isolation is covered by the
+      dedicated "Webhook provider dispatch (independent-review repair)"
+      suite (6 tests) added 2026-09-25 — see "Independent review" above.
 - [x] E2E: `acceptance/e2e-commerce-flows.md` FLOW 15 (RTO). Covered by
       backend integration tests (repeated failed-delivery-attempt
       webhooks → automatic RTO, COD closure without refund) — honestly

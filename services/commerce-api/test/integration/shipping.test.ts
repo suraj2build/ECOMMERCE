@@ -239,7 +239,7 @@ describe('Shipping / Tracking (M17)', () => {
   }
 
   describe('Carrier adapter substitution (SHIP-002)', () => {
-    it('proves ShippingService behaves identically against two differently-configured carrier adapter instances, with zero core-logic changes', async () => {
+    it('proves ShippingService.createShipment behaves identically against two differently-configured carrier adapter instances, with zero core-logic changes', async () => {
       const ctx = await seedContext();
       const skuA = await setupCheckoutableSku(500, ctx);
       const skuB = await setupCheckoutableSku(700, ctx);
@@ -255,8 +255,16 @@ describe('Shipping / Tracking (M17)', () => {
       // Two adapter INSTANCES, differently configured (distinct webhook
       // secrets) - exactly the substitution ADR-0020/SHIP-002 requires:
       // the exact same ShippingService code path, never modified per
-      // adapter, drives both to a correct booking and a correctly-verified
-      // webhook using EACH adapter's own secret.
+      // adapter, drives both to a correct booking via `createShipment`
+      // (constructor-injected, unaffected by the independent-review
+      // webhook-routing repair below - `createShipment`/`pollPendingShipments`
+      // deliberately still use the instance's own configured provider,
+      // never a per-request URL). Webhook-side provider dispatch is its
+      // own, separately-registered concern - proven by "Webhook provider
+      // dispatch (independent-review repair)" below, since a webhook's
+      // authenticating provider is now ALWAYS resolved from the registry
+      // by the URL's `:provider`, never from an arbitrary injected
+      // instance (the whole point of that repair).
       const adapterOne = new MockCarrierProvider('carrier-one-secret');
       const adapterTwo = new MockCarrierProvider('carrier-two-secret');
 
@@ -270,21 +278,9 @@ describe('Shipping / Tracking (M17)', () => {
       expect(shipmentTwo.status).toBe('BOOKED');
       expect(shipmentOne.provider).toBe('MOCK');
       expect(shipmentTwo.provider).toBe('MOCK');
-
-      // Each adapter instance's own signature verification is exercised
-      // identically through the SAME handleCarrierWebhook code path.
-      const bodyOne = trackingEvent(shipmentOne.providerShipmentRef!, 'in_transit', new Date(), 'evt-adapter-one-1');
-      const resultOne = await serviceOne.handleCarrierWebhook(bodyOne, signShipping(bodyOne, 'carrier-one-secret'));
-      expect(resultOne.ok).toBe(true);
-
-      // Adapter TWO's signature does not verify against adapter ONE's body
-      // (wrong secret) - proves the two are genuinely independently
-      // configured, not sharing hidden global state.
-      const wrongSignatureResult = await serviceTwo.handleCarrierWebhook(bodyOne, signShipping(bodyOne, 'carrier-one-secret'));
-      expect(wrongSignatureResult.ok).toBe(false);
-
-      const refreshedOne = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipmentOne.id } });
-      expect(refreshedOne.status).toBe('IN_TRANSIT');
+      expect(shipmentOne.trackingRef).toBeTruthy();
+      expect(shipmentTwo.trackingRef).toBeTruthy();
+      expect(shipmentOne.id).not.toBe(shipmentTwo.id);
     });
   });
 
@@ -514,6 +510,178 @@ describe('Shipping / Tracking (M17)', () => {
 
       const refreshed = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
       expect(refreshed.status).toBe('BOOKED'); // unchanged
+    });
+  });
+
+  /**
+   * Independent-review repair (M17, 2026-09-25): `POST
+   * /webhooks/shipping/:provider` previously ignored `:provider` entirely
+   * - every webhook was authenticated/parsed by whichever provider
+   * `SHIPPING_PROVIDER` happened to be configured globally, regardless of
+   * the URL. `MOCK_SECONDARY` (provider.ts) is a second registered
+   * identity, still `MockCarrierProvider` underneath but with its own
+   * distinct webhook secret, added specifically to prove the fix: the
+   * webhook route now genuinely dispatches to the provider named in the
+   * URL, never falling back to the globally configured one.
+   */
+  describe('Webhook provider dispatch (independent-review repair)', () => {
+    const MOCK_SECONDARY_SECRET = 'mock-secondary-carrier-webhook-secret-test-only';
+
+    async function bookedMockShipment() {
+      const skuId = await setupCheckoutableSku(500);
+      const token = await warehouseToken();
+      const { orderId } = await codOrder(skuId, `guest-ship-pd-${counter}`, `idem-ship-pd-${counter}`);
+      const lines = await testPrisma.orderLine.findMany({ where: { orderId } });
+      const fulfilmentId = await readyToShipFulfilment(orderId, lines.map((l) => l.id), token);
+      const createRes = await createShipmentHttp(fulfilmentId, token, `idem-pd-create-${counter}`);
+      expect(createRes.statusCode).toBe(201);
+      const shipment = createRes.json();
+      expect(shipment.provider).toBe('MOCK'); // the globally configured default, used by createShipment
+      return { orderId, fulfilmentId, shipment };
+    }
+
+    it('succeeds against the configured provider named in the URL', async () => {
+      const { shipment } = await bookedMockShipment();
+      const body = trackingEvent(shipment.providerShipmentRef, 'in_transit', new Date(), 'evt-pd-configured-1');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/shipping/mock',
+        headers: { 'content-type': 'application/json', 'x-shipping-signature': signShipping(body) },
+        payload: body,
+      });
+      expect(res.statusCode).toBe(200);
+      const refreshed = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
+      expect(refreshed.status).toBe('IN_TRANSIT');
+    });
+
+    it('fails safely for an unknown/unconfigured provider name - no event persisted, no crash', async () => {
+      const { shipment } = await bookedMockShipment();
+      const body = trackingEvent(shipment.providerShipmentRef, 'in_transit', new Date(), 'evt-pd-unknown-1');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/shipping/nonexistent_carrier',
+        headers: { 'content-type': 'application/json', 'x-shipping-signature': signShipping(body) },
+        payload: body,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('unknown_provider');
+
+      const events = await testPrisma.shipmentTrackingEvent.findMany({ where: { providerEventId: 'evt-pd-unknown-1' } });
+      expect(events).toHaveLength(0);
+
+      const refreshed = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
+      expect(refreshed.status).toBe('BOOKED'); // untouched
+    });
+
+    it('rejects a payload signed for the URL provider using a DIFFERENT provider secret', async () => {
+      const { shipment } = await bookedMockShipment();
+      // Signed with MOCK's own secret, but posted to the MOCK_SECONDARY
+      // endpoint - MOCK_SECONDARY's own registered secret never verifies
+      // a signature produced with MOCK's secret.
+      const body = trackingEvent(shipment.providerShipmentRef, 'in_transit', new Date(), 'evt-pd-wrongsecret-1');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/shipping/mock_secondary',
+        headers: { 'content-type': 'application/json', 'x-shipping-signature': signShipping(body, MOCK_WEBHOOK_SECRET) },
+        payload: body,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('invalid_signature');
+
+      const events = await testPrisma.shipmentTrackingEvent.findMany({ where: { providerEventId: 'evt-pd-wrongsecret-1' } });
+      expect(events).toHaveLength(0);
+    });
+
+    it('a genuinely valid signature for the URL provider cannot mutate a shipment booked under a DIFFERENT provider, and the event is recorded under the authenticating provider', async () => {
+      const { shipment } = await bookedMockShipment(); // provider: MOCK
+
+      // A body referencing the MOCK shipment's own providerShipmentRef,
+      // but correctly signed with MOCK_SECONDARY's own secret and posted
+      // to the MOCK_SECONDARY endpoint - a legitimately authenticated
+      // MOCK_SECONDARY webhook. MOCK_SECONDARY has never booked a
+      // shipment with this ref, so it must be treated as an unknown
+      // shipment reference FROM MOCK_SECONDARY'S OWN PERSPECTIVE, never
+      // as a match against the MOCK shipment that happens to share the
+      // ref string.
+      const body = trackingEvent(shipment.providerShipmentRef, 'in_transit', new Date(), 'evt-pd-crossprovider-1');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/shipping/mock_secondary',
+        headers: { 'content-type': 'application/json', 'x-shipping-signature': signShipping(body, MOCK_SECONDARY_SECRET) },
+        payload: body,
+      });
+      expect(res.statusCode).toBe(200); // a genuinely valid, correctly-authenticated MOCK_SECONDARY webhook
+
+      // The event is attributed to the provider that ACTUALLY
+      // authenticated it (MOCK_SECONDARY), never the shipment's own
+      // provider (MOCK) and never a globally-configured default.
+      const event = await testPrisma.shipmentTrackingEvent.findFirstOrThrow({
+        where: { provider: 'MOCK_SECONDARY', providerEventId: 'evt-pd-crossprovider-1' },
+      });
+      expect(event.shipmentId).toBeNull(); // no MOCK_SECONDARY shipment has this ref
+      expect(event.status).toBe('PROCESSED');
+
+      // The MOCK shipment itself is completely untouched by the
+      // MOCK_SECONDARY webhook, despite sharing the same providerShipmentRef
+      // string - proves provider identity, not just the ref string, gates
+      // which Shipment a webhook can ever mutate.
+      const refreshedMockShipment = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
+      expect(refreshedMockShipment.status).toBe('BOOKED');
+    });
+
+    it('preserves duplicate-event semantics after provider routing (dedup scoped to the authenticating provider)', async () => {
+      const { shipment } = await bookedMockShipment();
+      const body = trackingEvent(shipment.providerShipmentRef, 'in_transit', new Date(), 'evt-pd-dup-1');
+      const headers = { 'content-type': 'application/json', 'x-shipping-signature': signShipping(body) };
+
+      const first = await app.inject({ method: 'POST', url: '/api/v1/webhooks/shipping/mock', headers, payload: body });
+      expect(first.statusCode).toBe(200);
+      expect(first.json().duplicate).toBe(false);
+
+      const second = await app.inject({ method: 'POST', url: '/api/v1/webhooks/shipping/mock', headers, payload: body });
+      expect(second.statusCode).toBe(200);
+      expect(second.json().duplicate).toBe(true);
+
+      const events = await testPrisma.shipmentTrackingEvent.findMany({ where: { provider: 'MOCK', providerEventId: 'evt-pd-dup-1' } });
+      expect(events).toHaveLength(1);
+    });
+
+    it('preserves FAILED-event resume semantics after provider routing', async () => {
+      const { shipment } = await bookedMockShipment();
+      const body = trackingEvent(shipment.providerShipmentRef, 'in_transit', new Date(), 'evt-pd-resume-1');
+
+      // Simulate a prior delivery to the MOCK endpoint that was durably
+      // recorded but failed to apply.
+      await testPrisma.shipmentTrackingEvent.create({
+        data: {
+          shipmentId: shipment.id,
+          provider: 'MOCK',
+          providerEventId: 'evt-pd-resume-1',
+          source: 'WEBHOOK',
+          rawStatus: 'in_transit',
+          normalizedStatus: 'IN_TRANSIT',
+          payload: { simulated: 'prior-failed-attempt' },
+          status: 'FAILED',
+          processingError: 'simulated transient failure',
+          occurredAt: new Date(),
+        },
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/shipping/mock',
+        headers: { 'content-type': 'application/json', 'x-shipping-signature': signShipping(body) },
+        payload: body,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().duplicate).toBe(false);
+
+      const events = await testPrisma.shipmentTrackingEvent.findMany({ where: { provider: 'MOCK', providerEventId: 'evt-pd-resume-1' } });
+      expect(events).toHaveLength(1); // resumed against the SAME row
+      expect(events[0].status).toBe('PROCESSED');
+
+      const refreshed = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
+      expect(refreshed.status).toBe('IN_TRANSIT');
     });
   });
 

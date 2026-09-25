@@ -53,9 +53,19 @@ const shippingRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await shippingService.pollPendingShipments());
   });
 
+  // Independent-review repair (M17, 2026-09-25): `:provider` is genuinely
+  // used to select which registered ShippingProvider authenticates and
+  // parses this request - see ShippingService.handleCarrierWebhook's
+  // docblock. Never falls back to the globally configured
+  // SHIPPING_PROVIDER; an unknown/unconfigured name fails safely (400).
+  // Case-insensitive (upper-cased before lookup) so a carrier's own URL
+  // casing convention doesn't matter - the registry key is the source of
+  // truth, not string-exact matching.
   fastify.post('/webhooks/shipping/:provider', async (request, reply) => {
+    const { provider } = z.object({ provider: z.string().min(1).max(64) }).parse(request.params);
     const signature = request.headers['x-shipping-signature'];
     const result = await shippingService.handleCarrierWebhook(
+      provider.toUpperCase(),
       request.rawBody ?? '',
       typeof signature === 'string' ? signature : undefined,
     );

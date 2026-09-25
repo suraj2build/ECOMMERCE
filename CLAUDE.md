@@ -6,8 +6,8 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-24: `M17 BUILD COMPLETE — AWAITING INDEPENDENT
-REVIEW. M18+ NOT AUTHORIZED.`** An independent reviewer examined the
+**Status as of 2026-09-25: `M17 REPAIR COMPLETE — AWAITING INDEPENDENT
+RE-REVIEW. M18+ NOT AUTHORIZED.`** An independent reviewer examined the
 M16 (Warehouse & Fulfilment) build — adversarial concurrency/
 idempotency/IDOR/BOLA/transactional-rollback testing, the full
 clean-state suite green, zero regressions to M00–M15 — and certified
@@ -22,23 +22,38 @@ certification. The human project owner then gave explicit **"START
 BUILD — M17 SHIPPING / TRACKING"** authorization, scoped specifically
 and only to milestone **M17**, building on the `M16_ENGINEERING_CERTIFIED`
 baseline above, again with an explicit instruction not to continue
-automatically into M18+. M17 is now implemented and adversarially
-tested (carrier-adapter substitution, shipment-creation idempotency/
+automatically into M18+. M17 was implemented and adversarially tested
+(carrier-adapter substitution, shipment-creation idempotency/
 concurrency/crash-retry, webhook dedup/resume, illegal-transition
 rejection, redelivery-exhaustion → automatic RTO, the exactly-one-SALE
 invariant, polling-fallback graceful degradation, split-shipment
-independent tracking, IDOR — see `test/integration/shipping.test.ts`
-and `acceptance/m17-shipping-tracking.md`), and the full clean-state
-suite (lint, typecheck, build, unit, integration — the complete
-pre-existing M00–M16 suite included, zero regressions: 320 passing
-backend tests across 27 files — migration-from-zero, seed) is green.
-**This agent does not self-declare M17 certified** — per the M16 build
-instruction's own stop condition and this same discipline applied
-consistently, that determination belongs to the independent reviewer.
-This agent has stopped and is awaiting independent human review before
-any M18+ work. See `acceptance/m17-shipping-tracking.md` for its
-Definition of Done and `SHIP-005` in `blueprint/DECISION_REGISTER.md`
-for its state-machine/data-model design record.
+independent tracking, IDOR), CI-green at commit
+`495dcfcede60e922ec251a17fd3dcbd2ea362047`. An independent review of
+that build found **one BLOCKER**: `POST /webhooks/shipping/:provider`
+declared a per-provider URL but never actually used `:provider` — every
+webhook was authenticated/parsed by whichever provider
+`SHIPPING_PROVIDER` happened to be globally configured, regardless of
+the URL, breaking provider isolation once more than one provider
+identity (or an in-flight shipment from an earlier provider) existed.
+Fixed 2026-09-25: `ShippingService.handleCarrierWebhook` now resolves
+the SPECIFIC provider named in the URL for signature verification,
+event parsing, shipment lookup, and event dedup/recording — never a
+silent fallback to the globally configured default; an unknown/
+unconfigured provider name fails safely (400). A second registered test
+identity, `MOCK_SECONDARY`, was added specifically to prove genuine
+per-request provider dispatch/isolation (6 new adversarial tests,
+`test/integration/shipping.test.ts` "Webhook provider dispatch
+(independent-review repair)") — deliberately not a real carrier. The
+full clean-state suite (lint, typecheck, build, unit, integration —
+zero regressions: 326 passing backend tests across 27 files —
+migration-from-zero, seed) is green. **This agent does not self-declare
+M17 certified** — per the M16 build instruction's own stop condition
+and this same discipline applied consistently, that determination
+belongs to the independent reviewer. This agent has stopped and is
+awaiting independent re-review before any M18+ work. See
+`acceptance/m17-shipping-tracking.md` for its Definition of Done and
+`SHIP-005` in `blueprint/DECISION_REGISTER.md` for its state-machine/
+data-model design record and the repair's full detail.
 
 Phase 1 (M00–M07) completed an
 expanded engineering certification pass and was accepted by the human

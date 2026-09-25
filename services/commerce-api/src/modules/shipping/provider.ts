@@ -23,7 +23,18 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * status, which no carrier ever emits).
  */
 
-export type CarrierName = 'MOCK';
+/**
+ * `MOCK_SECONDARY` (M17 independent-review repair): a second registered
+ * identity, still `MockCarrierProvider` underneath with its own distinct
+ * webhook secret - added specifically so the webhook route's per-request
+ * provider dispatch (see `ShippingService.handleCarrierWebhook` and
+ * `routes.ts`'s `/webhooks/shipping/:provider`) can be proven against two
+ * genuinely different REGISTRY entries, not just two ad-hoc instances of
+ * the same class constructed by a test. Deliberately NOT a real
+ * production carrier - the review explicitly permits exactly this
+ * minimum adjustment to prove provider isolation.
+ */
+export type CarrierName = 'MOCK' | 'MOCK_SECONDARY';
 
 /**
  * The subset of ShipmentTrackingStatus a CARRIER can report. Deliberately
@@ -112,9 +123,14 @@ function normalizeMockStatus(rawStatus: string): NormalizedTrackingStatus {
  * second carrier actually built.
  */
 export class MockCarrierProvider implements ShippingProvider {
-  readonly name: CarrierName = 'MOCK';
+  readonly name: CarrierName;
 
-  constructor(private readonly webhookSecret: string = 'mock-carrier-webhook-secret-test-only') {}
+  constructor(
+    private readonly webhookSecret: string = 'mock-carrier-webhook-secret-test-only',
+    name: CarrierName = 'MOCK',
+  ) {
+    this.name = name;
+  }
 
   async initiateShipment(input: ShipmentBookingInput): Promise<ShipmentBookingResult> {
     const providerShipmentRef = `MOCK-SHP-${input.shipmentId}`;
@@ -168,6 +184,10 @@ export class MockCarrierProvider implements ShippingProvider {
 
 const providerRegistry: Record<CarrierName, () => ShippingProvider> = {
   MOCK: () => new MockCarrierProvider(),
+  // Distinct webhook secret so a signature valid for MOCK never verifies
+  // here, and vice versa - proves the webhook route's per-request
+  // provider dispatch is genuine, not a shared/global secret.
+  MOCK_SECONDARY: () => new MockCarrierProvider('mock-secondary-carrier-webhook-secret-test-only', 'MOCK_SECONDARY'),
 };
 
 export function resolveShippingProvider(name: string): ShippingProvider {

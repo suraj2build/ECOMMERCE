@@ -773,6 +773,26 @@ of what is still needed from anyone, and from whom.
   `services/commerce-api/src/modules/shipping/provider.ts`, and the
   `Shipment`/`ShipmentTrackingEvent`/`ShipmentTrackingStatus` schema
   comments in `packages/db/prisma/schema.prisma`.
+  **Independent-review repair (2026-09-25):** the initial build's
+  `POST /webhooks/shipping/:provider` route declared a per-provider URL
+  but never actually read `:provider` — every webhook was
+  authenticated/parsed by whichever provider `SHIPPING_PROVIDER`
+  happened to be globally configured, regardless of the URL, breaking
+  provider isolation the moment more than one provider identity (or an
+  in-flight shipment from an earlier provider) existed. Fixed:
+  `ShippingService.handleCarrierWebhook` now takes an explicit
+  `providerName` (the route's own `:provider`) and resolves that
+  SPECIFIC provider via `resolveShippingProvider` for signature
+  verification, event parsing, shipment lookup, and event dedup/
+  recording — `createShipment`/`pollPendingShipments` correctly keep
+  using the instance's globally-configured provider, since neither is
+  per-request URL-routed. A second registered test identity,
+  `MOCK_SECONDARY` (still `MockCarrierProvider`, its own distinct
+  webhook secret), was added to `provider.ts` specifically to prove
+  genuine per-request provider dispatch/isolation
+  (`test/integration/shipping.test.ts`, "Webhook provider dispatch
+  (independent-review repair)", 6 tests) — deliberately not a real
+  carrier.
 - **Affected specs:** `specs/16-shipping-tracking.md`,
   `specs/14-order-management.md`, `specs/15-warehouse-fulfilment.md`
 
