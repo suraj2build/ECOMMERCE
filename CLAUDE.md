@@ -8,8 +8,9 @@ including future sessions that have no memory of this one.
 
 **Status as of 2026-09-26: `M18_ENGINEERING_CERTIFIED — POST-PURCHASE
 PHASE (M19 RETURNS / M20 REFUNDS & STORE CREDIT / M21 EXCHANGES) REPAIR
-COMPLETE — EXC-004 FULFILMENT REPAIR COMPLETE — AWAITING INDEPENDENT
-REVIEW. M22+ NOT AUTHORIZED.`**
+COMPLETE — EXC-004 FULFILMENT REPAIR COMPLETE — EXC-004 CONCURRENCY
+REPAIR COMPLETE — AWAITING FINAL INDEPENDENT REVIEW. M22+ NOT
+AUTHORIZED.`**
 M19
 (Returns), M20 (Refunds & Store Credit), and M21 (Exchanges) were all
 implemented and adversarially tested sequentially, with per-milestone
@@ -169,7 +170,31 @@ trigger pair (`check_fulfilment_line_exclusivity` on `order_lines`,
 explicitly permitted as the alternative to a raw CHECK, and the correct
 SQL tool for this exact cross-table case — a deliberate, documented
 deviation from this codebase's usual pure-CHECK-constraint convention,
-not a shortcut. `Shipment` needed zero schema change at all (1:1 with
+not a shortcut.
+
+**2026-09-26 concurrency correction (final independent review,
+migration `20260926130000`):** the trigger pair as originally written
+read the OTHER side's row via a plain SELECT, no lock — under READ
+COMMITTED that is not itself a serialization point, so two genuinely
+concurrent transactions (one setting a fulfilment's `exchangeId`, the
+other attaching an `order_lines` row to that SAME fulfilment) could
+each read the other's pre-commit state and both pass, a real
+write-skew race that could violate the very invariant this trigger
+pair exists to enforce — a genuine gap, not a theoretical one. Fixed
+by giving both directions a SHARED serialization point: the SAME
+`order_fulfilments` row's own lock. An UPDATE/INSERT targeting
+`order_fulfilments` already holds that row's lock for the rest of its
+own transaction before its BEFORE ROW trigger ever fires, so
+`check_exchange_fulfilment_exclusivity` needed no change;
+`check_fulfilment_line_exclusivity` now explicitly
+`SELECT ... FOR UPDATE`s the target fulfilment row before reading its
+`exchangeId`, acquiring that identical lock. Proven with a genuine
+two-connection concurrent-transaction test
+(`test/integration/exchange-fulfilment-xor-race.test.ts`) that first
+reproduced the write-skew against the unfixed trigger (both sides
+committed, invariant violated), then proved the fixed trigger converges
+to exactly one winner every time, run repeatedly and in both
+interleavings. `Shipment` needed zero schema change at all (1:1 with
 `OrderFulfilment`, so its source is entirely derived). Inventory-ledger
 semantics for the replacement's physical dispatch were defined
 explicitly rather than reused from `SALE`: a new
@@ -241,6 +266,46 @@ record. **This agent does not self-declare this repair certified** —
 the same discipline as every milestone since Phase 1. This agent has
 stopped and is awaiting independent review. M22+ remains unauthorized
 regardless of how this review resolves.
+
+**A final independent review of that Option 2 build (review head
+`56f7fbe722d63b744b82068cfc7a79b6112384bf`) returned one blocker: the
+`OrderFulfilment` source-exclusivity trigger pair enforced its
+invariant with a PLAIN SELECT of the other side's row, no lock — under
+READ COMMITTED that is not itself a serialization point, so two
+genuinely concurrent transactions (one setting a fulfilment's
+`exchangeId`, the other attaching an `order_lines` row to that SAME
+fulfilment) could each read the other's pre-commit state and both
+pass, a genuine write-skew race that could leave the committed
+database in an illegal state where a fulfilment carried BOTH a
+populated `exchangeId` AND a child `order_lines` row.** Fixed
+2026-09-26 (migration `20260926130000_exchange_fulfilment_xor_concurrency_fix`)
+by giving both directions a SHARED serialization point: the SAME
+`order_fulfilments` row's own lock. An UPDATE/INSERT targeting
+`order_fulfilments` already holds that row's lock for the rest of its
+own transaction before its BEFORE ROW trigger ever fires, so
+`check_exchange_fulfilment_exclusivity` needed no change;
+`check_fulfilment_line_exclusivity` (which fires on `order_lines`, a
+different table with no lock of its own on the fulfilment row) now
+explicitly `SELECT ... FOR UPDATE`s the target fulfilment row before
+reading its `exchangeId`, acquiring that identical lock — whichever
+transaction reaches Postgres first in either direction now forces the
+other to block, then correctly observe the winner's committed change
+and cleanly reject, rather than both racing to a blind pre-commit
+snapshot. Proven with a genuine two-connection concurrent-transaction
+test (`test/integration/exchange-fulfilment-xor-race.test.ts`) that
+was first run against the UNFIXED trigger to confirm it actually
+reproduces the write-skew (both sides committed, invariant violated),
+then against the fixed trigger to confirm it converges to exactly one
+winner every time — run repeatedly, in both interleavings, with zero
+flakiness. No other part of the Option 2 design changed: the Product
+Owner's architecture decision stands, `EXCHANGE_DISPATCH` semantics are
+unchanged, the normal `OrderLine` `SALE` invariant is unchanged, and
+`TAX/COMPLIANCE REVIEW REQUIRED` remains open for exchange-dispatch
+tax-document consequences — see `EXC-004`'s own concurrency-correction
+addendum in `blueprint/DECISION_REGISTER.md` for the complete record.
+**This agent does not self-declare this repair certified.** This agent
+has stopped and is awaiting final independent review. M22+ remains
+unauthorized regardless of how this review resolves.
 
 M17 (Shipping /
 Tracking) was implemented and adversarially tested (carrier-adapter

@@ -1470,6 +1470,35 @@ of what is still needed from anyone, and from whom.
         1:1 with `OrderFulfilment` (`fulfilmentId` `@unique`), so its own
         source is entirely derived from whichever `OrderFulfilment` it is
         attached to.
+        - **2026-09-26 concurrency correction (final independent
+          review, migration `20260926130000`):** the trigger pair as
+          originally written read the OTHER side's row via a plain
+          SELECT, with no lock — under READ COMMITTED that is not
+          itself a serialization point, so two genuinely concurrent
+          transactions (one setting a fulfilment's `exchangeId`, the
+          other attaching an `order_lines` row to that SAME fulfilment)
+          could each read the other's pre-commit state and both pass —
+          a genuine write-skew race that could violate the very
+          invariant this trigger pair exists to enforce. This was a
+          real gap in the original design, not merely a theoretical
+          one recorded for completeness. Fixed by giving both
+          directions a SHARED serialization point: the SAME
+          `order_fulfilments` row's own lock.
+          `check_exchange_fulfilment_exclusivity` already runs holding
+          that lock for free (its own UPDATE/INSERT targets this exact
+          row); `check_fulfilment_line_exclusivity` now explicitly
+          `SELECT ... FOR UPDATE`s the target `order_fulfilments` row
+          before reading its `exchangeId`, so it blocks on — and only
+          then reads the true committed state of — any transaction
+          concurrently touching the SAME fulfilment in either
+          direction. Proven with a genuine two-connection concurrent-
+          transaction test (`test/integration/exchange-fulfilment-xor-race.test.ts`),
+          run repeatedly, asserting the committed XOR invariant holds
+          under both interleavings. The earlier "the database
+          invariant is enforced regardless of which application code
+          path is used" framing was correct in intent but overstated
+          before this fix — it is accurate only from this migration
+          onward.
       - **Inventory-ledger semantics (defined explicitly, not guessed).**
         A new `InventoryTxnType.EXCHANGE_DISPATCH`, posted by a new
         `InventoryService.recordExchangeDispatch` (same combined

@@ -1943,10 +1943,31 @@ model OrderLine {
 // `check_exchange_fulfilment_exclusivity` on order_fulfilments;
 // migration 20260926120000), the equally-strong relational design the
 // EXC-004 Option 2 decision explicitly permits as an alternative to a
-// CHECK constraint for exactly this case. `orderId` stays NOT NULL for
-// an exchange-anchored fulfilment too (the ORIGINAL order the exchange
-// belongs to - never a second Order), preserving every existing
-// orderId-scoped index/query/RTO-lookup unchanged.
+// CHECK constraint for exactly this case.
+//
+// Final-review concurrency repair (2026-09-26, migration
+// 20260926130000): the ORIGINAL trigger pair read the other side's row
+// via a plain SELECT, with no lock - under READ COMMITTED that is NOT
+// itself a serialization point, so two genuinely concurrent
+// transactions (one setting this row's `exchangeId`, the other
+// attaching an `order_lines` row to this same fulfilment) could each
+// read the other's pre-commit state and both pass, a genuine
+// write-skew race. Fixed by giving both directions a SHARED
+// serialization point - the SAME `order_fulfilments` row's own lock:
+// `check_exchange_fulfilment_exclusivity` already runs holding that
+// lock for free (its own UPDATE/INSERT targets this exact row);
+// `check_fulfilment_line_exclusivity` now explicitly
+// `SELECT ... FOR UPDATE`s this row before reading its `exchangeId`,
+// so it blocks on (and only then reads the true committed state of)
+// any transaction concurrently touching the SAME fulfilment, in either
+// direction. Proven under genuinely concurrent transactions, repeated
+// many times, in
+// test/integration/exchange-fulfilment-xor-race.test.ts.
+//
+// `orderId` stays NOT NULL for an exchange-anchored fulfilment too
+// (the ORIGINAL order the exchange belongs to - never a second Order),
+// preserving every existing orderId-scoped index/query/RTO-lookup
+// unchanged.
 model OrderFulfilment {
   id          String           @id @default(uuid())
   orderId     String

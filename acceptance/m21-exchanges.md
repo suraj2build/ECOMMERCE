@@ -24,8 +24,16 @@ consequence explicitly flagged **TAX/COMPLIANCE REVIEW REQUIRED**
 rather than decided here. `markReplacementFulfilled` remains only as
 an exception/recovery mechanism, never the normal path. See
 `EXC-004`'s "OPTION 2 SELECTED BY PRODUCT OWNER" addendum for the full
-design record. Not self-declared certified; independent re-review
-pending.
+design record. **A final independent review then found the
+`OrderFulfilment` source-exclusivity trigger pair admitted a genuine
+write-skew race under real concurrency (a plain SELECT with no lock in
+each trigger is not itself a serialization point); fixed 2026-09-26 by
+giving both directions a shared lock on the same `order_fulfilments`
+row, proven with a genuine two-connection concurrent-transaction test
+that first reproduced the race against the unfixed trigger, then
+confirmed the fix holds** — see `EXC-004`'s concurrency-correction
+addendum and `test/integration/exchange-fulfilment-xor-race.test.ts`.
+Not self-declared certified; independent re-review pending.
 
 ## Business acceptance
 
