@@ -7,7 +7,8 @@ including future sessions that have no memory of this one.
 ## 0. Current project stage — READ FIRST
 
 **Status as of 2026-09-26: `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED —
-M22 CUSTOMER 360 BUILD IN PROGRESS. M23+ NOT AUTHORIZED.`**
+M22 CUSTOMER 360 BUILD COMPLETE — AWAITING INDEPENDENT REVIEW. M23+ NOT
+AUTHORIZED.`**
 
 **On 2026-09-26 the independent reviewer recorded the repaired
 Post-Purchase Phase build — commit
@@ -40,6 +41,78 @@ customer account must be represented honestly as
 never fabricated balances or coupon lists) until their own milestones
 are separately authorized and built. **M23 and every later milestone
 remain unauthorized** regardless of how cleanly M22 lands.
+
+**M22 (Customer 360) is now built.** It genuinely reuses certified
+domains rather than duplicating them: order history/detail, shipment
+tracking, and wishlist all link directly to the EXISTING M12/M15/M17
+storefront routes and pages (`/orders`, `/orders/[id]`, `/wishlist`) —
+zero new backend code for those three; store-credit balance/history
+reuses the EXISTING M20 `GET /storefront/store-credit` route verbatim.
+Net-new work: a `CustomerAddress` model (the IND-003 address shape)
+with exactly one default per customer enforced by a partial unique
+index — never just an application-level check — proven under genuine
+concurrency for both a simultaneous set-default race and a concurrent
+delete-of-default-vs-set-default race (both converge to exactly one
+default via a shared `FOR UPDATE` lock on the customer's whole address
+set, the same row-lock-as-serialization-point idiom this codebase has
+used since `StoreCreditService.lockOrCreateAccount`); a bounded,
+deduplicated `RecentlyViewedProduct` log (configurable
+`RECENTLY_VIEWED_MAX_ITEMS`, explicitly **product-behavior storage
+bounding, not the still-`UNDER_REVIEW` `CUST-001` legal retention
+policy**); `CustomerSavedSize` ("My Sizes") scoped by top-level
+`Category` — the only genuine FK-based scoping signal available, since
+neither `Category` nor `Size` carries a gender/department field;
+a `CommunicationPreference` matrix granular per channel (SMS/WhatsApp/
+Email/Push) × per message type (CUST-002), with the one transactional
+message type (`ORDER_UPDATES`) rejected from opt-out — an engineering
+default reflecting operational reality, not a legal-consent-basis
+determination; a new `listMyReviews` read surface over the EXISTING
+M11 `Review` model (no duplicate storage); and `AuditLog.actorCustomerId`,
+closing a genuine pre-existing gap this build's own investigation
+found (`actorType: CUSTOMER` had no column recording WHICH customer
+acted). **Loyalty (M23) and Promotions/Coupons (M24) are explicitly
+`DEPENDENCY_DEFERRED — M23/M24`** in both the API and the account UI —
+a disabled, honest "Coming soon" navigation item, never a fabricated
+balance or coupon list, exactly as this authorization required. Every
+new customer-facing route is `requireCustomerAuth`-only (never a guest
+fallback, never a customerId read from anywhere but the verified JWT),
+with cross-customer IDOR proven negatively for every new resource type.
+26 new adversarial integration tests
+(`test/integration/customer-profile.test.ts`, including 6 genuine
+`Promise.all` concurrency tests — never `await A; await B;`) plus 4 new
+browser E2E tests (`test/e2e-storefront/account.spec.ts`) driving a
+REAL mobile-OTP sign-in through the browser: since this codebase's OTP
+verification only ever stores a plain SHA-256 hash of the 6-digit code
+(no plaintext backdoor exists or was invented here), the E2E test
+brute-forces the genuine hash space (10^6 SHA-256 hashes, well under a
+second) to recover the actual code the server generated, then drives
+the SAME production verification path a real customer uses — never a
+token-injection shortcut. This proves profile edit + reload
+persistence, full address CRUD + default handling, a real-PDP-visit
+recently-viewed dedupe/bound check, My Sizes, a real review submission
+via the existing M11 flow, the real M20 store-credit ledger, the
+communication-preference matrix persisting exactly as set, order-
+history/wishlist nav reuse, a genuine mobile-viewport render check, and
+cross-customer IDOR. This build's own clean-state validation caught and
+fixed two genuine bugs, not worked around: the storefront's CORS plugin
+never allowed the `PUT` method (`services/commerce-api/src/plugins/cors.ts`)
+— the first storefront routes to need it (My Sizes, communication
+preferences) — which surfaced as an opaque browser "Failed to fetch"
+with no HTTP-level error; and the E2E OTP-sign-in helper read the
+`OtpCode` row before the async `POST /otp/request` had actually
+committed, a genuine race that only surfaced under full-suite parallel
+load, fixed by waiting for the UI's own OTP-entry step first. Full
+clean-state suite (migration-from-zero — 26 migrations, zero schema
+drift — lint, typecheck, build, unit, full integration suite against
+real Postgres/Redis — 477/490 passing, the only 13 failures being the
+pre-existing, environment-only Meilisearch-unavailable-in-sandbox
+limitation, unrelated to this build — full Playwright E2E including
+mobile) green, zero regressions to the entire M00–M21 baseline. See
+`acceptance/m22-customer-360.md` for the complete Definition of Done.
+**This agent does not self-declare M22 certified** — per the same
+discipline applied at every milestone since Phase 1, that determination
+belongs to the independent reviewer. This agent has stopped and is
+awaiting independent review before any M23+ work.
 
 M19
 (Returns), M20 (Refunds & Store Credit), and M21 (Exchanges) were all

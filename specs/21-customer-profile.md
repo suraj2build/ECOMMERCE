@@ -1,6 +1,6 @@
 # 21. Customer Profile (Customer 360)
 
-**Status:** IMPLEMENTING (build started 2026-09-26, "START BUILD — M22
+**Status:** IMPLEMENTED (build complete 2026-09-26, "START BUILD — M22
 CUSTOMER 360" authorization; most features DECIDED 2026-09-22; data
 retention/deletion policy `CUST-001` remains `UNDER_REVIEW` pending
 legal input and does not block this build — see
@@ -8,7 +8,10 @@ legal input and does not block this build — see
 listed below as originally scoped, but M23 (Loyalty) and M24
 (Promotions/Coupons) are themselves unauthorized and unbuilt — this
 build represents those sections honestly as
-`DEPENDENCY_DEFERRED — M23/M24`, never fabricated.
+`DEPENDENCY_DEFERRED — M23/M24`, never fabricated. See
+`acceptance/m22-customer-360.md` for the full Definition of Done. This
+agent does not self-declare this build certified — that determination
+belongs to the independent reviewer.
 
 ## Purpose
 

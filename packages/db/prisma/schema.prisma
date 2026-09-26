@@ -103,6 +103,13 @@ model Customer {
   orders             Order[]
   storeCreditAccount StoreCreditAccount?
 
+  // M22 Customer 360 (specs/21-customer-profile.md)
+  addresses                CustomerAddress[]
+  recentlyViewedProducts   RecentlyViewedProduct[]
+  savedSizes               CustomerSavedSize[]
+  communicationPreferences CommunicationPreference[]
+  auditLogEntries          AuditLog[]
+
   @@map("customers")
 }
 
@@ -242,21 +249,26 @@ enum AuditActorType {
 }
 
 model AuditLog {
-  id           String         @id @default(uuid())
-  actorType    AuditActorType
-  actorStaffId String?
-  action       String // e.g. "po.approve", "inventory.adjust", "style.publish"
-  entityType   String
-  entityId     String
-  oldValue     Json?
-  newValue     Json?
-  reference    String?
-  createdAt    DateTime       @default(now())
+  id              String         @id @default(uuid())
+  actorType       AuditActorType
+  actorStaffId    String?
+  // M22: a customer-initiated mutation (profile/address/size/comm-pref
+  // change) sets actorType CUSTOMER and this column - previously
+  // actorType CUSTOMER had no column to record WHICH customer acted.
+  actorCustomerId String?
+  action          String // e.g. "po.approve", "inventory.adjust", "style.publish"
+  entityType      String
+  entityId        String
+  oldValue        Json?
+  newValue        Json?
+  reference       String?
+  createdAt       DateTime       @default(now())
 
   // Explicitly Restrict, not Prisma's implicit SetNull default for a
   // nullable FK: the audit trail must never silently lose who
-  // performed an action because that staff row was later deleted.
-  actorStaff StaffUser? @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
+  // performed an action because that staff/customer row was later deleted.
+  actorStaff    StaffUser? @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
+  actorCustomer Customer?  @relation(fields: [actorCustomerId], references: [id], onDelete: Restrict)
 
   @@index([entityType, entityId])
   @@index([action])
@@ -283,10 +295,11 @@ model Category {
   parentId String?
   isActive Boolean @default(true)
 
-  parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id])
-  children     Category[]    @relation("CategoryTree")
+  parent       Category?           @relation("CategoryTree", fields: [parentId], references: [id])
+  children     Category[]          @relation("CategoryTree")
   styles       Style[]
   returnPolicy ReturnPolicy?
+  savedSizes   CustomerSavedSize[]
 
   @@map("categories")
 }
@@ -343,9 +356,10 @@ model Style {
   supplierSkus       SupplierSku[]
   shoppableMediaTags ShoppableMediaTag[]
   reviews            Review[]
-  crossSellFrom      CrossSellOverride[] @relation("CrossSellFrom")
-  crossSellTo        CrossSellOverride[] @relation("CrossSellTo")
+  crossSellFrom      CrossSellOverride[]     @relation("CrossSellFrom")
+  crossSellTo        CrossSellOverride[]     @relation("CrossSellTo")
   returnPolicy       ReturnPolicy?
+  recentlyViewedBy   RecentlyViewedProduct[]
 
   @@index([lifecycleState])
   @@index([brandId])
@@ -377,6 +391,7 @@ model Size {
 
   skus               Sku[]
   shoppableMediaTags ShoppableMediaTag[]
+  savedByCustomers   CustomerSavedSize[]
 
   @@map("sizes")
 }
@@ -2685,4 +2700,123 @@ model Exchange {
 
   @@index([orderId])
   @@map("exchanges")
+}
+
+// ---------------------------------------------------------------------------
+// M22: Customer 360 (specs/21-customer-profile.md)
+// ---------------------------------------------------------------------------
+
+// Address book (IND-003 field shape - matches the inline addressSchema
+// CheckoutSession/Order already snapshot, so a saved address can later be
+// selected to populate that same shape at checkout time). Convenience/
+// profile data, deliberately NOT linked to any Order/Invoice snapshot -
+// editing or deleting a saved address must never mutate a historical
+// commerce document (see this model's own service-layer docs).
+model CustomerAddress {
+  id              String   @id @default(uuid())
+  customerId      String
+  label           String? // e.g. "Home", "Work" - free-text, optional
+  recipientName   String
+  recipientMobile String
+  line1           String
+  line2           String?
+  landmark        String?
+  city            String
+  state           String
+  stateCode       String
+  pincode         String
+  // Exactly one default address per customer - enforced by a partial
+  // unique index (customerId) WHERE "isDefault" = true (see migration),
+  // not just this application-level default; see CustomerProfileService
+  // for the transactional "unset old, set new" pattern this relies on.
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+// Bounded, deduplicated "recently viewed products" log - authenticated
+// customers only (never guest-tracked). Unique on (customerId, styleId)
+// so a repeat view updates viewedAt in place rather than growing
+// unbounded; CustomerProfileService additionally trims each customer's
+// row count down to RECENTLY_VIEWED_MAX_ITEMS after every upsert, inside
+// the same transaction - this is product-behavior storage bounding, NOT
+// the still-UNDER_REVIEW CUST-001 legal retention policy (see the spec's
+// own DECISION_REQUIRED note if that distinction is ever challenged).
+model RecentlyViewedProduct {
+  id         String   @id @default(uuid())
+  customerId String
+  styleId    String
+  viewedAt   DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  style    Style    @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, styleId])
+  @@index([customerId, viewedAt])
+  @@map("recently_viewed_products")
+}
+
+// "My Sizes" - preference storage only (no recommendation/sizing engine).
+// Scoped by top-level Category rather than a free-text gender/department
+// field (neither Category nor Size carries one) - the only genuine FK
+// available to distinguish "Jackets -> L" from "Jeans -> 32" for the same
+// customer. One saved size per (customer, category); updating an existing
+// preference is an upsert on that pair.
+model CustomerSavedSize {
+  id         String   @id @default(uuid())
+  customerId String
+  categoryId String
+  sizeId     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  size     Size     @relation(fields: [sizeId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, categoryId])
+  @@map("customer_saved_sizes")
+}
+
+// CUST-002: granular per-channel x per-message-type communication
+// preferences - never a single global marketing toggle. ORDER_UPDATES is
+// the one transactional message type in this vocabulary (essential
+// service communication, e.g. order confirmation/shipment/delivery) and
+// is NOT opt-outable via this table (CommunicationPreferenceService
+// rejects an attempt to set it optedIn=false) - every other message type
+// is genuine marketing consent, defaulting to opted-OUT until the
+// customer explicitly opts in (the safer engineering default; this is
+// NOT a legal-consent-basis determination - see CUST-001/AUD-002).
+enum CommunicationChannel {
+  SMS
+  WHATSAPP
+  EMAIL
+  PUSH
+}
+
+enum CommunicationMessageType {
+  ORDER_UPDATES
+  OFFERS_AND_PROMOTIONS
+  PRODUCT_RECOMMENDATIONS
+  NEWSLETTER
+}
+
+model CommunicationPreference {
+  id          String                   @id @default(uuid())
+  customerId  String
+  channel     CommunicationChannel
+  messageType CommunicationMessageType
+  optedIn     Boolean
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, channel, messageType])
+  @@map("communication_preferences")
 }

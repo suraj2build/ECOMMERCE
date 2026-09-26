@@ -1,9 +1,11 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { ProductDetail } from '@/lib/api';
 import { addToCart, addToWishlist } from '@/lib/cart';
+import { getStoredSession } from '@/lib/customer-auth';
+import { recordProductView } from '@/lib/account';
 import { buttonClassName } from '../ui/Button';
 
 /**
@@ -28,6 +30,16 @@ export function ProductDetailInteractive({ product }: { product: ProductDetail }
     const firstInStock = product.variants.find((v) => v.inStock);
     return (firstInStock ?? product.variants[0])?.colourId ?? null;
   }, [product.variants]);
+
+  // M22 Customer 360: authenticated-customer-only "recently viewed" log
+  // (never guest-tracked) - a genuine failure here (network, expired
+  // token) must never block or degrade the PDP itself, so it's a fire-
+  // and-forget best-effort call.
+  useEffect(() => {
+    if (getStoredSession()) {
+      void recordProductView(product.id).catch(() => {});
+    }
+  }, [product.id]);
 
   const [selectedColourId, setSelectedColourId] = useState<string | null>(defaultColourId);
   const [selectedSizeId, setSelectedSizeId] = useState<string | null>(null);

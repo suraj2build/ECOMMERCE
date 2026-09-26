@@ -137,6 +137,14 @@ const envSchema = z.object({
   // reaching the terminal claim - same "stale after N seconds is safe to
   // reclaim" idiom as PAYMENT_TIMEOUT_SECONDS/expireStalePayments.
   REFUND_PROCESSING_STALE_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
+
+  // --- Customer 360 (M22, specs/21-customer-profile.md) ---
+  // Bounds the "recently viewed products" log per customer - product-
+  // behavior storage bounding (never grow unbounded), NOT a stand-in for
+  // the still-UNDER_REVIEW CUST-001 legal data-retention policy. A
+  // conservative, configurable engineering default, not a compliance
+  // conclusion.
+  RECENTLY_VIEWED_MAX_ITEMS: z.coerce.number().int().positive().default(50),
 });
 
 export type Env = z.infer<typeof envSchema>;

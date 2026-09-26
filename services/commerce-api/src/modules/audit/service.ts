@@ -3,6 +3,9 @@ import type { PrismaClient, Prisma } from '@fcp/db';
 export interface AuditEntry {
   actorType: 'STAFF' | 'CUSTOMER' | 'SYSTEM';
   actorStaffId?: string;
+  // M22: records WHICH customer acted when actorType is CUSTOMER (the
+  // column previously didn't exist - see AuditLog's own schema comment).
+  actorCustomerId?: string;
   action: string;
   entityType: string;
   entityId: string;
@@ -26,6 +29,7 @@ export async function recordAudit(
     data: {
       actorType: entry.actorType,
       actorStaffId: entry.actorStaffId,
+      actorCustomerId: entry.actorCustomerId,
       action: entry.action,
       entityType: entry.entityType,
       entityId: entry.entityId,

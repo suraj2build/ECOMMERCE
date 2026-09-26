@@ -1618,6 +1618,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** Granular, per-channel (SMS/WhatsApp/Email/Push — matching the required notification-channel architecture, `NOTIF-001`) and per-message-type, not a single global toggle.
 - **Affected specs:** `specs/21-customer-profile.md`, `specs/24-marketing.md`
+- **M22 implementation note (2026-09-26):** built as `CommunicationPreference` (customer × channel × message type, unique per triple), with a controlled `CommunicationMessageType` vocabulary (`ORDER_UPDATES`, `OFFERS_AND_PROMOTIONS`, `PRODUCT_RECOMMENDATIONS`, `NEWSLETTER`). `ORDER_UPDATES` is treated as the one transactional/essential type in this vocabulary and is rejected from opt-out (400) — an engineering default reflecting operational reality (order confirmations must be deliverable), not a legal-consent-basis determination; `CUST-001`/`AUD-002` remain the actual compliance authority on consent.
 
 #### CUST-003 — Internal Customer 360 view vs. self-service profile scope split · **P2**
 - **Question:** Distinct internal view, or the same screen?
@@ -1636,6 +1637,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **Loyalty IS required. Model: POINTS + TIERS** (explicit, §20). The broader benefit ecosystem (cashback, coupons, promotional/onboarding coupons) is also supported but **kept conceptually separate**, never collapsed into one data structure: `LOYALTY POINTS`, `TIER/STATUS`, `STORE CREDIT/CASHBACK VALUE`, and `PROMOTIONS/COUPONS` are four distinct concepts.
 - **Affected specs:** `specs/22-loyalty.md`
+- **M22 note (2026-09-26):** M23 (Loyalty) remains unauthorized and unbuilt. The M22 Customer 360 account UI represents the Loyalty section honestly as a disabled "Coming soon" navigation item (`DEPENDENCY_DEFERRED — M23/M24`) rather than fabricating a points/tier balance — see `acceptance/m22-customer-360.md`.
 
 #### LOY-002 — Earn rate rules · **P0**
 - **Question:** How are points earned?

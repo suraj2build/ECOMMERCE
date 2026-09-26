@@ -16,7 +16,9 @@ const corsPlugin: FastifyPluginAsync = async (fastify) => {
   const allowedOrigins = env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
   await fastify.register(cors, {
     origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    // PUT added for M22's idempotent-upsert routes (My Sizes,
+    // communication preferences) - the first storefront routes to use it.
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   });
 };
 
