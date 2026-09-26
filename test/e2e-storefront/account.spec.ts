@@ -222,7 +222,15 @@ test.describe('Customer 360 account', () => {
     await expect(page.getByLabel('SMS - Offers & promotions')).toBeChecked();
     await expect(page.getByLabel('SMS - Newsletter')).not.toBeChecked();
     await expect(page.getByLabel('SMS - Order updates')).toBeChecked();
-    await expect(page.getByLabel('SMS - Order updates')).toBeDisabled();
+
+    // M22 certification-repair (finding 3): ORDER_UPDATES is no longer a
+    // hard-coded non-opt-outable rule - the customer can opt out of it
+    // through this same preference center, and that choice persists.
+    await page.getByLabel('SMS - Order updates').uncheck();
+    await page.getByRole('button', { name: 'Save preferences' }).click();
+    await expect(page.getByText('Saved.')).toBeVisible({ timeout: 10_000 });
+    await page.reload();
+    await expect(page.getByLabel('SMS - Order updates')).not.toBeChecked({ timeout: 10_000 });
   });
 
   test('account navigation reaches the real order-history and wishlist pages (flows C/D)', async ({ page }) => {

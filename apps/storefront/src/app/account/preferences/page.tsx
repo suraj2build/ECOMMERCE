@@ -35,11 +35,7 @@ export default function CommunicationPreferencesPage() {
   function toggle(channel: CommunicationChannel, messageType: CommunicationMessageType) {
     setMatrix((prev) =>
       prev
-        ? prev.map((row) =>
-            row.channel === channel && row.messageType === messageType && !row.transactional
-              ? { ...row, optedIn: !row.optedIn }
-              : row,
-          )
+        ? prev.map((row) => (row.channel === channel && row.messageType === messageType ? { ...row, optedIn: !row.optedIn } : row))
         : prev,
     );
   }
@@ -93,7 +89,6 @@ export default function CommunicationPreferencesPage() {
                 <tr key={messageType} className="border-t border-border">
                   <th scope="row" className="p-2 text-left font-normal text-ink">
                     {MESSAGE_TYPE_LABEL[messageType]}
-                    {messageType === 'ORDER_UPDATES' && <span className="ml-1 text-xs text-ink-muted">(required)</span>}
                   </th>
                   {CHANNELS.map((channel) => {
                     const row = matrix.find((r) => r.channel === channel && r.messageType === messageType);
@@ -104,7 +99,6 @@ export default function CommunicationPreferencesPage() {
                           type="checkbox"
                           aria-label={`${CHANNEL_LABEL[channel]} - ${MESSAGE_TYPE_LABEL[messageType]}`}
                           checked={row.optedIn}
-                          disabled={row.transactional}
                           onChange={() => toggle(channel, messageType)}
                           className="h-5 w-5"
                         />

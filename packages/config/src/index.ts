@@ -145,6 +145,16 @@ const envSchema = z.object({
   // conservative, configurable engineering default, not a compliance
   // conclusion.
   RECENTLY_VIEWED_MAX_ITEMS: z.coerce.number().int().positive().default(50),
+  // M22 certification-repair (finding 2): the count bound above alone
+  // does not age entries out over time - a customer who views fewer than
+  // RECENTLY_VIEWED_MAX_ITEMS products could otherwise keep an
+  // arbitrarily old view in the list forever. This is a SEPARATE,
+  // ALSO-configurable engineering bound on how long a view is
+  // considered "recent" for display purposes - still product-behavior
+  // storage bounding, NOT a resolution of CUST-001/AUD-002 (data
+  // retention/deletion policy), which remain UNDER_REVIEW. A
+  // conservative 90-day default.
+  RECENTLY_VIEWED_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
 });
 
 export type Env = z.infer<typeof envSchema>;

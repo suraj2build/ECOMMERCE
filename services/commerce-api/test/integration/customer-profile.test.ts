@@ -4,6 +4,7 @@ import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedCustomer } from '../helpers/auth.js';
 import { StoreCreditService } from '../../src/modules/refunds/store-credit-service.js';
+import { loadEnv } from '@fcp/config';
 
 /**
  * M22 Customer 360 (specs/21-customer-profile.md). Every route under
@@ -221,6 +222,85 @@ describe('Customer 360 (M22)', () => {
       expect(defaults).toHaveLength(1);
     });
 
+    it('genuinely concurrent FIRST-address creates for a brand-new customer (zero existing rows) converge to exactly one default, no 500s', async () => {
+      const { token } = await customer();
+
+      const [resA, resB] = await Promise.all([
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/storefront/account/addresses',
+          headers: auth(token),
+          payload: { recipientName: 'A', recipientMobile: '9000000001', line1: 'Flat 1', city: 'Delhi', state: 'Delhi', stateCode: 'DL', pincode: '110001' },
+        }),
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/storefront/account/addresses',
+          headers: auth(token),
+          payload: { recipientName: 'B', recipientMobile: '9000000002', line1: 'Flat 2', city: 'Mumbai', state: 'Maharashtra', stateCode: 'MH', pincode: '400001' },
+        }),
+      ]);
+      expect([resA.statusCode, resB.statusCode]).toEqual([201, 201]);
+
+      const list = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/addresses', headers: auth(token) });
+      const rows = list.json() as Array<{ isDefault: boolean }>;
+      expect(rows).toHaveLength(2);
+      expect(rows.filter((r) => r.isDefault)).toHaveLength(1);
+    });
+
+    it('a concurrent second-address create (with isDefault requested) racing a set-default call on the first converges to exactly one default', async () => {
+      const { token } = await customer();
+      const first = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/account/addresses',
+        headers: auth(token),
+        payload: { recipientName: 'A', recipientMobile: '9000000001', line1: 'Flat 1', city: 'Delhi', state: 'Delhi', stateCode: 'DL', pincode: '110001' },
+      });
+
+      const [createRes, setDefaultRes] = await Promise.all([
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/storefront/account/addresses',
+          headers: auth(token),
+          payload: { recipientName: 'B', recipientMobile: '9000000002', line1: 'Flat 2', city: 'Mumbai', state: 'Maharashtra', stateCode: 'MH', pincode: '400001', isDefault: true },
+        }),
+        app.inject({ method: 'POST', url: `/api/v1/storefront/account/addresses/${first.json().id}/default`, headers: auth(token) }),
+      ]);
+      expect(createRes.statusCode).toBe(201);
+      expect(setDefaultRes.statusCode).toBe(200);
+
+      const list = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/addresses', headers: auth(token) });
+      const rows = list.json() as Array<{ isDefault: boolean }>;
+      expect(rows).toHaveLength(2);
+      expect(rows.filter((r) => r.isDefault)).toHaveLength(1);
+    });
+
+    it('a concurrent delete-of-default racing a new-address create converges to exactly one default, no 500s', async () => {
+      const { token } = await customer();
+      const first = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/account/addresses',
+        headers: auth(token),
+        payload: { recipientName: 'A', recipientMobile: '9000000001', line1: 'Flat 1', city: 'Delhi', state: 'Delhi', stateCode: 'DL', pincode: '110001' },
+      });
+
+      const [delRes, createRes] = await Promise.all([
+        app.inject({ method: 'DELETE', url: `/api/v1/storefront/account/addresses/${first.json().id}`, headers: auth(token) }),
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/storefront/account/addresses',
+          headers: auth(token),
+          payload: { recipientName: 'B', recipientMobile: '9000000002', line1: 'Flat 2', city: 'Mumbai', state: 'Maharashtra', stateCode: 'MH', pincode: '400001' },
+        }),
+      ]);
+      expect(delRes.statusCode).toBe(204);
+      expect(createRes.statusCode).toBe(201);
+
+      const list = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/addresses', headers: auth(token) });
+      const rows = list.json() as Array<{ isDefault: boolean }>;
+      expect(rows).toHaveLength(1);
+      expect(rows.filter((r) => r.isDefault)).toHaveLength(1);
+    });
+
     it('concurrent delete-default and set-default on the same customer converge to exactly one default, never zero or two', async () => {
       const { token } = await customer();
       const a = await app.inject({
@@ -246,6 +326,66 @@ describe('Customer 360 (M22)', () => {
       const defaults = rows.filter((row) => row.isDefault);
       expect(defaults.length).toBeLessThanOrEqual(1);
       if (rows.length > 0) expect(defaults).toHaveLength(1);
+    });
+  });
+
+  // --- PII-safe audit trail (M22 certification-repair, finding 1) ---
+  //
+  // The original build recorded raw PII (email; address city/pincode) in
+  // AuditLog.oldValue/newValue. These tests prove every M22 audit event
+  // instead records only non-sensitive change metadata, never a
+  // customer's email, mobile, address lines, city, or pincode - while
+  // still keeping actorCustomerId/entityId/action for full traceability.
+  describe('PII-safe audit trail', () => {
+    const FORBIDDEN_STRINGS = ['updated@example.com', 'Flat 1', 'Delhi', '110001', '9000000001'];
+
+    function assertNoPii(value: unknown) {
+      const serialized = JSON.stringify(value ?? {});
+      for (const forbidden of FORBIDDEN_STRINGS) {
+        expect(serialized).not.toContain(forbidden);
+      }
+    }
+
+    it('customer_profile.update audit never records the email value', async () => {
+      const { token, customerId } = await customer();
+      await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/storefront/account/profile',
+        headers: auth(token),
+        payload: { fullName: 'Updated Name', email: 'updated@example.com' },
+      });
+      const rows = await testPrisma.auditLog.findMany({ where: { action: 'customer_profile.update', actorCustomerId: customerId } });
+      expect(rows).toHaveLength(1);
+      assertNoPii(rows[0]!.oldValue);
+      assertNoPii(rows[0]!.newValue);
+      expect(rows[0]!.actorCustomerId).toBe(customerId);
+    });
+
+    it('customer_address.create/update/delete audits never record recipient/address-line/city/pincode values', async () => {
+      const { token, customerId } = await customer();
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/account/addresses',
+        headers: auth(token),
+        payload: { recipientName: 'A', recipientMobile: '9000000001', line1: 'Flat 1', city: 'Delhi', state: 'Delhi', stateCode: 'DL', pincode: '110001' },
+      });
+      await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/storefront/account/addresses/${created.json().id}`,
+        headers: auth(token),
+        payload: { city: 'Mumbai' },
+      });
+      await app.inject({ method: 'DELETE', url: `/api/v1/storefront/account/addresses/${created.json().id}`, headers: auth(token) });
+
+      const rows = await testPrisma.auditLog.findMany({
+        where: { entityType: 'CustomerAddress', actorCustomerId: customerId },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(rows.map((r) => r.action)).toEqual(['customer_address.create', 'customer_address.update', 'customer_address.delete']);
+      for (const row of rows) {
+        assertNoPii(row.oldValue);
+        assertNoPii(row.newValue);
+      }
     });
   });
 
@@ -330,6 +470,40 @@ describe('Customer 360 (M22)', () => {
       const rows = await testPrisma.recentlyViewedProduct.findMany({ where: { customerId, styleId: style.id } });
       expect(rows).toHaveLength(1);
     });
+
+    // M22 certification-repair (finding 2): the original build only
+    // bounded this log by count (RECENTLY_VIEWED_MAX_ITEMS) - a customer
+    // who viewed fewer items than that count could keep an arbitrarily
+    // old view forever. RECENTLY_VIEWED_RETENTION_DAYS is a SEPARATE,
+    // also-configurable time bound - both must hold independently.
+    it('M22 certification-repair (finding 2): a view inside the retention window is visible, a view outside it is not, independent of the count bound', async () => {
+      const { token, customerId } = await customer();
+      const { brand, category } = await seedBrandAndLocation();
+      const recentStyle = await createPublishedStyle({ brandId: brand.id, categoryId: category.id }, 'RV-RECENT');
+      const staleStyle = await createPublishedStyle({ brandId: brand.id, categoryId: category.id }, 'RV-STALE');
+
+      await app.inject({ method: 'POST', url: `/api/v1/storefront/account/recently-viewed/${staleStyle.id}`, headers: auth(token) });
+      await app.inject({ method: 'POST', url: `/api/v1/storefront/account/recently-viewed/${recentStyle.id}`, headers: auth(token) });
+
+      const env = loadEnv();
+      const outsideWindow = new Date(Date.now() - (env.RECENTLY_VIEWED_RETENTION_DAYS + 1) * 24 * 60 * 60 * 1000);
+      await testPrisma.recentlyViewedProduct.updateMany({
+        where: { customerId, styleId: staleStyle.id },
+        data: { viewedAt: outsideWindow },
+      });
+
+      const list = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/recently-viewed', headers: auth(token) });
+      const items = list.json() as Array<{ styleId: string }>;
+      expect(items.map((i) => i.styleId)).toEqual([recentStyle.id]);
+      expect(items.map((i) => i.styleId)).not.toContain(staleStyle.id);
+
+      // The row itself is pruned on the next write for this customer
+      // ("prefer removing expired rows safely rather than allowing
+      // indefinite storage"), not merely filtered at read time.
+      await app.inject({ method: 'POST', url: `/api/v1/storefront/account/recently-viewed/${recentStyle.id}`, headers: auth(token) });
+      const remaining = await testPrisma.recentlyViewedProduct.findMany({ where: { customerId } });
+      expect(remaining.map((r) => r.styleId)).not.toContain(staleStyle.id);
+    });
   });
 
   // --- My Sizes ---
@@ -412,7 +586,7 @@ describe('Customer 360 (M22)', () => {
       }
     });
 
-    it('rejects opting out of the transactional ORDER_UPDATES message type', async () => {
+    it('M22 certification-repair (finding 3): allows opting out of ORDER_UPDATES - no invented non-opt-outable rule', async () => {
       const { token } = await customer();
       const res = await app.inject({
         method: 'PUT',
@@ -420,7 +594,17 @@ describe('Customer 360 (M22)', () => {
         headers: auth(token),
         payload: { preferences: [{ channel: 'SMS', messageType: 'ORDER_UPDATES', optedIn: false }] },
       });
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(200);
+      const row = (res.json() as Array<{ channel: string; messageType: string; optedIn: boolean }>).find(
+        (r) => r.channel === 'SMS' && r.messageType === 'ORDER_UPDATES',
+      );
+      expect(row!.optedIn).toBe(false);
+
+      const reload = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/communication-preferences', headers: auth(token) });
+      const reloadedRow = (reload.json() as Array<{ channel: string; messageType: string; optedIn: boolean }>).find(
+        (r) => r.channel === 'SMS' && r.messageType === 'ORDER_UPDATES',
+      );
+      expect(reloadedRow!.optedIn).toBe(false);
     });
 
     it('persists the exact matrix set, reload returns the same values', async () => {

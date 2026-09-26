@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type PrismaClient, type CustomerAddress, type CommunicationChannel, type CommunicationMessageType } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
-import { NotFoundError, ValidationError } from '@fcp/shared';
+import { NotFoundError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 
 export interface AddressInput {
@@ -29,9 +29,14 @@ const COMMUNICATION_MESSAGE_TYPES: CommunicationMessageType[] = [
   'PRODUCT_RECOMMENDATIONS',
   'NEWSLETTER',
 ];
-// ORDER_UPDATES is transactional/essential (order confirmation, shipment,
-// delivery) - never opt-outable through this preference center. Every
-// other message type is genuine marketing consent (CUST-002).
+// ORDER_UPDATES is the one transactional message type in this vocabulary
+// (CUST-002 requires per-channel x per-message-type granularity, not a
+// single global toggle - it does not require, and this build must not
+// invent, a rule that ORDER_UPDATES can never be opted out of through
+// this preference center). It still defaults to opted-in, and downstream
+// notification-delivery enforcement for legally-required transactional
+// messages is a separate, not-yet-defined policy question - see the
+// M22 certification-repair note on setCommunicationPreferences below.
 const TRANSACTIONAL_MESSAGE_TYPES: ReadonlySet<CommunicationMessageType> = new Set(['ORDER_UPDATES']);
 
 /**
@@ -64,21 +69,27 @@ export class CustomerProfileService {
   }
 
   async updateProfile(customerId: string, input: ProfileUpdateInput) {
-    const before = await this.getProfile(customerId);
     const updated = await this.prisma.$transaction(async (tx) => {
       const customer = await tx.customer.update({
         where: { id: customerId },
         data: { fullName: input.fullName, email: input.email },
         select: { id: true, mobile: true, email: true, fullName: true, mobileVerifiedAt: true, createdAt: true },
       });
+      // M22 certification-repair (finding 1): never record the actual
+      // email/name VALUES in the audit trail - email is PII, and the
+      // audit log's job here is proving WHO changed WHAT FIELDS WHEN,
+      // not holding a second copy of personal data. changedFields is
+      // derived from the input the caller actually sent, not from a
+      // value diff, so a field set to its current value still counts
+      // as "changed" from the caller's point of view.
+      const changedFields = Object.keys(input).filter((k) => input[k as keyof ProfileUpdateInput] !== undefined);
       await recordAudit(tx, {
         actorType: 'CUSTOMER',
         actorCustomerId: customerId,
         action: 'customer_profile.update',
         entityType: 'Customer',
         entityId: customerId,
-        oldValue: { fullName: before.fullName, email: before.email },
-        newValue: { fullName: customer.fullName, email: customer.email },
+        newValue: { changedFields },
       });
       return customer;
     });
@@ -98,34 +109,74 @@ export class CustomerProfileService {
   }
 
   /**
-   * Sets exactly one address as default via a SINGLE atomic UPDATE
-   * statement (`isDefault = (id = target)` for every row of this
-   * customer) rather than a separate "unset old, set new" pair of
-   * statements - two concurrent calls targeting different addresses of
-   * the SAME customer necessarily serialize on Postgres's own per-row
-   * write lock (the second statement blocks on the row(s) the first is
-   * updating, then re-evaluates against the first's now-committed
-   * state), so the committed result is always exactly one default,
-   * never zero or two - backed by the migration's own partial unique
-   * index as the final, unconditional guarantee.
+   * Sets exactly one address as default via two sequential UPDATE
+   * statements - clear whichever row is currently default, then set the
+   * target - both covered by the SAME transaction's already-held
+   * customer-row lock (lockCustomerForAddressMutation), so no concurrent
+   * caller for this customer can observe or interleave between them.
+   *
+   * M22 certification-repair (finding 4, discovered by this repair's own
+   * new adversarial test chaining a create-with-isDefault against a
+   * set-default): the ORIGINAL single-statement form
+   * (`SET "isDefault" = ("id" = target) WHERE "customerId" = ...`) is
+   * NOT safe on its own, even fully serialized by a lock, because
+   * PostgreSQL does not guarantee the ROW-PROCESSING ORDER within one
+   * multi-row UPDATE. The partial unique index
+   * (customer_addresses_one_default_per_customer) is checked per-row,
+   * immediately, not deferred to statement end - if Postgres happens to
+   * apply the new-default row before the old-default row within that
+   * single statement, the old row's still-`true` index entry and the
+   * new row's about-to-be-`true` entry transiently coexist and the
+   * unique index rejects the insert (Postgres error 23505), surfacing
+   * as a raw 500 - reproduced for real by
+   * test/integration/customer-profile.test.ts's own concurrent
+   * create-vs-set-default test. Splitting into "clear old" (only ever
+   * REMOVES index entries, never conflicts) then "set new" (only ever
+   * ADDS the one entry, and only after the old one is provably gone) is
+   * correct regardless of PostgreSQL's internal row order.
    */
   private async atomicSetDefault(tx: Prisma.TransactionClient, customerId: string, targetAddressId: string): Promise<void> {
     await tx.$executeRaw`
       UPDATE "customer_addresses"
-      SET "isDefault" = ("id" = ${targetAddressId}), "updatedAt" = now()
-      WHERE "customerId" = ${customerId}`;
+      SET "isDefault" = false, "updatedAt" = now()
+      WHERE "customerId" = ${customerId} AND "isDefault" = true AND "id" != ${targetAddressId}`;
+    await tx.$executeRaw`
+      UPDATE "customer_addresses"
+      SET "isDefault" = true, "updatedAt" = now()
+      WHERE "id" = ${targetAddressId} AND "isDefault" = false`;
+  }
+
+  /**
+   * M22 certification-repair (finding 4): every address-book mutation
+   * (create/update/set-default/delete) locks this SAME row - the
+   * customer's own row, which always exists, unlike an address row -
+   * as its single shared serialization point, acquired as the FIRST
+   * statement of the transaction. This replaces the earlier
+   * "lock the customer's whole address SET via SELECT ... FOR UPDATE"
+   * idiom, which had a genuine gap: a brand-new customer with ZERO
+   * address rows has no row for that query to lock at all, so two
+   * genuinely concurrent first-address creates could both read
+   * existingCount === 0 and both attempt isDefault = true, surfacing as
+   * a raw, unhandled partial-unique-index violation (500) rather than a
+   * clean, deterministic result - reproduced with a genuine
+   * `Promise.all` race in
+   * test/integration/customer-profile.test.ts ("zero existing rows")
+   * before this fix, run repeatedly against the OLD locking query.
+   * Locking the customer row instead works identically whether the
+   * customer has zero, one, or many addresses, and - because every one
+   * of these four methods now locks EXACTLY this one row, in this one
+   * order, for this one customer - it cannot reintroduce the earlier
+   * lock-order-inversion deadlock (40P01) that the previous multi-row
+   * `ORDER BY "id" FOR UPDATE` fix addressed: there is only ever one row
+   * being locked per customer, so there is no order left to invert.
+   */
+  private async lockCustomerForAddressMutation(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
+    await tx.$queryRaw`SELECT 1 FROM "customers" WHERE "id" = ${customerId} FOR UPDATE`;
   }
 
   async createAddress(customerId: string, input: AddressInput): Promise<CustomerAddress> {
     return this.prisma.$transaction(async (tx) => {
-      // Lock this customer's whole address set as the shared
-      // serialization point against concurrent create/delete/set-default
-      // calls for the same customer (same idiom as
-      // StoreCreditService.lockOrCreateAccount, generalized to a
-      // multi-row set - see the ORDER BY note on atomicSetDefault's
-      // sibling queries below for why a deterministic row order is
-      // required here, not optional).
-      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
+      await this.lockCustomerForAddressMutation(tx, customerId);
       const existingCount = await tx.customerAddress.count({ where: { customerId } });
       const created = await tx.customerAddress.create({
         data: {
@@ -148,13 +199,17 @@ export class CustomerProfileService {
       if (existingCount > 0 && input && (input as AddressInput & { isDefault?: boolean }).isDefault) {
         await this.atomicSetDefault(tx, customerId, created.id);
       }
+      // M22 certification-repair (finding 1): never record address-line/
+      // city/pincode/recipient VALUES (location and contact PII) in the
+      // audit trail - only the fact that an address was created, by
+      // whom, and whether it became the default.
       await recordAudit(tx, {
         actorType: 'CUSTOMER',
         actorCustomerId: customerId,
         action: 'customer_address.create',
         entityType: 'CustomerAddress',
         entityId: created.id,
-        newValue: { city: created.city, pincode: created.pincode, isDefault: created.isDefault },
+        newValue: { isDefault: created.isDefault },
       });
       return tx.customerAddress.findUniqueOrThrow({ where: { id: created.id } });
     });
@@ -163,7 +218,7 @@ export class CustomerProfileService {
   async updateAddress(customerId: string, addressId: string, input: Partial<AddressInput>): Promise<CustomerAddress> {
     await this.loadOwnedAddress(customerId, addressId);
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
+      await this.lockCustomerForAddressMutation(tx, customerId);
       const updated = await tx.customerAddress.update({
         where: { id: addressId },
         data: {
@@ -179,12 +234,14 @@ export class CustomerProfileService {
           pincode: input.pincode,
         },
       });
+      const changedFields = Object.keys(input).filter((k) => input[k as keyof AddressInput] !== undefined);
       await recordAudit(tx, {
         actorType: 'CUSTOMER',
         actorCustomerId: customerId,
         action: 'customer_address.update',
         entityType: 'CustomerAddress',
         entityId: addressId,
+        newValue: { changedFields },
       });
       return updated;
     });
@@ -193,21 +250,7 @@ export class CustomerProfileService {
   async setDefaultAddress(customerId: string, addressId: string): Promise<CustomerAddress> {
     await this.loadOwnedAddress(customerId, addressId);
     return this.prisma.$transaction(async (tx) => {
-      // ORDER BY "id" is not cosmetic: a real independent-review-caught
-      // bug had this SELECT ... FOR UPDATE with no explicit order.
-      // Postgres gives no ordering guarantee for a bare multi-row SELECT
-      // ... FOR UPDATE, so two genuinely concurrent transactions locking
-      // the SAME customer's row set could acquire those locks in
-      // DIFFERENT orders (e.g. one via an index scan, the other via a
-      // sequential scan under different cache/plan conditions) - a
-      // textbook lock-order-inversion deadlock (Postgres error 40P01),
-      // which surfaced as a raw 500 under CI's genuinely concurrent
-      // set-default test. Ordering by the primary key forces every
-      // transaction to acquire these locks in the SAME global order, so
-      // the loser always blocks cleanly behind the winner instead of
-      // deadlocking - proven by test/integration/customer-profile.test.ts's
-      // own concurrent set-default and delete-vs-set-default tests.
-      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
+      await this.lockCustomerForAddressMutation(tx, customerId);
       await this.atomicSetDefault(tx, customerId, addressId);
       await recordAudit(tx, {
         actorType: 'CUSTOMER',
@@ -223,12 +266,12 @@ export class CustomerProfileService {
   async deleteAddress(customerId: string, addressId: string): Promise<void> {
     await this.loadOwnedAddress(customerId, addressId);
     await this.prisma.$transaction(async (tx) => {
-      // Lock the customer's whole address set FIRST - the shared
-      // serialization point that makes a concurrent delete-vs-set-default
-      // (or delete-vs-delete) on the SAME customer's addresses converge
-      // to a single well-defined outcome rather than racing.
-      const rows = await tx.$queryRaw<CustomerAddress[]>`
-        SELECT * FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
+      await this.lockCustomerForAddressMutation(tx, customerId);
+      // Once the customer row lock above is held, no concurrent
+      // create/update/set-default/delete for this customer can proceed
+      // until this transaction commits, so a plain (non-locking) read of
+      // this customer's address rows here is already race-free.
+      const rows = await tx.customerAddress.findMany({ where: { customerId } });
       const target = rows.find((r) => r.id === addressId);
       if (!target) throw new NotFoundError('Address', addressId);
 
@@ -247,23 +290,37 @@ export class CustomerProfileService {
         action: 'customer_address.delete',
         entityType: 'CustomerAddress',
         entityId: addressId,
-        oldValue: { city: target.city, pincode: target.pincode, isDefault: target.isDefault },
+        oldValue: { wasDefault: target.isDefault },
       });
     });
   }
 
   // --- Recently viewed ---
 
+  /** M22 certification-repair (finding 2): shared by write and read paths so both bound by the identical cutoff instant. */
+  private recentlyViewedCutoff(): Date {
+    const env = loadEnv();
+    return new Date(Date.now() - env.RECENTLY_VIEWED_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  }
+
   async recordProductView(customerId: string, styleId: string): Promise<void> {
     const env = loadEnv();
+    const cutoff = this.recentlyViewedCutoff();
     await this.prisma.$transaction(async (tx) => {
       await tx.recentlyViewedProduct.upsert({
         where: { customerId_styleId: { customerId, styleId } },
         create: { customerId, styleId },
         update: { viewedAt: new Date() },
       });
-      // Bound the log: keep only the most recent RECENTLY_VIEWED_MAX_ITEMS
-      // rows for this customer, deleting anything older.
+      // Bound the log TWO ways, independently (M22 certification-repair,
+      // finding 2 - the original build only implemented the count bound
+      // below; a customer viewing fewer than RECENTLY_VIEWED_MAX_ITEMS
+      // products could otherwise keep an arbitrarily old view forever):
+      // 1) keep only the most recent RECENTLY_VIEWED_MAX_ITEMS rows;
+      // 2) delete anything older than RECENTLY_VIEWED_RETENTION_DAYS
+      // outright, regardless of count. Both are product-behavior storage
+      // bounding, NOT a resolution of the still-UNDER_REVIEW CUST-001/
+      // AUD-002 data-retention/deletion policy - see the config comment.
       const keepIds = (
         await tx.recentlyViewedProduct.findMany({
           where: { customerId },
@@ -273,13 +330,14 @@ export class CustomerProfileService {
         })
       ).map((r) => r.id);
       await tx.recentlyViewedProduct.deleteMany({ where: { customerId, id: { notIn: keepIds } } });
+      await tx.recentlyViewedProduct.deleteMany({ where: { customerId, viewedAt: { lt: cutoff } } });
     });
   }
 
   async listRecentlyViewed(customerId: string, limit = 20) {
     const env = loadEnv();
     const rows = await this.prisma.recentlyViewedProduct.findMany({
-      where: { customerId, style: { lifecycleState: 'PUBLISHED' } },
+      where: { customerId, viewedAt: { gte: this.recentlyViewedCutoff() }, style: { lifecycleState: 'PUBLISHED' } },
       orderBy: { viewedAt: 'desc' },
       take: Math.min(limit, env.RECENTLY_VIEWED_MAX_ITEMS),
       include: { style: { select: { id: true, name: true, styleCode: true } } },
@@ -406,11 +464,21 @@ export class CustomerProfileService {
     customerId: string,
     updates: Array<{ channel: CommunicationChannel; messageType: CommunicationMessageType; optedIn: boolean }>,
   ) {
-    for (const update of updates) {
-      if (TRANSACTIONAL_MESSAGE_TYPES.has(update.messageType) && !update.optedIn) {
-        throw new ValidationError(`${update.messageType} is a transactional message type and cannot be opted out of`);
-      }
-    }
+    // M22 certification-repair (finding 3): the original build rejected
+    // optedIn=false for ORDER_UPDATES with a 400, framing it as an
+    // established rule. No approved decision (CUST-002 in
+    // blueprint/DECISION_REGISTER.md only requires per-channel x
+    // per-message-type granularity, not a non-opt-outable message type)
+    // actually authorizes that - it was an invented product/legal
+    // conclusion this build had no authority to make (CUST-001/AUD-002
+    // remain UNDER_REVIEW). The preference record now represents
+    // whatever value the customer actually sets, for every message type
+    // including ORDER_UPDATES. Whether a downstream notification sender
+    // is ever legally required to send/suppress a transactional message
+    // regardless of this preference is a separate, not-yet-defined
+    // policy question, outside this milestone's scope - this service
+    // only records the customer's stated preference, it does not decide
+    // or enforce delivery semantics.
     await this.prisma.$transaction(async (tx) => {
       for (const update of updates) {
         await tx.communicationPreference.upsert({
