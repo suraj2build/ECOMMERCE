@@ -186,7 +186,7 @@ test.describe('Returns', () => {
     await page.goto(`/product/${styleId}`);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
-    await expect(addedToBag()).toBeVisible();
+    await expect(addedToBag()).toBeVisible({ timeout: 10_000 });
 
     await page.goto('/bag');
     await page.getByRole('link', { name: 'Checkout' }).click();

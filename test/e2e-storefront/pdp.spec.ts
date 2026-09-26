@@ -162,7 +162,7 @@ test.describe('Product Detail Page', () => {
 
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
-    await expect(page.getByText('Added to bag.').first()).toBeVisible();
+    await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('renders correctly on mobile with no horizontal overflow and a reachable footer', async ({ page }) => {

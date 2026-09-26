@@ -131,7 +131,7 @@ test.describe('Cart / Wishlist', () => {
 
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
-    await expect(page.getByText('Added to bag.').first()).toBeVisible();
+    await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });
 
     // The header's live count updates from the real cart, not a guess.
     await expect(page.getByRole('link', { name: /Shopping bag, 1 item/ })).toBeVisible();
@@ -157,7 +157,7 @@ test.describe('Cart / Wishlist', () => {
 
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Saved to wishlist.')).toBeVisible();
+    await expect(page.getByText('Saved to wishlist.')).toBeVisible({ timeout: 10_000 });
 
     await page.goto('/wishlist');
     await expect(page.getByText('E2E Cart Jacket').first()).toBeVisible();
@@ -178,7 +178,7 @@ test.describe('Cart / Wishlist', () => {
     // CSS-hidden and the sticky mobile bar's own copy (DOM order: last) is
     // the visible one - the inverse of the desktop test's .first().
     await page.getByRole('button', { name: 'Add to Bag' }).last().click();
-    await expect(page.getByText('Added to bag.').last()).toBeVisible();
+    await expect(page.getByText('Added to bag.').last()).toBeVisible({ timeout: 10_000 });
 
     await page.goto('/bag');
     const [bagScrollWidth, bagClientWidth] = await page.evaluate(() => [

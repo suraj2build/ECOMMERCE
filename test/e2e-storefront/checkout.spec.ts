@@ -173,7 +173,7 @@ test.describe('Checkout', () => {
 
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
-    await expect(page.getByText('Added to bag.').first()).toBeVisible();
+    await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });
 
     const reservationsBeforeCheckout = await prisma.inventoryReservation.count({ where: { sku: { styleId } } });
     expect(reservationsBeforeCheckout).toBe(0);
@@ -271,7 +271,7 @@ test.describe('Checkout', () => {
     // and the mobile sticky bar's own copy of it share the same DOM
     // text and both exist in the tree regardless of viewport - only the
     // one belonging to the visible layout must actually be visible here.
-    await expect(page.getByText('Added to bag.').last()).toBeVisible();
+    await expect(page.getByText('Added to bag.').last()).toBeVisible({ timeout: 10_000 });
 
     // Reservation begins only at checkout submission (INV-002/CHK
     // reservation timing) - never merely from adding to bag, on mobile

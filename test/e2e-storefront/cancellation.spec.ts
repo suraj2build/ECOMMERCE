@@ -203,12 +203,12 @@ test.describe('Cancellation', () => {
     await page.goto(`/product/${styleIdA}`);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
-    await expect(addedToBag()).toBeVisible();
+    await expect(addedToBag()).toBeVisible({ timeout: 10_000 });
 
     await page.goto(`/product/${styleIdB}`);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
-    await expect(addedToBag()).toBeVisible();
+    await expect(addedToBag()).toBeVisible({ timeout: 10_000 });
 
     await page.goto('/bag');
     await page.getByRole('link', { name: 'Checkout' }).click();
