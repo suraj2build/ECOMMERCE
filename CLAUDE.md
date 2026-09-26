@@ -6,11 +6,41 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-26: `M18_ENGINEERING_CERTIFIED — POST-PURCHASE
-PHASE (M19 RETURNS / M20 REFUNDS & STORE CREDIT / M21 EXCHANGES) REPAIR
-COMPLETE — EXC-004 FULFILMENT REPAIR COMPLETE — EXC-004 CONCURRENCY
-REPAIR COMPLETE — AWAITING FINAL INDEPENDENT REVIEW. M22+ NOT
-AUTHORIZED.`**
+**Status as of 2026-09-26: `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED —
+M22 CUSTOMER 360 BUILD IN PROGRESS. M23+ NOT AUTHORIZED.`**
+
+**On 2026-09-26 the independent reviewer recorded the repaired
+Post-Purchase Phase build — commit
+`13876a5f98cf3fb7a671ad2ca86d3e62edcd1a24` on
+`claude/loving-fermat-cyucke` — as `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED`**,
+covering M19 (Returns), M20 (Refunds & Store Credit), M21 (Exchanges),
+the EXC-004 Option-2 fulfilment-integration repair, and the EXC-004
+concurrency (write-skew) repair — engineering-implementation scope
+only, not production-readiness (the same open pre-production gates
+listed throughout this file — `TAX-001`–`005`, `CUST-001`, `AUD-002`,
+`CART-004`, `SEC-001`, production performance verification — remain
+open, none resolved by this certification). This commit is the
+**protected starting baseline** for all work below; it must not be
+regressed. The full history of the Post-Purchase Phase build, its
+five-finding independent-review repair, the EXC-004 Option 2 fulfilment
+decision/repair, and the EXC-004 concurrency repair is preserved
+unchanged in the historical narrative later in this section — this
+certification recording does not rewrite any of it.
+
+The human project owner then gave explicit **"START BUILD — M22
+CUSTOMER 360"** authorization on 2026-09-26, scoped specifically and
+only to milestone **M22** (Customer Profile / account self-service —
+`specs/21-customer-profile.md`), building on the
+`POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED` baseline above, with an
+explicit instruction not to continue automatically into M23+. The
+authorization explicitly excludes building M23 (Loyalty) or M24
+(Promotions/Coupons) functionality inside M22 — those sections of the
+customer account must be represented honestly as
+`DEPENDENCY_DEFERRED — M23/M24` (an honest "not yet enabled" state,
+never fabricated balances or coupon lists) until their own milestones
+are separately authorized and built. **M23 and every later milestone
+remain unauthorized** regardless of how cleanly M22 lands.
+
 M19
 (Returns), M20 (Refunds & Store Credit), and M21 (Exchanges) were all
 implemented and adversarially tested sequentially, with per-milestone
@@ -456,23 +486,32 @@ reconciliation, order-invoice recovery). Every Phase 1 and Phase 2
 test remains mandatory and must stay green — M16's own build kept all
 of them green throughout.
 
-**This authorization does NOT extend beyond M21.**
+**This authorization does NOT extend beyond M22.**
 Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
 1–3) remains a separate thing from implementation authorization
 (Layer 4):
 
-- **M22 and every later milestone remain unauthorized.** No
-  application code for M22+ (Customer 360, Loyalty, Promotions,
-  Marketing, Channels, SEO, Analytics, Admin/CMS, Gift Cards, Security
-  Hardening, Performance, Final Certification) should be added until
-  the human project owner gives a new, separate, explicit **START
-  BUILD** authorization for that phase — neither the Phase 2
-  authorization, nor the M16/M17/M18 authorizations, nor the
-  Post-Purchase Phase (M19–M21) authorization carries forward
-  automatically, regardless of how cleanly M08–M21 land.
-- Do **not** interpret "the Post-Purchase Phase shipped cleanly" as
-  authorization for the next milestone. Authorization must be explicit
-  and human-given for each milestone/phase.
+- **M23 and every later milestone remain unauthorized.** No
+  application code for M23+ (Loyalty, Promotions, Marketing, Channels,
+  SEO, Analytics, Admin/CMS, Gift Cards, Security Hardening,
+  Performance, Final Certification) should be added until the human
+  project owner gives a new, separate, explicit **START BUILD**
+  authorization for that phase — neither the Phase 2 authorization,
+  nor the M16/M17/M18 authorizations, nor the Post-Purchase Phase
+  (M19–M21) authorization, nor the M22 authorization carries forward
+  automatically, regardless of how cleanly M08–M22 land.
+- Do **not** interpret "M22 shipped cleanly" as authorization for the
+  next milestone. Authorization must be explicit and human-given for
+  each milestone/phase.
+- **M22 (Customer 360) was explicitly authorized on 2026-09-26**,
+  scoped only to that milestone, building on the
+  `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED` baseline at commit
+  `13876a5f98cf3fb7a671ad2ca86d3e62edcd1a24`, with an explicit
+  instruction that M23 (Loyalty) and M24 (Promotions/Coupons)
+  functionality must NOT be built inside M22 — those account sections
+  must be represented honestly as `DEPENDENCY_DEFERRED — M23/M24`
+  rather than fabricated. See §0 above and
+  `acceptance/m22-customer-360.md` for the Definition of Done.
 - The Post-Purchase Phase (M19 Returns, M20 Refunds & Store Credit,
   M21 Exchanges) was explicitly authorized on 2026-09-25 as a single
   bounded pass, scoped only to those three milestones, building on the

@@ -1,8 +1,14 @@
 # 21. Customer Profile (Customer 360)
 
-**Status:** UNDER_REVIEW (most features DECIDED 2026-09-22; data
+**Status:** IMPLEMENTING (build started 2026-09-26, "START BUILD — M22
+CUSTOMER 360" authorization; most features DECIDED 2026-09-22; data
 retention/deletion policy `CUST-001` remains `UNDER_REVIEW` pending
-legal input — see `blueprint/DECISION_REGISTER.md`)
+legal input and does not block this build — see
+`blueprint/DECISION_REGISTER.md`). Loyalty and coupon *visibility* are
+listed below as originally scoped, but M23 (Loyalty) and M24
+(Promotions/Coupons) are themselves unauthorized and unbuilt — this
+build represents those sections honestly as
+`DEPENDENCY_DEFERRED — M23/M24`, never fabricated.
 
 ## Purpose
 
