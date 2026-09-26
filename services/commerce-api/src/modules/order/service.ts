@@ -526,14 +526,72 @@ export class OrderService {
   private async lockFulfilment(
     tx: Prisma.TransactionClient,
     fulfilmentId: string,
-  ): Promise<{ id: string; orderId: string; status: FulfilmentStatus } | null> {
+  ): Promise<{ id: string; orderId: string; exchangeId: string | null; status: FulfilmentStatus } | null> {
     const rows = await tx.$queryRaw<
-      { id: string; orderId: string; status: FulfilmentStatus }[]
-    >`SELECT "id", "orderId", "status"
+      { id: string; orderId: string; exchangeId: string | null; status: FulfilmentStatus }[]
+    >`SELECT "id", "orderId", "exchangeId", "status"
       FROM "order_fulfilments"
       WHERE "id" = ${fulfilmentId}
       FOR UPDATE`;
     return rows[0] ?? null;
+  }
+
+  /**
+   * EXC-004 Option 2 repair (2026-09-26, Product Owner decision): the
+   * Exchange-replacement analogue of `assignLinesToFulfilment` - groups
+   * one already-PICKED, exchange-anchored PickTask into a new
+   * OrderFulfilment (`exchangeId` set, zero child `lines` - see
+   * OrderFulfilment's own schema comment on the trigger-enforced
+   * exclusivity this relies on), so it can flow through the SAME
+   * pack/ready-to-ship/ship/deliver routes and methods below completely
+   * unchanged. Requires the exchange's own PickTask to be PICKED first
+   * (the same M16 gate `assignLinesToFulfilment` already enforces for a
+   * normal OrderLine) - "replacement cannot ship before allocation [or
+   * before being picked]" is enforced structurally: there is no
+   * PickTask to pick, and no fulfilment to create, until
+   * ExchangeService.tryComplete has already reached
+   * REPLACEMENT_ALLOCATED and auto-created one.
+   *
+   * Idempotent ("no duplicate warehouse work"): a second call for the
+   * same exchange returns the SAME fulfilment rather than creating a
+   * second one - `exchangeId`'s own unique constraint on OrderFulfilment
+   * is the database-level backstop.
+   */
+  async assignExchangeToFulfilment(exchangeId: string, staffId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const exchangeRows = await tx.$queryRaw<
+        { id: string; orderId: string; status: string }[]
+      >`SELECT "id", "orderId", "status" FROM "exchanges" WHERE "id" = ${exchangeId} FOR UPDATE`;
+      const exchange = exchangeRows[0];
+      if (!exchange) throw new NotFoundError('Exchange', exchangeId);
+
+      const existingFulfilment = await tx.orderFulfilment.findUnique({ where: { exchangeId } });
+      if (existingFulfilment) return existingFulfilment; // idempotent no-op
+
+      const pickTask = await tx.pickTask.findUnique({ where: { exchangeId } });
+      if (!pickTask) {
+        throw new ValidationError(`Exchange '${exchangeId}' has no pick task yet - it must reach REPLACEMENT_ALLOCATED first`);
+      }
+      if (pickTask.status !== 'PICKED') {
+        throw new ValidationError(
+          `Cannot assign exchange '${exchangeId}' to a fulfilment - its replacement pick task is not eligible (status '${pickTask.status}') - it must be fully picked first`,
+        );
+      }
+
+      const fulfilment = await tx.orderFulfilment.create({ data: { orderId: exchange.orderId, exchangeId } });
+
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: staffId,
+        action: 'order.fulfilment.create',
+        entityType: 'OrderFulfilment',
+        entityId: fulfilment.id,
+        newValue: { exchangeId },
+        reference: exchange.orderId,
+      });
+
+      return fulfilment;
+    });
   }
 
   /**
@@ -696,21 +754,41 @@ export class OrderService {
       // first), so this read is guaranteed consistent with `locked`.
       const fulfilment = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { lines: true } });
 
-      for (const line of fulfilment.lines) {
-        // reservationId lets InventoryService itself verify this line's
-        // allocation is genuine (CONVERTED, sufficient quantity) rather
-        // than trusting this call blindly (independent-review finding #5).
-        await this.inventory.recordSale(
+      if (fulfilment.exchangeId) {
+        // EXC-004 Option 2 repair (2026-09-26): an exchange-anchored
+        // fulfilment has no child OrderLines (see OrderFulfilment's own
+        // schema comment) - its dispatch posts EXCHANGE_DISPATCH, never
+        // SALE, since the replacement was already financially settled by
+        // Exchange itself, not a second retail sale (see
+        // InventoryService.recordExchangeDispatch's own docblock).
+        const exchange = await tx.exchange.findUniqueOrThrow({ where: { id: fulfilment.exchangeId } });
+        await this.inventory.recordExchangeDispatch(
           {
-            skuId: line.skuId,
-            locationId: line.locationId,
-            quantity: line.quantity,
-            referenceType: 'ORDER_LINE',
-            referenceId: line.id,
-            reservationId: line.reservationId ?? undefined,
+            skuId: exchange.replacementSkuId,
+            locationId: exchange.originalLocationId,
+            quantity: exchange.quantity,
+            referenceId: exchange.id,
+            reservationId: exchange.replacementReservationId ?? undefined,
           },
           tx,
         );
+      } else {
+        for (const line of fulfilment.lines) {
+          // reservationId lets InventoryService itself verify this line's
+          // allocation is genuine (CONVERTED, sufficient quantity) rather
+          // than trusting this call blindly (independent-review finding #5).
+          await this.inventory.recordSale(
+            {
+              skuId: line.skuId,
+              locationId: line.locationId,
+              quantity: line.quantity,
+              referenceType: 'ORDER_LINE',
+              referenceId: line.id,
+              reservationId: line.reservationId ?? undefined,
+            },
+            tx,
+          );
+        }
       }
 
       await tx.orderFulfilment.update({
@@ -760,6 +838,34 @@ export class OrderService {
         entityId: fulfilmentId,
         reference: fulfilment.orderId,
       });
+
+      if (fulfilment.exchangeId) {
+        // EXC-004 Option 2 repair (2026-09-26, Product Owner decision):
+        // this is the normal, automatic happy-path completion - an
+        // Exchange reaches COMPLETED the instant its replacement's own
+        // OrderFulfilment/Shipment reaches DELIVERED, never merely
+        // because it was allocated (independent-review repair finding
+        // 3's own discipline, now satisfied automatically rather than
+        // only via the manual markReplacementFulfilled exception path).
+        // `replacementFulfilledByStaffId` is left null when `staffId` is
+        // null (a carrier webhook/poll reported delivery, not a staff
+        // action) - written directly (no ExchangeService import, the
+        // same avoided-circular-dependency reasoning as
+        // WarehouseService's own direct order_lines/exchanges writes).
+        await tx.exchange.updateMany({
+          where: { id: fulfilment.exchangeId, status: 'REPLACEMENT_ALLOCATED' },
+          data: { status: 'COMPLETED', replacementFulfilledAt: new Date(), replacementFulfilledByStaffId: staffId ?? null },
+        });
+        await recordAudit(tx, {
+          actorType: staffId ? 'STAFF' : 'SYSTEM',
+          actorStaffId: staffId ?? undefined,
+          action: 'exchange.replacement_fulfilled.auto',
+          entityType: 'Exchange',
+          entityId: fulfilment.exchangeId,
+          reference: fulfilment.orderId,
+        });
+      }
+
       await this.recomputeOrderStatus(tx, fulfilment.orderId);
       return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
     };

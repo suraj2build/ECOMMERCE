@@ -424,6 +424,20 @@ export class ShippingService {
    * Resolving what "order-level RTO" should mean for a genuinely mixed-
    * state multi-shipment order is a real open business question
    * (`blueprint/DECISION_REGISTER.md`, deferred - not invented here).
+   *
+   * EXC-004 Option 2 repair (2026-09-26): this SAME fallback also
+   * correctly covers an exchange-anchored shipment's RTO, with no
+   * further code change - `shipment.orderId` is the ORIGINAL order the
+   * exchange belongs to (never a second Order), whose own lines are
+   * already DELIVERED and therefore never "every active line still
+   * SHIPPED" - `markRTO` rejects it via the exact same ValidationError
+   * this method already catches and reconciles-for-a-human, for the
+   * exact same reason (an order-level RTO rollup that isn't true for
+   * this order). The Shipment itself still durably reflects
+   * RTO_INITIATED; the Exchange is left at REPLACEMENT_ALLOCATED for
+   * explicit staff follow-up (`markReplacementFulfilled`'s exception/
+   * recovery path, or a fresh replacement) - never silently advanced to
+   * COMPLETED.
    */
   private async applyTrackingUpdate(shipmentId: string, normalizedStatus: NormalizedTrackingStatus, occurredAt: Date): Promise<void> {
     await this.prisma.$transaction(async (tx) => {

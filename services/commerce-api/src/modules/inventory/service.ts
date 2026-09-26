@@ -801,6 +801,109 @@ export class InventoryService {
   }
 
   /**
+   * EXCHANGE_DISPATCH (EXC-004 Option 2 repair, 2026-09-26 Product Owner
+   * decision): posted when an Exchange replacement's OrderFulfilment
+   * ships - the moment the replacement unit physically leaves the
+   * warehouse. Same balance effect as `recordSale` (both `onHand` and
+   * `reserved` decrement together - stock physically leaves), and the
+   * SAME validation discipline (reservation must be CONVERTED and
+   * sufficient; onHand/reserved must be sufficient; a shortfall throws
+   * rather than silently clamping).
+   *
+   * Deliberately a SEPARATE method/ledger type from `recordSale`, not a
+   * `referenceType` variant reusing `type: 'SALE'`: the replacement was
+   * never a second retail transaction - no second Order/OrderLine/
+   * invoice exists for it, and its price difference was already settled
+   * by Exchange itself (CUSTOMER_PAYS payment or STORE_CREDIT, at
+   * REPLACEMENT_ALLOCATED time) - so posting it as SALE would
+   * misrepresent the ledger as if a second sale occurred. Guarded by its
+   * own partial unique index (inventory_transactions_exchange_dispatch_once,
+   * migration 20260926120100) mirroring SALE's exactly-once discipline.
+   *
+   * GST/invoice consequence of this dispatch is explicitly NOT decided
+   * here - TAX/COMPLIANCE REVIEW REQUIRED (see EXC-004 in
+   * blueprint/DECISION_REGISTER.md). This method posts only the
+   * inventory-ledger consequence of the physical dispatch; it does not
+   * generate or imply any tax document.
+   */
+  async recordExchangeDispatch(
+    params: {
+      skuId: string;
+      locationId: string;
+      quantity: number;
+      referenceId: string;
+      reservationId?: string;
+    },
+    externalTx?: Prisma.TransactionClient,
+  ) {
+    if (params.quantity <= 0) throw new ValidationError('Exchange dispatch quantity must be positive');
+    const run = async (tx: Prisma.TransactionClient) => {
+      if (params.reservationId) {
+        const reservation = await this.lockReservation(tx, params.reservationId);
+        if (!reservation) {
+          throw new InventoryIntegrityError(
+            `Cannot record an exchange dispatch: reservation '${params.reservationId}' does not exist`,
+          );
+        }
+        if (reservation.skuId !== params.skuId || reservation.locationId !== params.locationId) {
+          throw new InventoryIntegrityError(
+            `Cannot record an exchange dispatch: reservation '${params.reservationId}' is for a different SKU/location than this dispatch`,
+          );
+        }
+        if (reservation.status !== 'CONVERTED') {
+          throw new InventoryIntegrityError(
+            `Cannot record an exchange dispatch against reservation '${params.reservationId}' in status '${reservation.status}' - it requires an already-converted (firm) allocation`,
+          );
+        }
+        if (reservation.quantity < params.quantity) {
+          throw new InventoryIntegrityError(
+            `Cannot record an exchange dispatch of ${params.quantity} units against reservation '${params.reservationId}', which only allocated ${reservation.quantity}`,
+          );
+        }
+      }
+
+      const balance = await this.lockBalance(tx, params.skuId, params.locationId);
+      if (balance.onHand < params.quantity) {
+        throw new InventoryIntegrityError(
+          `Cannot record an exchange dispatch of ${params.quantity} units for SKU '${params.skuId}' at location '${params.locationId}' - only ${balance.onHand} on hand`,
+        );
+      }
+      if (balance.reserved < params.quantity) {
+        throw new InventoryIntegrityError(
+          `Cannot record an exchange dispatch of ${params.quantity} units for SKU '${params.skuId}' at location '${params.locationId}' - only ${balance.reserved} reserved`,
+        );
+      }
+
+      await tx.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: params.skuId, locationId: params.locationId } },
+        data: {
+          onHand: balance.onHand - params.quantity,
+          reserved: balance.reserved - params.quantity,
+        },
+      });
+
+      try {
+        return await this.writeLedgerRow(tx, {
+          skuId: params.skuId,
+          locationId: params.locationId,
+          quantity: params.quantity,
+          referenceType: 'EXCHANGE',
+          referenceId: params.referenceId,
+          type: 'EXCHANGE_DISPATCH',
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new InventoryIntegrityError(
+            `An EXCHANGE_DISPATCH has already been posted for exchange '${params.referenceId}' - refusing to post a duplicate dispatch`,
+          );
+        }
+        throw err;
+      }
+    };
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
    * ADJUSTMENT: authorized manual correction (ADM-003). Requires a reason.
    * Adjustments whose absolute quantity exceeds the configured threshold
    * require a co-approver id (checked for a Finance-tier permission at the
@@ -1010,6 +1113,15 @@ export class InventoryService {
           // reconciliation proof (RESERVATION -> ALLOCATION -> SALE ->
           // RETURN_RECEIVED -> RETURN_QC_PASS chain). TRANSFER_OUT stays
           // onHand-only - a location transfer never touches reservations.
+          onHand -= txn.quantity;
+          reserved -= txn.quantity;
+          break;
+        case 'EXCHANGE_DISPATCH':
+          // EXC-004 Option 2 repair (2026-09-26): same combined onHand+
+          // reserved decrement as SALE (recordExchangeDispatch mirrors
+          // recordSale's own balance effect exactly - stock physically
+          // leaves the warehouse) but a distinct type, since it is never
+          // a second retail sale (see recordExchangeDispatch's docblock).
           onHand -= txn.quantity;
           reserved -= txn.quantity;
           break;

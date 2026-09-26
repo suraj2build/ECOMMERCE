@@ -701,6 +701,22 @@ enum InventoryTxnType {
   RETURN_DISPOSED
   EXCHANGE_RELEASE
   EXCHANGE_RESERVE
+  // EXC-004 Option 2 repair (2026-09-26): posted when an Exchange
+  // replacement's OrderFulfilment ships - the moment the replacement unit
+  // physically leaves the warehouse. Deliberately NOT `SALE`: the
+  // replacement was never a second retail transaction (no second Order/
+  // OrderLine/invoice exists for it - the price difference was already
+  // settled by Exchange itself, via CUSTOMER_PAYS payment or STORE_CREDIT
+  // at REPLACEMENT_ALLOCATED time), so conflating it with SALE would
+  // misrepresent the ledger as if a second sale occurred. Same balance
+  // effect as SALE (onHand -= qty AND reserved -= qty together - stock
+  // physically leaves), posted via InventoryService.recordExchangeDispatch,
+  // guarded by its own partial unique index
+  // (inventory_transactions_exchange_dispatch_once) mirroring SALE's
+  // exactly-once discipline. GST/invoice consequence of this dispatch is
+  // explicitly NOT decided here - TAX/COMPLIANCE REVIEW REQUIRED (see
+  // EXC-004 in blueprint/DECISION_REGISTER.md).
+  EXCHANGE_DISPATCH
   RTO
   ADJUSTMENT
   TRANSFER_OUT
@@ -1743,10 +1759,21 @@ enum PickExceptionType {
 // platform, so today this is always equal to the live value, but snapshotting
 // costs nothing and removes any future ambiguity about which quantity a
 // historical pick task was actually working against.
+// EXC-004 Option 2 repair (2026-09-26): generalized to a polymorphic
+// fulfilment source - `orderLineId` XOR `exchangeId` (never both, never
+// neither), enforced by the same-row check constraint
+// `pick_tasks_source_xor_check` (migration 20260926120000). `orderId`
+// stays NOT NULL in both cases: for an exchange-anchored task it is the
+// ORIGINAL order the exchange belongs to (never a second Order - the
+// exchange never creates one), preserving every existing orderId-scoped
+// index/query. An exchange-sourced task's replacement SKU/location come
+// from the owning Exchange row (`replacementSkuId`/`originalLocationId` -
+// the same location the replacement reservation was made against).
 model PickTask {
   id                String             @id @default(uuid())
   orderId           String
-  orderLineId       String             @unique
+  orderLineId       String?            @unique
+  exchangeId        String?            @unique
   skuId             String
   locationId        String
   allocatedQuantity Int
@@ -1767,7 +1794,8 @@ model PickTask {
   updatedAt         DateTime           @updatedAt
 
   order         Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderLine     OrderLine  @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  orderLine     OrderLine? @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  exchange      Exchange?  @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
   sku           Sku        @relation(fields: [skuId], references: [id], onDelete: Restrict)
   location      Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
   pickedByStaff StaffUser? @relation("PickTaskPickedBy", fields: [pickedByStaffId], references: [id], onDelete: SetNull)
@@ -1904,9 +1932,25 @@ model OrderLine {
 // requires OrderLineStatus.PICKED, the engineering-level analogue of
 // "generate a pick list" the M15 scope-boundary note anticipated) and the
 // two progress through PACKED/READY_TO_SHIP/SHIPPED/DELIVERED together.
+// EXC-004 Option 2 repair (2026-09-26): generalized to a polymorphic
+// fulfilment source - a fulfilment is sourced EITHER by its child
+// `lines` (normal OrderLine fulfilment, the default) OR by `exchangeId`
+// (an Exchange replacement), never both. This is a genuine CROSS-TABLE
+// invariant (this row's `exchangeId` vs. OTHER rows' `order_lines.
+// fulfilmentId`), which a same-row CHECK constraint cannot express - it
+// is instead enforced by a trigger pair
+// (`check_fulfilment_line_exclusivity` on order_lines,
+// `check_exchange_fulfilment_exclusivity` on order_fulfilments;
+// migration 20260926120000), the equally-strong relational design the
+// EXC-004 Option 2 decision explicitly permits as an alternative to a
+// CHECK constraint for exactly this case. `orderId` stays NOT NULL for
+// an exchange-anchored fulfilment too (the ORIGINAL order the exchange
+// belongs to - never a second Order), preserving every existing
+// orderId-scoped index/query/RTO-lookup unchanged.
 model OrderFulfilment {
   id          String           @id @default(uuid())
   orderId     String
+  exchangeId  String?          @unique
   status      FulfilmentStatus @default(PENDING)
   carrierName String?
   trackingRef String?
@@ -1917,6 +1961,7 @@ model OrderFulfilment {
   updatedAt   DateTime         @updatedAt
 
   order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  exchange Exchange?   @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
   lines    OrderLine[]
   shipment Shipment?
 
@@ -2432,24 +2477,30 @@ enum ExchangeStatus {
   PICKUP_SCHEDULED
   PICKED_UP
   RECEIVED
-  // Independent-review repair (finding 3, 2026-09-26): QC passed AND
-  // payment/credit settled AND the replacement reservation converted to
-  // a firm allocation - the inventory side is fully resolved, but the
-  // replacement has NOT yet reached the customer. Physical forward
-  // fulfilment (pick/pack/ship/tracking) of the allocated replacement
-  // has no certified integration with M16/M17's OrderLine-anchored
-  // PickTask/OrderFulfilment/Shipment pipeline in this pass - see
-  // EXC-004 in blueprint/DECISION_REGISTER.md for the DECISION_REQUIRED
-  // architecture options. An Exchange sits here until a staff member
-  // explicitly confirms the replacement was actually delivered
-  // (ExchangeService.markReplacementFulfilled) - it must NEVER be
+  // Independent-review repair (finding 3, 2026-09-26); superseded by the
+  // EXC-004 Option 2 repair (2026-09-26): QC passed AND payment/credit
+  // settled AND the replacement reservation converted to a firm
+  // allocation - the inventory side is fully resolved, but the
+  // replacement has NOT yet reached the customer. This is the moment a
+  // PickTask is auto-created for the replacement (see PickTask's own
+  // schema comment) - physical forward fulfilment (pick/pack/ship/
+  // tracking) now reuses M16/M17's certified PickTask/OrderFulfilment/
+  // Shipment pipeline directly (generalized to a polymorphic fulfilment
+  // source - see OrderFulfilment's own schema comment), rather than
+  // duplicating it. An Exchange sits here until its replacement
+  // shipment reaches DELIVERED (normal path, automatic) or a staff
+  // member explicitly confirms fulfilment via the exception/recovery
+  // path (ExchangeService.markReplacementFulfilled) - it must NEVER be
   // reported as COMPLETED merely because this state was reached.
   REPLACEMENT_ALLOCATED
-  // Only reachable from REPLACEMENT_ALLOCATED via an explicit staff
-  // confirmation that the replacement fulfilment has actually reached
-  // its customer-complete boundary (see markReplacementFulfilled) - this
-  // is the customer-visible "done" state, deliberately never set merely
-  // because the replacement was allocated.
+  // Reached automatically once the replacement's OrderFulfilment/
+  // Shipment reaches DELIVERED (the normal, happy-path route - EXC-004
+  // Option 2), or via markReplacementFulfilled's own explicit staff
+  // confirmation, kept only as an exception/recovery mechanism for a
+  // replacement genuinely fulfilled outside the tracked warehouse/
+  // shipping pipeline - this is the customer-visible "done" state,
+  // deliberately never set merely because the replacement was
+  // allocated.
   COMPLETED
   // The original item failed QC (INV-006's own gate, applied here
   // exactly as RET-005 applies it to a Return): disposition still posts
@@ -2491,22 +2542,26 @@ enum ExchangePaymentStatus {
 // documented for cancellation (CAN-004) and returns (this model's own
 // orderLineId is @unique, mirroring ReturnLine's).
 //
-// Scope boundary (EXC-004 in blueprint/DECISION_REGISTER.md, corrected
-// 2026-09-26 independent-review repair, finding 3): physical FORWARD
-// fulfilment (pick/pack/ship/tracking) of the replacement item has no
-// certified integration with M16/M17's OrderLine-anchored PickTask/
-// OrderFulfilment/Shipment pipeline in this pass - a genuine
-// DECISION_REQUIRED architecture question, not silently guessed (see
-// EXC-004's own options). `replacementAllocatedAt` marks the replacement
-// as inventory-committed (a firm allocation, no longer available for
-// other orders) once QC passes and payment/credit settles, moving the
-// Exchange to `REPLACEMENT_ALLOCATED` - NEVER `COMPLETED`.
-// `replacementFulfilledAt`/`replacementFulfilledByStaffId` record the
-// explicit staff confirmation (a manual/follow-on process, not tracked
-// by any automated pipeline here) that actually moves the Exchange to
-// `COMPLETED` - the only honest way, absent that architecture decision,
-// to avoid reporting an exchange "done" merely because the stock was
-// set aside.
+// Scope boundary (EXC-004 in blueprint/DECISION_REGISTER.md): the
+// independent-review repair (2026-09-26, finding 3) left physical
+// FORWARD fulfilment (pick/pack/ship/tracking) of the replacement as an
+// open DECISION_REQUIRED. The Product Owner selected Option 2
+// (2026-09-26): generalize M16/M17's OrderLine-anchored PickTask/
+// OrderFulfilment/Shipment pipeline to serve an Exchange replacement as
+// an alternate fulfilment source (see those models' own schema
+// comments) - now implemented. `replacementAllocatedAt` marks the
+// replacement as inventory-committed (a firm allocation, no longer
+// available for other orders) once QC passes and payment/credit
+// settles, moving the Exchange to `REPLACEMENT_ALLOCATED` (and
+// auto-creating its PickTask) - NEVER `COMPLETED` yet.
+// `replacementFulfilledAt`/`replacementFulfilledByStaffId` are now set
+// on EITHER of two paths: automatically, when the replacement's own
+// OrderFulfilment/Shipment reaches DELIVERED (the normal happy path,
+// `replacementFulfilledByStaffId` left null - no specific staff member
+// confirmed it, the carrier/system did), or via
+// `markReplacementFulfilled`'s explicit staff confirmation, now kept
+// only as an exception/recovery mechanism (e.g. a replacement fulfilled
+// genuinely outside the tracked pipeline) - never the normal happy path.
 model Exchange {
   id                 String         @id @default(uuid())
   exchangeNumber     String         @unique
@@ -2597,6 +2652,15 @@ model Exchange {
   replacementFulfilledByStaff StaffUser?        @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
   storeCreditEntry            StoreCreditEntry? @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
   paymentEvents               PaymentEvent[]
+  // EXC-004 Option 2 repair (2026-09-26): the replacement's physical
+  // forward fulfilment - one PickTask (auto-created the instant this
+  // Exchange reaches REPLACEMENT_ALLOCATED) and, once picked and
+  // assigned, one OrderFulfilment (with its own Shipment, via the SAME
+  // M16/M17 pipeline normal orders use) - reusing the certified
+  // primitives rather than duplicating them (see the schema comments on
+  // PickTask/OrderFulfilment above).
+  pickTask                    PickTask?
+  fulfilment                  OrderFulfilment?
 
   @@index([orderId])
   @@map("exchanges")

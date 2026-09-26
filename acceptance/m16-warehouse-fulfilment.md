@@ -3,6 +3,16 @@
 **Spec(s):** `specs/15-warehouse-fulfilment.md`
 **Status:** IMPLEMENTED (M16 build, 2026-09-24) — **M16 BUILD COMPLETE,
 AWAITING INDEPENDENT REVIEW.** This agent does not self-certify M16.
+**2026-09-26 addendum (EXC-004 Option 2 repair):** `PickTask`/
+`OrderFulfilment` were generalized (nullable `exchangeId`, a same-row
+CHECK on `PickTask` and a cross-table trigger pair for
+`OrderFulfilment`) to also serve an Exchange replacement as an
+alternate fulfilment source, alongside their original `OrderLine`
+anchoring — every acceptance criterion below, and every M16 invariant
+it certifies, is unchanged and re-proven green
+(`test/integration/warehouse.test.ts`, unmodified, still passes in
+full); see `blueprint/DECISION_REGISTER.md` `EXC-004` for the full
+design record.
 
 ## Business acceptance
 

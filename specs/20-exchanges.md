@@ -5,8 +5,12 @@ scope, repaired 2026-09-26 per independent review — see
 `blueprint/DECISION_REGISTER.md` `EXC-001`–`004`; `VERIFIED` pending
 independent re-review, not self-declared). The replacement's physical
 forward-fulfilment integration with M16/M17's certified warehouse/
-shipping pipeline is an open `DECISION_REQUIRED` (see `EXC-004`), not
-resolved by this status.
+shipping pipeline was an open `DECISION_REQUIRED` (see `EXC-004`);
+the Product Owner selected Option 2 on 2026-09-26 (generalize the
+certified `PickTask`/`OrderFulfilment`/`Shipment` pipeline to serve an
+Exchange replacement as an alternate fulfilment source), now
+implemented — see `EXC-004`'s "OPTION 2 SELECTED BY PRODUCT OWNER"
+addendum for the full design record.
 
 ## Purpose
 

@@ -3,6 +3,15 @@
 **Spec(s):** `specs/16-shipping-tracking.md`
 **Status:** IMPLEMENTED (M17 build, 2026-09-24; independent-review
 repair, 2026-09-25 — see §"Independent review" below)
+**2026-09-26 addendum (EXC-004 Option 2 repair):** `Shipment`/
+`ShippingService` needed ZERO changes to also serve an Exchange
+replacement's shipment — every method already operated generically on
+`fulfilmentId`, and the one RTO branch (`OrderService.markRTO`)
+already handled a rejection from it via the pre-existing multi-
+shipment reconciliation fallback. Every acceptance criterion below is
+unchanged and re-proven green (`test/integration/shipping.test.ts`,
+unmodified, still passes in full); see
+`blueprint/DECISION_REGISTER.md` `EXC-004` for the full design record.
 
 ## Independent review
 

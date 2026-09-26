@@ -8,10 +8,24 @@ unacceptable (reaching a firm inventory allocation is not the same
 thing as the replacement reaching the customer) and required the
 14-day hold default's provenance corrected; repaired 2026-09-26
 (Post-Purchase Phase independent-review repair, findings 1 and 3) — see
-`EXC-004`'s repair addenda. **Physical forward fulfilment of the
-replacement remains an open `DECISION_REQUIRED`** (see `EXC-004`); this
-build does not claim that question resolved. Not self-declared
-`VERIFIED`; independent re-review pending.
+`EXC-004`'s repair addenda. That repair left **physical forward
+fulfilment of the replacement** as an open `DECISION_REQUIRED` with
+three options. **The Product Owner selected Option 2 on 2026-09-26**:
+generalize M16/M17's certified `PickTask`/`OrderFulfilment`/`Shipment`
+pipeline (nullable dual-source FKs — same-row CHECK for `PickTask`,
+a cross-table trigger pair for `OrderFulfilment`) to serve an Exchange
+replacement as an alternate fulfilment source, reusing the SAME
+pick/pack/ready-to-ship/ship/deliver routes a normal order's own
+fulfilment uses. `Exchange.status` now reaches `COMPLETED`
+AUTOMATICALLY the instant the replacement's own shipment reaches
+DELIVERED — a new `EXCHANGE_DISPATCH` inventory-ledger type (never a
+second `SALE`) marks the physical dispatch, with its GST/invoice
+consequence explicitly flagged **TAX/COMPLIANCE REVIEW REQUIRED**
+rather than decided here. `markReplacementFulfilled` remains only as
+an exception/recovery mechanism, never the normal path. See
+`EXC-004`'s "OPTION 2 SELECTED BY PRODUCT OWNER" addendum for the full
+design record. Not self-declared certified; independent re-review
+pending.
 
 ## Business acceptance
 
@@ -51,23 +65,31 @@ build does not claim that question resolved. Not self-declared
       repair, finding 3). QC pass + payment/credit settlement +
       reservation conversion reaches a NEW intermediate status,
       `REPLACEMENT_ALLOCATED` — the inventory side is fully resolved,
-      but the Exchange is NOT done. Only an explicit staff confirmation
-      (`ExchangeService.markReplacementFulfilled`, gated by a NEW,
-      separately-granted `exchange:fulfil` permission — never bundled
-      into `exchange:qc`, which is about the ORIGINAL item's condition)
-      moves it to `COMPLETED`, recording `replacementFulfilledAt`/
-      `replacementFulfilledByStaffId`. `exchanges.test.ts`'s
-      "replacement fulfilment state distinction" describe block proves
-      both the rejection before `REPLACEMENT_ALLOCATED` and the
-      idempotent, RBAC-gated confirmation after it; every existing
-      happy-path test in this file now asserts `REPLACEMENT_ALLOCATED`
-      at the QC/payment-settlement point, not `COMPLETED`.
-      **`DECISION_REQUIRED — EXCHANGE REPLACEMENT FULFILMENT MODEL`
-      remains open** (see `EXC-004`): whether/how to integrate the
-      replacement's actual physical pick/pack/ship with M16/M17's
-      OrderLine-anchored pipeline is NOT resolved by this repair —
-      `markReplacementFulfilled` is an honest manual stand-in, not a
-      substitute for that architecture decision.
+      but the Exchange is NOT done. `exchanges.test.ts`'s "replacement
+      fulfilment state distinction" describe block proves the rejection
+      before `REPLACEMENT_ALLOCATED`.
+      **EXC-004 Option 2 repair (2026-09-26, Product Owner decision):**
+      `REPLACEMENT_ALLOCATED` now auto-creates a replacement `PickTask`
+      (`ExchangeService.tryComplete` → `WarehouseService.createPickTaskForExchange`),
+      reusing M16/M17's certified pipeline (generalized to a polymorphic
+      fulfilment source) for pick → `assignReplacementToFulfilment` →
+      pack → ready-to-ship → ship (posts `EXCHANGE_DISPATCH`, never a
+      second `SALE`) → deliver. `Exchange.status` moves to `COMPLETED`
+      AUTOMATICALLY the instant that replacement shipment reaches
+      DELIVERED (`OrderService.markFulfilmentDelivered`'s own exchange
+      branch) — this is now the normal happy path.
+      `ExchangeService.markReplacementFulfilled` (gated by the SAME
+      `exchange:fulfil` permission) remains ONLY as an exception/
+      recovery mechanism for a replacement genuinely fulfilled outside
+      this tracked pipeline — never the normal route. See
+      `test/integration/exchange-fulfilment.test.ts` (16 tests) for the
+      full pick/pack/ship/deliver/COMPLETED proof, including real
+      carrier tracking + webhook-driven delivery, duplicate-webhook
+      safety, and exactly-once `EXCHANGE_DISPATCH`.
+      **`DECISION_REQUIRED — EXCHANGE REPLACEMENT FULFILMENT MODEL` is
+      now RESOLVED** (Option 2 selected and implemented) — see
+      `EXC-004`'s "OPTION 2 SELECTED BY PRODUCT OWNER" addendum in
+      `blueprint/DECISION_REGISTER.md` for the full design record.
 
 ## Negative scenarios / edge cases
 
@@ -150,7 +172,10 @@ build does not claim that question resolved. Not self-declared
 
 ## Definition of Done
 
-All boxes above checked, plus `acceptance/README.md` — **except** the
-replacement-physical-fulfilment architecture question, which remains
-`DECISION_REQUIRED` (see `EXC-004`) and is not claimed resolved by this
-build or this repair.
+All boxes above checked, plus `acceptance/README.md`. The
+replacement-physical-fulfilment architecture question (`EXC-004`) is
+now RESOLVED (Option 2 selected by the Product Owner 2026-09-26 and
+implemented — see `EXC-004`'s "OPTION 2 SELECTED BY PRODUCT OWNER"
+addendum in `blueprint/DECISION_REGISTER.md`); this repair does not
+self-declare the resulting build "certified" — independent re-review
+remains pending, per this project's own binding discipline.

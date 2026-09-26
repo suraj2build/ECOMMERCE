@@ -8,8 +8,8 @@ including future sessions that have no memory of this one.
 
 **Status as of 2026-09-26: `M18_ENGINEERING_CERTIFIED — POST-PURCHASE
 PHASE (M19 RETURNS / M20 REFUNDS & STORE CREDIT / M21 EXCHANGES) REPAIR
-COMPLETE, AWAITING INDEPENDENT RE-REVIEW. ONE ARCHITECTURE DECISION
-(EXCHANGE REPLACEMENT FULFILMENT) REMAINS OPEN. M22+ NOT AUTHORIZED.`**
+COMPLETE — EXC-004 FULFILMENT REPAIR COMPLETE — AWAITING INDEPENDENT
+REVIEW. M22+ NOT AUTHORIZED.`**
 M19
 (Returns), M20 (Refunds & Store Credit), and M21 (Exchanges) were all
 implemented and adversarially tested sequentially, with per-milestone
@@ -148,6 +148,99 @@ stopped and is awaiting independent re-review; `EXC-004`'s
 `DECISION_REQUIRED` is explicitly flagged for the Product Owner's
 attention, not silently left for a future agent to rediscover. M22+
 remains unauthorized regardless of how this re-review resolves.
+
+**On 2026-09-26 the Product Owner resolved `EXC-004`'s
+`DECISION_REQUIRED` with an explicit architecture decision: "SELECT
+OPTION 2."** Exchange replacement physical fulfilment now genuinely
+reuses M16/M17's certified `PickTask`/`OrderFulfilment`/`Shipment`
+pipeline, generalized to a polymorphic fulfilment source, rather than
+creating a second `Order`, fabricating a replacement `OrderLine`, or
+building a parallel exchange-only pipeline — implemented the same day
+under a separate, explicitly scoped repair authorization bounded to
+this one decision. `PickTask.orderLineId` is now nullable alongside a
+new nullable `exchangeId` (`@unique`), with a same-row XOR CHECK
+constraint (`pick_tasks_source_xor_check`) — a genuine per-row
+guarantee. `OrderFulfilment` gained a nullable `exchangeId` (`@unique`)
+whose exclusivity against its child `order_lines` is a real CROSS-TABLE
+invariant no CHECK constraint can express — enforced instead by a
+trigger pair (`check_fulfilment_line_exclusivity` on `order_lines`,
+`check_exchange_fulfilment_exclusivity` on `order_fulfilments`), the
+"equally strong relational design" the Product Owner's own instruction
+explicitly permitted as the alternative to a raw CHECK, and the correct
+SQL tool for this exact cross-table case — a deliberate, documented
+deviation from this codebase's usual pure-CHECK-constraint convention,
+not a shortcut. `Shipment` needed zero schema change at all (1:1 with
+`OrderFulfilment`, so its source is entirely derived). Inventory-ledger
+semantics for the replacement's physical dispatch were defined
+explicitly rather than reused from `SALE`: a new
+`InventoryTxnType.EXCHANGE_DISPATCH`, posted by a new
+`InventoryService.recordExchangeDispatch` (same combined onHand/reserved
+decrement as `recordSale`, its own partial-unique-index exactly-once
+guard) — deliberately never conflated with a genuine retail `SALE`,
+since the replacement's price difference was already settled by
+Exchange itself, not a second transaction. Any GST/invoice consequence
+of this physical dispatch is explicitly flagged **TAX/COMPLIANCE
+REVIEW REQUIRED** — not decided or guessed here.
+`WarehouseService.createPickTaskForExchange`, called from
+`ExchangeService.tryComplete`'s own reservation-conversion transaction,
+auto-creates the replacement's `PickTask` the instant an exchange
+reaches `REPLACEMENT_ALLOCATED` — the exact moment-of-parity with a
+normal order's own ALLOCATED → PickTask creation; a pick shortfall/
+exception on it routes to the already-existing
+`ExchangeStatus.REPLACEMENT_UNAVAILABLE` rather than inventing a new
+status, since both represent the identical fact. `OrderService`
+gained `assignExchangeToFulfilment` (a new `POST /exchanges/:id/fulfilment`
+route, gated by the EXISTING `exchange:fulfil` permission — no new
+permission needed) and branches in `markFulfilmentShipped` (posts
+`EXCHANGE_DISPATCH` instead of iterating child lines) and
+`markFulfilmentDelivered` (flips `Exchange.status` to `COMPLETED`
+automatically); pack/ready-to-ship/ship/deliver, and pick itself, all
+reuse the EXISTING `/orders/fulfilments/:fulfilmentId/*` and
+`/warehouse/pick-tasks/:id/pick` routes completely unchanged — no
+parallel routes, no new base permissions. `ShippingService` needed
+ZERO code changes: every method already operated generically on
+`fulfilmentId`, and its one RTO branch already reconciles-for-a-human
+exactly the rejection an exchange-anchored shipment's RTO produces, via
+the SAME pre-existing multi-shipment fallback. `Exchange.status` now
+reaches `COMPLETED` **automatically** the instant the replacement's own
+shipment reaches DELIVERED — the normal happy path;
+`markReplacementFulfilled` remains, demoted exactly as instructed to an
+exception/recovery mechanism only, never the route a correctly-flowing
+exchange takes. Every existing M16/M17 certified invariant (exactly-once
+SALE, no overselling, row-lock concurrency, idempotent pick/pack/
+shipment transitions, provider isolation, webhook dedup, split-shipment
+behaviour, inventory-ledger authority, auditability, RBAC, IDOR/BOLA
+protection) was preserved and re-proven unchanged — the entire
+pre-existing `warehouse.test.ts`/`shipping.test.ts`/`exchanges.test.ts`
+suites re-run green, byte-for-byte unmodified, zero regressions — plus
+a new 16-point adversarial integration matrix
+(`test/integration/exchange-fulfilment.test.ts`) proving the
+generalized pipeline itself: normal OrderLine fulfilment unchanged; the
+full pick→pack→ship→deliver→COMPLETED happy path (both via manual staff
+routes and via real carrier tracking/webhook-driven delivery);
+replacement cannot ship before allocation; no duplicate warehouse work;
+concurrent pick/pack/shipment-creation; a duplicate `delivered` webhook
+as a safe no-op; exactly-once `EXCHANGE_DISPATCH` with the original
+order's own `SALE` row untouched; a pick exception correctly routing to
+`REPLACEMENT_UNAVAILABLE`; a `QC_FAILED`/`CANCELLED` exchange never
+getting a `PickTask` at all; RBAC/IDOR-BOLA (a role without
+`exchange:fulfil`, or without the base `warehouse:pick`/`order:fulfil`
+permissions, correctly rejected); idempotency-key replay; and two
+unrelated exchanges on two different orders progressing independently
+under real concurrency. Full clean-state validation: migration from
+zero (two new migrations, `20260926120000_exchange_fulfilment_generalization`
+and `20260926120100_exchange_dispatch_unique_index` — split across two
+files deliberately, since Postgres forbids using a newly-added enum
+value in the same transaction that added it), zero schema drift, clean
+seed, lint, typecheck, build, unit tests, the complete integration
+suite against real Postgres/Redis, and the full Playwright E2E suite
+(including mobile) — all green, zero regressions to the entire
+M00–M21 baseline. See `EXC-004`'s "OPTION 2 SELECTED BY PRODUCT OWNER"
+addendum in `blueprint/DECISION_REGISTER.md` for the complete design
+record. **This agent does not self-declare this repair certified** —
+the same discipline as every milestone since Phase 1. This agent has
+stopped and is awaiting independent review. M22+ remains unauthorized
+regardless of how this review resolves.
 
 M17 (Shipping /
 Tracking) was implemented and adversarially tested (carrier-adapter

@@ -4,6 +4,7 @@ import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
+import { WarehouseService } from '../warehouse/service.js';
 import { InventoryService } from '../inventory/service.js';
 import { CatalogService } from '../catalog/service.js';
 import { resolveShippingProvider, type ShippingProvider } from '../shipping/provider.js';
@@ -19,6 +20,31 @@ export interface InitiateExchangeInput {
   reason: string;
   method: 'PICKUP' | 'DROP_OFF';
 }
+
+/**
+ * EXC-004 Option 2 repair (2026-09-26): the replacement's physical
+ * pick/pack/ship/tracking state, read-projected onto the Exchange
+ * itself so a customer (or staff) reading ONE exchange can see its
+ * replacement's tracking without separately knowing about PickTask/
+ * OrderFulfilment/Shipment as distinct resources - "tracking visible to
+ * the owning customer" (required test coverage) needs no new customer-
+ * facing endpoint, just this projection on the existing
+ * getExchangeForCustomer read, ownership-checked exactly as the rest of
+ * that method already is.
+ */
+export interface ExchangeReplacementFulfilmentView {
+  pickTask: { id: string; status: string; allocatedQuantity: number; pickedQuantity: number } | null;
+  fulfilment: {
+    id: string;
+    status: string;
+    packedAt: Date | null;
+    shippedAt: Date | null;
+    deliveredAt: Date | null;
+    shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number } | null;
+  } | null;
+}
+
+export type ExchangeView = Exchange & { replacementFulfilment: ExchangeReplacementFulfilmentView };
 
 /**
  * Exchanges (M21, specs/20-exchanges.md, EXC-001-003; `EXC-004` in
@@ -42,20 +68,30 @@ export interface InitiateExchangeInput {
  * "never fire a financial consequence before the QC gate" discipline);
  * =0 -> EVEN (nothing to settle).
  *
- * Scope boundary (EXC-004, corrected 2026-09-26 independent-review
- * repair, finding 3): physical FORWARD fulfilment of the replacement
- * (pick/pack/ship/tracking) has no certified integration with M16/M17's
- * OrderLine-anchored pipeline in this pass - a genuine DECISION_REQUIRED
- * architecture question (see EXC-004's own options), not silently
- * guessed. `replacementAllocatedAt` marks it inventory-committed once QC
- * passes and payment/credit settles, moving the Exchange to
- * REPLACEMENT_ALLOCATED - never COMPLETED. Only
- * `markReplacementFulfilled`'s own explicit staff confirmation (a
- * manual/follow-on action) moves it to COMPLETED. See the Exchange
- * model's own schema comment.
+ * Physical FORWARD fulfilment of the replacement (pick/pack/ship/
+ * tracking): the independent-review repair (finding 3, 2026-09-26) left
+ * this an open DECISION_REQUIRED (EXC-004). The Product Owner selected
+ * Option 2 the same day: genuinely reuse M16/M17's certified PickTask/
+ * OrderFulfilment/Shipment pipeline (generalized to a polymorphic
+ * fulfilment source - see those models' own schema comments), rather
+ * than a parallel exchange-only pipeline or a second Order/OrderLine.
+ * `replacementAllocatedAt` marks the replacement inventory-committed
+ * once QC passes and payment/credit settles, moving the Exchange to
+ * REPLACEMENT_ALLOCATED and auto-creating its PickTask (`tryComplete`) -
+ * never COMPLETED yet. From there, pick -> assignReplacementToFulfilment
+ * -> pack -> ready-to-ship -> ship (posts EXCHANGE_DISPATCH, never SALE
+ * - see InventoryService.recordExchangeDispatch) -> deliver
+ * AUTOMATICALLY completes the Exchange
+ * (OrderService.markFulfilmentDelivered's own exchange branch) - the
+ * normal happy path. `markReplacementFulfilled`'s own explicit staff
+ * confirmation remains ONLY as an exception/recovery mechanism (a
+ * replacement genuinely fulfilled outside this tracked pipeline), never
+ * the normal route to COMPLETED. See the Exchange model's own schema
+ * comment.
  */
 export class ExchangeService {
   private readonly order: OrderService;
+  private readonly warehouse: WarehouseService;
   private readonly inventory: InventoryService;
   private readonly catalog: CatalogService;
   private readonly storeCredit: StoreCreditService;
@@ -66,6 +102,7 @@ export class ExchangeService {
     provider?: ShippingProvider,
   ) {
     this.order = new OrderService(fastify);
+    this.warehouse = new WarehouseService(fastify);
     this.inventory = new InventoryService(fastify);
     this.catalog = new CatalogService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
@@ -619,32 +656,63 @@ export class ExchangeService {
     // Independent-review repair (finding 3, 2026-09-26): independent
     // review did not accept `status = COMPLETED` merely because the
     // replacement's stock was set aside - a customer exchange is not
-    // complete until the replacement actually reaches the customer.
-    // Physical forward fulfilment (pick/pack/ship/tracking) of the
-    // allocated replacement has no certified integration with M16/M17's
-    // OrderLine-anchored PickTask/OrderFulfilment/Shipment pipeline in
-    // this pass - a genuine architecture question, not silently guessed
-    // (see EXC-004 in blueprint/DECISION_REGISTER.md for the
-    // DECISION_REQUIRED options). So this only reaches
-    // REPLACEMENT_ALLOCATED here - the inventory side is fully
-    // resolved, but COMPLETED is reserved for markReplacementFulfilled's
-    // own explicit staff confirmation that the replacement genuinely
-    // reached its customer-complete boundary.
-    await this.prisma.exchange.updateMany({
+    // complete until the replacement actually reaches the customer. So
+    // this only reaches REPLACEMENT_ALLOCATED here - the inventory side
+    // is fully resolved, but COMPLETED requires the replacement's actual
+    // physical fulfilment.
+    //
+    // EXC-004 Option 2 repair (2026-09-26, Product Owner decision): that
+    // physical fulfilment now genuinely reuses M16/M17's certified
+    // PickTask/OrderFulfilment/Shipment pipeline (generalized to a
+    // polymorphic fulfilment source - see those models' own schema
+    // comments), rather than stopping at a manual staff stand-in. The
+    // `updateMany`'s own `count` is this method's compare-and-swap: only
+    // the ONE caller that genuinely wins this transition (this method
+    // can race itself - both the QC-pass path and the payment-capture
+    // webhook path call it, and either can arrive last) creates the
+    // PickTask, so a concurrent double-call can never create two.
+    const claimed = await this.prisma.exchange.updateMany({
       where: { id: exchange.id, status: { notIn: ['REPLACEMENT_ALLOCATED', 'COMPLETED', 'CANCELLED', 'REPLACEMENT_UNAVAILABLE'] } },
       data: { status: 'REPLACEMENT_ALLOCATED', replacementAllocatedAt: new Date() },
+    });
+    if (claimed.count !== 1) return; // lost the race - the winner already did (or is doing) the rest
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.warehouse.createPickTaskForExchange(tx, {
+        id: exchange.id,
+        orderId: exchange.orderId,
+        replacementSkuId: exchange.replacementSkuId,
+        originalLocationId: exchange.originalLocationId,
+        quantity: exchange.quantity,
+      });
     });
     await recordAudit(this.prisma, { actorType: 'SYSTEM', action: 'exchange.replacement_allocated', entityType: 'Exchange', entityId: exchange.id, reference: exchange.orderId });
   }
 
   /**
-   * The ONLY path that ever moves an Exchange to COMPLETED (finding 3) -
-   * an explicit staff confirmation that the replacement fulfilment has
-   * actually reached its customer-complete boundary. A manual/follow-on
-   * action, not driven by any automated pipeline in this pass (see
-   * tryComplete's own docblock and EXC-004) - this is the honest
-   * minimum that keeps "COMPLETED" meaningful without guessing an
-   * unbuilt integration.
+   * EXC-004 Option 2 repair (2026-09-26): the staff action that groups
+   * this exchange's own (already-PICKED) replacement PickTask into a
+   * new OrderFulfilment, so it can flow through the SAME
+   * pack/ready-to-ship/ship/deliver routes a normal order's own
+   * fulfilment already uses (see OrderService.assignExchangeToFulfilment's
+   * own docblock for the full eligibility/idempotency discipline).
+   */
+  async assignReplacementToFulfilment(exchangeId: string, staffId: string) {
+    return this.order.assignExchangeToFulfilment(exchangeId, staffId);
+  }
+
+  /**
+   * EXC-004 Option 2 repair (2026-09-26): now an EXCEPTION/RECOVERY
+   * mechanism only, kept for a replacement genuinely fulfilled outside
+   * the tracked warehouse/shipping pipeline - the NORMAL happy path to
+   * COMPLETED is now automatic (OrderService.markFulfilmentDelivered's
+   * own exchange branch, fired the instant the replacement's
+   * OrderFulfilment/Shipment reaches DELIVERED). This method still
+   * requires REPLACEMENT_ALLOCATED and is still idempotent - it is
+   * deliberately NOT restricted from being called while a PickTask/
+   * OrderFulfilment already exists in progress, since a genuine
+   * recovery (e.g. a warehouse issue resolved manually, outside the
+   * system) can legitimately need it even then.
    */
   async markReplacementFulfilled(exchangeId: string, staffId: string): Promise<Exchange> {
     return this.prisma.$transaction(async (tx) => {
@@ -674,13 +742,50 @@ export class ExchangeService {
 
   // --- Reads ---
 
-  async getExchange(id: string): Promise<Exchange> {
-    const exchange = await this.prisma.exchange.findUnique({ where: { id } });
-    if (!exchange) throw new NotFoundError('Exchange', id);
-    return exchange;
+  /**
+   * EXC-004 Option 2 repair (2026-09-26): loads this exchange's
+   * replacement PickTask/OrderFulfilment/Shipment (if any exist yet) as
+   * a read-only projection - see ExchangeReplacementFulfilmentView's
+   * own docblock.
+   */
+  private async loadReplacementFulfilmentView(exchangeId: string): Promise<ExchangeReplacementFulfilmentView> {
+    const [pickTask, fulfilment] = await Promise.all([
+      this.prisma.pickTask.findUnique({
+        where: { exchangeId },
+        select: { id: true, status: true, allocatedQuantity: true, pickedQuantity: true },
+      }),
+      this.prisma.orderFulfilment.findUnique({ where: { exchangeId }, include: { shipment: true } }),
+    ]);
+    return {
+      pickTask: pickTask ?? null,
+      fulfilment: fulfilment
+        ? {
+            id: fulfilment.id,
+            status: fulfilment.status,
+            packedAt: fulfilment.packedAt,
+            shippedAt: fulfilment.shippedAt,
+            deliveredAt: fulfilment.deliveredAt,
+            shipment: fulfilment.shipment
+              ? {
+                  id: fulfilment.shipment.id,
+                  provider: fulfilment.shipment.provider,
+                  status: fulfilment.shipment.status,
+                  trackingRef: fulfilment.shipment.trackingRef,
+                  deliveryAttempts: fulfilment.shipment.deliveryAttempts,
+                }
+              : null,
+          }
+        : null,
+    };
   }
 
-  async getExchangeForCustomer(id: string, identity: CartOwnerIdentity): Promise<Exchange> {
+  async getExchange(id: string): Promise<ExchangeView> {
+    const exchange = await this.prisma.exchange.findUnique({ where: { id } });
+    if (!exchange) throw new NotFoundError('Exchange', id);
+    return { ...exchange, replacementFulfilment: await this.loadReplacementFulfilmentView(id) };
+  }
+
+  async getExchangeForCustomer(id: string, identity: CartOwnerIdentity): Promise<ExchangeView> {
     const exchange = await this.getExchange(id);
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: exchange.orderId } });
     const owns = (identity.customerId && order.customerId === identity.customerId) || (identity.guestSessionId && order.guestSessionId === identity.guestSessionId);

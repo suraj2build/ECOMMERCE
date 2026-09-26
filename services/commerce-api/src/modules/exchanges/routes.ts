@@ -135,6 +135,17 @@ const exchangeRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await exchanges.recordQcAndDisposition(id, request.staffUser!.id, body));
   });
 
+  // EXC-004 Option 2 repair (2026-09-26): groups this exchange's own
+  // (already-PICKED via /warehouse/pick-tasks/:id/pick, reused
+  // unchanged) replacement pick task into a new OrderFulfilment - from
+  // here, pack/ready-to-ship/ship/deliver reuse the SAME
+  // /orders/fulfilments/:fulfilmentId/* routes a normal order's own
+  // fulfilment already uses (see ExchangeService.assignReplacementToFulfilment).
+  fastify.post('/exchanges/:id/fulfilment', { preHandler: fulfilAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    reply.status(201).send(await exchanges.assignReplacementToFulfilment(id, request.staffUser!.id));
+  });
+
   // Independent-review repair (finding 3, 2026-09-26): the only route
   // that can move an exchange from REPLACEMENT_ALLOCATED to COMPLETED -
   // see ExchangeService.markReplacementFulfilled's own docblock.

@@ -75,6 +75,38 @@ export class WarehouseService {
   }
 
   /**
+   * EXC-004 Option 2 repair (2026-09-26): the Exchange-replacement
+   * analogue of `createPickTasksForOrder` - one PENDING PickTask,
+   * exchange-anchored (`exchangeId`, `orderLineId` left null - see the
+   * PickTask model's own schema comment) rather than order-line-
+   * anchored. `orderId` is still the ORIGINAL order the exchange
+   * belongs to (never a second Order). Called from
+   * ExchangeService.tryComplete's own transaction, in the SAME atomic
+   * step that converts the replacement reservation to a firm
+   * allocation (REPLACEMENT_ALLOCATED) - "warehouse work creation"
+   * happens at exactly the moment-of-parity with a normal order's own
+   * ALLOCATED -> PickTask creation. Idempotent by construction: the
+   * caller only reaches this once per Exchange (the same `updateMany`
+   * guard that claims the REPLACEMENT_ALLOCATED transition also
+   * prevents a concurrent second call), and `exchangeId`'s own unique
+   * constraint is a defence-in-depth backstop against any other path.
+   */
+  async createPickTaskForExchange(
+    tx: Prisma.TransactionClient,
+    exchange: { id: string; orderId: string; replacementSkuId: string; originalLocationId: string; quantity: number },
+  ): Promise<void> {
+    await tx.pickTask.create({
+      data: {
+        orderId: exchange.orderId,
+        exchangeId: exchange.id,
+        skuId: exchange.replacementSkuId,
+        locationId: exchange.originalLocationId,
+        allocatedQuantity: exchange.quantity,
+      },
+    });
+  }
+
+  /**
    * Row-locks and returns one PickTask by id, MUST run inside a
    * transaction - see the class docblock on concurrency.
    */
@@ -84,7 +116,8 @@ export class WarehouseService {
   ): Promise<{
     id: string;
     orderId: string;
-    orderLineId: string;
+    orderLineId: string | null;
+    exchangeId: string | null;
     skuId: string;
     locationId: string;
     allocatedQuantity: number;
@@ -96,7 +129,8 @@ export class WarehouseService {
       {
         id: string;
         orderId: string;
-        orderLineId: string;
+        orderLineId: string | null;
+        exchangeId: string | null;
         skuId: string;
         locationId: string;
         allocatedQuantity: number;
@@ -104,7 +138,7 @@ export class WarehouseService {
         status: PickTaskStatus;
         idempotencyKey: string | null;
       }[]
-    >`SELECT "id", "orderId", "orderLineId", "skuId", "locationId", "allocatedQuantity", "pickedQuantity", "status", "idempotencyKey"
+    >`SELECT "id", "orderId", "orderLineId", "exchangeId", "skuId", "locationId", "allocatedQuantity", "pickedQuantity", "status", "idempotencyKey"
       FROM "pick_tasks"
       WHERE "id" = ${pickTaskId}
       FOR UPDATE`;
@@ -151,6 +185,7 @@ export class WarehouseService {
       id: task.id,
       orderId: task.orderId,
       orderLineId: task.orderLineId,
+      exchangeId: task.exchangeId,
       skuId: task.skuId,
       styleName: task.sku?.style?.name,
       colourName: task.sku?.colour?.name,
@@ -229,29 +264,41 @@ export class WarehouseService {
         );
       }
 
-      // Re-verify against the live OrderLine - a line can be cancelled by
-      // a staff/CS action between task creation and this pick attempt
-      // (the "pick cancelled line" adversarial scenario).
-      const line = await tx.orderLine.findUniqueOrThrow({ where: { id: task.orderLineId } });
-      if (line.status === 'CANCELLED') {
-        await tx.pickTask.update({
-          where: { id: task.id },
-          data: { status: 'CANCELLED', idempotencyKey: params.idempotencyKey },
-        });
-        await recordAudit(tx, {
-          actorType: 'STAFF',
-          actorStaffId: params.staffId,
-          action: 'warehouse.pick.blocked_cancelled_line',
-          entityType: 'PickTask',
-          entityId: task.id,
-          reference: task.orderId,
-        });
-        return { kind: 'line_cancelled' as const, orderLineId: task.orderLineId };
-      }
-      if (line.status !== 'ALLOCATED') {
-        throw new ValidationError(
-          `Order line '${task.orderLineId}' is not eligible for picking (status '${line.status}')`,
-        );
+      // EXC-004 Option 2 repair (2026-09-26): an exchange-anchored task
+      // (task.orderLineId === null, task.exchangeId set) has no
+      // OrderLine to re-verify against - and no equivalent race exists:
+      // ExchangeService.cancelExchange is only reachable BEFORE
+      // REPLACEMENT_ALLOCATED, i.e. strictly before this PickTask is
+      // ever created (see ExchangeService.tryComplete's own docblock),
+      // so an exchange this task belongs to can never be cancelled out
+      // from under it the way an OrderLine can.
+      let orderLineId: string | null = null;
+      if (task.orderLineId) {
+        // Re-verify against the live OrderLine - a line can be cancelled
+        // by a staff/CS action between task creation and this pick
+        // attempt (the "pick cancelled line" adversarial scenario).
+        const line = await tx.orderLine.findUniqueOrThrow({ where: { id: task.orderLineId } });
+        if (line.status === 'CANCELLED') {
+          await tx.pickTask.update({
+            where: { id: task.id },
+            data: { status: 'CANCELLED', idempotencyKey: params.idempotencyKey },
+          });
+          await recordAudit(tx, {
+            actorType: 'STAFF',
+            actorStaffId: params.staffId,
+            action: 'warehouse.pick.blocked_cancelled_line',
+            entityType: 'PickTask',
+            entityId: task.id,
+            reference: task.orderId,
+          });
+          return { kind: 'line_cancelled' as const, orderLineId: task.orderLineId };
+        }
+        if (line.status !== 'ALLOCATED') {
+          throw new ValidationError(
+            `Order line '${task.orderLineId}' is not eligible for picking (status '${line.status}')`,
+          );
+        }
+        orderLineId = task.orderLineId;
       }
 
       let status: PickTaskStatus;
@@ -299,34 +346,73 @@ export class WarehouseService {
       });
 
       if (status === 'PICKED') {
-        await tx.orderLine.update({ where: { id: task.orderLineId }, data: { status: 'PICKED' } });
+        if (orderLineId) {
+          await tx.orderLine.update({ where: { id: orderLineId }, data: { status: 'PICKED' } });
+        }
+        // Exchange-anchored: nothing else to update here - the Exchange
+        // itself already reflects REPLACEMENT_ALLOCATED; PICKED is
+        // purely this PickTask's own state, consumed next by
+        // OrderService.assignExchangeToFulfilment.
       } else {
-        // SHORT_PICKED or EXCEPTION - route to the order-exception path
-        // and post the authorized/audited inventory adjustment for the
-        // shortfall (specs/15-warehouse-fulfilment.md, binding).
+        // SHORT_PICKED or EXCEPTION - post the authorized/audited
+        // inventory adjustment for the shortfall
+        // (specs/15-warehouse-fulfilment.md, binding) and route to the
+        // appropriate exception path for this task's source.
         const reasonPrefix = status === 'SHORT_PICKED' ? 'Pick shortfall' : `Pick exception (${exceptionType})`;
+        const sourceLabel = orderLineId ? `order line '${orderLineId}'` : `exchange '${task.exchangeId}'`;
         const fullReason = params.exceptionReason
           ? `${reasonPrefix}: ${params.exceptionReason}`
           : `${reasonPrefix}: picked ${pickedQuantity}/${task.allocatedQuantity}`;
 
-        await tx.orderLine.update({
-          where: { id: task.orderLineId },
-          data: { status: 'EXCEPTION', exceptionReason: fullReason },
-        });
+        if (orderLineId) {
+          await tx.orderLine.update({
+            where: { id: orderLineId },
+            data: { status: 'EXCEPTION', exceptionReason: fullReason },
+          });
+        }
 
         await this.inventory.postAdjustment(
           {
             skuId: task.skuId,
             locationId: task.locationId,
             quantityDelta: -shortfall,
-            reason: `${reasonPrefix} on pick task '${task.id}' (order line '${task.orderLineId}')`,
+            reason: `${reasonPrefix} on pick task '${task.id}' (${sourceLabel})`,
             actorStaffId: params.staffId,
             coApproverStaffId: params.coApproverStaffId,
           },
           tx,
         );
 
-        await this.recomputeOrderStatusToException(tx, task.orderId);
+        if (orderLineId) {
+          await this.recomputeOrderStatusToException(tx, task.orderId);
+        } else if (task.exchangeId) {
+          // EXC-004 Option 2 repair (2026-09-26): a pick shortfall/
+          // exception against an exchange replacement has no OrderLine/
+          // Order.EXCEPTION equivalent - reuses the ALREADY-EXISTING
+          // ExchangeStatus.REPLACEMENT_UNAVAILABLE (the same status
+          // ExchangeService.tryComplete already sets when a held
+          // reservation is lost), since both represent the identical
+          // customer-facing fact: "the replacement this Exchange
+          // committed to is no longer deliverable, and needs explicit
+          // human follow-up" - never a new, redundant status. Written
+          // directly (no ExchangeService import - WarehouseService
+          // never imports it, avoiding the circular dependency
+          // ExchangeService's own import of WarehouseService would
+          // otherwise create), the same direct-cross-table-write
+          // precedent this method already uses for order_lines.
+          await tx.exchange.updateMany({
+            where: { id: task.exchangeId, status: 'REPLACEMENT_ALLOCATED' },
+            data: { status: 'REPLACEMENT_UNAVAILABLE' },
+          });
+          await recordAudit(tx, {
+            actorType: 'STAFF',
+            actorStaffId: params.staffId,
+            action: 'exchange.replacement.unavailable',
+            entityType: 'Exchange',
+            entityId: task.exchangeId,
+            reference: task.orderId,
+          });
+        }
       }
 
       await recordAudit(tx, {

@@ -108,7 +108,12 @@ export const PERMISSION_KEYS = [
   // staff confirmation that a REPLACEMENT_ALLOCATED exchange's
   // replacement has actually reached the customer - a distinct,
   // manager-gated action from exchange:qc (which is about the ORIGINAL
-  // item's condition), never bundled into it.
+  // item's condition), never bundled into it. EXC-004 Option 2 repair
+  // (2026-09-26): also gates the new "assign this exchange's picked
+  // replacement to a fulfilment" action (the manager-level checkpoint
+  // before packing/shipping begins) - pick/pack/ship/deliver themselves
+  // reuse warehouse:pick/order:fulfil unchanged (see
+  // OrderService.assignExchangeToFulfilment/markFulfilment* docblocks).
   'exchange:fulfil',
 ] as const;
 

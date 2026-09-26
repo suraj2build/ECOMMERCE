@@ -1428,6 +1428,143 @@ of what is still needed from anyone, and from whom.
       No option is selected by this repair. `REPLACEMENT_ALLOCATED`/
       `markReplacementFulfilled` stand as the honest interim
       state-machine either way this eventually resolves.
+
+      **OPTION 2 SELECTED BY PRODUCT OWNER — 2026-09-26.** The Product
+      Owner explicitly selected Option 2 (generalize `PickTask`/
+      `OrderFulfilment`/`Shipment` to accept either an `OrderLine` OR an
+      `Exchange` anchor), with explicit hard constraints: no second
+      `Order`; no fabricated replacement `OrderLine`; no parallel
+      exchange-only warehouse/shipping pipeline; `markReplacementFulfilled`
+      demoted to an exception/recovery mechanism only, never the normal
+      happy path; a genuine DB-level "exactly one source" guarantee
+      (nullable dual-source FKs, not an unvalidated generic polymorphic
+      reference); every existing M16/M17 certified invariant preserved
+      unchanged; and inventory-ledger semantics for the replacement's
+      physical dispatch defined explicitly rather than reusing
+      `ORDER_LINE` `SALE` semantics. Implemented the same day
+      (migrations `20260926120000_exchange_fulfilment_generalization`,
+      `20260926120100_exchange_dispatch_unique_index`):
+
+      - **Schema.** `PickTask.orderLineId` is now nullable; a new
+        `PickTask.exchangeId` (nullable, `@unique`) is added, with a
+        same-row CHECK constraint (`pick_tasks_source_xor_check`:
+        `(orderLineId IS NOT NULL) != (exchangeId IS NOT NULL)`) — a
+        genuine per-row XOR, the exact tool this schema already uses
+        elsewhere (`return_policies_scope_xor_check`/
+        `orders_identity_xor_check`). `OrderFulfilment` gains a nullable
+        `exchangeId` (`@unique`); its own exclusivity ("sourced EITHER by
+        child `order_lines` OR by `exchangeId`, never both") is a genuine
+        CROSS-TABLE invariant a same-row CHECK cannot express, so it is
+        enforced instead by a trigger pair
+        (`check_fulfilment_line_exclusivity` on `order_lines` BEFORE
+        INSERT/UPDATE OF `fulfilmentId`; `check_exchange_fulfilment_exclusivity`
+        on `order_fulfilments` BEFORE INSERT/UPDATE OF `exchangeId`) — the
+        "equally strong relational design" the Product Owner's own
+        instruction explicitly permitted as an alternative to a raw
+        CHECK, and the correct SQL tool for a cross-table invariant.
+        `orderId` stays `NOT NULL` on both `PickTask` and
+        `OrderFulfilment` even for an exchange-anchored row — it is the
+        ORIGINAL order the exchange belongs to (never a second `Order`),
+        so every existing `orderId`-scoped index/query/RTO lookup needed
+        zero changes. `Shipment` needed NO schema change at all: it is
+        1:1 with `OrderFulfilment` (`fulfilmentId` `@unique`), so its own
+        source is entirely derived from whichever `OrderFulfilment` it is
+        attached to.
+      - **Inventory-ledger semantics (defined explicitly, not guessed).**
+        A new `InventoryTxnType.EXCHANGE_DISPATCH`, posted by a new
+        `InventoryService.recordExchangeDispatch` (same combined
+        `onHand -= qty` / `reserved -= qty` balance effect as `recordSale`,
+        same reservation-validity/sufficiency checks, same partial-unique-
+        index exactly-once defence — `inventory_transactions_exchange_dispatch_once`,
+        scoped to `type='EXCHANGE_DISPATCH' AND referenceType='EXCHANGE'`)
+        — but a DISTINCT type and method from `SALE`, since the
+        replacement was never a second retail transaction: no second
+        `Order`/`OrderLine`/invoice exists for it, and its price
+        difference was already settled by `Exchange` itself
+        (`CUSTOMER_PAYS` payment or `STORE_CREDIT`) at
+        `REPLACEMENT_ALLOCATED` time — conflating it with `SALE` would
+        misrepresent the ledger as a second sale. Any GST/invoice
+        consequence of this physical dispatch is explicitly **TAX/
+        COMPLIANCE REVIEW REQUIRED** — not decided or guessed here; this
+        change posts only the inventory-ledger consequence, never a tax
+        document.
+      - **Service layer.** `WarehouseService` gained
+        `createPickTaskForExchange` (the Exchange analogue of
+        `createPickTasksForOrder`, called from `ExchangeService.tryComplete`'s
+        own reservation-conversion transaction — the exact moment-of-parity
+        with a normal order's ALLOCATED → PickTask creation) and a branch
+        in `recordPickOutcome`: an exchange-anchored task has no
+        `OrderLine` to re-verify (moot anyway, since `cancelExchange` is
+        only reachable BEFORE `REPLACEMENT_ALLOCATED`, i.e. strictly
+        before its `PickTask` can exist); a pick shortfall/exception
+        routes to the ALREADY-EXISTING `ExchangeStatus.REPLACEMENT_UNAVAILABLE`
+        (the same status a lost reservation already used) rather than
+        inventing a new one, since both represent the identical fact:
+        "the replacement this Exchange committed to is no longer
+        deliverable." `OrderService` gained `assignExchangeToFulfilment`
+        (the Exchange analogue of `assignLinesToFulfilment` — requires the
+        replacement `PickTask` to be `PICKED`, idempotent by construction)
+        and branches in `markFulfilmentShipped` (posts
+        `EXCHANGE_DISPATCH` instead of iterating child lines/`recordSale`
+        when `fulfilment.exchangeId` is set) and `markFulfilmentDelivered`
+        (flips `Exchange.status` to `COMPLETED` — the normal, AUTOMATIC
+        happy path — recording `replacementFulfilledAt`/
+        `replacementFulfilledByStaffId`, the latter left `null` when
+        delivery was carrier/webhook-triggered rather than a staff
+        action). Both write directly to the `exchanges`/`pick_tasks`
+        tables rather than importing `ExchangeService` (the same
+        avoided-circular-dependency precedent `WarehouseService` already
+        used for direct `order_lines` writes — `ExchangeService` imports
+        `OrderService`/`WarehouseService`, so the reverse import would
+        cycle). `ShippingService` needed ZERO changes: every method was
+        already fully generic over `fulfilmentId`; its one RTO branch
+        (`OrderService.markRTO`) already catches and reconciles-for-a-
+        human exactly the `ValidationError` an exchange-anchored
+        shipment's RTO produces (the original order's own lines are
+        DELIVERED, not SHIPPED), via the SAME pre-existing multi-shipment
+        fallback — no special-casing needed.
+      - **Completion.** `Exchange.status` now reaches `COMPLETED`
+        AUTOMATICALLY the instant its replacement's `OrderFulfilment`/
+        `Shipment` reaches `DELIVERED` — the normal happy path.
+        `markReplacementFulfilled` remains, demoted exactly as instructed
+        to an exception/recovery mechanism for a replacement genuinely
+        fulfilled outside this tracked pipeline — never the route a
+        correctly-flowing exchange takes.
+      - **New route.** `POST /exchanges/:id/fulfilment` (gated by the
+        existing `exchange:fulfil` permission — no new permission
+        needed) groups an exchange's already-`PICKED` replacement task
+        into a new `OrderFulfilment`; pack/ready-to-ship/ship/deliver all
+        REUSE the existing `/orders/fulfilments/:fulfilmentId/*` routes
+        completely unchanged (gated by the existing `order:fulfil`), and
+        pick reuses the existing `/warehouse/pick-tasks/:id/pick`
+        (gated by the existing `warehouse:pick`) — no parallel routes,
+        no new base permissions, only the one manager-level checkpoint
+        `exchange:fulfil` already gated.
+      - **Tests.** `test/integration/exchange-fulfilment.test.ts` (16
+        adversarial tests): normal `OrderLine` fulfilment unchanged;
+        full pick→pack→ship→deliver→`COMPLETED` happy path (manual staff
+        routes AND real carrier tracking/webhook-driven delivery, in two
+        separate tests); replacement cannot ship before allocation (no
+        `PickTask` exists yet); no duplicate warehouse work (idempotent
+        assign-to-fulfilment); concurrent pick; concurrent assign-to-
+        fulfilment; concurrent shipment creation; duplicate `delivered`
+        webhook (safe no-op, no double completion/dispatch); tracking
+        visible to the owning guest (and a clean 404 for a different
+        guest); `COMPLETED` reached ONLY after `DELIVERED` (not at
+        `SHIPPED`/`IN_TRANSIT`); exactly-once `EXCHANGE_DISPATCH`, never
+        a second `SALE`, and the original order's own `SALE` row
+        untouched; a pick exception on the replacement routing to
+        `REPLACEMENT_UNAVAILABLE`; a `QC_FAILED` and a `CANCELLED`
+        exchange each never getting a `PickTask` at all; RBAC (a role
+        without `exchange:fulfil` is rejected, unauthenticated is
+        rejected); IDOR/BOLA (a role without the base
+        `warehouse:pick`/`order:fulfil` permissions is rejected on an
+        exchange-anchored task exactly as on a normal one); idempotency-
+        key replay (retry/process-restart); and two unrelated exchanges
+        on two different orders progressing independently under real
+        concurrency. All existing `exchanges.test.ts`/`warehouse.test.ts`/
+        `shipping.test.ts` suites re-run green, zero regressions, proving
+        every preserved invariant this instruction listed.
   - Full design rationale and the 19-point adversarial matrix:
     `ExchangeService`'s own docblock in
     `services/commerce-api/src/modules/exchanges/service.ts`, and
