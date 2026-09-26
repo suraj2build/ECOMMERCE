@@ -121,8 +121,11 @@ export class CustomerProfileService {
       // Lock this customer's whole address set as the shared
       // serialization point against concurrent create/delete/set-default
       // calls for the same customer (same idiom as
-      // StoreCreditService.lockOrCreateAccount).
-      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} FOR UPDATE`;
+      // StoreCreditService.lockOrCreateAccount, generalized to a
+      // multi-row set - see the ORDER BY note on atomicSetDefault's
+      // sibling queries below for why a deterministic row order is
+      // required here, not optional).
+      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
       const existingCount = await tx.customerAddress.count({ where: { customerId } });
       const created = await tx.customerAddress.create({
         data: {
@@ -160,7 +163,7 @@ export class CustomerProfileService {
   async updateAddress(customerId: string, addressId: string, input: Partial<AddressInput>): Promise<CustomerAddress> {
     await this.loadOwnedAddress(customerId, addressId);
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
       const updated = await tx.customerAddress.update({
         where: { id: addressId },
         data: {
@@ -190,7 +193,21 @@ export class CustomerProfileService {
   async setDefaultAddress(customerId: string, addressId: string): Promise<CustomerAddress> {
     await this.loadOwnedAddress(customerId, addressId);
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} FOR UPDATE`;
+      // ORDER BY "id" is not cosmetic: a real independent-review-caught
+      // bug had this SELECT ... FOR UPDATE with no explicit order.
+      // Postgres gives no ordering guarantee for a bare multi-row SELECT
+      // ... FOR UPDATE, so two genuinely concurrent transactions locking
+      // the SAME customer's row set could acquire those locks in
+      // DIFFERENT orders (e.g. one via an index scan, the other via a
+      // sequential scan under different cache/plan conditions) - a
+      // textbook lock-order-inversion deadlock (Postgres error 40P01),
+      // which surfaced as a raw 500 under CI's genuinely concurrent
+      // set-default test. Ordering by the primary key forces every
+      // transaction to acquire these locks in the SAME global order, so
+      // the loser always blocks cleanly behind the winner instead of
+      // deadlocking - proven by test/integration/customer-profile.test.ts's
+      // own concurrent set-default and delete-vs-set-default tests.
+      await tx.$queryRaw`SELECT 1 FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
       await this.atomicSetDefault(tx, customerId, addressId);
       await recordAudit(tx, {
         actorType: 'CUSTOMER',
@@ -211,7 +228,7 @@ export class CustomerProfileService {
       // (or delete-vs-delete) on the SAME customer's addresses converge
       // to a single well-defined outcome rather than racing.
       const rows = await tx.$queryRaw<CustomerAddress[]>`
-        SELECT * FROM "customer_addresses" WHERE "customerId" = ${customerId} FOR UPDATE`;
+        SELECT * FROM "customer_addresses" WHERE "customerId" = ${customerId} ORDER BY "id" FOR UPDATE`;
       const target = rows.find((r) => r.id === addressId);
       if (!target) throw new NotFoundError('Address', addressId);
 

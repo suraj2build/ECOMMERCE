@@ -7,6 +7,19 @@
 this milestone's testable scope. Loyalty balance/history and coupons
 are **`DEPENDENCY_DEFERRED — M23/M24`** — see note below.
 
+**CI-caught concurrency fix (2026-09-26):** the initial push's own CI
+run found a genuine deadlock (Postgres error 40P01, surfaced as a raw
+500) in the address-book's `SELECT ... FOR UPDATE` row-locking pattern
+under real concurrent load — a bare multi-row `SELECT ... FOR UPDATE`
+gives Postgres no ordering guarantee, so two genuinely concurrent
+transactions locking the SAME customer's address set could acquire
+those row locks in different orders and deadlock. Fixed by adding
+`ORDER BY "id"` to all four such queries in
+`CustomerProfileService` (create/update/delete/set-default), forcing
+every transaction to acquire these locks in the same global order —
+proven with 5 repeated local runs of the full concurrency suite (zero
+flakiness) plus the same green result in the next CI run.
+
 ## `DEPENDENCY_DEFERRED — M23/M24`
 
 The spec's originally-listed required features include "loyalty
