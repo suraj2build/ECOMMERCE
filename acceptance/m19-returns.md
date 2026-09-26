@@ -2,8 +2,11 @@
 
 **Spec(s):** `specs/18-returns.md`
 **Status:** M19 build complete 2026-09-25 (engineering scope) — see
-`blueprint/DECISION_REGISTER.md` `RET-005`. Not self-declared
-`VERIFIED`; independent review pending.
+`blueprint/DECISION_REGISTER.md` `RET-005`. Independent review of that
+build found the mobile photo/evidence gap below required closing;
+repaired 2026-09-26 (Post-Purchase Phase independent-review repair,
+finding 2) — see `RET-005`'s repair addendum. Not self-declared
+`VERIFIED`; independent re-review pending.
 
 ## Business acceptance
 
@@ -50,15 +53,39 @@
 
 ## Mobile behavior
 
-- [ ] Photo upload for return condition (if required by config) uses a
-      mobile-camera-friendly flow. **Not built in this pass** — no
-      photo/evidence capture exists anywhere in the M19 implementation
-      (`ReturnLine` has no evidence/attachment fields). The approved
-      spec/build instruction treats this as configured/optional
-      ("only if configured"); it was not configured on, and object-
-      storage-backed evidence capture was left out rather than
-      half-built. A genuine, documented scope gap, not a silent one —
-      flagged here for a follow-up pass rather than claimed done.
+- [x] Photo upload for return condition (if required by config) uses a
+      mobile-camera-friendly flow. **Implemented 2026-09-26**
+      (independent-review repair, finding 2): `ReturnPolicy.evidenceRequired`
+      (config-driven, resolved through the SAME style > category >
+      platform-default order as `windowDays`/`returnable`, never
+      universally mandatory) drives whether the storefront presents the
+      upload step as required or optional; the actual upload endpoint
+      accepts a file regardless, so a CS-assisted upload always works.
+      Storage: a new minimal provider abstraction
+      (`modules/returns/evidence-storage.ts`) — no usable S3/MinIO
+      client existed anywhere in this codebase before this repair (only
+      ADR-0007's config/docker-compose scaffolding, never called), and
+      no MinIO instance is reachable in CI/this sandbox to test against,
+      so the actually-shipped, actually-tested provider is private
+      local-disk storage (never registered as a static-served
+      directory — no public URL for any object regardless of key),
+      behind the SAME interface a future real S3 provider could
+      implement without any `ReturnService` change. Security: ownership/
+      RBAC-checked on every read (customer: clean 404 IDOR pattern;
+      staff: `return:read`), server-generated opaque object keys (never
+      a client filename/path), an allowlisted MIME type sniffed from the
+      file's OWN magic bytes — never the client-declared Content-Type,
+      closing "reject unsupported/executable payloads" against a
+      renamed-executable upload — a bounded file size (config, plus a
+      transport-level `@fastify/multipart` backstop), and a bounded
+      file count per line. See `test/integration/returns.test.ts`
+      "Return evidence upload" (12 tests: upload/list/download, PNG
+      sniffing, executable rejection, oversized rejection, per-line
+      cap, customer/staff IDOR on both the metadata and content routes,
+      RBAC, unauthenticated rejection, evidenceRequired resolution,
+      rejection once cancelled) and the mobile Playwright coverage
+      below. See `RET-005` in `blueprint/DECISION_REGISTER.md` for the
+      full design record.
 
 ## Test requirements
 
@@ -74,9 +101,17 @@
       a real Razorpay redirect, which no E2E spec in this repo drives.
       Return initiation/withdrawal itself is also directly browser-
       tested on desktop and mobile viewports
-      (`test/e2e-storefront/returns.spec.ts`).
+      (`test/e2e-storefront/returns.spec.ts`). The mobile-camera-
+      friendly evidence upload (finding 2 repair) is itself driven
+      through a real genuine-mobile-viewport (390×844) browser test —
+      `test/e2e-storefront/returns.spec.ts` "uploads return-condition
+      evidence via the mobile-camera-friendly upload control on a
+      genuine mobile viewport", using Playwright's `setInputFiles`
+      against the real `<input type="file" capture="environment">`
+      control (the standard way to drive a camera-capture input in an
+      automated test), asserting both the browser-visible outcome and
+      the database-verified `ReturnEvidence` row.
 
 ## Definition of Done
 
-All boxes above checked except the documented mobile photo-upload gap,
-plus `acceptance/README.md`.
+All boxes above checked, plus `acceptance/README.md`.

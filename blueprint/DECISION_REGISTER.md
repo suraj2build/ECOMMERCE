@@ -982,10 +982,26 @@ of what is still needed from anyone, and from whom.
     not 7×86400000ms to the millisecond; this was a genuine off-by-one
     this build's own boundary test caught and fixed.
   - **Locking:** Return/ReturnLine/ReturnPickup form their own,
-    fully self-contained lock domain — Return operations never touch
-    `OrderLine`/`OrderFulfilment`/`PickTask` rows at all, so there is no
-    lock-ordering interaction with any M15–M18 transition to reason
-    about, unlike `CAN-004`'s own fulfilment-lock dance.
+    fully self-contained lock domain distinct from `OrderFulfilment`/
+    `PickTask` — no lock-ordering interaction with any M15–M18
+    fulfilment transition to reason about, unlike `CAN-004`'s own
+    fulfilment-lock dance.
+    - **2026-09-26 correction (independent-review repair, finding 5):**
+      the claim above that Return operations "never touch `OrderLine`...
+      rows at all" was true for the READS `performInitiate` always did,
+      but incomplete about locking — it never actually row-locked the
+      `OrderLine`(s) it read before checking for a conflicting Exchange,
+      which is a genuine gap (see `EXC-004`'s matching correction).
+      `performInitiate` now locks every targeted `OrderLine` row
+      (`SELECT ... FOR UPDATE`, sorted for deadlock-avoidance, the same
+      idiom `OrderService`'s own multi-line lock already established)
+      as the FIRST statement of its transaction, specifically so a
+      genuinely concurrent `ExchangeService.performInitiate` on the
+      SAME line serializes on that identical row lock rather than both
+      racing to completion. This is the one exception to "Return never
+      touches OrderLine rows" — a read/lock only, never a write; the
+      claim about `OrderFulfilment`/`PickTask` remains accurate and
+      unchanged.
   - **Reverse logistics:** reuses the SAME `ShippingProvider.
     initiateReversePickup` two-phase durable-intent pattern
     `SHIP-005`/M17 established for forward shipments — the
@@ -1013,6 +1029,49 @@ of what is still needed from anyone, and from whom.
     executes refund/store-credit logic itself — `refundEligible`/
     `refundEligibleAt` are a durable, auditable, traceable handoff only,
     consumed later by M20's `RefundService` (see `REF-005`).
+  - **Mobile evidence upload (2026-09-26, independent-review repair,
+    finding 2):** the original M19 build left this genuinely unbuilt
+    (acceptance/m19-returns.md's own mobile-behaviour box was left
+    honestly unchecked, not silently marked done). Repaired by adding
+    `ReturnPolicy.evidenceRequired` (config-driven, resolved through the
+    SAME style > category > platform-default order `resolveReturnPolicy`
+    already uses for `windowDays`/`returnable` — no separate/duplicated
+    policy table) and a new `ReturnEvidence` model (one row per uploaded
+    file, `objectKey String @unique` as the ONLY pointer into storage).
+    - **Storage:** no usable S3/MinIO client existed anywhere in this
+      codebase before this repair — ADR-0007 scaffolds the config
+      surface (`S3_ENDPOINT`/`S3_BUCKET`) and a MinIO docker-compose
+      service, but no application code ever called it, and no MinIO
+      instance is reachable in CI or this sandbox to test against.
+      Rather than ship an untested S3 client (violating "update
+      acceptance only after real tests prove it"), the minimum provider
+      abstraction this pass can both build AND genuinely verify is a
+      private LOCAL-DISK provider
+      (`modules/returns/evidence-storage.ts`,
+      `EvidenceStorageProvider` interface) — never registered as a
+      static-served directory by any route, so no object has a public
+      URL regardless of key; a real `S3EvidenceStorageProvider` can
+      implement the SAME interface later without touching
+      `ReturnService`.
+    - **Security:** `objectKey` is always server-generated
+      (`crypto.randomUUID()`), never a client-supplied filename/path;
+      the allowlisted MIME type is resolved by sniffing the file's OWN
+      magic-number byte signature (`sniffImageMimeType`), NEVER the
+      client-declared multipart Content-Type — a renamed executable
+      claiming to be `image/jpeg` is rejected on its real bytes, closing
+      "reject unsupported/executable payloads" against the one vector
+      that actually matters; a bounded file size (config, plus a
+      `@fastify/multipart` transport-level backstop) and a bounded
+      file-count-per-line; ownership/RBAC-checked on every read
+      (customer: the same clean-404 IDOR pattern every other storefront
+      return route uses; staff: `return:read`) — content is streamed
+      through the service on every request, never cached behind a
+      reusable URL.
+    - **Test requirements:** `test/integration/returns.test.ts`'s
+      "Return evidence upload" describe block (12 tests) and
+      `test/e2e-storefront/returns.spec.ts`'s genuine-mobile-viewport
+      upload test (Playwright `setInputFiles` against a real
+      `<input type="file" capture="environment">`).
   - Full design rationale and the 31-point adversarial matrix:
     `ReturnService`'s own docblock in
     `services/commerce-api/src/modules/returns/service.ts`, and
@@ -1112,6 +1171,56 @@ of what is still needed from anyone, and from whom.
     to catch-and-recover mid-transaction, which is invalid in Postgres
     (a failed statement aborts the whole transaction); properly fixed
     by retrying the whole transaction once on that specific race.
+  - **2026-09-26 addendum (independent-review repair, finding 4 —
+    deeper refund-concurrency recheck):** the original design reasoned
+    that `RefundStatus` should have "two terminal states, no in-flight
+    PROCESSING state," on the theory that a third status would let two
+    concurrent attempts both think they own the retry. That reasoning
+    had it backwards, and independent review correctly asked for a
+    recheck of PENDING/FAILED retry races, concurrent `settle()` calls,
+    a provider-success-then-process-crash-before-claim scenario, and a
+    reconciliation sweep racing an explicit staff retry. Before this
+    addendum, `settle()` had NO in-flight claim at all — two genuinely
+    concurrent `settle()` calls for the same PENDING/FAILED refund both
+    proceeded straight to calling the external Razorpay/store-credit
+    operation, relying ENTIRELY on that external system's own
+    idempotency (Razorpay's `x-razorpay-idempotency-key`,
+    `StoreCreditService`'s own `idempotencyKey`) rather than any
+    protection this system itself provided.
+    - **Fix:** a new `PROCESSING` status, claimed via a genuine
+      database-level CAS (`updateMany` from PENDING/FAILED, or a
+      PROCESSING row stale past `REFUND_PROCESSING_STALE_SECONDS`, to
+      PROCESSING) as the FIRST thing `settle()` does, BEFORE calling any
+      external operation — the exact same "claim, act, claim again"
+      idiom the existing PENDING→COMPLETED/FAILED claim already used,
+      just applied one step earlier. Only the caller whose conditional
+      update actually affects a row proceeds to call the external
+      operation; a concurrent loser returns the current row immediately
+      without waiting for the winner — a genuine, intentional API
+      behaviour: a caller may transiently observe `PROCESSING` rather
+      than the eventual `COMPLETED` outcome, proven and documented by
+      `refunds.test.ts`'s own concurrency test rather than assumed away.
+      A stale-PROCESSING row (the process that claimed it crashed before
+      ever reaching the terminal claim) is recoverable via the SAME
+      age-based-cutoff idiom `PaymentService.expireStalePayments`
+      already established elsewhere in this codebase.
+    - **Honest limit of what this closes:** the PROCESSING claim closes
+      every race genuinely within this system's OWN control. It does
+      NOT, and cannot, strengthen Razorpay's own idempotency-key
+      contract, which is real but TIME-BOUNDED (honored for a fixed
+      window from first use, not an unconditional forever-exactly-once
+      guarantee) — a crash-then-retry straddling more than that window
+      is a residual risk inherent to building on Razorpay's actual
+      documented contract, not something application code can close,
+      and this repair does not claim otherwise.
+    - **Test requirements:** `refunds.test.ts`'s new tests prove (1) a
+      concurrent PREPAID settlement calls the mocked Razorpay refund
+      endpoint exactly once, (2) a stale-PROCESSING row recovers via
+      retry, (3) a FRESH (non-stale) PROCESSING row is left alone by a
+      concurrent retry and never re-calls the provider, and (4) an
+      explicit staff retry racing the reconciliation sweep for the SAME
+      refund still converges to exactly one completed settlement and
+      exactly one provider call.
   - Full design rationale and the 20-point adversarial matrix:
     `RefundService`'s own docblock in
     `services/commerce-api/src/modules/refunds/service.ts`, and
@@ -1193,14 +1302,33 @@ of what is still needed from anyone, and from whom.
     order id) without re-initiating the whole exchange (negative
     scenario #3).
   - **Replacement reservation:** `InventoryService.reserve` with a new
-    `EXCHANGE_REPLACEMENT_HOLD_DAYS` config (default 14 days — far
-    longer than checkout's short-lived default), checked/reserved in
-    the SAME request as initiation (negative scenario #1: a genuine
-    out-of-stock replacement fails the whole call). If that reservation
-    is lost (expired, or otherwise no longer `ACTIVE`) before the
-    original item comes back, the `Exchange` durably transitions to a
-    `REPLACEMENT_UNAVAILABLE` terminal status with an audit row — never
-    a silently lost hold (negative scenario #2).
+    `EXCHANGE_REPLACEMENT_HOLD_DAYS` config (default 14 CALENDAR
+    days — far longer than checkout's short-lived default), checked/
+    reserved in the SAME request as initiation (negative scenario #1: a
+    genuine out-of-stock replacement fails the whole call). If that
+    reservation is lost (expired, or otherwise no longer `ACTIVE`)
+    before the original item comes back, the `Exchange` durably
+    transitions to a `REPLACEMENT_UNAVAILABLE` terminal status with an
+    audit row — never a silently lost hold, and never a silent release
+    that pretends the exchange is proceeding normally (negative scenario
+    #2). Preserves audit history and requires explicit customer/CS
+    resolution once in `REPLACEMENT_UNAVAILABLE`.
+    - **2026-09-26 correction (Post-Purchase Phase independent-review
+      repair, finding 1):** at the original 2026-09-25 build, this
+      14-day default was recorded above as an *engineering* default —
+      the original M21 build instruction explicitly prohibited inventing
+      an arbitrary reservation lifetime, so that framing was wrong. The
+      Product Owner has now explicitly **APPROVED 14 calendar days** as
+      the default replacement-reservation hold in this repair review.
+      This is a genuine, human-given product decision, not an
+      engineering default; `EXCHANGE_REPLACEMENT_HOLD_DAYS` remains
+      configurable (`packages/config/src/index.ts`), and no other
+      arbitrary timing policy has been introduced alongside it. The
+      expiry behaviour itself (durable transition to
+      `REPLACEMENT_UNAVAILABLE`, never a silent release) was already
+      correctly implemented at the original build and is unchanged by
+      this correction — only the status/provenance of the 14-day number
+      itself was wrong and is now fixed.
   - **Completion** (`InventoryService.convertReservation`, firm
     allocation) waits for BOTH the QC-pass gate and payment/credit
     settlement, whichever arrives last — proven under both orderings by
@@ -1230,6 +1358,76 @@ of what is still needed from anyone, and from whom.
     the way `EXC-001` explicitly forbids, is a genuine, non-trivial
     design question left for a dedicated follow-up rather than guessed
     here.
+    - **2026-09-26 correction and DECISION_REQUIRED (Post-Purchase Phase
+      independent-review repair, finding 3):** independent review
+      correctly rejected the original build's `status = COMPLETED` the
+      moment `replacementAllocatedAt` was set - reaching a firm
+      inventory allocation is not the same thing as the replacement
+      actually reaching the customer, and reporting it as complete on
+      that basis alone overstates what happened. Repaired minimally and
+      honestly: `tryComplete` now only reaches a NEW
+      `REPLACEMENT_ALLOCATED` status (never `COMPLETED`); a new,
+      separately-permissioned (`exchange:fulfil`, distinct from
+      `exchange:qc`) staff action,
+      `ExchangeService.markReplacementFulfilled`
+      (`POST /exchanges/:id/replacement-fulfilled`), is the ONLY path
+      that ever sets `status = COMPLETED`, recording
+      `replacementFulfilledAt`/`replacementFulfilledByStaffId` for
+      audit. This is a genuine, tested state distinction (see
+      `exchanges.test.ts` "replacement fulfilment state distinction"),
+      not merely a renamed status.
+
+      **DECISION_REQUIRED — EXCHANGE REPLACEMENT FULFILMENT MODEL.**
+      Whether/how to integrate the replacement's actual physical
+      fulfilment with M16/M17's certified `PickTask`/`OrderFulfilment`/
+      `Shipment` pipeline remains open and is NOT resolved by this
+      repair - `markReplacementFulfilled` is a manual staff
+      confirmation standing in for that integration, not a replacement
+      for deciding it. `PickTask.orderLineId`,
+      `OrderFulfilment.orderId`/`.lines: OrderLine[]`, and
+      `Shipment.fulfilmentId`/`.orderId` are all hard-anchored to an
+      `OrderLine` belonging to a real, invoiced `Order` - none of them
+      have any notion of "ship this allocated unit without an
+      OrderLine". Three concrete options, none silently chosen here:
+      1. **Model the replacement as a new `OrderLine` on the SAME
+         existing `Order`** (never a second `Order` - `EXC-001` forbids
+         that representation). Reuses `PickTask`/`OrderFulfilment`/
+         `Shipment`/the exactly-once-`SALE` invariant completely
+         unmodified. Requires deciding what this line's own
+         `unitPriceInclusive`/`taxableValueSnapshot`/`gstRatePercent`/
+         `lineTotalInclusive`/GST-invoice treatment means when the
+         Exchange (not a new `Order`-level payment) already owns
+         settlement of any price difference - a genuine `TAX`-adjacent
+         compliance question this project's own discipline requires
+         routing to qualified review, not engineering guesswork, and
+         `recordSale()`'s exactly-once-SALE semantics would need an
+         explicit answer for a line with no new payment collected
+         through the `Order` itself.
+      2. **Generalize `PickTask`/`OrderFulfilment`/`Shipment` to accept
+         either an `OrderLine` OR an `Exchange` anchor** (nullable dual
+         foreign keys with an XOR check, the same idiom
+         `return_policies_scope_xor_check`/`orders_identity_xor_check`
+         already establish elsewhere in this schema). Avoids the
+         tax/invoice entanglement of option 1 and keeps `Exchange` the
+         sole settlement owner. Its cost is real: it reopens the
+         CERTIFIED M16/M17 schema/services this repair's own binding
+         discipline says to preserve untouched except where strictly
+         required, for every existing `Order` in the system, not only
+         exchanges - a materially larger, cross-milestone change that
+         needs its own dedicated design/regression pass, not a same-day
+         repair addition.
+      3. **Keep `markReplacementFulfilled` as the permanent design** -
+         physical fulfilment of an exchange replacement stays a
+         manual/operational process outside this platform's own
+         pick/pack/ship tracking, by deliberate choice rather than as an
+         interim gap. Cheapest to keep, but means exchange replacements
+         never get customer-visible tracking/ETA the way an ordinary
+         shipment does - a genuine product-experience trade-off for the
+         Product Owner to accept or reject, not an engineering call.
+
+      No option is selected by this repair. `REPLACEMENT_ALLOCATED`/
+      `markReplacementFulfilled` stand as the honest interim
+      state-machine either way this eventually resolves.
   - Full design rationale and the 19-point adversarial matrix:
     `ExchangeService`'s own docblock in
     `services/commerce-api/src/modules/exchanges/service.ts`, and

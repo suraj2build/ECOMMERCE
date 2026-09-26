@@ -1,8 +1,12 @@
 # 20. Exchanges
 
 **Status:** IMPLEMENTED (M21 build complete 2026-09-25, engineering
-scope — see `blueprint/DECISION_REGISTER.md` `EXC-001`–`004`;
-`VERIFIED` pending independent review, not self-declared)
+scope, repaired 2026-09-26 per independent review — see
+`blueprint/DECISION_REGISTER.md` `EXC-001`–`004`; `VERIFIED` pending
+independent re-review, not self-declared). The replacement's physical
+forward-fulfilment integration with M16/M17's certified warehouse/
+shipping pipeline is an open `DECISION_REQUIRED` (see `EXC-004`), not
+resolved by this status.
 
 ## Purpose
 

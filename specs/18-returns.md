@@ -1,8 +1,9 @@
 # 18. Returns
 
 **Status:** IMPLEMENTED (M19 build complete 2026-09-25, engineering
-scope — see `blueprint/DECISION_REGISTER.md` `RET-001`–`005`, `EXC-001`;
-`VERIFIED` pending independent review, not self-declared)
+scope, repaired 2026-09-26 per independent review (mobile evidence
+upload) — see `blueprint/DECISION_REGISTER.md` `RET-001`–`005`,
+`EXC-001`; `VERIFIED` pending independent re-review, not self-declared)
 
 ## Purpose
 

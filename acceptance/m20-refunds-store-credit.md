@@ -2,8 +2,12 @@
 
 **Spec(s):** `specs/19-refunds.md`, `specs/33-store-credit-gift-cards.md` (store-credit ledger foundation)
 **Status:** M20 build complete 2026-09-25 (engineering scope) — see
-`blueprint/DECISION_REGISTER.md` `REF-005`. Not self-declared
-`VERIFIED`; independent review pending.
+`blueprint/DECISION_REGISTER.md` `REF-005`. Independent review of that
+build required a deeper refund-concurrency recheck (a genuine gap: no
+in-flight claim existed before an external settlement call); repaired
+2026-09-26 (Post-Purchase Phase independent-review repair, finding 4) —
+see `REF-005`'s 2026-09-26 addendum. Not self-declared `VERIFIED`;
+independent re-review pending.
 
 ## Business acceptance
 
@@ -51,6 +55,24 @@
 - [x] Refund and store-credit issuance operations are idempotent per
       triggering event ID (`orderLineId` is the structural anchor;
       `idempotencyKey` defense-in-depth on top).
+- [x] **Independent-review repair, finding 4 (deeper recheck):** a
+      genuine in-flight `PROCESSING` claim (a database-level CAS,
+      claimed BEFORE any external Razorpay/store-credit call) closes
+      every settlement race within this system's own control —
+      concurrent `settle()` calls, PENDING/FAILED retry races, a
+      reconciliation sweep racing an explicit staff retry, and a
+      crashed-mid-settlement PROCESSING row recoverable via an
+      age-based stale cutoff (`REFUND_PROCESSING_STALE_SECONDS`).
+      Honestly documents (does not overclaim) the residual, time-bounded
+      limit of Razorpay's own idempotency-key contract, which no
+      application code can strengthen further — see `REF-005`'s
+      2026-09-26 addendum in `blueprint/DECISION_REGISTER.md`.
+      `refunds.test.ts`: "genuinely concurrent PREPAID refund requests
+      call the Razorpay refund endpoint exactly once", "a stale
+      PROCESSING refund... is recoverable via retry", "a FRESH
+      (non-stale) PROCESSING refund is left alone by a concurrent
+      retry", "a reconciliation-sweep pass racing an explicit staff
+      retry... still converges to exactly one completed settlement".
 
 ## Auditability
 

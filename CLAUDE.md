@@ -6,9 +6,11 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-25: `M18_ENGINEERING_CERTIFIED — POST-PURCHASE
-PHASE (M19 RETURNS / M20 REFUNDS & STORE CREDIT / M21 EXCHANGES) BUILD
-COMPLETE, AWAITING INDEPENDENT REVIEW. M22+ NOT AUTHORIZED.`** M19
+**Status as of 2026-09-26: `M18_ENGINEERING_CERTIFIED — POST-PURCHASE
+PHASE (M19 RETURNS / M20 REFUNDS & STORE CREDIT / M21 EXCHANGES) REPAIR
+COMPLETE, AWAITING INDEPENDENT RE-REVIEW. ONE ARCHITECTURE DECISION
+(EXCHANGE REPLACEMENT FULFILMENT) REMAINS OPEN. M22+ NOT AUTHORIZED.`**
+M19
 (Returns), M20 (Refunds & Store Credit), and M21 (Exchanges) were all
 implemented and adversarially tested sequentially, with per-milestone
 validation and commit, exactly as authorized (commits `9e7b7f2`,
@@ -70,6 +72,82 @@ milestone, and `acceptance/m19-returns.md`, `m20-refunds-store-credit.md`,
 same discipline applied at every milestone since Phase 1, that
 determination belongs to the independent reviewer. This agent has
 stopped and is awaiting independent review before any M22+ work.
+
+**An independent review of that Post-Purchase Phase build (starting from
+review head `73de2cf17c0e73a205efbddf8250f6f288602913`) returned five
+findings — none BLOCKER-labeled outright, but all requiring repair —
+fixed 2026-09-26 under a separate, explicitly scoped repair
+authorization.** **Finding 1** (M21): the 14-day `EXCHANGE_REPLACEMENT_HOLD_DAYS`
+default had been recorded as an engineering default, which the original
+build instruction explicitly prohibited — corrected to record it as
+what it actually is, an explicit Product Owner decision made during
+this repair review; the expiry-to-`REPLACEMENT_UNAVAILABLE` behavior
+itself was already correct and unchanged. **Finding 2** (M19): mobile
+condition-photo/evidence upload, left honestly unbuilt at the original
+build, is now implemented — config-driven (`ReturnPolicy.evidenceRequired`,
+never universally mandatory), a new minimal private-object-storage
+abstraction (no usable S3/MinIO client existed anywhere in this
+codebase before this repair, and none is reachable in CI/this sandbox
+to test against, so the shipped, tested provider is local-disk, behind
+an interface a real S3 provider can later implement unchanged),
+magic-byte MIME sniffing that never trusts the client-declared
+Content-Type (closing "reject executable payloads" against the vector
+that actually matters), and full ownership/RBAC/IDOR coverage — proven
+with a genuine mobile-viewport Playwright test using `setInputFiles`
+against a real `capture="environment"` input. **Finding 3** (M21, the
+substantive one): independent review correctly rejected the original
+build's `status = COMPLETED` the moment a replacement was allocated —
+reaching a firm inventory allocation is not the same thing as the
+replacement reaching the customer. Repaired with a new intermediate
+`REPLACEMENT_ALLOCATED` status and a new, separately-permissioned
+(`exchange:fulfil`) explicit staff confirmation
+(`markReplacementFulfilled`) as the ONLY path to `COMPLETED`. Whether/
+how to integrate the replacement's actual physical fulfilment with
+M16/M17's certified `PickTask`/`OrderFulfilment`/`Shipment` pipeline —
+which is hard-anchored to a real, invoiced `OrderLine`, something an
+Exchange deliberately never creates a second one of — is NOT resolved
+by this repair: it is recorded as an open **`DECISION_REQUIRED —
+EXCHANGE REPLACEMENT FULFILMENT MODEL`** with three concrete
+architecture options in `EXC-004` (`blueprint/DECISION_REGISTER.md`),
+for the Product Owner to decide in a future, separately-authorized
+pass. **Finding 4** (M20): a deeper refund-concurrency recheck found
+that `RefundService.settle()` had no in-flight claim before calling the
+external Razorpay/store-credit operation at all — two genuinely
+concurrent `settle()` calls both proceeded straight to the external
+call, relying entirely on THAT system's own idempotency rather than any
+protection this system provided. Fixed with a genuine database-level
+`PROCESSING` compare-and-swap claimed before any external call (the
+exact idiom a prior schema comment had argued against, for reasons that
+turned out to be backwards) plus age-based stale-claim recovery
+mirroring `PaymentService.expireStalePayments`; the repair explicitly
+documents, rather than papers over, the residual and genuinely
+time-bounded limit of Razorpay's own idempotency-key contract, which no
+application code can strengthen further. **Finding 5** (M19/M21): the
+Return/Exchange cross-domain mutual-exclusion check added at the
+original build was only an application-level check-then-insert, not a
+real concurrency guard — two genuinely concurrent transactions could
+each read "no conflict" before either committed, since `return_lines`/
+`exchanges` carry independent unique constraints that don't block each
+other. Fixed by row-locking the shared `OrderLine` (`SELECT ... FOR
+UPDATE`) as the first statement of both `ReturnService.performInitiate`
+and `ExchangeService.performInitiate`, proven with a genuinely
+concurrent (`Promise.all`-fired) adversarial test, not a sequential
+simulation. Combined repair: 3 new integration tests (M21 real-
+concurrency + fulfilment-state-distinction), 12 new integration tests
+(M19 evidence upload), 4 new integration tests (M20 concurrency
+recheck), and 2 new/updated browser E2E tests — 68 integration tests
+across the three files (43 M19, 23 M20, 22 M21) and the full storefront
+E2E suite, zero regressions to the entire M00–M18 baseline, confirmed
+across repeated runs (concurrency-sensitive suites run twice) and a
+full migration-from-zero clean-state proof. See `RET-005`, `REF-005`,
+and `EXC-004`'s own 2026-09-26 repair addenda in
+`blueprint/DECISION_REGISTER.md` for the complete per-finding design
+record. **This agent does not self-declare this repair certified** —
+the same discipline as every milestone since Phase 1. This agent has
+stopped and is awaiting independent re-review; `EXC-004`'s
+`DECISION_REQUIRED` is explicitly flagged for the Product Owner's
+attention, not silently left for a future agent to rediscover. M22+
+remains unauthorized regardless of how this re-review resolves.
 
 M17 (Shipping /
 Tracking) was implemented and adversarially tested (carrier-adapter
@@ -244,11 +322,20 @@ Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
   `4a616b3cefa8e4e1879dd8c62b293682ea6bc206`, worked sequentially with
   per-milestone validation and no self-authorized continuation into
   M22+. All three milestones were implemented, adversarially tested,
-  and committed as authorized (see §0 above). See
+  and committed as authorized (see §0 above). An independent review of
+  that build returned five findings (none BLOCKER, all requiring
+  repair); repaired 2026-09-26 under a separate, explicitly scoped
+  repair authorization — see §0's repair narrative above. This repair
+  authorization likewise does NOT extend to M22+, and its own one
+  remaining open item (`EXC-004`'s `DECISION_REQUIRED — EXCHANGE
+  REPLACEMENT FULFILMENT MODEL`) requires a separate, explicit Product
+  Owner decision before any future pass may resolve it — an engineering
+  agent must not guess an answer to it. See
   `acceptance/m19-returns.md`, `acceptance/m20-refunds-store-credit.md`,
   `acceptance/m21-exchanges.md` for the Definitions of Done, and
   `RET-005`/`REF-005`/`EXC-004` in `blueprint/DECISION_REGISTER.md` for
-  the full design records.
+  the full design records, now including each one's 2026-09-26 repair
+  addendum.
 - M16 (Warehouse & Fulfilment) was explicitly authorized on
   2026-09-24, scoped only to that milestone, building on the
   `PHASE_2_CERTIFIED` baseline at commit
