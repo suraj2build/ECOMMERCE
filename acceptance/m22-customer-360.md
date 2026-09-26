@@ -20,6 +20,72 @@ every transaction to acquire these locks in the same global order —
 proven with 5 repeated local runs of the full concurrency suite (zero
 flakiness) plus the same green result in the next CI run.
 
+**Independent-review certification-repair (2026-09-26):** an
+independent review of the above state (commit `a27dfed`) found four
+issues requiring repair before M22 could be considered for
+certification. All four are fixed; see `CLAUDE.md` §0 for the full
+narrative. Summary:
+
+1. **PII in audit payloads.** `CustomerProfileService` was recording
+   raw PII (email; address city/pincode/recipient) in
+   `AuditLog.oldValue`/`newValue`. Fixed: every M22 audit event now
+   records only non-sensitive change metadata (`changedFields`,
+   `isDefault`/`wasDefault` flags, category/size IDs) — never an email,
+   mobile, address line, city, or pincode value — while
+   `actorCustomerId`/`entityId`/`action` still provide full
+   traceability. Proven by dedicated tests in
+   `test/integration/customer-profile.test.ts` ("PII-safe audit
+   trail") that assert the raw PII strings never appear in a
+   persisted `AuditLog` row.
+2. **Recently-viewed had no time-based retention.** Only
+   `RECENTLY_VIEWED_MAX_ITEMS` (a count bound) was implemented; a
+   customer viewing fewer items than that count could keep an
+   arbitrarily old view forever. Fixed: a new, separately-configurable
+   `RECENTLY_VIEWED_RETENTION_DAYS` (default 90) bounds the log by
+   time as well — expired rows are pruned on the next write and
+   filtered out on read. Both bounds are product-behavior storage
+   bounding, explicitly **not** a resolution of the still-`UNDER_REVIEW`
+   `CUST-001`/`AUD-002` data-retention/deletion policy.
+3. **`ORDER_UPDATES` non-opt-outable rule was invented.** The original
+   build rejected `optedIn=false` for `ORDER_UPDATES` with an HTTP 400,
+   framing it as settled policy. No approved decision (`CUST-002` only
+   requires per-channel × per-message-type granularity) authorized
+   that rule. Fixed: the 400 rejection is removed; `ORDER_UPDATES`
+   remains in the vocabulary and still defaults to opted-in, but the
+   customer can now set any value for it like every other message
+   type. Downstream notification-delivery enforcement for legally-
+   required transactional messages remains an open, undecided policy
+   question outside this milestone's scope.
+4. **Zero-address concurrency race.** The address-book's row-set lock
+   had no row to lock for a brand-new customer with zero addresses —
+   reproduced with a genuine `Promise.all` race
+   (two concurrent first-address creates both observed
+   `existingCount === 0` and both attempted `isDefault = true`,
+   surfacing as a raw 500 from the partial unique index). Fixed by
+   locking the customer's own row (always exists) as the single shared
+   serialization point across create/update/set-default/delete,
+   replacing the address-row-set lock entirely. This repair's own
+   adversarial testing also found and fixed a second, related bug:
+   `atomicSetDefault`'s single-statement form
+   (`SET "isDefault" = (id = target)`) could self-conflict against the
+   same partial unique index depending on PostgreSQL's internal
+   (unspecified) row-processing order within one UPDATE statement —
+   fixed by splitting it into an order-independent "clear old, then
+   set new" pair, both covered by the same customer-row lock.
+
+New adversarial tests: 3 zero/first-address concurrency races
+(create-vs-create, create-vs-set-default, delete-vs-create), a
+recently-viewed retention-window test (inside/outside), and PII-absence
+assertions on every M22 audit call site —
+`test/integration/customer-profile.test.ts`, now 38 tests total. Full
+clean-state suite green (lint, typecheck, build, unit, full integration
+suite — 483/496, the only 13 failures being the pre-existing
+Meilisearch-unavailable-in-sandbox limitation — migration-from-zero,
+zero schema drift, full Playwright E2E including mobile), zero
+regressions to the entire M00–M21 baseline. This repair does not
+self-declare M22 certified — that determination belongs to the
+independent reviewer.
+
 ## `DEPENDENCY_DEFERRED — M23/M24`
 
 The spec's originally-listed required features include "loyalty
@@ -69,10 +135,13 @@ fully implemented and tested.
       `NEWSLETTER`), `/account/preferences` page.
 - [x] Communication preferences are settable per channel and per
       message type — not one global toggle. `ORDER_UPDATES` is the one
-      transactional message type in this vocabulary and is NOT
-      opt-outable (rejected with 400) — an engineering default
-      reflecting operational reality, not a legal-consent-basis
-      determination (`CUST-001`/`AUD-002` remain `UNDER_REVIEW`).
+      transactional message type in this vocabulary, defaults to
+      opted-in, and (per the 2026-09-26 certification repair) is a
+      fully ordinary, opt-outable message type like any other — no
+      non-opt-outable rule is invented or enforced here. Downstream
+      notification-delivery enforcement for legally-required
+      transactional messages is a separate, undecided policy question
+      (`CUST-001`/`AUD-002` remain `UNDER_REVIEW`).
 
 ## Functional acceptance
 
@@ -109,13 +178,20 @@ fully implemented and tested.
    `RECENTLY_VIEWED_MAX_ITEMS` window is exceeded (oldest dropped,
    proven under both sequential and genuinely concurrent repeated
    views) — implementation-defined bound, does not grow unbounded.
+   **Also** excludes items older than `RECENTLY_VIEWED_RETENTION_DAYS`,
+   independent of the count bound (certification-repair finding 2).
 3. [x] An unpublished/draft style is gracefully excluded from the
    recently-viewed list rather than erroring.
 4. [x] Deleting the current default address promotes another remaining
    address to default (most-recently-updated); deleting the only
    remaining address leaves zero addresses, no error.
-5. [x] Opting out of the transactional `ORDER_UPDATES` message type is
-   rejected (400), never silently accepted.
+5. [x] Opting out of `ORDER_UPDATES` succeeds like any other message
+   type and persists (certification-repair finding 3 — the original
+   build's 400 rejection was an invented rule with no approved-decision
+   basis and has been removed).
+6. [x] Two genuinely concurrent first-address creates for a brand-new
+   (zero-address) customer converge to exactly one default, no raw 500
+   (certification-repair finding 4).
 
 ## Mobile / Desktop behavior
 
@@ -127,12 +203,20 @@ fully implemented and tested.
 ## Concurrency (adversarial)
 
 - [x] Two simultaneous default-address changes converge to exactly one
-      default (single atomic `UPDATE ... SET "isDefault" = (id = target)`
-      statement, serialized by Postgres's own per-row write lock).
+      default (an order-independent "clear old, then set new" pair of
+      UPDATE statements, both covered by the same customer-row lock —
+      certification-repair finding 4 replaced the original single-
+      statement form, which could self-conflict against the partial
+      unique index depending on PostgreSQL's internal row-processing
+      order).
 - [x] Concurrent delete-of-default vs. set-default on the same customer
       converge to exactly one default, never zero or two (both lock the
-      customer's whole address set via `FOR UPDATE` as the shared
-      serialization point).
+      customer's own row via `FOR UPDATE` as the shared serialization
+      point — stable even when the customer has zero addresses).
+- [x] Two genuinely concurrent first-address creates, a create racing
+      a set-default, and a delete-of-default racing a create, all for
+      a customer starting with zero or one address, converge to exactly
+      one default with no raw 500 (certification-repair finding 4).
 - [x] Concurrent repeated recently-viewed views of the same product
       never create duplicate rows (`@@unique([customerId, styleId])`
       upsert).
@@ -151,8 +235,11 @@ fully implemented and tested.
 - [x] Authorization test: cross-customer data access is blocked for
       every new resource type (`acceptance/e2e-commerce-flows.md`
       FLOW 19 pattern applied customer-to-customer) —
-      `test/integration/customer-profile.test.ts` (26 tests) and
+      `test/integration/customer-profile.test.ts` (38 tests) and
       `test/e2e-storefront/account.spec.ts` flow J.
+- [x] PII-safe audit trail: every M22 audit event's `oldValue`/
+      `newValue` is asserted to never contain an email, mobile, address
+      line, city, or pincode value (certification-repair finding 1).
 - [x] E2E: real mobile-OTP sign-in through the browser (never a
       token-injection shortcut — the test brute-forces the genuine
       SHA-256 OTP hash space, driving the SAME production verification

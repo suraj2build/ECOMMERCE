@@ -7,8 +7,8 @@ including future sessions that have no memory of this one.
 ## 0. Current project stage — READ FIRST
 
 **Status as of 2026-09-26: `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED —
-M22 CUSTOMER 360 BUILD COMPLETE — AWAITING INDEPENDENT REVIEW. M23+ NOT
-AUTHORIZED.`**
+M22 CUSTOMER 360 CERTIFICATION-REPAIR COMPLETE — AWAITING INDEPENDENT
+RE-REVIEW. M23+ NOT AUTHORIZED.`**
 
 **On 2026-09-26 the independent reviewer recorded the repaired
 Post-Purchase Phase build — commit
@@ -63,10 +63,10 @@ policy**); `CustomerSavedSize` ("My Sizes") scoped by top-level
 `Category` — the only genuine FK-based scoping signal available, since
 neither `Category` nor `Size` carries a gender/department field;
 a `CommunicationPreference` matrix granular per channel (SMS/WhatsApp/
-Email/Push) × per message type (CUST-002), with the one transactional
-message type (`ORDER_UPDATES`) rejected from opt-out — an engineering
-default reflecting operational reality, not a legal-consent-basis
-determination; a new `listMyReviews` read surface over the EXISTING
+Email/Push) × per message type (CUST-002), with `ORDER_UPDATES` as the
+one transactional message type in the vocabulary, defaulting to
+opted-in (see the 2026-09-26 certification-repair paragraph below for
+why it is NOT rejected from opt-out); a new `listMyReviews` read surface over the EXISTING
 M11 `Review` model (no duplicate storage); and `AuditLog.actorCustomerId`,
 closing a genuine pre-existing gap this build's own investigation
 found (`actorType: CUSTOMER` had no column recording WHICH customer
@@ -79,7 +79,9 @@ fallback, never a customerId read from anywhere but the verified JWT),
 with cross-customer IDOR proven negatively for every new resource type.
 26 new adversarial integration tests
 (`test/integration/customer-profile.test.ts`, including 6 genuine
-`Promise.all` concurrency tests — never `await A; await B;`) plus 4 new
+`Promise.all` concurrency tests — never `await A; await B;`; see the
+2026-09-26 certification-repair paragraph below for the further tests
+added during repair) plus 4 new
 browser E2E tests (`test/e2e-storefront/account.spec.ts`) driving a
 REAL mobile-OTP sign-in through the browser: since this codebase's OTP
 verification only ever stores a plain SHA-256 hash of the 6-digit code
@@ -109,10 +111,67 @@ pre-existing, environment-only Meilisearch-unavailable-in-sandbox
 limitation, unrelated to this build — full Playwright E2E including
 mobile) green, zero regressions to the entire M00–M21 baseline. See
 `acceptance/m22-customer-360.md` for the complete Definition of Done.
-**This agent does not self-declare M22 certified** — per the same
-discipline applied at every milestone since Phase 1, that determination
-belongs to the independent reviewer. This agent has stopped and is
-awaiting independent review before any M23+ work.
+
+**Independent-review certification-repair (2026-09-26, commit
+`a27dfed` reviewed):** an independent review of the above build
+returned four findings, none disputing the milestone's overall shape,
+all requiring repair before certification. **Finding 1** (PII in audit
+payloads): `CustomerProfileService` recorded raw PII — the customer's
+actual email; an address's actual city/pincode/recipient — in
+`AuditLog.oldValue`/`newValue`. Repaired: every M22 audit event now
+records only non-sensitive change metadata (`changedFields`,
+`isDefault`/`wasDefault` flags, category/size IDs), never a PII value,
+while `actorCustomerId`/`entityId`/`action` still give full
+traceability — proven by new tests that assert the raw PII strings
+never appear in a persisted `AuditLog` row. **Finding 2** (recently-
+viewed had no time retention): only the `RECENTLY_VIEWED_MAX_ITEMS`
+count bound existed, though the original M22 instruction required BOTH
+count and time bounding. Repaired: a new, separately-configurable
+`RECENTLY_VIEWED_RETENTION_DAYS` (default 90) bounds the log by time
+too — expired rows are pruned on write and filtered on read, still
+explicitly product-behavior storage bounding, not a `CUST-001`/
+`AUD-002` retention determination. **Finding 3** (`ORDER_UPDATES`
+non-opt-outable rule was invented): the original build rejected
+`optedIn=false` for `ORDER_UPDATES` with an HTTP 400, self-declaring it
+as settled policy the approved spec never actually authorized —
+`CUST-002` requires per-channel × per-message-type granularity, not a
+non-opt-outable message type. Repaired: the 400 rejection is removed;
+`ORDER_UPDATES` remains in the vocabulary and still defaults to
+opted-in, but the customer can now set any value for it, same as every
+other message type — downstream notification-delivery enforcement for
+legally-required transactional messages remains a separate, undecided
+policy question. **Finding 4** (zero-address concurrency race): the
+address-book's row-set lock had no row to lock for a brand-new
+customer with zero addresses — reproduced for real with a genuine
+`Promise.all` race (two concurrent first-address creates both observed
+`existingCount === 0`, both attempted `isDefault = true`, one hit the
+partial unique index and surfaced as a raw 500). Repaired by locking
+the customer's own row (always exists) as the single shared
+serialization point across create/update/set-default/delete, replacing
+the address-row-set lock entirely — this repair's own adversarial
+testing then found and fixed a second, related bug this same change
+exposed: `atomicSetDefault`'s single-statement form could itself
+transiently self-conflict against the partial unique index, since
+PostgreSQL does not guarantee row-processing order within one
+multi-row UPDATE; fixed by splitting it into an order-independent
+"clear old, then set new" pair of statements, both still covered by
+the one customer-row lock. Combined repair: 12 new adversarial tests
+(3 zero/first-address concurrency races, 2 PII-absence tests, 1
+retention-window test, plus the corrected `ORDER_UPDATES` test) —
+`test/integration/customer-profile.test.ts` now 38 tests total, plus
+an updated `test/e2e-storefront/account.spec.ts`. Full clean-state
+suite green (lint, typecheck, build, unit, full integration suite —
+483/496 passing, the only 13 failures the same pre-existing
+Meilisearch-unavailable-in-sandbox limitation — migration-from-zero,
+zero schema drift, full Playwright E2E including mobile), zero
+regressions to the entire M00–M21 baseline. See
+`acceptance/m22-customer-360.md`'s "Independent-review
+certification-repair" section for the complete record.
+
+**This agent does not self-declare M22 (or this repair) certified** —
+per the same discipline applied at every milestone since Phase 1, that
+determination belongs to the independent reviewer. This agent has
+stopped and is awaiting independent re-review before any M23+ work.
 
 M19
 (Returns), M20 (Refunds & Store Credit), and M21 (Exchanges) were all

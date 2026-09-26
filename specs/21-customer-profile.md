@@ -4,14 +4,20 @@
 CUSTOMER 360" authorization; most features DECIDED 2026-09-22; data
 retention/deletion policy `CUST-001` remains `UNDER_REVIEW` pending
 legal input and does not block this build — see
-`blueprint/DECISION_REGISTER.md`). Loyalty and coupon *visibility* are
-listed below as originally scoped, but M23 (Loyalty) and M24
-(Promotions/Coupons) are themselves unauthorized and unbuilt — this
-build represents those sections honestly as
+`blueprint/DECISION_REGISTER.md`). An independent review of the initial
+build returned four certification-repair findings (PII in audit
+payloads; recently-viewed missing time-based retention; an invented
+`ORDER_UPDATES` non-opt-outable rule with no approved-decision basis;
+a zero-address concurrency race), all repaired the same day — see
+`acceptance/m22-customer-360.md`'s "Independent-review
+certification-repair" section for the full record. Loyalty and coupon
+*visibility* are listed below as originally scoped, but M23 (Loyalty)
+and M24 (Promotions/Coupons) are themselves unauthorized and unbuilt —
+this build represents those sections honestly as
 `DEPENDENCY_DEFERRED — M23/M24`, never fabricated. See
 `acceptance/m22-customer-360.md` for the full Definition of Done. This
-agent does not self-declare this build certified — that determination
-belongs to the independent reviewer.
+agent does not self-declare this build (or its repair) certified —
+that determination belongs to the independent reviewer.
 
 ## Purpose
 
