@@ -85,6 +85,7 @@ describe('Exchanges (M21)', () => {
       'exchange:initiate',
       'exchange:receive',
       'exchange:qc',
+      'exchange:fulfil',
       'return:read',
       'return:initiate',
     ],
@@ -252,8 +253,22 @@ describe('Exchanges (M21)', () => {
     expect(reservation.status).toBe('ACTIVE');
 
     const completed = await receiveAndQc(exchange.id, wT, 'PASS');
-    expect(completed.status).toBe('COMPLETED');
+    // Independent-review repair (finding 3): the inventory side settling
+    // (QC pass + reservation converted) reaches REPLACEMENT_ALLOCATED,
+    // NEVER COMPLETED - the replacement hasn't reached the customer yet.
+    expect(completed.status).toBe('REPLACEMENT_ALLOCATED');
     expect(completed.replacementAllocatedAt).toBeTruthy();
+    expect(completed.replacementFulfilledAt).toBeNull();
+
+    // Confirming fulfilment before REPLACEMENT_ALLOCATED is rejected -
+    // proven separately below in test 16; here, prove the ONLY path to
+    // COMPLETED is the explicit staff confirmation.
+    const fulfilRes = await app.inject({ method: 'POST', url: `/api/v1/exchanges/${exchange.id}/replacement-fulfilled`, headers: { authorization: `Bearer ${wT}` } });
+    expect(fulfilRes.statusCode).toBe(200);
+    const fulfilled = fulfilRes.json();
+    expect(fulfilled.status).toBe('COMPLETED');
+    expect(fulfilled.replacementFulfilledAt).toBeTruthy();
+    expect(fulfilled.replacementFulfilledByStaffId).toBeTruthy();
 
     // Explicit ledger transactions: RETURN_RECEIVED+RETURN_QC_PASS for
     // the original, RESERVATION+ALLOCATION for the replacement - never a
@@ -284,7 +299,7 @@ describe('Exchanges (M21)', () => {
     expect(exchange.replacementSkuId).toBe(fixture.whiteM.id);
 
     const completed = await receiveAndQc(exchange.id, wT, 'PASS');
-    expect(completed.status).toBe('COMPLETED');
+    expect(completed.status).toBe('REPLACEMENT_ALLOCATED'); // finding 3 - not COMPLETED until markReplacementFulfilled
   });
 
   // --- 3. CUSTOMER_PAYS: replacement costs more ---
@@ -318,7 +333,7 @@ describe('Exchanges (M21)', () => {
     expect(webhookRes.statusCode).toBe(200);
 
     const final = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
-    expect(final.status).toBe('COMPLETED');
+    expect(final.status).toBe('REPLACEMENT_ALLOCATED'); // finding 3 - not COMPLETED until markReplacementFulfilled
     expect(final.paymentStatus).toBe('CAPTURED');
     expect(final.replacementAllocatedAt).toBeTruthy();
 
@@ -346,7 +361,7 @@ describe('Exchanges (M21)', () => {
     expect(afterPayment.paymentStatus).toBe('CAPTURED');
 
     const completed = await receiveAndQc(exchange.id, wT, 'PASS');
-    expect(completed.status).toBe('COMPLETED');
+    expect(completed.status).toBe('REPLACEMENT_ALLOCATED'); // finding 3 - not COMPLETED until markReplacementFulfilled
   });
 
   // --- 4. Negative scenario #3: payment fails, exchange doesn't complete silently, retry works ---
@@ -380,7 +395,7 @@ describe('Exchanges (M21)', () => {
     const captureBody = JSON.stringify(capturedEvent(providerOrderId, `pay_retry_${counter}`));
     await app.inject({ method: 'POST', url: '/api/v1/webhooks/razorpay', headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(captureBody) }, payload: captureBody });
     const final = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
-    expect(final.status).toBe('COMPLETED');
+    expect(final.status).toBe('REPLACEMENT_ALLOCATED'); // finding 3 - not COMPLETED until markReplacementFulfilled
     expect(await testPrisma.exchange.count({ where: { orderLineId: lineId } })).toBe(1);
   });
 
@@ -402,7 +417,7 @@ describe('Exchanges (M21)', () => {
     expect(await testPrisma.storeCreditEntry.count()).toBe(0); // not yet, QC hasn't happened
 
     const completed = await receiveAndQc(exchange.id, wT, 'PASS');
-    expect(completed.status).toBe('COMPLETED');
+    expect(completed.status).toBe('REPLACEMENT_ALLOCATED'); // finding 3 - not COMPLETED until markReplacementFulfilled
     expect(completed.storeCreditEntryId).toBeTruthy();
 
     const account = await testPrisma.storeCreditAccount.findUniqueOrThrow({ where: { guestSessionId: guestId } });
@@ -632,5 +647,101 @@ describe('Exchanges (M21)', () => {
       payload: { orderId, lines: [{ orderLineId: lineId, reason: 'Wrong colour' }], method: 'DROP_OFF', idempotencyKey: `ret-crossdomain-allowed-${counter}` },
     });
     expect(allowedRes.statusCode).toBe(201);
+  });
+
+  // --- 15. Cross-domain mutual exclusion under REAL concurrency (independent-review repair, finding 5) ---
+
+  it('genuinely concurrent Return-initiate and Exchange-initiate on the SAME order line converge to exactly one winner, never both', async () => {
+    // Not a sequential simulation: both requests are fired via
+    // Promise.all so their two `$transaction` calls genuinely overlap in
+    // Postgres. Before the finding-5 repair, both could read
+    // "no returnLine, no exchange" under read-committed isolation before
+    // either committed (the two tables' unique constraints on
+    // orderLineId don't stop each other), so both could win. The fix
+    // locks the SAME order_lines row (SELECT ... FOR UPDATE) as the
+    // first statement of each transaction, forcing genuine serialization
+    // - the loser must observe the winner's committed row and reject.
+    const fixture = await setupExchangeableStyle(1500);
+    const { orderId } = await codOrder(fixture.blackM.id, `guest-realconcurrency-${counter}`, `idem-realconcurrency-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+
+    const [returnRes, exchangeRes] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/api/v1/returns',
+        headers: { authorization: `Bearer ${wT}` },
+        payload: { orderId, lines: [{ orderLineId: lineId, reason: 'Wrong colour' }], method: 'DROP_OFF', idempotencyKey: `ret-realconcurrency-${counter}` },
+      }),
+      initiateExchange(orderId, lineId, fixture.blackL.id, wT, `exc-realconcurrency-${counter}`),
+    ]);
+
+    const statusCodes = [returnRes.statusCode, exchangeRes.statusCode].sort();
+    // Exactly one side wins (201) and the other is rejected as a
+    // genuine conflict (409) - never [201, 201], which would mean the
+    // same physical line acquired both an active Return and an active
+    // Exchange concurrently.
+    expect(statusCodes).toEqual([201, 409]);
+
+    const returnLineCount = await testPrisma.returnLine.count({ where: { orderLineId: lineId } });
+    const exchangeCount = await testPrisma.exchange.count({ where: { orderLineId: lineId } });
+    // Exactly one of the two child rows exists - the DB-level serial
+    // point (the shared order-line row lock) is what makes this provable
+    // under real concurrency, not merely under a sequential test order.
+    expect(returnLineCount + exchangeCount).toBe(1);
+  });
+
+  // --- 16. REPLACEMENT_ALLOCATED vs COMPLETED state distinction (independent-review repair, finding 3) ---
+
+  describe('replacement fulfilment state distinction', () => {
+    it('rejects confirming replacement fulfilment before the exchange reaches REPLACEMENT_ALLOCATED', async () => {
+      const fixture = await setupExchangeableStyle(1500);
+      const { orderId } = await codOrder(fixture.blackM.id, `guest-fulfil-early-${counter}`, `idem-fulfil-early-${counter}`);
+      const wT = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, wT);
+      const exchange = (await initiateExchange(orderId, lineId, fixture.blackL.id, wT, `exc-fulfil-early-${counter}`)).json();
+      expect(exchange.status).toBe('REQUESTED');
+
+      const res = await app.inject({ method: 'POST', url: `/api/v1/exchanges/${exchange.id}/replacement-fulfilled`, headers: { authorization: `Bearer ${wT}` } });
+      expect(res.statusCode).toBe(400);
+
+      const stillRequested = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+      expect(stillRequested.status).toBe('REQUESTED');
+      expect(stillRequested.replacementFulfilledAt).toBeNull();
+    });
+
+    it('confirming replacement fulfilment is idempotent and requires exchange:fulfil, distinct from exchange:qc', async () => {
+      const fixture = await setupExchangeableStyle(1500);
+      const { orderId } = await codOrder(fixture.blackM.id, `guest-fulfil-rbac-${counter}`, `idem-fulfil-rbac-${counter}`);
+      const wT = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, wT);
+      const exchange = (await initiateExchange(orderId, lineId, fixture.blackL.id, wT, `exc-fulfil-rbac-${counter}`)).json();
+      const allocated = await receiveAndQc(exchange.id, wT, 'PASS');
+      expect(allocated.status).toBe('REPLACEMENT_ALLOCATED');
+
+      // A DIFFERENT role granted exchange:qc but never exchange:fulfil -
+      // grantPermissions is additive (upsert), so reusing WAREHOUSE_MANAGER
+      // here would still carry the fulfil grant already made above via
+      // warehouseToken(); a genuinely separate role is required to prove
+      // the two permissions are not bundled.
+      await grantPermissions('WAREHOUSE_OPERATOR', ['exchange:qc']);
+      const qcOnlyToken = (await createAuthenticatedStaff(app, ['WAREHOUSE_OPERATOR'])).token;
+      const forbiddenRes = await app.inject({ method: 'POST', url: `/api/v1/exchanges/${exchange.id}/replacement-fulfilled`, headers: { authorization: `Bearer ${qcOnlyToken}` } });
+      expect(forbiddenRes.statusCode).toBe(403);
+
+      const firstRes = await app.inject({ method: 'POST', url: `/api/v1/exchanges/${exchange.id}/replacement-fulfilled`, headers: { authorization: `Bearer ${wT}` } });
+      expect(firstRes.statusCode).toBe(200);
+      const first = firstRes.json();
+      expect(first.status).toBe('COMPLETED');
+      const fulfilledAt = first.replacementFulfilledAt;
+      expect(fulfilledAt).toBeTruthy();
+
+      // Idempotent no-op on a repeat call - never a second audit-visible
+      // "completion" event or a changed replacementFulfilledAt.
+      const secondRes = await app.inject({ method: 'POST', url: `/api/v1/exchanges/${exchange.id}/replacement-fulfilled`, headers: { authorization: `Bearer ${wT}` } });
+      expect(secondRes.statusCode).toBe(200);
+      expect(secondRes.json().status).toBe('COMPLETED');
+      expect(secondRes.json().replacementFulfilledAt).toBe(fulfilledAt);
+    });
   });
 });

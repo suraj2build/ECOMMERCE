@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { Prisma, type PrismaClient, type Return, type ReturnLine, type ReturnStatus, type ReturnDisposition, type QcResult } from '@fcp/db';
+import { Prisma, type PrismaClient, type Return, type ReturnLine, type ReturnStatus, type ReturnDisposition, type QcResult, type ReturnEvidence } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
@@ -8,6 +8,7 @@ import { InventoryService } from '../inventory/service.js';
 import { resolveShippingProvider, type ShippingProvider } from '../shipping/provider.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 import { resolveReturnPolicy, isWithinWindow } from './policy.js';
+import { resolveEvidenceStorageProvider, generateEvidenceObjectKey, sniffImageMimeType, type EvidenceStorageProvider } from './evidence-storage.js';
 
 export interface InitiateReturnLineInput {
   orderLineId: string;
@@ -35,14 +36,17 @@ export class ReturnService {
   private readonly order: OrderService;
   private readonly inventory: InventoryService;
   private readonly provider: ShippingProvider;
+  private readonly evidenceStorage: EvidenceStorageProvider;
 
   constructor(
     private readonly fastify: FastifyInstance,
     provider?: ShippingProvider,
+    evidenceStorage?: EvidenceStorageProvider,
   ) {
     this.order = new OrderService(fastify);
     this.inventory = new InventoryService(fastify);
     this.provider = provider ?? resolveShippingProvider(loadEnv().SHIPPING_PROVIDER);
+    this.evidenceStorage = evidenceStorage ?? resolveEvidenceStorageProvider();
   }
 
   private get prisma(): PrismaClient {
@@ -156,6 +160,27 @@ export class ReturnService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Independent-review repair (finding 5, 2026-09-26): the
+        // application-level cross-domain check below (reading
+        // OrderLine.returnLine/.exchange) is NOT by itself a genuine
+        // concurrency guard - two REAL concurrent transactions (this
+        // Return-initiate and a concurrent Exchange-initiate on the SAME
+        // OrderLine, different idempotency keys) can each read
+        // "no returnLine, no exchange" under read-committed isolation
+        // before either commits, then each independently insert into
+        // its OWN table (`return_lines`/`exchanges` have SEPARATE unique
+        // constraints on orderLineId, so the database itself does not
+        // block this). Locking every targeted OrderLine row FIRST, in
+        // sorted order (same deadlock-avoidance idiom
+        // OrderService.performCancellation already established for its
+        // own multi-line lock), makes this transaction and a concurrent
+        // ExchangeService.performInitiate's own lock on the SAME row
+        // genuinely serialize on ONE shared row lock - whichever
+        // transaction commits first is the one whose cross-domain check
+        // the other reliably observes, never a lost-update race.
+        const sortedLineIds = [...orderLineIds].sort();
+        await tx.$queryRaw`SELECT "id" FROM "order_lines" WHERE "id" = ANY(${sortedLineIds}) ORDER BY "id" FOR UPDATE`;
+
         const preparedLines: { orderLineId: string; skuId: string; locationId: string; quantity: number; reason: string }[] = [];
 
         for (const input of lines) {
@@ -552,12 +577,143 @@ export class ReturnService {
     });
   }
 
+  // --- Evidence (M19 independent-review repair, finding 2) ---
+
+  /**
+   * Ownership-checked load of one ReturnLine within its parent Return -
+   * the SAME clean-404 IDOR-safe pattern `getReturnForCustomer` already
+   * uses (never a distinguishable 403). `identity: null` means a staff
+   * caller, already RBAC-gated at the route layer, so no ownership check
+   * runs.
+   */
+  private async loadReturnLineOwned(returnId: string, lineId: string, identity: CartOwnerIdentity | null): Promise<{ line: ReturnLine; ret: Return }> {
+    const ret = await this.prisma.return.findUnique({ where: { id: returnId } });
+    if (!ret) throw new NotFoundError('Return', returnId);
+    if (identity) {
+      const order = await this.prisma.order.findUniqueOrThrow({ where: { id: ret.orderId } });
+      const owns =
+        (identity.customerId && order.customerId === identity.customerId) || (identity.guestSessionId && order.guestSessionId === identity.guestSessionId);
+      if (!owns) throw new NotFoundError('Return', returnId);
+    }
+    const line = await this.prisma.returnLine.findUnique({ where: { id: lineId } });
+    if (!line || line.returnId !== returnId) throw new NotFoundError('ReturnLine', lineId);
+    return { line, ret };
+  }
+
+  private allowedEvidenceMimeTypes(): Set<string> {
+    return new Set(
+      loadEnv()
+        .RETURN_EVIDENCE_ALLOWED_MIME_TYPES.split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  /**
+   * Config-driven, mobile-camera-friendly evidence upload (never
+   * universally mandatory - `ReturnPolicy.evidenceRequired` governs
+   * whether the storefront's own upload step is presented as required,
+   * this method itself accepts an upload regardless so a CS-assisted
+   * upload always works). Bytes are written to private object storage
+   * BEFORE the DB row is recorded (see this method's own inline
+   * comment); the row never references bytes that were never written.
+   */
+  async uploadEvidence(
+    returnId: string,
+    lineId: string,
+    staffId: string | null,
+    identity: CartOwnerIdentity | null,
+    file: { buffer: Buffer },
+  ): Promise<ReturnEvidence> {
+    const { ret } = await this.loadReturnLineOwned(returnId, lineId, identity);
+    if (ret.status === 'CANCELLED' || ret.status === 'DISPOSITIONED') {
+      throw new ValidationError(`Cannot add evidence to a return in status '${ret.status}'`);
+    }
+
+    const env = loadEnv();
+    if (file.buffer.length === 0) throw new ValidationError('Evidence file is empty');
+    if (file.buffer.length > env.RETURN_EVIDENCE_MAX_FILE_SIZE_BYTES) {
+      throw new ValidationError(`Evidence file exceeds the maximum allowed size of ${env.RETURN_EVIDENCE_MAX_FILE_SIZE_BYTES} bytes`);
+    }
+    // The client-declared mimeType (multipart Content-Type) is NEVER
+    // trusted for the allowlist check - only the actual byte-signature
+    // sniffed from the file itself. This is what "reject unsupported/
+    // executable payloads" actually means: a renamed .exe cannot pass
+    // by lying about its Content-Type.
+    const allowed = this.allowedEvidenceMimeTypes();
+    const sniffed = sniffImageMimeType(file.buffer);
+    if (!sniffed || !allowed.has(sniffed)) {
+      throw new ValidationError(`Unsupported or unrecognized evidence file type - allowed types: ${[...allowed].join(', ')}`);
+    }
+    const mimeType = sniffed;
+
+    const existingCount = await this.prisma.returnEvidence.count({ where: { returnLineId: lineId } });
+    if (existingCount >= env.RETURN_EVIDENCE_MAX_FILES_PER_LINE) {
+      throw new ValidationError(`This return line already has the maximum of ${env.RETURN_EVIDENCE_MAX_FILES_PER_LINE} evidence file(s)`);
+    }
+
+    const objectKey = generateEvidenceObjectKey();
+    await this.evidenceStorage.putObject(objectKey, file.buffer, mimeType);
+
+    const created = await this.prisma.returnEvidence.create({
+      data: {
+        returnLineId: lineId,
+        objectKey,
+        mimeType,
+        sizeBytes: file.buffer.length,
+        uploadedBy: staffId ? 'STAFF' : 'CUSTOMER',
+        uploadedByStaffId: staffId ?? undefined,
+      },
+    });
+
+    await recordAudit(this.prisma, {
+      actorType: staffId ? 'STAFF' : 'CUSTOMER',
+      actorStaffId: staffId ?? undefined,
+      action: 'return.evidence.upload',
+      entityType: 'ReturnEvidence',
+      entityId: created.id,
+      newValue: { returnLineId: lineId, mimeType, sizeBytes: file.buffer.length },
+      reference: returnId,
+    });
+
+    return created;
+  }
+
+  /** Metadata only - never the file bytes and never a URL. */
+  async listEvidence(returnId: string, lineId: string, identity: CartOwnerIdentity | null): Promise<ReturnEvidence[]> {
+    await this.loadReturnLineOwned(returnId, lineId, identity);
+    return this.prisma.returnEvidence.findMany({ where: { returnLineId: lineId }, orderBy: { createdAt: 'asc' } });
+  }
+
+  /**
+   * The only path that ever reads a file's actual bytes - re-checks
+   * ownership/existence on every call (never cached, never a
+   * pre-signed/public URL handed out once and reused).
+   */
+  async getEvidenceContent(returnId: string, lineId: string, evidenceId: string, identity: CartOwnerIdentity | null): Promise<{ buffer: Buffer; mimeType: string }> {
+    await this.loadReturnLineOwned(returnId, lineId, identity);
+    const evidence = await this.prisma.returnEvidence.findUnique({ where: { id: evidenceId } });
+    if (!evidence || evidence.returnLineId !== lineId) throw new NotFoundError('ReturnEvidence', evidenceId);
+    return this.evidenceStorage.getObject(evidence.objectKey);
+  }
+
   // --- Reads ---
 
+  /**
+   * `evidenceRequired` per line is resolved fresh from ReturnPolicy on
+   * every read (never persisted/snapshotted) - it drives whether the
+   * storefront presents its mobile-camera upload step as required, and
+   * a later config change should be reflected immediately, not frozen
+   * at return-creation time the way a financial value (REF-003) would
+   * be.
+   */
   async getReturn(id: string) {
     const ret = await this.prisma.return.findUnique({ where: { id }, include: { lines: true, pickup: true } });
     if (!ret) throw new NotFoundError('Return', id);
-    return ret;
+    const lines = await Promise.all(
+      ret.lines.map(async (l) => ({ ...l, evidenceRequired: (await resolveReturnPolicy(this.prisma, l.skuId)).evidenceRequired })),
+    );
+    return { ...ret, lines };
   }
 
   async getReturnForCustomer(id: string, identity: CartOwnerIdentity) {

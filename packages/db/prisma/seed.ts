@@ -92,6 +92,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'exchange:read',
     'exchange:receive',
     'exchange:qc',
+    // Independent-review repair (finding 3, 2026-09-26): manager-gated,
+    // like exchange:qc - confirming actual replacement fulfilment.
+    'exchange:fulfil',
   ],
   WAREHOUSE_OPERATOR: [
     'grn:create',

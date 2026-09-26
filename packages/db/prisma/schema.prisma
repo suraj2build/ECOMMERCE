@@ -146,28 +146,30 @@ model StaffUser {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  roles                   StaffUserRole[]
-  sessions                StaffSession[]
-  submittedPOs            PurchaseOrder[]         @relation("POSubmittedBy")
-  approvedPOs             PurchaseOrder[]         @relation("POApprovedBy")
-  poApprovalEvents        PurchaseOrderApproval[]
-  receivedGRNs            GoodsReceipt[]          @relation("GRNReceivedBy")
-  inventoryAdjustments    InventoryTransaction[]  @relation("InventoryAdjustmentActor")
-  coApprovedAdjustments   InventoryTransaction[]  @relation("InventoryAdjustmentCoApprover")
-  publishedStyles         Style[]                 @relation("StylePublishedBy")
-  auditLogEntries         AuditLog[]
-  moderatedShoppableMedia ShoppableMedia[]        @relation("ShoppableMediaModeratedBy")
-  moderatedReviews        Review[]                @relation("ReviewModeratedBy")
-  crossSellOverrides      CrossSellOverride[]
-  pickedPickTasks         PickTask[]              @relation("PickTaskPickedBy")
-  createdShipments        Shipment[]              @relation("ShipmentCreatedBy")
-  initiatedReturns        Return[]                @relation("ReturnInitiatedBy")
-  qcReturnLines           ReturnLine[]            @relation("ReturnLineQcBy")
-  createdReturnPickups    ReturnPickup[]          @relation("ReturnPickupCreatedBy")
-  initiatedRefunds        Refund[]                @relation("RefundInitiatedBy")
-  storeCreditEntriesActed StoreCreditEntry[]      @relation("StoreCreditEntryActor")
-  initiatedExchanges      Exchange[]              @relation("ExchangeInitiatedBy")
-  qcExchanges             Exchange[]              @relation("ExchangeQcBy")
+  roles                         StaffUserRole[]
+  sessions                      StaffSession[]
+  submittedPOs                  PurchaseOrder[]         @relation("POSubmittedBy")
+  approvedPOs                   PurchaseOrder[]         @relation("POApprovedBy")
+  poApprovalEvents              PurchaseOrderApproval[]
+  receivedGRNs                  GoodsReceipt[]          @relation("GRNReceivedBy")
+  inventoryAdjustments          InventoryTransaction[]  @relation("InventoryAdjustmentActor")
+  coApprovedAdjustments         InventoryTransaction[]  @relation("InventoryAdjustmentCoApprover")
+  publishedStyles               Style[]                 @relation("StylePublishedBy")
+  auditLogEntries               AuditLog[]
+  moderatedShoppableMedia       ShoppableMedia[]        @relation("ShoppableMediaModeratedBy")
+  moderatedReviews              Review[]                @relation("ReviewModeratedBy")
+  crossSellOverrides            CrossSellOverride[]
+  pickedPickTasks               PickTask[]              @relation("PickTaskPickedBy")
+  createdShipments              Shipment[]              @relation("ShipmentCreatedBy")
+  initiatedReturns              Return[]                @relation("ReturnInitiatedBy")
+  qcReturnLines                 ReturnLine[]            @relation("ReturnLineQcBy")
+  uploadedReturnEvidence        ReturnEvidence[]        @relation("ReturnEvidenceUploadedBy")
+  createdReturnPickups          ReturnPickup[]          @relation("ReturnPickupCreatedBy")
+  initiatedRefunds              Refund[]                @relation("RefundInitiatedBy")
+  storeCreditEntriesActed       StoreCreditEntry[]      @relation("StoreCreditEntryActor")
+  initiatedExchanges            Exchange[]              @relation("ExchangeInitiatedBy")
+  qcExchanges                   Exchange[]              @relation("ExchangeQcBy")
+  replacementFulfilledExchanges Exchange[]              @relation("ExchangeReplacementFulfilledBy")
 
   @@map("staff_users")
 }
@@ -2068,13 +2070,19 @@ model ShipmentTrackingEvent {
 // idiom orders_identity_xor_check already established for customerId/
 // guestSessionId.
 model ReturnPolicy {
-  id         String   @id @default(uuid())
-  styleId    String?  @unique
-  categoryId String?  @unique
-  windowDays Int
-  returnable Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               String   @id @default(uuid())
+  styleId          String?  @unique
+  categoryId       String?  @unique
+  windowDays       Int
+  returnable       Boolean  @default(true)
+  // Independent-review repair (finding 2, 2026-09-26): config-driven
+  // photo/evidence-capture requirement, resolved through the SAME
+  // style > category > platform-default order as windowDays/returnable
+  // (resolveReturnPolicy) - never universally mandatory, and never a
+  // separate/duplicated policy table.
+  evidenceRequired Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   style    Style?    @relation(fields: [styleId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -2164,15 +2172,43 @@ model ReturnLine {
   refundEligibleAt DateTime?
   createdAt        DateTime           @default(now())
 
-  return       Return     @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  orderLine    OrderLine  @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  sku          Sku        @relation(fields: [skuId], references: [id], onDelete: Restrict)
-  location     Location   @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  qcActorStaff StaffUser? @relation("ReturnLineQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  return       Return           @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderLine    OrderLine        @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  sku          Sku              @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location     Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  qcActorStaff StaffUser?       @relation("ReturnLineQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
   refund       Refund?
+  evidence     ReturnEvidence[]
 
   @@index([returnId])
   @@map("return_lines")
+}
+
+// Independent-review repair (finding 2, 2026-09-26): mobile condition-
+// photo/evidence capture for a return, config-driven per
+// ReturnPolicy.evidenceRequired (never universally mandatory). One row
+// per uploaded file - a ReturnLine may carry several (e.g. multiple
+// angles). The actual file bytes live in private object storage
+// (services/commerce-api/src/modules/returns/evidence-storage.ts),
+// never in this table and never at a public/unauthenticated URL;
+// `objectKey` is a server-generated opaque identifier (never a
+// user-supplied filename or path) used ONLY to look the file up through
+// that storage abstraction.
+model ReturnEvidence {
+  id                String         @id @default(uuid())
+  returnLineId      String
+  objectKey         String         @unique
+  mimeType          String
+  sizeBytes         Int
+  uploadedBy        AuditActorType
+  uploadedByStaffId String?
+  createdAt         DateTime       @default(now())
+
+  returnLine      ReturnLine @relation(fields: [returnLineId], references: [id], onDelete: Cascade)
+  uploadedByStaff StaffUser? @relation("ReturnEvidenceUploadedBy", fields: [uploadedByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([returnLineId])
+  @@map("return_evidence")
 }
 
 enum ReturnPickupStatus {
@@ -2225,16 +2261,33 @@ enum RefundMethod {
   STORE_CREDIT
 }
 
-// Deliberately two terminal states, no in-flight "PROCESSING" state - see
-// RefundService's own docblock: the durable-intent row commits as PENDING
-// BEFORE the external Razorpay call (or, for STORE_CREDIT, before the
-// purely-internal ledger write) and is claimed via a conditional update
-// straight to COMPLETED or FAILED, the same two-phase pattern
-// ShippingService.createShipment/ReturnService's reverse-pickup booking
-// already established - an ambiguous third "in progress" status would
-// only invite two concurrent attempts to both think they own the retry.
+// Independent-review repair (finding 4, 2026-09-26): the original design
+// here (two terminal states, no in-flight status) reasoned that a third
+// "in progress" status would let two concurrent attempts both think they
+// own the retry - that reasoning had it backwards. Without an in-flight
+// claim, TWO genuinely concurrent settle() calls for the SAME PENDING/
+// FAILED refund both proceeded straight to calling the external
+// Razorpay/store-credit operation, relying ENTIRELY on the external
+// system's own idempotency (Razorpay's x-razorpay-idempotency-key
+// header, StoreCreditService's own idempotencyKey) to avoid a real
+// double-effect - i.e. our OWN system offered zero protection against a
+// concurrent double-call, and Razorpay's idempotency-key guarantee is
+// itself time-bounded (see RefundService.settle's own docblock), not an
+// unconditional forever-exactly-once contract we may safely assume.
+// PROCESSING is a genuine in-flight CAS-claimed status (conditional
+// update PENDING/FAILED -> PROCESSING BEFORE the external call, the
+// exact same "claim, then act, then claim again" idiom this enum's
+// existing PENDING->COMPLETED/FAILED claim already uses) - only the
+// caller whose conditional update actually affects a row proceeds to
+// call the external operation; every other concurrent caller affects
+// zero rows and simply re-reads. A stale PROCESSING row (the process
+// that claimed it crashed before ever reaching the terminal claim) is
+// recoverable via the SAME age-based sweep idiom
+// PaymentService.expireStalePayments already established
+// (REFUND_PROCESSING_STALE_SECONDS).
 enum RefundStatus {
   PENDING
+  PROCESSING
   COMPLETED
   FAILED
 }
@@ -2379,6 +2432,24 @@ enum ExchangeStatus {
   PICKUP_SCHEDULED
   PICKED_UP
   RECEIVED
+  // Independent-review repair (finding 3, 2026-09-26): QC passed AND
+  // payment/credit settled AND the replacement reservation converted to
+  // a firm allocation - the inventory side is fully resolved, but the
+  // replacement has NOT yet reached the customer. Physical forward
+  // fulfilment (pick/pack/ship/tracking) of the allocated replacement
+  // has no certified integration with M16/M17's OrderLine-anchored
+  // PickTask/OrderFulfilment/Shipment pipeline in this pass - see
+  // EXC-004 in blueprint/DECISION_REGISTER.md for the DECISION_REQUIRED
+  // architecture options. An Exchange sits here until a staff member
+  // explicitly confirms the replacement was actually delivered
+  // (ExchangeService.markReplacementFulfilled) - it must NEVER be
+  // reported as COMPLETED merely because this state was reached.
+  REPLACEMENT_ALLOCATED
+  // Only reachable from REPLACEMENT_ALLOCATED via an explicit staff
+  // confirmation that the replacement fulfilment has actually reached
+  // its customer-complete boundary (see markReplacementFulfilled) - this
+  // is the customer-visible "done" state, deliberately never set merely
+  // because the replacement was allocated.
   COMPLETED
   // The original item failed QC (INV-006's own gate, applied here
   // exactly as RET-005 applies it to a Return): disposition still posts
@@ -2420,15 +2491,22 @@ enum ExchangePaymentStatus {
 // documented for cancellation (CAN-004) and returns (this model's own
 // orderLineId is @unique, mirroring ReturnLine's).
 //
-// Scope boundary (EXC-004 in blueprint/DECISION_REGISTER.md): physical
-// FORWARD fulfilment (pick/pack/ship/tracking) of the replacement item is
-// explicitly out of this milestone's scope - `replacementAllocatedAt`
-// marks the replacement as inventory-committed (a firm allocation, no
-// longer available for other orders) once QC passes and payment/credit
-// settles; the warehouse's own pick/pack/ship of that allocated unit is
-// a manual/follow-on process, not tracked here. This mirrors RET-005's
-// own honestly-scoped boundary rather than silently pretending a full
-// parallel shipment pipeline exists.
+// Scope boundary (EXC-004 in blueprint/DECISION_REGISTER.md, corrected
+// 2026-09-26 independent-review repair, finding 3): physical FORWARD
+// fulfilment (pick/pack/ship/tracking) of the replacement item has no
+// certified integration with M16/M17's OrderLine-anchored PickTask/
+// OrderFulfilment/Shipment pipeline in this pass - a genuine
+// DECISION_REQUIRED architecture question, not silently guessed (see
+// EXC-004's own options). `replacementAllocatedAt` marks the replacement
+// as inventory-committed (a firm allocation, no longer available for
+// other orders) once QC passes and payment/credit settles, moving the
+// Exchange to `REPLACEMENT_ALLOCATED` - NEVER `COMPLETED`.
+// `replacementFulfilledAt`/`replacementFulfilledByStaffId` record the
+// explicit staff confirmation (a manual/follow-on process, not tracked
+// by any automated pipeline here) that actually moves the Exchange to
+// `COMPLETED` - the only honest way, absent that architecture decision,
+// to avoid reporting an exchange "done" merely because the stock was
+// set aside.
 model Exchange {
   id                 String         @id @default(uuid())
   exchangeNumber     String         @unique
@@ -2452,8 +2530,16 @@ model Exchange {
   // #2). `replacementAllocatedAt` is set once the reservation is
   // successfully converted to a firm allocation (QC pass + payment/credit
   // settled) - see this model's own scope-boundary comment above.
-  replacementReservationId String?
-  replacementAllocatedAt   DateTime?
+  replacementReservationId      String?
+  replacementAllocatedAt        DateTime?
+  // Set only by an explicit staff confirmation
+  // (ExchangeService.markReplacementFulfilled) that the replacement
+  // fulfilment has actually reached its customer-complete boundary -
+  // see this model's own scope-boundary comment above (EXC-004,
+  // finding 3). Never set automatically alongside
+  // replacementAllocatedAt.
+  replacementFulfilledAt        DateTime?
+  replacementFulfilledByStaffId String?
 
   // Price-difference settlement (EXC-002). originalLineValue mirrors
   // REF-003's "original transaction value" (the original line's own
@@ -2501,15 +2587,16 @@ model Exchange {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  order            Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  orderLine        OrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  originalSku      Sku               @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
-  originalLocation Location          @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
-  replacementSku   Sku               @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
-  initiatedStaff   StaffUser?        @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
-  qcActorStaff     StaffUser?        @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
-  storeCreditEntry StoreCreditEntry? @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
-  paymentEvents    PaymentEvent[]
+  order                       Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLine                   OrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  originalSku                 Sku               @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
+  originalLocation            Location          @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
+  replacementSku              Sku               @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
+  initiatedStaff              StaffUser?        @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
+  qcActorStaff                StaffUser?        @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  replacementFulfilledByStaff StaffUser?        @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
+  storeCreditEntry            StoreCreditEntry? @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
+  paymentEvents               PaymentEvent[]
 
   @@index([orderId])
   @@map("exchanges")

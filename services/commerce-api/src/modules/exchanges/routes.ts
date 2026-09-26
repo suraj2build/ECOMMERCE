@@ -31,6 +31,7 @@ const exchangeRoutes: FastifyPluginAsync = async (fastify) => {
   const initiateAuth = [fastify.requireStaffAuth, fastify.requirePermission('exchange:initiate')];
   const receiveAuth = [fastify.requireStaffAuth, fastify.requirePermission('exchange:receive')];
   const qcAuth = [fastify.requireStaffAuth, fastify.requirePermission('exchange:qc')];
+  const fulfilAuth = [fastify.requireStaffAuth, fastify.requirePermission('exchange:fulfil')];
   const identityAuth = { preHandler: fastify.tryCustomerAuth };
 
   // --- Storefront (customer/guest self-service) ---
@@ -97,7 +98,11 @@ const exchangeRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/exchanges', { preHandler: readAuth }, async (request, reply) => {
     const query = z
-      .object({ status: z.enum(['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'COMPLETED', 'QC_FAILED', 'REPLACEMENT_UNAVAILABLE', 'CANCELLED']).optional() })
+      .object({
+        status: z
+          .enum(['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'REPLACEMENT_ALLOCATED', 'COMPLETED', 'QC_FAILED', 'REPLACEMENT_UNAVAILABLE', 'CANCELLED'])
+          .optional(),
+      })
       .parse(request.query);
     reply.status(200).send(await exchanges.listPendingWarehouseWork(query.status));
   });
@@ -128,6 +133,14 @@ const exchangeRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = qcSchema.parse(request.body);
     reply.status(200).send(await exchanges.recordQcAndDisposition(id, request.staffUser!.id, body));
+  });
+
+  // Independent-review repair (finding 3, 2026-09-26): the only route
+  // that can move an exchange from REPLACEMENT_ALLOCATED to COMPLETED -
+  // see ExchangeService.markReplacementFulfilled's own docblock.
+  fastify.post('/exchanges/:id/replacement-fulfilled', { preHandler: fulfilAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    reply.status(200).send(await exchanges.markReplacementFulfilled(id, request.staffUser!.id));
   });
 };
 

@@ -42,3 +42,7 @@ Thumbs.db
 # Local data volumes (docker-compose bind mounts, if any)
 infra/.data/
 dump.rdb
+
+# Return evidence local-disk storage (RETURN_EVIDENCE_STORAGE_DIR, M19
+# independent-review repair) - private uploaded content, never committed.
+services/commerce-api/var/

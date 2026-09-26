@@ -55,7 +55,7 @@ export interface ExchangeView {
   orderId: string;
   orderLineId: string;
   replacementSkuId: string;
-  status: 'REQUESTED' | 'PICKUP_SCHEDULED' | 'PICKED_UP' | 'RECEIVED' | 'COMPLETED' | 'QC_FAILED' | 'REPLACEMENT_UNAVAILABLE' | 'CANCELLED';
+  status: 'REQUESTED' | 'PICKUP_SCHEDULED' | 'PICKED_UP' | 'RECEIVED' | 'REPLACEMENT_ALLOCATED' | 'COMPLETED' | 'QC_FAILED' | 'REPLACEMENT_UNAVAILABLE' | 'CANCELLED';
   paymentDirection: 'CUSTOMER_PAYS' | 'STORE_CREDIT' | 'EVEN';
   paymentStatus: 'NOT_REQUIRED' | 'PENDING' | 'CAPTURED' | 'FAILED';
   priceDifference: string;

@@ -104,6 +104,12 @@ export const PERMISSION_KEYS = [
   'exchange:initiate',
   'exchange:receive',
   'exchange:qc',
+  // Independent-review repair (finding 3, 2026-09-26): the explicit
+  // staff confirmation that a REPLACEMENT_ALLOCATED exchange's
+  // replacement has actually reached the customer - a distinct,
+  // manager-gated action from exchange:qc (which is about the ORIGINAL
+  // item's condition), never bundled into it.
+  'exchange:fulfil',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

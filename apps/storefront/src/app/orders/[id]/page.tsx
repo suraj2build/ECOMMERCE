@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Container } from '@/components/ui/Container';
 import { Button, buttonClassName } from '@/components/ui/Button';
 import { getMyOrder, cancelMyOrderLine, type OrderView } from '@/lib/orders';
-import { listMyReturns, initiateMyReturn, cancelMyReturn, type ReturnView } from '@/lib/returns';
+import { listMyReturns, initiateMyReturn, cancelMyReturn, uploadMyReturnEvidence, listMyReturnEvidence, type ReturnView } from '@/lib/returns';
 import { listMyOrderRefunds, type RefundView } from '@/lib/refunds';
 import {
   listMyExchanges,
@@ -42,6 +42,7 @@ const RETURN_STATUS_LABEL: Record<ReturnView['status'], string> = {
 // implies money moved before the server actually completed it.
 const REFUND_STATUS_LABEL: Record<RefundView['status'], string> = {
   PENDING: 'Refund pending',
+  PROCESSING: 'Refund processing',
   COMPLETED: 'Refunded',
   FAILED: 'Refund pending (retrying)',
 };
@@ -55,6 +56,7 @@ const EXCHANGE_STATUS_LABEL: Record<ExchangeView['status'], string> = {
   PICKUP_SCHEDULED: 'Pickup scheduled',
   PICKED_UP: 'Picked up - awaiting warehouse receipt',
   RECEIVED: 'Received - under inspection',
+  REPLACEMENT_ALLOCATED: 'Replacement reserved - preparing to ship',
   COMPLETED: 'Exchange completed',
   QC_FAILED: 'Under review',
   REPLACEMENT_UNAVAILABLE: 'Replacement unavailable - we will contact you',
@@ -112,6 +114,9 @@ export default function OrderDetailPage() {
   const [returnMethod, setReturnMethod] = useState<'PICKUP' | 'DROP_OFF'>('PICKUP');
   const [returnError, setReturnError] = useState<string | null>(null);
   const [returnInFlight, setReturnInFlight] = useState(false);
+  const [evidenceCounts, setEvidenceCounts] = useState<Record<string, number>>({});
+  const [evidenceUploadingLineId, setEvidenceUploadingLineId] = useState<string | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [exchanges, setExchanges] = useState<ExchangeView[]>([]);
   const [exchangingLineId, setExchangingLineId] = useState<string | null>(null);
   const [exchangeOptions, setExchangeOptions] = useState<ReplacementOption[]>([]);
@@ -269,6 +274,51 @@ export default function OrderDetailPage() {
     }
   }
 
+  // Independent-review repair (finding 2): loads the evidence-file count
+  // for every active (non-CANCELLED/DISPOSITIONED) return line whenever
+  // the returns list changes, so the upload control can show "N photo(s)
+  // added" without a separate fetch per render.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadEvidenceCounts() {
+      const entries = await Promise.all(
+        returns
+          .filter((ret) => ret.status !== 'CANCELLED' && ret.status !== 'DISPOSITIONED')
+          .flatMap((ret) => ret.lines.map((line) => ({ returnId: ret.id, line })))
+          .map(async ({ returnId, line }) => {
+            try {
+              const evidence = await listMyReturnEvidence(returnId, line.id);
+              // Keyed by the ReturnLine's OWN id (matching
+              // handleEvidenceUpload's own key below), never the
+              // OrderLine's id - the two are different ids.
+              return [line.id, evidence.length] as const;
+            } catch {
+              return [line.orderLineId, 0] as const;
+            }
+          }),
+      );
+      if (!cancelled) setEvidenceCounts(Object.fromEntries(entries));
+    }
+    if (returns.length > 0) void loadEvidenceCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [returns]);
+
+  async function handleEvidenceUpload(returnId: string, lineId: string, file: File) {
+    setEvidenceError(null);
+    setEvidenceUploadingLineId(lineId);
+    try {
+      await uploadMyReturnEvidence(returnId, lineId, file);
+      const evidence = await listMyReturnEvidence(returnId, lineId);
+      setEvidenceCounts((prev) => ({ ...prev, [lineId]: evidence.length }));
+    } catch (err) {
+      setEvidenceError(err instanceof Error ? err.message : 'Could not upload this photo - please try again.');
+    } finally {
+      setEvidenceUploadingLineId(null);
+    }
+  }
+
   if (error) {
     return (
       <Container className="py-8">
@@ -381,21 +431,54 @@ export default function OrderDetailPage() {
               {(() => {
                 const existing = returnForLine(line.id);
                 if (existing) {
+                  const evidenceActive = existing.ret.status !== 'CANCELLED' && existing.ret.status !== 'DISPOSITIONED';
+                  const evidenceCount = evidenceCounts[existing.line.id] ?? 0;
                   return (
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <p className="text-xs text-ink-muted">
-                        {existing.ret.returnNumber}: {RETURN_STATUS_LABEL[existing.ret.status]}
-                        {existing.ret.status === 'CANCELLED' && existing.ret.cancelledReason ? ` (${existing.ret.cancelledReason})` : ''}
-                      </p>
-                      {(existing.ret.status === 'REQUESTED' || existing.ret.status === 'PICKUP_SCHEDULED') && (
-                        <button
-                          type="button"
-                          disabled={returnInFlight}
-                          onClick={() => withdrawReturn(existing.ret.id)}
-                          className="min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
-                        >
-                          Cancel return
-                        </button>
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-ink-muted">
+                          {existing.ret.returnNumber}: {RETURN_STATUS_LABEL[existing.ret.status]}
+                          {existing.ret.status === 'CANCELLED' && existing.ret.cancelledReason ? ` (${existing.ret.cancelledReason})` : ''}
+                        </p>
+                        {(existing.ret.status === 'REQUESTED' || existing.ret.status === 'PICKUP_SCHEDULED') && (
+                          <button
+                            type="button"
+                            disabled={returnInFlight}
+                            onClick={() => withdrawReturn(existing.ret.id)}
+                            className="min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                          >
+                            Cancel return
+                          </button>
+                        )}
+                      </div>
+                      {evidenceActive && (
+                        <div className="flex flex-col gap-1">
+                          <label htmlFor={`return-evidence-${line.id}`} className="text-xs text-ink-muted">
+                            {existing.line.evidenceRequired ? 'Photo of item condition (required)' : 'Add a photo of item condition (optional)'}
+                            {evidenceCount > 0 ? ` - ${evidenceCount} photo${evidenceCount === 1 ? '' : 's'} added` : ''}
+                          </label>
+                          <input
+                            id={`return-evidence-${line.id}`}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            capture="environment"
+                            disabled={evidenceUploadingLineId === line.id}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              // The evidence routes are keyed by the ReturnLine's OWN id
+                              // (existing.line.id), never the OrderLine's id (line.id).
+                              if (file) void handleEvidenceUpload(existing.ret.id, existing.line.id, file);
+                            }}
+                            className="text-xs text-ink-muted"
+                          />
+                          {evidenceUploadingLineId === line.id && <p className="text-xs text-ink-muted">Uploading...</p>}
+                          {evidenceError && (
+                            <p role="alert" className="text-xs text-danger">
+                              {evidenceError}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
                   );

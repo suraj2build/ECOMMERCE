@@ -55,7 +55,7 @@ export interface RefundView {
   triggerType: 'CANCELLATION' | 'RETURN';
   method: 'ORIGINAL_PAYMENT_METHOD' | 'STORE_CREDIT';
   amount: string;
-  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
 }
 
 export interface StoreCreditView {

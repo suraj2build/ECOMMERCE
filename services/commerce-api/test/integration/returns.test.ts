@@ -895,4 +895,209 @@ describe('Returns (M19)', () => {
       expect(finalOrder.status).not.toBe('CANCELLED'); // one line delivered, one cancelled - order itself never force-cancelled
     });
   });
+
+  // --- Evidence upload (independent-review repair, finding 2) ---
+
+  describe('Return evidence upload', () => {
+    const FAKE_JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 0x11)]);
+    const FAKE_PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(200, 0x22)]);
+    // A Windows PE executable's real magic bytes ("MZ...") - declares
+    // itself as image/jpeg in the multipart Content-Type to prove the
+    // server never trusts that claim.
+    const FAKE_EXECUTABLE = Buffer.concat([Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]), Buffer.alloc(200, 0x33)]);
+
+    function multipartBody(boundary: string, fileBuffer: Buffer, filename: string, declaredContentType: string): Buffer {
+      const preamble = Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${declaredContentType}\r\n\r\n`,
+      );
+      const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`);
+      return Buffer.concat([preamble, fileBuffer, epilogue]);
+    }
+
+    function uploadEvidence(url: string, headers: Record<string, string>, fileBuffer: Buffer, filename = 'condition.jpg', declaredContentType = 'image/jpeg') {
+      const boundary = `----testboundary${Math.random().toString(36).slice(2)}`;
+      return app.inject({
+        method: 'POST',
+        url,
+        headers: { ...headers, 'content-type': `multipart/form-data; boundary=${boundary}` },
+        payload: multipartBody(boundary, fileBuffer, filename, declaredContentType),
+      });
+    }
+
+    async function setupDeliveredReturnLine() {
+      const { skuId } = await setupCheckoutableSku(1200);
+      const guestId = `guest-evidence-${counter}`;
+      const { orderId, headers } = await codOrder(skuId, guestId, `idem-evidence-${counter}`);
+      const token = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, token);
+      const initRes = await initiateReturnAsCustomer(orderId, [{ orderLineId: lineId, reason: 'Wrong colour' }], headers, `ret-evidence-${counter}`);
+      expect(initRes.statusCode).toBe(201);
+      const returnId = initRes.json().id as string;
+      const returnLineId = initRes.json().lines[0].id as string;
+      return { orderId, returnId, returnLineId, lineId, headers, token };
+    }
+
+    it('the owning customer can upload, list, and retrieve their own evidence on a mobile-friendly upload endpoint', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      expect(uploadRes.statusCode).toBe(201);
+      const evidence = uploadRes.json();
+      expect(evidence.mimeType).toBe('image/jpeg');
+      expect(evidence.sizeBytes).toBe(FAKE_JPEG.length);
+      // Never a public URL/path - only an opaque server-generated id/key.
+      expect(evidence.objectKey).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(JSON.stringify(evidence)).not.toContain('var/return-evidence');
+
+      const listRes = await app.inject({ method: 'GET', url: `/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json()).toHaveLength(1);
+      expect(listRes.json()[0].id).toBe(evidence.id);
+
+      const contentRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence/${evidence.id}`,
+        headers,
+      });
+      expect(contentRes.statusCode).toBe(200);
+      expect(contentRes.headers['content-type']).toBe('image/jpeg');
+      expect(Buffer.compare(contentRes.rawPayload, FAKE_JPEG)).toBe(0);
+    });
+
+    it('accepts a genuine PNG too, sniffed from its own byte signature', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_PNG, 'condition.png', 'image/png');
+      expect(res.statusCode).toBe(201);
+      expect(res.json().mimeType).toBe('image/png');
+    });
+
+    it('rejects an executable file even when it falsely declares an image Content-Type - never trusts the client-supplied MIME type', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_EXECUTABLE, 'totally-a-photo.jpg', 'image/jpeg');
+      expect(res.statusCode).toBe(400);
+      expect(await testPrisma.returnEvidence.count()).toBe(0);
+    });
+
+    it('rejects a file exceeding the configured maximum size', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const oversized = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(6 * 1024 * 1024, 0x44)]); // > 5 MiB default
+      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, oversized);
+      // Caught by @fastify/multipart's own transport-level `fileSize`
+      // limit (app.ts) BEFORE ReturnService.uploadEvidence's own
+      // config-driven size check ever runs - a 413, the more precise
+      // HTTP status for this case, and defence-in-depth on top of the
+      // service-level check exercised by a same-service size violation
+      // that transport limit wouldn't itself catch.
+      expect(res.statusCode).toBe(413);
+      expect(await testPrisma.returnEvidence.count()).toBe(0);
+    });
+
+    it('enforces the configured maximum number of evidence files per line', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      for (let i = 0; i < 6; i++) {
+        const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG, `photo-${i}.jpg`);
+        expect(res.statusCode).toBe(201);
+      }
+      const overflowRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG, 'photo-overflow.jpg');
+      expect(overflowRes.statusCode).toBe(400);
+      expect(await testPrisma.returnEvidence.count({ where: { returnLineId } })).toBe(6);
+    });
+
+    it('rejects a different guest uploading or reading evidence for another guest\'s return - clean 404, never a distinguishable error (IDOR)', async () => {
+      const { returnId, returnLineId } = await setupDeliveredReturnLine();
+      const otherGuestHeaders = { [GUEST_HEADER]: `guest-evidence-intruder-${counter}` };
+
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, otherGuestHeaders, FAKE_JPEG);
+      expect(uploadRes.statusCode).toBe(404);
+
+      const listRes = await app.inject({ method: 'GET', url: `/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers: otherGuestHeaders });
+      expect(listRes.statusCode).toBe(404);
+    });
+
+    it('rejects reading evidence content by a different guest even with a valid evidence id (IDOR on the content-download route)', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      const evidenceId = uploadRes.json().id as string;
+
+      const otherGuestHeaders = { [GUEST_HEADER]: `guest-evidence-intruder2-${counter}` };
+      const contentRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence/${evidenceId}`,
+        headers: otherGuestHeaders,
+      });
+      expect(contentRes.statusCode).toBe(404);
+    });
+
+    it('authorized staff can inspect (list and download) evidence uploaded by a customer, attributed correctly in the audit log', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      const evidenceId = uploadRes.json().id as string;
+
+      const staffToken = await warehouseToken();
+      const listRes = await app.inject({ method: 'GET', url: `/api/v1/returns/${returnId}/lines/${returnLineId}/evidence`, headers: { authorization: `Bearer ${staffToken}` } });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json()).toHaveLength(1);
+
+      const contentRes = await app.inject({
+        method: 'GET',
+        url: `/api/v1/returns/${returnId}/lines/${returnLineId}/evidence/${evidenceId}`,
+        headers: { authorization: `Bearer ${staffToken}` },
+      });
+      expect(contentRes.statusCode).toBe(200);
+
+      const audit = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'return.evidence.upload', entityId: evidenceId } });
+      expect(audit.actorType).toBe('CUSTOMER');
+    });
+
+    it('a staff member without return:read cannot inspect evidence', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+
+      await grantPermissions('MARKETING', ['marketing:manage']);
+      const noPermToken = (await createAuthenticatedStaff(app, ['MARKETING'])).token;
+      const res = await app.inject({ method: 'GET', url: `/api/v1/returns/${returnId}/lines/${returnLineId}/evidence`, headers: { authorization: `Bearer ${noPermToken}` } });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('rejects a completely unauthenticated evidence upload with 400 (no guest/customer identity presented at all) - the SAME precedent as every other storefront route', async () => {
+      const { returnId, returnLineId } = await setupDeliveredReturnLine();
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, {}, FAKE_JPEG);
+      // resolveCartIdentity (shared by every storefront route) rejects a
+      // request with NEITHER a customer session NOR a guest-session
+      // header as a 400 request-validation failure - distinct from the
+      // clean-404 IDOR case above, which is identity PRESENT but not
+      // matching. Both cases already prove no distinguishable-403 leak.
+      expect(uploadRes.statusCode).toBe(400);
+    });
+
+    it('resolves evidenceRequired per line from the SAME style > category > platform-default ReturnPolicy order as the window/returnable check, and exposes it on read', async () => {
+      const { skuId, categoryId } = await setupCheckoutableSku(1200);
+      await testPrisma.returnPolicy.create({ data: { categoryId, windowDays: 7, returnable: true, evidenceRequired: true } });
+      const guestId = `guest-evidence-required-${counter}`;
+      const { orderId, headers } = await codOrder(skuId, guestId, `idem-evidence-required-${counter}`);
+      const token = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, token);
+      const initRes = await initiateReturnAsCustomer(orderId, [{ orderLineId: lineId, reason: 'Wrong colour' }], headers, `ret-evidence-required-${counter}`);
+      const returnId = initRes.json().id as string;
+
+      const getRes = await app.inject({ method: 'GET', url: `/api/v1/storefront/returns/${returnId}`, headers });
+      expect(getRes.statusCode).toBe(200);
+      expect(getRes.json().lines[0].evidenceRequired).toBe(true);
+
+      // Config-driven, never universally mandatory - the return itself
+      // was already created above WITHOUT any evidence, proving the
+      // flag drives the storefront's OWN UI treatment rather than a
+      // hard server-side gate on initiation.
+      expect(await testPrisma.return.count({ where: { id: returnId } })).toBe(1);
+    });
+
+    it('rejects adding evidence to a cancelled return', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const cancelRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/returns/${returnId}/cancel`, headers });
+      expect(cancelRes.statusCode).toBe(200);
+
+      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      expect(res.statusCode).toBe(400);
+    });
+  });
 });

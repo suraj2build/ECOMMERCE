@@ -1,5 +1,12 @@
+import path from 'node:path';
 import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { PrismaClient } from '@fcp/db';
+
+// Playwright's config runs from the repo root - a real local file path is
+// required for setInputFiles (unlike the URL fixtures used elsewhere in
+// this file), so this resolves relative to the process's own cwd rather
+// than this module's own location.
+const FIXTURE_IMAGE_PATH = path.join(process.cwd(), 'apps/storefront/public/e2e-fixture.png');
 
 const API_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
 const STOREFRONT_URL = process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000';
@@ -315,5 +322,52 @@ test.describe('Returns', () => {
 
     const returnRow = await prisma.return.findFirstOrThrow({ where: { orderId } });
     expect(returnRow.method).toBe('PICKUP');
+  });
+
+  /**
+   * Independent-review repair (finding 2, specs/18-returns.md mobile
+   * behaviour): the mobile-camera-friendly evidence-upload flow, driven
+   * through a real browser at a genuine mobile viewport. Playwright's
+   * `setInputFiles` is the standard way to drive a
+   * `<input type="file" capture="environment">` in an automated test -
+   * it exercises the exact same file-selection code path a real phone's
+   * camera-capture UI would hand back to the page, without needing an
+   * actual camera in CI.
+   */
+  test('uploads return-condition evidence via the mobile-camera-friendly upload control on a genuine mobile viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const { orderId, lineId } = await placeOneLineCodOrder(page, '9876510003', true);
+    await deliverOrder(orderId, lineId);
+
+    await page.goto(`/orders/${orderId}`);
+    const hoodieRow = page.locator('li', { hasText: 'E2E Returns Hoodie' });
+    await hoodieRow.getByRole('button', { name: 'Return this item' }).click();
+    await hoodieRow.getByLabel(/Reason/).fill('Fabric feels different from the photos');
+    await hoodieRow.getByLabel('Drop-off').check();
+    await hoodieRow.getByRole('button', { name: 'Start return' }).click();
+    await expect(hoodieRow.getByText(/Return requested/)).toBeVisible();
+
+    // The upload control is present and offered as optional by default
+    // (no evidenceRequired policy configured for this style/category).
+    const fileInput = hoodieRow.locator('input[type="file"]');
+    await expect(hoodieRow.getByText(/Add a photo of item condition \(optional\)/)).toBeVisible();
+
+    await fileInput.setInputFiles(FIXTURE_IMAGE_PATH);
+    await expect(hoodieRow.getByText(/1 photo added/)).toBeVisible({ timeout: 10_000 });
+
+    // Database-verified outcome: a real, private ReturnEvidence row
+    // exists, correctly attributed to the customer, sniffed as a
+    // genuine PNG.
+    const returnRow = await prisma.return.findFirstOrThrow({ where: { orderId }, include: { lines: true } });
+    const evidence = await prisma.returnEvidence.findFirstOrThrow({ where: { returnLineId: returnRow.lines[0]!.id } });
+    expect(evidence.mimeType).toBe('image/png');
+    expect(evidence.uploadedBy).toBe('CUSTOMER');
+    expect(evidence.sizeBytes).toBeGreaterThan(0);
+
+    // A second upload increments the count rather than replacing it.
+    await fileInput.setInputFiles(FIXTURE_IMAGE_PATH);
+    await expect(hoodieRow.getByText(/2 photos added/)).toBeVisible({ timeout: 10_000 });
+    expect(await prisma.returnEvidence.count({ where: { returnLineId: returnRow.lines[0]!.id } })).toBe(2);
   });
 });

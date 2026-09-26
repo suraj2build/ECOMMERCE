@@ -42,11 +42,17 @@ export interface InitiateExchangeInput {
  * "never fire a financial consequence before the QC gate" discipline);
  * =0 -> EVEN (nothing to settle).
  *
- * Scope boundary (EXC-004): physical FORWARD fulfilment of the
- * replacement (pick/pack/ship/tracking) is out of this milestone -
- * `replacementAllocatedAt` marks it inventory-committed once QC passes
- * and payment/credit settles; a human/future-milestone process actually
- * ships it. See the Exchange model's own schema comment.
+ * Scope boundary (EXC-004, corrected 2026-09-26 independent-review
+ * repair, finding 3): physical FORWARD fulfilment of the replacement
+ * (pick/pack/ship/tracking) has no certified integration with M16/M17's
+ * OrderLine-anchored pipeline in this pass - a genuine DECISION_REQUIRED
+ * architecture question (see EXC-004's own options), not silently
+ * guessed. `replacementAllocatedAt` marks it inventory-committed once QC
+ * passes and payment/credit settles, moving the Exchange to
+ * REPLACEMENT_ALLOCATED - never COMPLETED. Only
+ * `markReplacementFulfilled`'s own explicit staff confirmation (a
+ * manual/follow-on action) moves it to COMPLETED. See the Exchange
+ * model's own schema comment.
  */
 export class ExchangeService {
   private readonly order: OrderService;
@@ -179,6 +185,34 @@ export class ExchangeService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Independent-review repair (finding 5, 2026-09-26): the
+        // `line.exchange`/`line.returnLine` checks above ran on a plain,
+        // unlocked read taken BEFORE this transaction even opened - a
+        // genuinely concurrent ReturnService.performInitiate on the SAME
+        // OrderLine (a different idempotency key) could read "no
+        // exchange yet" at the same moment this method did, and both
+        // proceed to insert into their own separate table
+        // (`exchanges`/`return_lines` have independent unique
+        // constraints on orderLineId, so the database does not block
+        // this by itself). Re-locking and re-checking the SAME OrderLine
+        // row here, as the very first statement of this transaction,
+        // makes this transaction and ReturnService's own lock on the
+        // identical row (see that service's own matching comment)
+        // genuinely serialize on one shared row lock - this is the
+        // authoritative check; everything validated above (deliverable
+        // status, window/policy, replacement SKU) is a fast-fail
+        // pre-check only.
+        await tx.$queryRaw`SELECT "id" FROM "order_lines" WHERE "id" = ${input.orderLineId} FOR UPDATE`;
+        const freshLine = await tx.orderLine.findUnique({
+          where: { id: input.orderLineId },
+          include: { exchange: true, returnLine: { include: { return: true } } },
+        });
+        if (!freshLine || freshLine.orderId !== input.orderId) throw new NotFoundError('OrderLine', input.orderLineId);
+        if (freshLine.exchange) throw new ConflictError(`Order line '${input.orderLineId}' already has an existing exchange`);
+        if (freshLine.returnLine && freshLine.returnLine.return.status !== 'CANCELLED') {
+          throw new ConflictError(`Order line '${input.orderLineId}' already has an existing return`);
+        }
+
         const reservation = await this.inventory.reserve(
           {
             skuId: replacementSku.id,
@@ -520,18 +554,27 @@ export class ExchangeService {
   }
 
   /**
-   * Attempts to move a QC-passed exchange to COMPLETED: settles the
-   * price difference (issues store credit if STORE_CREDIT and not yet
-   * issued; no-ops if CUSTOMER_PAYS and not yet CAPTURED - completion
-   * simply waits) and converts the replacement reservation into a firm
-   * allocation. Called from both the QC-pass path and the payment-
-   * capture webhook path, since completion depends on BOTH conditions
-   * and either can be the one that arrives last.
+   * Attempts to move a QC-passed exchange to REPLACEMENT_ALLOCATED (NOT
+   * COMPLETED - see this method's own finding-3 comment below): settles
+   * the price difference (issues store credit if STORE_CREDIT and not
+   * yet issued; no-ops if CUSTOMER_PAYS and not yet CAPTURED - this
+   * step simply waits) and converts the replacement reservation into a
+   * firm allocation. Called from both the QC-pass path and the payment-
+   * capture webhook path, since it depends on BOTH conditions and
+   * either can be the one that arrives last.
    */
   private async tryComplete(exchangeId: string): Promise<void> {
     const exchange = await this.prisma.exchange.findUnique({ where: { id: exchangeId } });
     if (!exchange) return;
-    if (exchange.status === 'COMPLETED' || exchange.status === 'CANCELLED' || exchange.status === 'QC_FAILED' || exchange.status === 'REPLACEMENT_UNAVAILABLE') return;
+    if (
+      exchange.status === 'REPLACEMENT_ALLOCATED' ||
+      exchange.status === 'COMPLETED' ||
+      exchange.status === 'CANCELLED' ||
+      exchange.status === 'QC_FAILED' ||
+      exchange.status === 'REPLACEMENT_UNAVAILABLE'
+    ) {
+      return;
+    }
     if (exchange.qcResult !== 'PASS') return;
     const paymentSettled = exchange.paymentStatus === 'NOT_REQUIRED' || exchange.paymentStatus === 'CAPTURED';
     if (!paymentSettled) return;
@@ -573,11 +616,60 @@ export class ExchangeService {
       return;
     }
 
+    // Independent-review repair (finding 3, 2026-09-26): independent
+    // review did not accept `status = COMPLETED` merely because the
+    // replacement's stock was set aside - a customer exchange is not
+    // complete until the replacement actually reaches the customer.
+    // Physical forward fulfilment (pick/pack/ship/tracking) of the
+    // allocated replacement has no certified integration with M16/M17's
+    // OrderLine-anchored PickTask/OrderFulfilment/Shipment pipeline in
+    // this pass - a genuine architecture question, not silently guessed
+    // (see EXC-004 in blueprint/DECISION_REGISTER.md for the
+    // DECISION_REQUIRED options). So this only reaches
+    // REPLACEMENT_ALLOCATED here - the inventory side is fully
+    // resolved, but COMPLETED is reserved for markReplacementFulfilled's
+    // own explicit staff confirmation that the replacement genuinely
+    // reached its customer-complete boundary.
     await this.prisma.exchange.updateMany({
-      where: { id: exchange.id, status: { notIn: ['COMPLETED', 'CANCELLED', 'REPLACEMENT_UNAVAILABLE'] } },
-      data: { status: 'COMPLETED', replacementAllocatedAt: new Date() },
+      where: { id: exchange.id, status: { notIn: ['REPLACEMENT_ALLOCATED', 'COMPLETED', 'CANCELLED', 'REPLACEMENT_UNAVAILABLE'] } },
+      data: { status: 'REPLACEMENT_ALLOCATED', replacementAllocatedAt: new Date() },
     });
-    await recordAudit(this.prisma, { actorType: 'SYSTEM', action: 'exchange.complete', entityType: 'Exchange', entityId: exchange.id, reference: exchange.orderId });
+    await recordAudit(this.prisma, { actorType: 'SYSTEM', action: 'exchange.replacement_allocated', entityType: 'Exchange', entityId: exchange.id, reference: exchange.orderId });
+  }
+
+  /**
+   * The ONLY path that ever moves an Exchange to COMPLETED (finding 3) -
+   * an explicit staff confirmation that the replacement fulfilment has
+   * actually reached its customer-complete boundary. A manual/follow-on
+   * action, not driven by any automated pipeline in this pass (see
+   * tryComplete's own docblock and EXC-004) - this is the honest
+   * minimum that keeps "COMPLETED" meaningful without guessing an
+   * unbuilt integration.
+   */
+  async markReplacementFulfilled(exchangeId: string, staffId: string): Promise<Exchange> {
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await this.lockExchange(tx, exchangeId);
+      if (!locked) throw new NotFoundError('Exchange', exchangeId);
+      if (locked.status === 'COMPLETED') return tx.exchange.findUniqueOrThrow({ where: { id: exchangeId } }); // idempotent no-op
+      if (locked.status !== 'REPLACEMENT_ALLOCATED') {
+        throw new ValidationError(
+          `Cannot confirm replacement fulfilment for an exchange in status '${locked.status}' - the replacement must be allocated (REPLACEMENT_ALLOCATED) first`,
+        );
+      }
+      await tx.exchange.update({
+        where: { id: exchangeId },
+        data: { status: 'COMPLETED', replacementFulfilledAt: new Date(), replacementFulfilledByStaffId: staffId },
+      });
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: staffId,
+        action: 'exchange.replacement_fulfilled',
+        entityType: 'Exchange',
+        entityId: exchangeId,
+        reference: locked.orderId,
+      });
+      return tx.exchange.findUniqueOrThrow({ where: { id: exchangeId } });
+    });
   }
 
   // --- Reads ---
@@ -610,7 +702,11 @@ export class ExchangeService {
 
   async listPendingWarehouseWork(status?: ExchangeStatus): Promise<Exchange[]> {
     return this.prisma.exchange.findMany({
-      where: status ? { status } : { status: { in: ['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED'] } },
+      // REPLACEMENT_ALLOCATED still needs staff action (an explicit
+      // markReplacementFulfilled confirmation - finding 3), so it stays
+      // in the default "pending work" set alongside the warehouse-floor
+      // statuses.
+      where: status ? { status } : { status: { in: ['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'REPLACEMENT_ALLOCATED'] } },
       orderBy: { createdAt: 'asc' },
       take: 100,
     });

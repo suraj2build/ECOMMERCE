@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { ValidationError } from '@fcp/shared';
 import { ReturnService } from './service.js';
 import { resolveCartIdentity } from '../cart/identity.js';
 
@@ -65,6 +66,30 @@ const returnRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await returnService.cancelReturn(id, null, identity, body.reason));
   });
 
+  // --- Evidence (M19 independent-review repair, finding 2) ---
+
+  fastify.post('/storefront/returns/:id/lines/:lineId/evidence', identityAuth, async (request, reply) => {
+    const identity = resolveCartIdentity(request);
+    const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
+    const part = await request.file();
+    if (!part) throw new ValidationError('An evidence file is required');
+    const buffer = await part.toBuffer();
+    reply.status(201).send(await returnService.uploadEvidence(id, lineId, null, identity, { buffer }));
+  });
+
+  fastify.get('/storefront/returns/:id/lines/:lineId/evidence', identityAuth, async (request, reply) => {
+    const identity = resolveCartIdentity(request);
+    const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
+    reply.status(200).send(await returnService.listEvidence(id, lineId, identity));
+  });
+
+  fastify.get('/storefront/returns/:id/lines/:lineId/evidence/:evidenceId', identityAuth, async (request, reply) => {
+    const identity = resolveCartIdentity(request);
+    const { id, lineId, evidenceId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid(), evidenceId: z.string().uuid() }).parse(request.params);
+    const content = await returnService.getEvidenceContent(id, lineId, evidenceId, identity);
+    reply.status(200).header('content-type', content.mimeType).header('cache-control', 'private, no-store').send(content.buffer);
+  });
+
   // --- Staff ---
 
   fastify.post('/returns', { preHandler: initiateAuth }, async (request, reply) => {
@@ -117,6 +142,27 @@ const returnRoutes: FastifyPluginAsync = async (fastify) => {
     const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
     const body = qcSchema.parse(request.body);
     reply.status(200).send(await returnService.recordQcAndDisposition(id, lineId, request.staffUser!.id, body));
+  });
+
+  // --- Evidence (M19 independent-review repair, finding 2) - staff can inspect; CS-assisted upload uses the same return:initiate grouping as staff initiation ---
+
+  fastify.post('/returns/:id/lines/:lineId/evidence', { preHandler: initiateAuth }, async (request, reply) => {
+    const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
+    const part = await request.file();
+    if (!part) throw new ValidationError('An evidence file is required');
+    const buffer = await part.toBuffer();
+    reply.status(201).send(await returnService.uploadEvidence(id, lineId, request.staffUser!.id, null, { buffer }));
+  });
+
+  fastify.get('/returns/:id/lines/:lineId/evidence', { preHandler: readAuth }, async (request, reply) => {
+    const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
+    reply.status(200).send(await returnService.listEvidence(id, lineId, null));
+  });
+
+  fastify.get('/returns/:id/lines/:lineId/evidence/:evidenceId', { preHandler: readAuth }, async (request, reply) => {
+    const { id, lineId, evidenceId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid(), evidenceId: z.string().uuid() }).parse(request.params);
+    const content = await returnService.getEvidenceContent(id, lineId, evidenceId, null);
+    reply.status(200).header('content-type', content.mimeType).header('cache-control', 'private, no-store').send(content.buffer);
   });
 };
 

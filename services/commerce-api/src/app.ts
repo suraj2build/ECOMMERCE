@@ -1,4 +1,5 @@
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyError } from 'fastify';
+import multipart from '@fastify/multipart';
 import { loadEnv } from '@fcp/config';
 import { createLogger } from '@fcp/shared';
 
@@ -91,6 +92,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(corsPlugin);
   await app.register(errorHandlerPlugin);
   await app.register(authPlugin);
+  // Return-evidence upload only (M19 independent-review repair, finding
+  // 2) - a hard byte-ceiling backstop at the transport layer, defence
+  // in depth alongside ReturnService.uploadEvidence's own config-driven
+  // size/MIME checks. Nothing else in this API accepts file uploads.
+  await app.register(multipart, { limits: { fileSize: loadEnv().RETURN_EVIDENCE_MAX_FILE_SIZE_BYTES, files: 1 } });
 
   // Search indexing (M10, ADR-0006) - decorated once so every module can
   // trigger a best-effort reindex after a catalog/price/stock change

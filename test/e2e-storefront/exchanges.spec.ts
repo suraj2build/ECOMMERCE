@@ -189,15 +189,32 @@ test.describe('Exchanges', () => {
     await expectOk(await api.post(`/api/v1/exchanges/${exchange.id}/qc`, { headers: staffAuthHeaders, data: { qcResult: 'PASS', disposition: 'RESTOCK_SELLABLE' } }), 'QC pass');
 
     await page.reload();
+    const rowAfterQc = page.locator('li', { hasText: 'E2E Exchange Jacket' });
+    // Independent-review repair (finding 3): QC pass + store-credit
+    // settlement moves this to REPLACEMENT_ALLOCATED, never straight to
+    // COMPLETED - the replacement hasn't reached the customer yet.
+    await expect(rowAfterQc.getByText(/Replacement reserved/)).toBeVisible();
+    const afterQc = await prisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(afterQc.status).toBe('REPLACEMENT_ALLOCATED');
+    expect(afterQc.replacementAllocatedAt).toBeTruthy();
+
+    // Only an explicit staff confirmation that the replacement actually
+    // reached the customer moves it to COMPLETED (no automated pipeline
+    // exists for this in the current build - see EXC-004's
+    // DECISION_REQUIRED entry).
+    await expectOk(await api.post(`/api/v1/exchanges/${exchange.id}/replacement-fulfilled`, { headers: staffAuthHeaders }), 'Confirm replacement fulfilled');
+
+    await page.reload();
     const rowAfter = page.locator('li', { hasText: 'E2E Exchange Jacket' });
     await expect(rowAfter.getByText(/Exchange completed/)).toBeVisible();
 
     // Database-verified outcome: real store credit issued to this
     // guest, the exchange fully COMPLETED with the replacement
-    // allocated.
+    // allocated AND fulfilment explicitly confirmed.
     const completed = await prisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
     expect(completed.status).toBe('COMPLETED');
     expect(completed.replacementAllocatedAt).toBeTruthy();
+    expect(completed.replacementFulfilledAt).toBeTruthy();
     const account = await prisma.storeCreditAccount.findUniqueOrThrow({ where: { guestSessionId: order.guestSessionId! } });
     expect(Number(account.balance)).toBeCloseTo(Math.abs(Number(exchange.priceDifference)), 2);
   });

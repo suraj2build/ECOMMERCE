@@ -58,6 +58,18 @@ export interface ReturnLineView {
   disposition: 'RESTOCK_SELLABLE' | 'RESTOCK_DAMAGED' | 'WRITE_OFF' | 'RETURN_TO_SUPPLIER' | null;
   qcResult: 'PASS' | 'FAIL' | 'PARTIAL' | null;
   refundEligible: boolean;
+  // Independent-review repair (finding 2, specs/18-returns.md mobile
+  // behavior): config-driven, resolved fresh per line from ReturnPolicy
+  // on every read - drives whether this line's photo-upload step is
+  // presented as required rather than optional.
+  evidenceRequired: boolean;
+}
+
+export interface ReturnEvidenceView {
+  id: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 }
 
 export interface ReturnView {
@@ -94,3 +106,30 @@ export const cancelMyReturn = (id: string, reason?: string) =>
     method: 'POST',
     body: JSON.stringify({ reason }),
   });
+
+/**
+ * Mobile-camera-friendly evidence upload (independent-review repair,
+ * finding 2). `file` is whatever a `<input type="file" accept="image/*"
+ * capture="environment">` hands back on a phone - the browser's own
+ * camera-capture flow, not a custom one built here. Multipart, not
+ * JSON, so `returnsFetch`'s own `Content-Type: application/json` default
+ * must NOT be applied - the browser sets its own multipart boundary
+ * header when given a FormData body.
+ */
+export async function uploadMyReturnEvidence(returnId: string, lineId: string, file: File): Promise<ReturnEvidenceView> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const res = await fetch(`${API_URL}/api/v1/storefront/returns/${returnId}/lines/${lineId}/evidence`, {
+    method: 'POST',
+    headers: identityHeaders(),
+    body: form,
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+    throw new Error(body?.error?.message ?? `Upload failed (${res.status})`);
+  }
+  return res.json() as Promise<ReturnEvidenceView>;
+}
+
+export const listMyReturnEvidence = (returnId: string, lineId: string) =>
+  returnsFetch<ReturnEvidenceView[]>(`/api/v1/storefront/returns/${returnId}/lines/${lineId}/evidence`);

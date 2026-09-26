@@ -9,7 +9,10 @@ import { NotFoundError } from '@fcp/shared';
  * table and the SAME style > category > platform-default resolution
  * order, not two independently-maintained copies.
  */
-export async function resolveReturnPolicy(prisma: PrismaClient, skuId: string): Promise<{ windowDays: number; returnable: boolean }> {
+export async function resolveReturnPolicy(
+  prisma: PrismaClient,
+  skuId: string,
+): Promise<{ windowDays: number; returnable: boolean; evidenceRequired: boolean }> {
   const sku = await prisma.sku.findUnique({
     where: { id: skuId },
     select: { styleId: true, style: { select: { categoryId: true } } },
@@ -17,12 +20,12 @@ export async function resolveReturnPolicy(prisma: PrismaClient, skuId: string): 
   if (!sku) throw new NotFoundError('Sku', skuId);
 
   const styleRow = await prisma.returnPolicy.findUnique({ where: { styleId: sku.styleId } });
-  if (styleRow) return { windowDays: styleRow.windowDays, returnable: styleRow.returnable };
+  if (styleRow) return { windowDays: styleRow.windowDays, returnable: styleRow.returnable, evidenceRequired: styleRow.evidenceRequired };
 
   const categoryRow = await prisma.returnPolicy.findUnique({ where: { categoryId: sku.style.categoryId } });
-  if (categoryRow) return { windowDays: categoryRow.windowDays, returnable: categoryRow.returnable };
+  if (categoryRow) return { windowDays: categoryRow.windowDays, returnable: categoryRow.returnable, evidenceRequired: categoryRow.evidenceRequired };
 
-  return { windowDays: loadEnv().RETURN_WINDOW_DEFAULT_DAYS, returnable: true };
+  return { windowDays: loadEnv().RETURN_WINDOW_DEFAULT_DAYS, returnable: true, evidenceRequired: false };
 }
 
 /**

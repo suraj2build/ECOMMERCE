@@ -107,8 +107,36 @@ const envSchema = z.object({
   // scenario #2: "hold reservation for a bounded window") - deliberately
   // far longer than INVENTORY_RESERVATION_TTL_SECONDS's checkout-session
   // default, since an exchange's original item genuinely takes days to
-  // travel back, not minutes.
+  // travel back, not minutes. The 14-calendar-day default is an EXPLICIT
+  // Product Owner decision (Post-Purchase Phase independent-review
+  // repair, 2026-09-26 - see EXC-004 in blueprint/DECISION_REGISTER.md),
+  // not an engineering default - it remains configurable here, and MUST
+  // NOT be silently changed without a corresponding Product Owner
+  // decision recorded the same way.
   EXCHANGE_REPLACEMENT_HOLD_DAYS: z.coerce.number().int().positive().default(14),
+
+  // --- Return evidence (M19 independent-review repair, finding 2) ---
+  // Config-driven per ReturnPolicy.evidenceRequired - these are the
+  // platform-wide upload constraints, never per-request client input.
+  // No usable S3/MinIO object-storage client existed anywhere in this
+  // codebase before this repair (ADR-0007 only ever scaffolded the
+  // config/docker-compose service, never a client) and no MinIO instance
+  // is reachable in CI/this sandbox - RETURN_EVIDENCE_STORAGE_DIR is a
+  // private, non-statically-served local-disk directory (the minimum
+  // provider abstraction this pass actually needs and can test for
+  // real), never served directly by any route.
+  RETURN_EVIDENCE_STORAGE_DIR: z.string().default('var/return-evidence'),
+  RETURN_EVIDENCE_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(5_242_880), // 5 MiB
+  RETURN_EVIDENCE_ALLOWED_MIME_TYPES: z.string().default('image/jpeg,image/png,image/webp'),
+  RETURN_EVIDENCE_MAX_FILES_PER_LINE: z.coerce.number().int().positive().default(6),
+
+  // --- Refunds (M20 independent-review repair, finding 4) ---
+  // Age-based recovery cutoff for a Refund stuck in PROCESSING (the
+  // in-flight CAS-claimed status - see RefundStatus's own schema
+  // comment) because the process that claimed it crashed before ever
+  // reaching the terminal claim - same "stale after N seconds is safe to
+  // reclaim" idiom as PAYMENT_TIMEOUT_SECONDS/expireStalePayments.
+  REFUND_PROCESSING_STALE_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
 });
 
 export type Env = z.infer<typeof envSchema>;

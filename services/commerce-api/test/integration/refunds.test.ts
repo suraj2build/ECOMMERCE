@@ -652,6 +652,163 @@ describe('Refunds & Store Credit (M20)', () => {
     expect(orderAfterRetry.refundRequired).toBe(false);
   });
 
+  // --- 8b. Independent-review repair, finding 4: deeper refund-concurrency recheck ---
+
+  it('genuinely concurrent PREPAID refund requests call the Razorpay refund endpoint exactly once (the PROCESSING claim, not merely Razorpay idempotency, prevents a second call)', async () => {
+    const { skuId } = await setupCheckoutableSku(1500);
+    const { orderId } = await prepaidCapturedOrder(skuId, `guest-prepaid-conc-${counter}`, `idem-prepaid-conc-${counter}`);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    const lineId = order.lines[0]!.id;
+    const csT = await csToken();
+    await cancelLine(orderId, lineId, csT, `cancel-prepaid-conc-${counter}`);
+    const fin = await financeToken();
+
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
+    const callsBefore = fetchMock.mock.calls.length;
+
+    const [a, b, c] = await Promise.all([
+      processRefund(orderId, lineId, fin, `prepaid-conc-a-${counter}`),
+      processRefund(orderId, lineId, fin, `prepaid-conc-b-${counter}`),
+      processRefund(orderId, lineId, fin, `prepaid-conc-c-${counter}`),
+    ]);
+    // All three resolve to the SAME Refund row. Each one's OWN HTTP
+    // response reflects whatever this row's status was at the exact
+    // instant it was read: the winner of the PROCESSING claim (below)
+    // sees the full settlement through to COMPLETED, but a loser that
+    // lost the claim returns immediately without waiting for the
+    // winner - it may legitimately observe a transient PROCESSING
+    // snapshot rather than the eventual COMPLETED outcome. That is the
+    // correct, intended behaviour of a genuine in-flight claim (never a
+    // FAILED or a second independent settlement), not a bug - at least
+    // one must reflect the real work; none may show anything else.
+    for (const r of [a, b, c]) {
+      expect(r.statusCode).toBe(201);
+      expect(['PROCESSING', 'COMPLETED']).toContain(r.json().status);
+    }
+    expect([a, b, c].some((r) => r.json().status === 'COMPLETED')).toBe(true);
+    expect(new Set([a, b, c].map((r) => r.json().id)).size).toBe(1);
+
+    const refundCalls = fetchMock.mock.calls.slice(callsBefore).filter(([url]) => (url as string).toString().includes('/refund'));
+    // The database-level PROCESSING claim (finding 4) is what actually
+    // guarantees this - not merely Razorpay's own idempotency-key
+    // dedup, which is a real but time-bounded contract this test does
+    // not (and cannot) exercise the boundary of.
+    expect(refundCalls.length).toBe(1);
+    expect(await testPrisma.refund.count({ where: { orderLineId: lineId } })).toBe(1);
+
+    const finalRefund = await testPrisma.refund.findUniqueOrThrow({ where: { id: a.json().id } });
+    expect(finalRefund.status).toBe('COMPLETED'); // the eventual, settled outcome
+
+    const payment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: order.checkoutSessionId } });
+    // A single-line refund amount is less than Payment.amount (which
+    // includes shipping) - PARTIALLY_REFUNDED is the correct outcome,
+    // same as the pre-existing provider-failure-retry test above.
+    expect(['REFUNDED', 'PARTIALLY_REFUNDED']).toContain(payment.status);
+  });
+
+  it('a stale PROCESSING refund (the settling process crashed before its terminal claim) is recoverable via retry', async () => {
+    const { skuId } = await setupCheckoutableSku(1500);
+    const { orderId } = await prepaidCapturedOrder(skuId, `guest-stale-${counter}`, `idem-stale-${counter}`);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    const lineId = order.lines[0]!.id;
+    const csT = await csToken();
+    await cancelLine(orderId, lineId, csT, `cancel-stale-${counter}`);
+    const fin = await financeToken();
+
+    // Simulate a genuine intent row that a crashed process claimed but
+    // never finished settling - never reachable through the API itself
+    // (settle() always claims-then-terminally-resolves in one call
+    // path), so this directly manufactures the exact DB state a real
+    // crash would leave behind.
+    const createRes = await processRefund(orderId, lineId, fin, `refund-stale-create-${counter}`);
+    // processRefund already settles to COMPLETED in this mock - force it
+    // back to a stale PROCESSING row to simulate the crash scenario.
+    const refundId = createRes.json().id as string;
+    await testPrisma.refund.update({
+      where: { id: refundId },
+      data: { status: 'PROCESSING', updatedAt: new Date(Date.now() - 10 * 60 * 1000) }, // 10 min ago, past the 5 min default stale window
+    });
+
+    const retryRes = await app.inject({ method: 'POST', url: `/api/v1/refunds/${refundId}/retry`, headers: { authorization: `Bearer ${fin}` } });
+    expect(retryRes.statusCode).toBe(200);
+    expect(retryRes.json().status).toBe('COMPLETED');
+    expect(await testPrisma.refund.count({ where: { orderLineId: lineId } })).toBe(1); // still exactly one row
+  });
+
+  it('a FRESH (non-stale) PROCESSING refund is left alone by a concurrent retry - never re-calls the provider', async () => {
+    const { skuId } = await setupCheckoutableSku(1500);
+    const { orderId } = await prepaidCapturedOrder(skuId, `guest-fresh-${counter}`, `idem-fresh-${counter}`);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    const lineId = order.lines[0]!.id;
+    const csT = await csToken();
+    await cancelLine(orderId, lineId, csT, `cancel-fresh-${counter}`);
+    const fin = await financeToken();
+
+    const createRes = await processRefund(orderId, lineId, fin, `refund-fresh-create-${counter}`);
+    const refundId = createRes.json().id as string;
+    // Force it to a FRESH PROCESSING row (updatedAt = now) - simulates a
+    // genuinely still-in-flight concurrent attempt, not a crash.
+    await testPrisma.refund.update({ where: { id: refundId }, data: { status: 'PROCESSING' } });
+
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
+    const callsBefore = fetchMock.mock.calls.length;
+
+    const retryRes = await app.inject({ method: 'POST', url: `/api/v1/refunds/${refundId}/retry`, headers: { authorization: `Bearer ${fin}` } });
+    expect(retryRes.statusCode).toBe(200);
+    // Left exactly as PROCESSING - the retry did NOT claim it, and
+    // therefore never re-called the provider.
+    expect(retryRes.json().status).toBe('PROCESSING');
+    const refundCalls = fetchMock.mock.calls.slice(callsBefore).filter(([url]) => (url as string).toString().includes('/refund'));
+    expect(refundCalls.length).toBe(0);
+  });
+
+  it('a reconciliation-sweep pass racing an explicit staff retry for the same refund still converges to exactly one completed settlement', async () => {
+    const { skuId } = await setupCheckoutableSku(1500);
+    const { orderId } = await prepaidCapturedOrder(skuId, `guest-sweep-race-${counter}`, `idem-sweep-race-${counter}`);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    const lineId = order.lines[0]!.id;
+    const csT = await csToken();
+    await cancelLine(orderId, lineId, csT, `cancel-sweep-race-${counter}`);
+    const fin = await financeToken();
+
+    // Create the intent (PENDING) without settling it yet - drive
+    // straight to the DB rather than through processRefund, which would
+    // also settle it immediately in this mocked environment.
+    const order2 = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    const payment = await testPrisma.payment.findFirstOrThrow({ where: { checkoutSessionId: order2.checkoutSessionId } });
+    const line = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+    const manualRefund = await testPrisma.refund.create({
+      data: {
+        orderId,
+        orderLineId: lineId,
+        paymentId: payment.id,
+        triggerType: 'CANCELLATION',
+        method: 'ORIGINAL_PAYMENT_METHOD',
+        amount: line.lineTotalInclusive,
+        reason: 'Order line cancelled',
+        status: 'PENDING',
+        idempotencyKey: `manual-sweep-race-${counter}`,
+        initiatedByStaffId: null,
+      },
+    });
+
+    const retryUrl = `/api/v1/refunds/${manualRefund.id}/retry`;
+    const [retryA, sweepA] = await Promise.all([
+      app.inject({ method: 'POST', url: retryUrl, headers: { authorization: `Bearer ${fin}` } }),
+      app.inject({ method: 'POST', url: '/api/v1/refunds/reconcile', headers: { authorization: `Bearer ${fin}` } }),
+    ]);
+    expect(retryA.statusCode).toBe(200);
+    expect(sweepA.statusCode).toBe(200);
+
+    const finalRefund = await testPrisma.refund.findUniqueOrThrow({ where: { id: manualRefund.id } });
+    expect(finalRefund.status).toBe('COMPLETED');
+    expect(await testPrisma.refund.count({ where: { orderLineId: lineId } })).toBe(1);
+
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
+    const refundCalls = fetchMock.mock.calls.filter(([url]) => (url as string).toString().includes('/refund'));
+    expect(refundCalls.length).toBe(1);
+  });
+
   // --- 9. Reconciliation sweep ---
 
   it('the reconciliation sweep processes a flagged PREPAID cancellation and a QC-passed COD return that were never explicitly triggered', async () => {

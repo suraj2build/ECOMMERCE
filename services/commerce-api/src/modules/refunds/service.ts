@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type PrismaClient, type Refund, type RefundMethod } from '@fcp/db';
+import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { InvoiceService } from '../tax/invoice-service.js';
@@ -215,18 +216,22 @@ export class RefundService {
   }
 
   /**
-   * Conditional claim (M17/M19 idiom): only a row still PENDING or FAILED
-   * can be claimed COMPLETED/FAILED - a genuinely concurrent duplicate
-   * settlement attempt that loses this race affects zero rows and simply
-   * re-reads the winner's outcome, never double-applying a provider
-   * refund or store-credit entry (each of THOSE is independently
-   * idempotent too - see StoreCreditService.issue and the Razorpay
-   * idempotency-key header on PaymentProvider.refund - so even a genuine
-   * concurrent double-call converges to one real-world consequence).
+   * Conditional claim (M17/M19 idiom, extended - independent-review
+   * repair, finding 4): a row in PENDING, FAILED, or its OWN just-claimed
+   * PROCESSING state can be claimed to a terminal COMPLETED/FAILED - a
+   * genuinely concurrent duplicate settlement attempt that loses this
+   * race affects zero rows and simply re-reads the winner's outcome,
+   * never double-applying a provider refund or store-credit entry (each
+   * of THOSE is independently idempotent too - see
+   * StoreCreditService.issue and the Razorpay idempotency-key header on
+   * PaymentProvider.refund - so even a genuine concurrent double-call
+   * converges to one real-world consequence). This is defence-in-depth
+   * ON TOP OF claimProcessing's own in-flight lock below, not a
+   * replacement for it.
    */
   private async claim(refundId: string, status: 'COMPLETED' | 'FAILED', extra: Partial<Pick<Refund, 'providerRefundId' | 'storeCreditEntryId' | 'failureReason'>>): Promise<Refund> {
     await this.prisma.refund.updateMany({
-      where: { id: refundId, status: { in: ['PENDING', 'FAILED'] } },
+      where: { id: refundId, status: { in: ['PENDING', 'FAILED', 'PROCESSING'] } },
       data: {
         status,
         processedAt: status === 'COMPLETED' ? new Date() : undefined,
@@ -238,12 +243,72 @@ export class RefundService {
     return this.prisma.refund.findUniqueOrThrow({ where: { id: refundId } });
   }
 
+  /**
+   * Independent-review repair (finding 4): claims the in-flight
+   * PROCESSING status BEFORE settle() ever calls an external operation
+   * (Razorpay refund / StoreCreditService.issue) - a genuine
+   * database-level compare-and-swap, not merely trusting the external
+   * system's own idempotency to prevent two genuinely concurrent
+   * settle() calls from both reaching that external call at once. Only
+   * the caller whose conditional update actually affects a row proceeds;
+   * every other concurrent caller affects zero rows here and returns
+   * `claimed: false` with the current row, never calling the external
+   * operation itself.
+   *
+   * A row already PROCESSING for longer than
+   * REFUND_PROCESSING_STALE_SECONDS is treated as abandoned (the process
+   * that claimed it crashed before ever reaching claim()'s terminal
+   * transition) and is safe to reclaim - the SAME age-based recovery
+   * idiom PaymentService.expireStalePayments already established for
+   * a stuck INITIATED payment.
+   */
+  private async claimProcessing(refundId: string): Promise<{ claimed: boolean; refund: Refund }> {
+    const staleCutoff = new Date(Date.now() - loadEnv().REFUND_PROCESSING_STALE_SECONDS * 1000);
+    const result = await this.prisma.refund.updateMany({
+      where: {
+        id: refundId,
+        OR: [{ status: { in: ['PENDING', 'FAILED'] } }, { status: 'PROCESSING', updatedAt: { lt: staleCutoff } }],
+      },
+      data: { status: 'PROCESSING' },
+    });
+    const refund = await this.prisma.refund.findUniqueOrThrow({ where: { id: refundId } });
+    return { claimed: result.count > 0, refund };
+  }
+
+  /**
+   * Settles one Refund intent. Documents the ACTUAL external idempotency
+   * guarantee this relies on for the PREPAID/Razorpay path (finding 4):
+   * `RazorpayPaymentProvider.refund` sends the SAME deterministic
+   * `x-razorpay-idempotency-key` (this Refund's own `id`) on every retry
+   * - Razorpay's own documented contract honors that header for a
+   * BOUNDED window (24 hours from first use), returning the original
+   * cached response for a duplicate request inside that window. This is
+   * NOT an unconditional forever-exactly-once contract: a crash-then-
+   * retry that happens to straddle more than 24 hours between the first
+   * attempt and a later retry is a genuine residual risk Razorpay's own
+   * API does not eliminate, and no application-level code can close it
+   * without Razorpay itself offering a stronger guarantee. What THIS
+   * method's own `claimProcessing` above closes is the risk ENTIRELY
+   * within this system's control: two of ITS OWN concurrent/retried
+   * settle() calls (concurrent settle() calls, a reconciliation sweep
+   * racing an explicit staff retry, PENDING vs FAILED retry races) never
+   * both reach the external call at the same time - only the winner of
+   * the PROCESSING claim ever calls Razorpay/StoreCreditService for a
+   * given attempt.
+   */
   private async settle(intent: Refund): Promise<Refund> {
     if (intent.status === 'COMPLETED') return intent;
+
+    const { claimed, refund: current } = await this.claimProcessing(intent.id);
+    if (!claimed) return current;
 
     if (intent.method === 'STORE_CREDIT') {
       const order = await this.prisma.order.findUniqueOrThrow({ where: { id: intent.orderId } });
       try {
+        // StoreCreditService.issue is independently idempotent by this
+        // SAME deterministic key on every retry - a stale-PROCESSING
+        // recovery that races a still-genuinely-in-flight earlier
+        // attempt converges to the SAME entry rather than issuing twice.
         const entry = await this.storeCredit.issue({
           identity: { customerId: order.customerId ?? undefined, guestSessionId: order.guestSessionId ?? undefined },
           amount: Number(intent.amount),
