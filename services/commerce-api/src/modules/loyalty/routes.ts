@@ -49,6 +49,15 @@ const loyaltyRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/loyalty/sweep/release-stale-holds', { preHandler: staffAuth }, async (_request, reply) => {
     reply.status(200).send({ released: await loyalty.releaseStaleRedemptionHolds() });
   });
+
+  // 2026-09-27 LOY-006: the vesting sweep - PENDING entitlements whose
+  // line is delivered and whose return/exchange window has closed
+  // transition to VESTED here. Same idempotent/concurrency-safe/
+  // callable-directly-or-by-a-future-scheduler shape as every other
+  // sweep above.
+  fastify.post('/loyalty/sweep/vest', { preHandler: staffAuth }, async (_request, reply) => {
+    reply.status(200).send({ vested: await loyalty.vestEligiblePoints() });
+  });
 };
 
 export default loyaltyRoutes;

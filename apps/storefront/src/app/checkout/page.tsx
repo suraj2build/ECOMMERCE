@@ -240,7 +240,12 @@ export default function CheckoutPage() {
           {loyaltyBalance && loyaltyBalance.balance > 0 && (
             <fieldset className="space-y-2">
               <legend className="font-display text-lg text-ink">Loyalty points</legend>
-              <p className="text-sm text-ink-muted">You have {loyaltyBalance.balance} points available to redeem.</p>
+              <p className="text-sm text-ink-muted">
+                You have {loyaltyBalance.balance} points available to redeem.
+                {loyaltyBalance.pendingPoints > 0
+                  ? ` (${loyaltyBalance.pendingPoints} more points are pending and not yet redeemable.)`
+                  : ''}
+              </p>
               <label htmlFor="redeem-points" className="sr-only">
                 Points to redeem
               </label>

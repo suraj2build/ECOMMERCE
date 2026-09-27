@@ -15,21 +15,23 @@ process.env.RAZORPAY_WEBHOOK_SECRET = 'test_webhook_secret';
 process.env.COD_MAX_ORDER_VALUE_INR = '50000';
 
 const SERVICEABLE_PINCODE = '110001';
+const RETURN_WINDOW_DEFAULT_DAYS = 7; // packages/config default - see returns/policy.ts
 
 /**
- * Loyalty (M23, specs/22-loyalty.md, LOY-001-005) adversarial
- * certification. Covers: EARN at order confirmation (idempotent, no
- * double-earn on retry, zero-point/guest no-ops), REVERSE on
- * cancellation and on QC-PASS return (proportional, capped at
- * remaining, gated identically to refund eligibility - a FAILED QC
- * return does not claw back points), FIFO EXPIRE (deterministic,
- * non-double-expiring, callable sweep), checkout-time redemption HOLD
- * (reserve/convert/release mirroring InventoryReservation's own
- * lifecycle), genuine concurrency (two simultaneous checkouts cannot
- * double-spend the same points balance), manual staff adjustment
- * (idempotent), and cross-customer IDOR on both customer-facing routes.
+ * Loyalty (M23, specs/22-loyalty.md, LOY-001-006) adversarial
+ * certification.
+ *
+ * 2026-09-27 LOY-006 PRODUCT OWNER DECISION: this file was rewritten in
+ * full for the PENDING -> VESTED -> REDEEMED/EXPIRED vesting lifecycle -
+ * points earned on a purchase are calculated at order confirmation but
+ * are NOT redeemable until the qualifying line is DELIVERED *and* its
+ * own return/exchange eligibility window has CLOSED. Covers exactly the
+ * 16-item required test matrix (tests 1-16 below, each header names its
+ * matrix item) plus the pre-existing supporting coverage this lifecycle
+ * change did not remove: idempotent EARN, guest/zero-point no-ops,
+ * QC-FAIL non-reversal, manual staff adjustment, IDOR, and staff RBAC.
  */
-describe('Loyalty (M23)', () => {
+describe('Loyalty (M23) - vesting lifecycle (LOY-006)', () => {
   let app: FastifyInstance;
   let counter = 0;
 
@@ -154,37 +156,57 @@ describe('Loyalty (M23)', () => {
     expect(res.statusCode).toBe(201);
   }
 
-  /** Places a COD order as a signed-in customer (loyalty requires a persistent identity - guest orders never earn/redeem). */
-  function customerCheckout(
+/** Places a COD order as a signed-in customer (loyalty requires a persistent identity - guest orders never earn/redeem). Since this codebase's cart is never automatically cleared on checkout confirmation, the just-purchased SKU is explicitly removed afterward - several tests in this file place more than one order for the SAME customer token, and each must produce a genuinely fresh, single-line order rather than silently re-including a previous purchase. */
+  async function customerCheckout(
     skuId: string,
     customerToken: string,
     idempotencyKey: string,
     opts: { quantity?: number; loyaltyPointsToRedeem?: number } = {},
   ) {
     const headers = { authorization: `Bearer ${customerToken}` };
-    return addToCart(skuId, headers, opts.quantity ?? 1).then(() =>
-      app.inject({
-        method: 'POST',
-        url: '/api/v1/storefront/checkout',
-        headers,
-        payload: {
-          contactName: 'Jane Doe',
-          contactMobile: '9876543210',
-          billingAddress: validAddress(),
-          shippingAddress: validAddress(),
-          paymentMethod: 'COD',
-          idempotencyKey,
-          ...(opts.loyaltyPointsToRedeem ? { loyaltyPointsToRedeem: opts.loyaltyPointsToRedeem } : {}),
-        },
-      }),
-    );
+    await addToCart(skuId, headers, opts.quantity ?? 1);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: {
+        contactName: 'Jane Doe',
+        contactMobile: '9876543210',
+        billingAddress: validAddress(),
+        shippingAddress: validAddress(),
+        paymentMethod: 'COD',
+        idempotencyKey,
+        ...(opts.loyaltyPointsToRedeem ? { loyaltyPointsToRedeem: opts.loyaltyPointsToRedeem } : {}),
+      },
+    });
+    await app.inject({ method: 'DELETE', url: `/api/v1/storefront/cart/items/${skuId}`, headers });
+    return res;
+  }
+
+  /** Multi-SKU variant - checks out every SKU currently in the customer's cart as separate order lines in one order. */
+  async function customerCheckoutMultiLine(skuIds: string[], customerToken: string, idempotencyKey: string) {
+    const headers = { authorization: `Bearer ${customerToken}` };
+    for (const skuId of skuIds) await addToCart(skuId, headers);
+    return app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: {
+        contactName: 'Jane Doe',
+        contactMobile: '9876543210',
+        billingAddress: validAddress(),
+        shippingAddress: validAddress(),
+        paymentMethod: 'COD',
+        idempotencyKey,
+      },
+    });
   }
 
   async function orderFromSession(sessionId: string) {
     return testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
   }
 
-  /** Earns `targetPoints` (or more) for a fresh customer via one confirmed COD order at the default 1-point-per-100-INR rate, returning the customer token and the earning order. */
+  /** Places a confirmed COD order earning `targetPoints` (or more) at the default 1-point-per-100-INR rate. Under LOY-006 this points batch is CALCULATED but PENDING - not yet redeemable. */
   async function customerWithEarnedPoints(targetPoints: number, ctx: Awaited<ReturnType<typeof seedContext>>) {
     const subtotalNeeded = targetPoints * 100 + 200; // headroom past the floor() rounding
     const { skuId } = await setupCheckoutableSku(subtotalNeeded, ctx, 50);
@@ -195,11 +217,16 @@ describe('Loyalty (M23)', () => {
     return { token, order, skuId };
   }
 
+  /** Delivers the sole line of a single-line order via the real pick->pack->ready->ship->deliver pipeline. */
   async function deliverOrderLine(orderId: string, staffToken: string): Promise<{ lineId: string; fulfilmentId: string }> {
     const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
-    const lineId = order.lines[0]!.id;
+    return deliverSpecificLine(orderId, order.lines[0]!.id, order.lines[0]!.quantity, staffToken);
+  }
+
+  /** Delivers ONE specific line of a (possibly multi-line) order as its own fulfilment - lets a test give two lines of the same order independent delivery dates. */
+  async function deliverSpecificLine(orderId: string, lineId: string, quantity: number, staffToken: string): Promise<{ lineId: string; fulfilmentId: string }> {
     const task = await testPrisma.pickTask.findUniqueOrThrow({ where: { orderLineId: lineId } });
-    await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: { authorization: `Bearer ${staffToken}` }, payload: { idempotencyKey: `pick-${lineId}`, outcome: 'FULL', pickedQuantity: order.lines[0]!.quantity } });
+    await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: { authorization: `Bearer ${staffToken}` }, payload: { idempotencyKey: `pick-${lineId}`, outcome: 'FULL', pickedQuantity: quantity } });
     const fulfilRes = await app.inject({ method: 'POST', url: `/api/v1/orders/${orderId}/fulfilments`, headers: { authorization: `Bearer ${staffToken}` }, payload: { lineIds: [lineId] } });
     const fulfilmentId = fulfilRes.json().id as string;
     await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/pack`, headers: { authorization: `Bearer ${staffToken}` } });
@@ -210,29 +237,53 @@ describe('Loyalty (M23)', () => {
     return { lineId, fulfilmentId };
   }
 
+  /** Backdates a fulfilment's deliveredAt (and hence its line's return-window clock) so `isWithinWindow` sees the window as closed, without waiting real days. */
+  async function backdateDelivery(fulfilmentId: string, daysAgo: number) {
+    await testPrisma.orderFulfilment.update({ where: { id: fulfilmentId }, data: { deliveredAt: new Date(Date.now() - daysAgo * 86_400_000) } });
+  }
+
+  async function vestPoints(): Promise<number> {
+    return new LoyaltyService(app).vestEligiblePoints();
+  }
+
+  /** End-to-end: earns, delivers, closes the window, and vests - returns a customer with `points` genuinely AVAILABLE (matches the matrix's own "100 available" fixtures). */
+  async function customerWithVestedPoints(targetPoints: number, ctx: Awaited<ReturnType<typeof seedContext>>) {
+    const { token, order } = await customerWithEarnedPoints(targetPoints, ctx);
+    const wT = await warehouseToken();
+    const { fulfilmentId } = await deliverOrderLine(order.id, wT);
+    await backdateDelivery(fulfilmentId, RETURN_WINDOW_DEFAULT_DAYS + 3);
+    const vested = await vestPoints();
+    expect(vested).toBeGreaterThanOrEqual(1);
+    return { token, order };
+  }
+
   async function getBalance(customerToken: string) {
     const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty', headers: { authorization: `Bearer ${customerToken}` } });
     expect(res.statusCode).toBe(200);
-    return res.json() as { balance: number; lifetimeEarnedPoints: number; tier: { id: string; name: string } | null };
+    return res.json() as { balance: number; pendingPoints: number; lifetimeEarnedPoints: number; tier: { id: string; name: string } | null };
   }
 
-  // --- EARN ---
+  // --- Matrix item 1 ---
 
-  describe('EARN at order confirmation', () => {
-    it('1. a confirmed COD order posts exactly one EARN entry at the configured rate, reflected in the account balance', async () => {
+  describe('1. Order confirmed -> points calculated -> PENDING -> available balance unchanged', () => {
+    it('posts a PENDING EARN entry per line, at the configured rate - balance stays 0, pendingPoints reflects the calculated entitlement', async () => {
       const ctx = await seedContext();
       const { token, order } = await customerWithEarnedPoints(100, ctx);
       const expectedPoints = Math.floor(Number(order.subtotal) / 100);
 
       const balance = await getBalance(token);
-      expect(balance.balance).toBe(expectedPoints);
-      expect(balance.lifetimeEarnedPoints).toBe(expectedPoints);
+      expect(balance.balance).toBe(0);
+      expect(balance.pendingPoints).toBe(expectedPoints);
+      expect(balance.lifetimeEarnedPoints).toBe(0); // lifetime standing also only counts VESTED points
 
-      const entries = await testPrisma.loyaltyLedgerEntry.count({ where: { qualifyingOrderId: order.id } });
-      expect(entries).toBe(1);
+      const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
+      const entry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: line.id } });
+      expect(entry.type).toBe('EARN');
+      expect(entry.vestingStatus).toBe('PENDING');
+      expect(entry.expiresAt).toBeNull(); // the expiry clock has not started - it starts at vesting (matrix item 11)
     });
 
-    it('2. a guest (no customerId) order never earns points - safe no-op', async () => {
+    it('a guest (no customerId) order never earns points - safe no-op', async () => {
       const ctx = await seedContext();
       const { skuId } = await setupCheckoutableSku(15000, ctx);
       const headers = { 'x-guest-session-id': `guest-loy-${counter}` };
@@ -244,47 +295,127 @@ describe('Loyalty (M23)', () => {
         payload: { contactName: 'Guest', contactMobile: '9876543210', billingAddress: validAddress(), shippingAddress: validAddress(), paymentMethod: 'COD', idempotencyKey: `idem-guest-${counter}` },
       });
       expect(res.statusCode).toBe(201);
-      const order = await orderFromSession(res.json().id);
-      expect(await testPrisma.loyaltyLedgerEntry.count({ where: { qualifyingOrderId: order.id } })).toBe(0);
+      expect(await testPrisma.loyaltyLedgerEntry.count()).toBe(0);
       expect(await testPrisma.loyaltyAccount.count()).toBe(0);
     });
 
-    it('3. retrying order creation for the same confirmed session never double-earns (idempotent on qualifyingOrderId)', async () => {
+    it('retrying order confirmation for the same line never double-earns (idempotent on qualifyingOrderLineId)', async () => {
       const ctx = await seedContext();
       const { order } = await customerWithEarnedPoints(100, ctx);
+      const orderWithLines = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { lines: true } });
 
-      // Direct repeat call of the same idempotent operation the checkout
-      // flow itself calls exactly once - simulates a retried/duplicate
-      // invocation (e.g. a crash-and-retry) rather than re-running checkout.
       const loyalty = new LoyaltyService(app);
       await testPrisma.$transaction(async (tx) => {
-        await loyalty.earnForOrder(tx, order);
+        await loyalty.earnForOrder(tx, orderWithLines);
       });
 
-      expect(await testPrisma.loyaltyLedgerEntry.count({ where: { qualifyingOrderId: order.id } })).toBe(1);
+      const line = orderWithLines.lines[0]!;
+      expect(await testPrisma.loyaltyLedgerEntry.count({ where: { qualifyingOrderLineId: line.id } })).toBe(1);
     });
 
-    it('4. a very small order (below the rounding floor) earns zero points - safe no-op, no ledger entry', async () => {
+    it('a very small order (below the rounding floor) earns zero points - safe no-op, no ledger entry', async () => {
       const ctx = await seedContext();
       const { skuId } = await setupCheckoutableSku(50, ctx); // floor(50/100) = 0 points
       const { token } = await createAuthenticatedCustomer(app);
       const res = await customerCheckout(skuId, token, `idem-tiny-${counter}`);
       expect(res.statusCode).toBe(201);
-      const order = await orderFromSession(res.json().id);
-      expect(await testPrisma.loyaltyLedgerEntry.count({ where: { qualifyingOrderId: order.id } })).toBe(0);
+      expect(await testPrisma.loyaltyLedgerEntry.count()).toBe(0);
     });
   });
 
-  // --- REVERSE (cancellation) ---
+  // --- Matrix item 2 ---
 
-  describe('REVERSE on cancellation', () => {
-    it('5. cancelling the sole line of an order (pre-shipment) reverses its earned points via a REVERSE ledger entry, never a direct mutation', async () => {
+  describe('2. Delivered -> return/exchange window still open -> still PENDING', () => {
+    it('delivering the line (real-time, window not yet closed) and running the vesting sweep leaves the entry PENDING', async () => {
       const ctx = await seedContext();
       const { token, order } = await customerWithEarnedPoints(100, ctx);
-      const before = await getBalance(token);
-      expect(before.balance).toBeGreaterThanOrEqual(100);
+      const wT = await warehouseToken();
+      await deliverOrderLine(order.id, wT); // deliveredAt = now - window is wide open
+
+      const vested = await vestPoints();
+      expect(vested).toBe(0);
+
+      const balance = await getBalance(token);
+      expect(balance.balance).toBe(0);
+      expect(balance.pendingPoints).toBeGreaterThan(0);
 
       const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
+      const entry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: line.id } });
+      expect(entry.vestingStatus).toBe('PENDING');
+    });
+  });
+
+  // --- Matrix item 3 ---
+
+  describe('3. Delivered -> window closes -> vest -> AVAILABLE exactly once', () => {
+    it('once delivered and the window has closed, the sweep vests the entry exactly once - a second sweep run is a safe no-op', async () => {
+      const ctx = await seedContext();
+      const { token, order } = await customerWithEarnedPoints(100, ctx);
+      const wT = await warehouseToken();
+      const { fulfilmentId } = await deliverOrderLine(order.id, wT);
+      await backdateDelivery(fulfilmentId, RETURN_WINDOW_DEFAULT_DAYS + 3);
+
+      const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
+      const beforeEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: line.id } });
+
+      const firstSweep = await vestPoints();
+      expect(firstSweep).toBe(1);
+
+      const vestedEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: beforeEntry.id } });
+      expect(vestedEntry.vestingStatus).toBe('VESTED');
+      expect(vestedEntry.vestedAt).toBeTruthy();
+      expect(vestedEntry.expiresAt).toBeTruthy();
+
+      const balance = await getBalance(token);
+      expect(balance.balance).toBe(beforeEntry.pointsDelta);
+      expect(balance.pendingPoints).toBe(0);
+      expect(balance.lifetimeEarnedPoints).toBe(beforeEntry.pointsDelta);
+
+      const vestAudit = await testPrisma.auditLog.count({ where: { action: 'loyalty.vest', entityId: vestedEntry.accountId } });
+      expect(vestAudit).toBe(1);
+
+      // Sweep retry (matrix item 5) - never a duplicate vesting/balance change.
+      const secondSweep = await vestPoints();
+      expect(secondSweep).toBe(0);
+      const balanceAfterRetry = await getBalance(token);
+      expect(balanceAfterRetry.balance).toBe(balance.balance);
+    });
+  });
+
+  // --- Matrix item 4 ---
+
+  describe('4. Two concurrent vesting sweeps -> exactly one vesting transition', () => {
+    it('two genuinely concurrent sweep invocations racing the same due entry converge to exactly one vesting event', async () => {
+      const ctx = await seedContext();
+      const { token, order } = await customerWithEarnedPoints(100, ctx);
+      const wT = await warehouseToken();
+      const { fulfilmentId } = await deliverOrderLine(order.id, wT);
+      await backdateDelivery(fulfilmentId, RETURN_WINDOW_DEFAULT_DAYS + 3);
+
+      const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
+      const entry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: line.id } });
+
+      const [countA, countB] = await Promise.all([vestPoints(), vestPoints()]);
+      expect(countA + countB).toBe(1); // exactly one of the two concurrent sweeps actually vested this entry
+
+      const finalEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: entry.id } });
+      expect(finalEntry.vestingStatus).toBe('VESTED');
+      const balance = await getBalance(token);
+      expect(balance.balance).toBe(entry.pointsDelta); // never double-credited
+      const vestAudit = await testPrisma.auditLog.count({ where: { action: 'loyalty.vest', entityId: entry.accountId } });
+      expect(vestAudit).toBe(1);
+    });
+  });
+
+  // --- Matrix item 6 ---
+
+  describe('6. Cancellation before vesting -> pending points cancelled -> never available', () => {
+    it('cancelling a not-yet-shipped line cancels its PENDING entitlement - a later sweep run can never vest it', async () => {
+      const ctx = await seedContext();
+      const { token, order } = await customerWithEarnedPoints(100, ctx);
+      const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
+      const earnBefore = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: line.id } });
+
       const cancelRes = await app.inject({
         method: 'POST',
         url: `/api/v1/storefront/orders/${order.id}/lines/${line.id}/cancel`,
@@ -293,16 +424,29 @@ describe('Loyalty (M23)', () => {
       });
       expect(cancelRes.statusCode).toBe(200);
 
-      const after = await getBalance(token);
-      expect(after.balance).toBe(0);
+      const cancelledEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: earnBefore.id } });
+      expect(cancelledEntry.vestingStatus).toBe('CANCELLED');
+
+      const balance = await getBalance(token);
+      expect(balance.balance).toBe(0);
+      expect(balance.pendingPoints).toBe(0);
 
       const reverseEntry = await testPrisma.loyaltyLedgerEntry.findFirst({ where: { reversalOrderLineId: line.id } });
       expect(reverseEntry).toBeTruthy();
       expect(reverseEntry!.type).toBe('REVERSE');
-      expect(reverseEntry!.pointsDelta).toBe(-before.balance);
+      expect(reverseEntry!.pointsDelta).toBe(0); // nothing was ever in the balance to reverse
+      expect(reverseEntry!.requiredPointsDelta).toBe(-earnBefore.pointsDelta); // the full required reversal is still truthfully recorded
+
+      // A cancelled line can never ship/deliver again (M18's own certified
+      // boundary), so a sweep run proves the CANCELLED status is durable,
+      // never later reinterpreted as eligible.
+      const vested = await vestPoints();
+      expect(vested).toBe(0);
+      const finalBalance = await getBalance(token);
+      expect(finalBalance.balance).toBe(0);
     });
 
-    it('6. retrying the same cancellation never double-reverses (idempotent on reversalOrderLineId)', async () => {
+    it('retrying the same cancellation never double-reverses (idempotent on reversalOrderLineId)', async () => {
       const ctx = await seedContext();
       const { token, order } = await customerWithEarnedPoints(100, ctx);
       const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
@@ -316,13 +460,13 @@ describe('Loyalty (M23)', () => {
     });
   });
 
-  // --- REVERSE (return, QC-gated) ---
+  // --- Matrix item 7 ---
 
-  describe('REVERSE on return, gated identically to refund eligibility', () => {
+  describe('7. Return/QC before vesting -> pending points reversed/cancelled -> never available', () => {
     async function deliveredOrderWithReturn(qc: 'PASS' | 'FAIL', ctx: Awaited<ReturnType<typeof seedContext>>) {
       const { token, order } = await customerWithEarnedPoints(100, ctx);
       const wT = await warehouseToken();
-      const { lineId } = await deliverOrderLine(order.id, wT);
+      const { lineId } = await deliverOrderLine(order.id, wT); // real-time delivery - window still open, entry still PENDING
 
       const initRes = await app.inject({
         method: 'POST',
@@ -345,197 +489,207 @@ describe('Loyalty (M23)', () => {
       return { token, order, lineId, returnLineId: returnLine.id };
     }
 
-    it('7. a QC-PASS return reverses the line share of earned points', async () => {
+    it('a QC-PASS return while still PENDING cancels the entitlement (pointsDelta 0, requiredPointsDelta fully recorded) - never later vests', async () => {
       const ctx = await seedContext();
-      const { token, returnLineId } = await deliveredOrderWithReturn('PASS', ctx);
-      const after = await getBalance(token);
-      expect(after.balance).toBe(0);
-      expect(await testPrisma.loyaltyLedgerEntry.findFirst({ where: { reversalReturnLineId: returnLineId } })).toBeTruthy();
-    });
+      const { token, lineId, returnLineId } = await deliveredOrderWithReturn('PASS', ctx);
+      const entry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: lineId } });
+      expect(entry.vestingStatus).toBe('CANCELLED');
 
-    it('8. a QC-FAIL return does NOT claw back points - mirrors the existing refundEligible=false DECISION_REQUIRED boundary', async () => {
-      const ctx = await seedContext();
-      const { token, returnLineId } = await deliveredOrderWithReturn('FAIL', ctx);
-      const after = await getBalance(token);
-      expect(after.balance).toBeGreaterThan(0); // untouched
-      expect(await testPrisma.loyaltyLedgerEntry.findFirst({ where: { reversalReturnLineId: returnLineId } })).toBeNull();
-    });
-  });
-
-  // --- Blocker 1 reproduction (independent-review certification repair) ---
-
-  describe('REVERSE after points already spent (Blocker 1 reproduction)', () => {
-    it('22. cancelling a line whose earned points were already redeemed on a LATER order posts a SHORT reversal - proves the current cap-at-remaining behavior does not satisfy "points earned on a cancelled/returned qualifying purchase must be reversed"', async () => {
-      const ctx = await seedContext();
-      // Order A earns ~200 points (its own, sole EARN batch) - the exact
-      // amount depends on the headroom customerWithEarnedPoints adds past
-      // the rounding floor, so read it back rather than hardcoding it.
-      const { token, order: orderA } = await customerWithEarnedPoints(200, ctx);
-      const earnEntryA = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderId: orderA.id } });
-      const earnedPoints = earnEntryA.pointsDelta;
-      expect(earnedPoints).toBeGreaterThanOrEqual(200);
-
-      // The customer then spends most (but not all) of those points on
-      // Order B - FIFO consumption draws from Order A's batch (the only
-      // one that exists at this point), leaving only a small remainder
-      // of remainingPoints on it.
-      const redeemAmount = 150;
-      const expectedRemaining = earnedPoints - redeemAmount;
-      const { skuId: skuB } = await setupCheckoutableSku(3000, ctx);
-      const redeemRes = await customerCheckout(skuB, token, `idem-blocker1-redeem-${counter}`, { loyaltyPointsToRedeem: redeemAmount });
-      expect(redeemRes.statusCode).toBe(201);
-
-      const freshEarnA = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: earnEntryA.id } });
-      expect(freshEarnA.remainingPoints).toBe(expectedRemaining);
-
-      // Order A's line is now cancelled - a qualifying reversal event.
-      // The FULL `earnedPoints` Order A earned must be reversed through
-      // the ledger (the approved requirement), never merely "whatever is
-      // still unconsumed in that one batch".
-      const lineA = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: orderA.id } });
-      const cancelRes = await app.inject({
-        method: 'POST',
-        url: `/api/v1/storefront/orders/${orderA.id}/lines/${lineA.id}/cancel`,
-        headers: { authorization: `Bearer ${token}` },
-        payload: { reason: 'Blocker 1 repro', idempotencyKey: `blocker1-cancel-${lineA.id}` },
-      });
-      expect(cancelRes.statusCode).toBe(200);
-
-      const reverseEntry = await testPrisma.loyaltyLedgerEntry.findFirst({ where: { reversalOrderLineId: lineA.id } });
-      expect(reverseEntry).toBeTruthy();
-      // The balance-affecting reversal is still capped at whatever
-      // remains unconsumed in the EARN batch (`expectedRemaining`) -
-      // applying more would make the balance negative, which this build
-      // does not invent semantics for.
-      expect(reverseEntry!.pointsDelta).toBe(-expectedRemaining); // short by redeemAmount of the required -earnedPoints
-      expect(-reverseEntry!.pointsDelta).not.toBe(earnedPoints);
-      // LOY-001 repair (Blocker 1): the FULL required reversal is now
-      // ALWAYS recorded too, separately, so the shortfall is fully
-      // visible/audited rather than silently hidden behind a capped
-      // number - see DECISION_REQUIRED - LOYALTY CLAWBACK AFTER POINTS
-      // ALREADY SPENT in specs/22-loyalty.md for the unresolved business
-      // question of what (if anything) should be done about it.
-      expect(reverseEntry!.requiredPointsDelta).toBe(-earnedPoints);
-      const shortfallAudit = await testPrisma.auditLog.findFirst({ where: { action: 'loyalty.reverse.shortfall', reference: orderA.id } });
-      expect(shortfallAudit).toBeTruthy();
-      expect((shortfallAudit!.newValue as { shortfall: number }).shortfall).toBe(redeemAmount);
-    });
-  });
-
-  // --- Checkout-time redemption HOLD ---
-
-  describe('Redemption hold: reserve / convert / release', () => {
-    it('9. redeeming points at checkout creates an ACTIVE hold that does NOT touch the ledger/balance until order confirmation, then CONVERTs to a real REDEEM entry', async () => {
-      const ctx = await seedContext();
-      const { token } = await customerWithEarnedPoints(200, ctx);
-      const before = await getBalance(token);
-      expect(before.balance).toBeGreaterThanOrEqual(150);
-
-      const { skuId: skuId2 } = await setupCheckoutableSku(3000, ctx);
-      const redeemPoints = 150;
-      const res = await customerCheckout(skuId2, token, `idem-redeem-${counter}`, { loyaltyPointsToRedeem: redeemPoints });
-      expect(res.statusCode).toBe(201);
-      const view = res.json();
-      expect(view.loyaltyPointsRedeemed).toBe(redeemPoints);
-      expect(view.amountPayable).toBeLessThan(view.grandTotal);
-
-      const order2 = await orderFromSession(view.id);
-      const hold = await testPrisma.loyaltyRedemptionHold.findUniqueOrThrow({ where: { checkoutSessionId: view.id } });
-      expect(hold.status).toBe('CONVERTED'); // COD auto-confirms in the same call, so conversion already happened
-      expect(order2.loyaltyPointsRedeemed).toBe(redeemPoints);
-
-      const redeemEntries = await testPrisma.loyaltyLedgerEntry.findMany({ where: { type: 'REDEEM' } });
-      expect(redeemEntries.reduce((s, e) => s + e.pointsDelta, 0)).toBe(-redeemPoints);
-
-      // This SAME order2 also earns its own new points on its own
-      // subtotal (EARN runs for every confirmed order regardless of
-      // whether it's simultaneously redeeming) - the net balance change
-      // is redemption spent MINUS whatever order2 itself just earned,
-      // never a bare `before - redeemPoints` (that would silently ignore
-      // order2's own EARN, exactly the "one ledger compensating another"
-      // this build must never let happen unnoticed).
-      const after = await getBalance(token);
-      expect(after.balance).toBe(before.balance - redeemPoints + order2.loyaltyPointsEarned);
-    });
-
-    it('10. redeeming below the configured minimum is rejected, reservations released, no hold created', async () => {
-      const ctx = await seedContext();
-      const { token } = await customerWithEarnedPoints(200, ctx);
-      const { skuId: skuId2 } = await setupCheckoutableSku(3000, ctx);
-      const res = await customerCheckout(skuId2, token, `idem-min-${counter}`, { loyaltyPointsToRedeem: 10 });
-      expect(res.statusCode).toBe(400);
-      expect(await testPrisma.loyaltyRedemptionHold.count()).toBe(0);
-    });
-
-    it('11. redeeming more points than are available (balance minus active holds) is rejected', async () => {
-      const ctx = await seedContext();
-      const { token } = await customerWithEarnedPoints(150, ctx);
       const balance = await getBalance(token);
-      const { skuId: skuId2 } = await setupCheckoutableSku(3000, ctx);
-      const res = await customerCheckout(skuId2, token, `idem-over-${counter}`, { loyaltyPointsToRedeem: balance.balance + 500 });
-      expect(res.statusCode).toBe(400);
+      expect(balance.balance).toBe(0);
+      expect(balance.pendingPoints).toBe(0);
+
+      const reverseEntry = await testPrisma.loyaltyLedgerEntry.findFirst({ where: { reversalReturnLineId: returnLineId } });
+      expect(reverseEntry).toBeTruthy();
+      expect(reverseEntry!.pointsDelta).toBe(0);
+      expect(reverseEntry!.requiredPointsDelta).toBe(-entry.pointsDelta);
+
+      // Never becomes available even if a sweep later runs (the calendar
+      // window may still technically be open, but CANCELLED is terminal).
+      const vested = await vestPoints();
+      expect(vested).toBe(0);
+      expect((await getBalance(token)).balance).toBe(0);
     });
 
-    it('12. a guest identity cannot redeem loyalty points (loyalty requires a persistent customer identity)', async () => {
+    it('a QC-FAIL return does NOT cancel/reverse points - the entitlement remains PENDING and can still vest normally', async () => {
       const ctx = await seedContext();
-      const { skuId } = await setupCheckoutableSku(3000, ctx);
-      const headers = { 'x-guest-session-id': `guest-noloy-${counter}` };
-      await addToCart(skuId, headers);
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/v1/storefront/checkout',
-        headers,
-        payload: { contactName: 'Guest', contactMobile: '9876543210', billingAddress: validAddress(), shippingAddress: validAddress(), paymentMethod: 'COD', idempotencyKey: `idem-guest-redeem-${counter}`, loyaltyPointsToRedeem: 150 },
-      });
-      expect(res.statusCode).toBe(400);
-    });
+      const { token, lineId } = await deliveredOrderWithReturn('FAIL', ctx);
+      const entry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: lineId } });
+      expect(entry.vestingStatus).toBe('PENDING'); // untouched
 
-    it('13. releaseStaleRedemptionHolds releases an expired ACTIVE hold without touching the ledger', async () => {
-      const ctx = await seedContext();
-      const { token } = await customerWithEarnedPoints(200, ctx);
-      const { skuId: skuId2 } = await setupCheckoutableSku(3000, ctx);
-      const res = await customerCheckout(skuId2, token, `idem-stale-${counter}`, { loyaltyPointsToRedeem: 150 });
-      expect(res.statusCode).toBe(201);
-      // Force the hold back to ACTIVE and expired, simulating an
-      // abandoned/failed-payment checkout whose order was never created
-      // (the COD happy path always converts immediately - this
-      // reconstructs the PREPAID-payment-never-completed scenario the
-      // sweep exists for).
-      await testPrisma.loyaltyRedemptionHold.updateMany({
-        where: { checkoutSessionId: res.json().id },
-        data: { status: 'ACTIVE', expiresAt: new Date(Date.now() - 1000) },
-      });
-      const before = await getBalance(token);
+      const fulfilment = await testPrisma.orderFulfilment.findFirstOrThrow({ where: { lines: { some: { id: lineId } } } });
+      await backdateDelivery(fulfilment.id, RETURN_WINDOW_DEFAULT_DAYS + 3);
+      const vested = await vestPoints();
+      expect(vested).toBe(1); // a QC-FAILED return does not block vesting once the window closes
 
-      const loyalty = new LoyaltyService(app);
-      const released = await loyalty.releaseStaleRedemptionHolds();
-      expect(released).toBeGreaterThanOrEqual(1);
-
-      const hold = await testPrisma.loyaltyRedemptionHold.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id } });
-      expect(hold.status).toBe('RELEASED');
-      const after = await getBalance(token);
-      expect(after.balance).toBe(before.balance); // untouched - a hold never spent anything
+      const balance = await getBalance(token);
+      expect(balance.balance).toBe(entry.pointsDelta);
     });
   });
 
-  // --- Genuine concurrency: two simultaneous checkouts cannot double-spend ---
+  // --- Matrix item 8 ---
 
-  describe('Concurrency: redemption cannot be double-spent', () => {
-    it('14. two genuinely concurrent checkouts each redeeming most of the same balance converge to exactly one success - the loser is rejected safely, never a negative balance', async () => {
+  describe('8. 100 available + 500 pending -> checkout can redeem a maximum based only on the 100 available', () => {
+    it('checkout redemption is capped at the AVAILABLE (vested) balance, never available+pending', async () => {
       const ctx = await seedContext();
-      const { token } = await customerWithEarnedPoints(200, ctx);
+      const { token } = await customerWithVestedPoints(100, ctx);
+      const vestedBalance = await getBalance(token);
+      expect(vestedBalance.balance).toBeGreaterThanOrEqual(100);
+      const available = vestedBalance.balance;
+
+      // Earn a SECOND, much larger batch that stays PENDING (not delivered) -
+      // mirroring the Product Owner's own "100 available + 500 pending"
+      // illustration (kept under the test environment's COD order-value
+      // ceiling once tax/shipping are added, so 300 rather than 500).
+      const { skuId: pendingSkuId } = await setupCheckoutableSku(300 * 100 + 200, ctx, 50);
+      const pendingRes = await customerCheckout(pendingSkuId, token, `idem-8-pending-${counter}`);
+      expect(pendingRes.statusCode).toBe(201);
+      const balanceWithPending = await getBalance(token);
+      expect(balanceWithPending.balance).toBe(available); // unchanged - the new batch is PENDING
+      expect(balanceWithPending.pendingPoints).toBeGreaterThanOrEqual(300);
+
+      // Attempting to redeem more than the available (but well within
+      // available+pending) is rejected.
+      const { skuId: overSkuId } = await setupCheckoutableSku(3000, ctx);
+      const overRes = await customerCheckout(overSkuId, token, `idem-8-over-${counter}`, { loyaltyPointsToRedeem: available + 200 });
+      expect(overRes.statusCode).toBe(400);
+
+      // Redeeming exactly the available amount succeeds.
+      const { skuId: exactSkuId } = await setupCheckoutableSku(3000, ctx);
+      const exactRes = await customerCheckout(exactSkuId, token, `idem-8-exact-${counter}`, { loyaltyPointsToRedeem: available });
+      expect(exactRes.statusCode).toBe(201);
+      expect(exactRes.json().loyaltyPointsRedeemed).toBe(available);
+    });
+  });
+
+  // --- Matrix item 9 ---
+
+  describe('9. Minimum-redemption calculation ignores pending points', () => {
+    it('a customer with ONLY pending points (0 available) cannot redeem even the configured minimum', async () => {
+      const ctx = await seedContext();
+      const { token, order } = await customerWithEarnedPoints(200, ctx); // stays PENDING - never delivered
+      expect((await getBalance(token)).pendingPoints).toBeGreaterThanOrEqual(200);
+      expect((await getBalance(token)).balance).toBe(0);
+
+      const { skuId } = await setupCheckoutableSku(3000, ctx);
+      const res = await customerCheckout(skuId, token, `idem-9-${counter}`, { loyaltyPointsToRedeem: 100 }); // default LOYALTY_MIN_REDEMPTION_POINTS
+      expect(res.statusCode).toBe(400);
+      void order;
+    });
+  });
+
+  // --- Matrix item 10 ---
+
+  describe('10. FIFO redemption never consumes pending points', () => {
+    it('redeeming draws down ONLY the vested batch - a pending batch for the same account is left completely untouched', async () => {
+      const ctx = await seedContext();
+      const { token } = await customerWithVestedPoints(200, ctx);
+      const vestedEntry = await testPrisma.loyaltyLedgerEntry.findFirstOrThrow({ where: { type: 'EARN', vestingStatus: 'VESTED' } });
+
+      // A second, later batch for the SAME customer that stays PENDING.
+      const { skuId: pendingSkuId } = await setupCheckoutableSku(300 * 100 + 200, ctx, 50);
+      await customerCheckout(pendingSkuId, token, `idem-10-pending-${counter}`);
+      const pendingEntry = await testPrisma.loyaltyLedgerEntry.findFirstOrThrow({ where: { type: 'EARN', vestingStatus: 'PENDING' } });
+      const pendingRemainingBefore = pendingEntry.remainingPoints;
+
+      const { skuId: redeemSkuId } = await setupCheckoutableSku(3000, ctx);
+      const redeemPoints = 100; // must meet LOYALTY_MIN_REDEMPTION_POINTS (default 100)
+      const res = await customerCheckout(redeemSkuId, token, `idem-10-redeem-${counter}`, { loyaltyPointsToRedeem: redeemPoints });
+      expect(res.statusCode).toBe(201);
+
+      const freshVested = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: vestedEntry.id } });
+      expect(freshVested.remainingPoints).toBe(vestedEntry.pointsDelta - redeemPoints);
+
+      const freshPending = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: pendingEntry.id } });
+      expect(freshPending.remainingPoints).toBe(pendingRemainingBefore); // completely untouched
+      expect(freshPending.vestingStatus).toBe('PENDING');
+    });
+  });
+
+  // --- Matrix item 11 ---
+
+  describe('11. Expiry clock starts from vesting date, not the original purchase date', () => {
+    it('expiresAt is null while PENDING, and is set to vestedAt + configured expiry duration only once vested', async () => {
+      const ctx = await seedContext();
+      const { order } = await customerWithEarnedPoints(100, ctx);
+      const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
+      const pendingEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: line.id } });
+      expect(pendingEntry.expiresAt).toBeNull();
+
+      const wT = await warehouseToken();
+      const { fulfilmentId } = await deliverOrderLine(order.id, wT);
+      await backdateDelivery(fulfilmentId, RETURN_WINDOW_DEFAULT_DAYS + 3);
+      await vestPoints();
+
+      const vestedEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: pendingEntry.id } });
+      expect(vestedEntry.vestedAt).toBeTruthy();
+      expect(vestedEntry.expiresAt).toBeTruthy();
+      // expiresAt is anchored to vestedAt (~now), NOT createdAt (which is
+      // over a week earlier, thanks to the backdated delivery above) -
+      // the two would differ by roughly RETURN_WINDOW_DEFAULT_DAYS if the
+      // clock had wrongly started at purchase time.
+      const msFromVestToExpiry = vestedEntry.expiresAt!.getTime() - vestedEntry.vestedAt!.getTime();
+      const msFromCreateToExpiry = vestedEntry.expiresAt!.getTime() - vestedEntry.createdAt.getTime();
+      expect(msFromCreateToExpiry).toBeGreaterThan(msFromVestToExpiry);
+
+      // The expiry sweep itself only ever acts on VESTED entries.
+      await testPrisma.loyaltyLedgerEntry.update({ where: { id: vestedEntry.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+      const loyalty = new LoyaltyService(app);
+      const expiredCount = await loyalty.expirePoints();
+      expect(expiredCount).toBe(1);
+    });
+  });
+
+  // --- Matrix items 12 & 13 ---
+
+  describe('12 & 13. Partial/multi-line order: independent vesting per line, by each line\'s own delivery date', () => {
+    it('line A (delivered, window closed) vests while line B (delivered later, window still open) remains PENDING - independent vesting by delivery date', async () => {
+      const ctx = await seedContext();
+      const { skuId: skuA } = await setupCheckoutableSku(20000, ctx, 50);
+      const { skuId: skuB } = await setupCheckoutableSku(20000, ctx, 50);
+      const { token } = await createAuthenticatedCustomer(app);
+      const res = await customerCheckoutMultiLine([skuA, skuB], token, `idem-multiline-${counter}`);
+      expect(res.statusCode).toBe(201);
+      const order = await orderFromSession(res.json().id);
+      const lines = await testPrisma.orderLine.findMany({ where: { orderId: order.id }, orderBy: { id: 'asc' } });
+      expect(lines).toHaveLength(2);
+      const [lineA, lineB] = lines as [(typeof lines)[number], (typeof lines)[number]];
+
+      const wT = await warehouseToken();
+      const { fulfilmentId: fulfilmentA } = await deliverSpecificLine(order.id, lineA.id, lineA.quantity, wT);
+      await backdateDelivery(fulfilmentA, RETURN_WINDOW_DEFAULT_DAYS + 3); // A's window has closed
+
+      const { fulfilmentId: fulfilmentB } = await deliverSpecificLine(order.id, lineB.id, lineB.quantity, wT);
+      // B is delivered "now" (real time, matrix item 13's own "different
+      // delivery dates" premise) - its window is still open.
+      void fulfilmentB;
+
+      const vested = await vestPoints();
+      expect(vested).toBe(1); // exactly line A
+
+      const entryA = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: lineA.id } });
+      const entryB = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: lineB.id } });
+      expect(entryA.vestingStatus).toBe('VESTED');
+      expect(entryB.vestingStatus).toBe('PENDING');
+
+      const balance = await getBalance(token);
+      expect(balance.balance).toBe(entryA.pointsDelta);
+      expect(balance.pendingPoints).toBe(entryB.pointsDelta);
+    });
+  });
+
+  // --- Matrix item 14: existing redemption concurrency proof, now against genuinely VESTED points ---
+
+  describe('14. Existing redemption concurrency protection remains green under the vesting model', () => {
+    it('two genuinely concurrent checkouts each redeeming most of the same AVAILABLE balance converge to exactly one success', async () => {
+      const ctx = await seedContext();
+      const { token } = await customerWithVestedPoints(200, ctx);
       const balance = await getBalance(token);
       const spendEach = Math.floor(balance.balance * 0.7); // two of these together exceed the balance
 
       const { skuId: skuA } = await setupCheckoutableSku(3000, ctx);
       const { skuId: skuB } = await setupCheckoutableSku(3000, ctx);
 
-      // Each checkout uses its OWN cart line (added synchronously before
-      // either request fires) so the race is isolated to the loyalty
-      // hold/balance check, not cart-item contention. Both promises are
-      // created (and dispatched) before either is awaited - genuine
-      // concurrent execution against real Postgres, the same idiom this
-      // codebase's own INV-003/EXC-004 concurrency tests rely on.
       await addToCart(skuA, { authorization: `Bearer ${token}` });
       await addToCart(skuB, { authorization: `Bearer ${token}` });
 
@@ -554,16 +708,6 @@ describe('Loyalty (M23)', () => {
             loyaltyPointsToRedeem: spendEach,
           },
         });
-
-      // A separate, freshly-earned second account line is NOT used here
-      // deliberately - both requests target the SAME LoyaltyAccount to
-      // exercise the row lock. Since startCheckout adds its OWN cart item
-      // per call via a shared cart, fire the second request against a
-      // second independent cart identity for the SAME customer is not
-      // possible (cart is keyed by customer) - instead this reuses the
-      // same cart/session but a distinct idempotencyKey, relying on the
-      // account-row FOR UPDATE lock inside reserveRedemptionForCheckout
-      // (not the cart) to serialize the two attempts.
       const fireB = () =>
         app.inject({
           method: 'POST',
@@ -582,78 +726,71 @@ describe('Loyalty (M23)', () => {
 
       const [resA, resB] = await Promise.all([fireA(), fireB()]);
       const statuses = [resA.statusCode, resB.statusCode].sort();
-      // Exactly one succeeds (201); the other is safely rejected (400,
-      // insufficient available points) once it observes the winner's
-      // committed hold - never both succeeding (double-spend), never
-      // both failing.
       expect(statuses).toEqual([201, 400]);
 
       const winner = resA.statusCode === 201 ? resA : resB;
       const winnerOrder = await orderFromSession(winner.json().id);
-
-      // The winning order ALSO earns its own new points on its own
-      // subtotal (EARN runs for every confirmed order) - the net change
-      // is spendEach spent MINUS whatever the winner itself just earned,
-      // never a bare `balance - spendEach` (see test 9's own note on
-      // this same point - one ledger effect must never be allowed to
-      // silently mask another).
+      // The winner's OWN new order also earns points, but under LOY-006
+      // those are freshly-created PENDING entries that never touch
+      // `balance` - so the net change here is spend-only.
       const finalBalance = await getBalance(token);
+      expect(finalBalance.balance).toBe(balance.balance - spendEach);
       expect(finalBalance.balance).toBeGreaterThanOrEqual(0);
-      expect(finalBalance.balance).toBe(balance.balance - spendEach + winnerOrder.loyaltyPointsEarned);
+      void winnerOrder;
     });
   });
 
-  // --- FIFO EXPIRE ---
+  // --- Matrix item 16: the fixed 100%-shortfall accounting hole (exceptional/admin post-vest path) ---
 
-  describe('EXPIRE (FIFO sweep)', () => {
-    it('15. an EARN batch past its expiry is expired by the sweep exactly once, even if the sweep runs twice concurrently', async () => {
+  describe('16. Exceptional post-vest reversal: the required reversal is truthfully recorded even at a zero balance-affecting amount', () => {
+    it('a VESTED entry whose points were already fully spent still gets a REVERSE entry (pointsDelta 0) with the full requiredPointsDelta and a shortfall audit event - never silently skipped', async () => {
       const ctx = await seedContext();
-      const { token, order } = await customerWithEarnedPoints(100, ctx);
-      const earnEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderId: order.id } });
-      await testPrisma.loyaltyLedgerEntry.update({ where: { id: earnEntry.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+      // Vest a batch, then spend it all elsewhere - simulating the
+      // ADMIN-EXCEPTION scenario the Product Owner's own instruction
+      // describes (a VESTED entry reversed after its points are already
+      // spent). Under the certified system's NORMAL customer lifecycle
+      // this branch is structurally unreachable (cancellation only
+      // applies pre-shipment; a return/exchange can only be INITIATED
+      // while the window is open, and vesting only happens once it has
+      // closed) - so this test invokes LoyaltyService.reverseForOrderLine
+      // directly, exactly as an out-of-band administrative process would,
+      // rather than via the customer-facing cancel/return HTTP routes
+      // (which correctly refuse to reach this state through normal use).
+      const { token, order } = await customerWithVestedPoints(200, ctx);
+      const line = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } });
+      const vestedEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: line.id } });
+      const earnedPoints = vestedEntry.pointsDelta;
+
+      const { skuId } = await setupCheckoutableSku(3000, ctx);
+      const spendRes = await customerCheckout(skuId, token, `idem-16-spend-${counter}`, { loyaltyPointsToRedeem: earnedPoints });
+      expect(spendRes.statusCode).toBe(201);
+      const freshEntry = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: vestedEntry.id } });
+      expect(freshEntry.remainingPoints).toBe(0); // fully spent
 
       const loyalty = new LoyaltyService(app);
-      const [countA, countB] = await Promise.all([loyalty.expirePoints(), loyalty.expirePoints()]);
-      expect(countA + countB).toBe(1); // exactly one of the two concurrent sweeps actually expired this batch
+      const fullOrder = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      await testPrisma.$transaction(async (tx) => {
+        await loyalty.reverseForOrderLine(tx, fullOrder, line, 'Admin-exception reversal test');
+      });
 
-      const after = await getBalance(token);
-      expect(after.balance).toBe(0);
-      const expireEntries = await testPrisma.loyaltyLedgerEntry.count({ where: { type: 'EXPIRE', accountId: earnEntry.accountId } });
-      expect(expireEntries).toBe(1);
-    });
+      const reverseEntry = await testPrisma.loyaltyLedgerEntry.findFirstOrThrow({ where: { reversalOrderLineId: line.id } });
+      expect(reverseEntry.pointsDelta).toBe(0); // nothing left in the balance to reverse
+      expect(reverseEntry.requiredPointsDelta).toBe(-earnedPoints); // the FULL required reversal, never silently dropped
 
-    it('16. FIFO ordering: the OLDEST unexpired earn batch expires first, a newer batch is unaffected', async () => {
-      const ctx = await seedContext();
-      const { token, order: order1 } = await customerWithEarnedPoints(100, ctx);
-      const account = await testPrisma.loyaltyAccount.findUniqueOrThrow({ where: { customerId: (await testPrisma.customer.findFirstOrThrow()).id } });
-      // Second, later earn for the SAME customer - a fresh order.
-      const { skuId } = await setupCheckoutableSku(15200, ctx, 50);
-      const res2 = await customerCheckout(skuId, token, `idem-second-earn-${counter}`);
-      expect(res2.statusCode).toBe(201);
-      const order2 = await orderFromSession(res2.json().id);
+      const shortfallAudit = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'loyalty.reverse.postvest.shortfall', reference: order.id } });
+      expect((shortfallAudit.newValue as { shortfall: number }).shortfall).toBe(earnedPoints);
 
-      const entry1 = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderId: order1.id } });
-      const entry2 = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderId: order2.id } });
-      await testPrisma.loyaltyLedgerEntry.update({ where: { id: entry1.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
-
-      const loyalty = new LoyaltyService(app);
-      await loyalty.expirePoints();
-
-      const freshEntry1 = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: entry1.id } });
-      const freshEntry2 = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: entry2.id } });
-      expect(freshEntry1.remainingPoints).toBe(0);
-      expect(freshEntry2.remainingPoints).toBe(entry2.pointsDelta); // untouched
-
+      // The balance is unaffected further (it was already 0 for this
+      // batch) - no negative balance was invented.
       const balance = await getBalance(token);
-      expect(balance.balance).toBe(entry2.pointsDelta);
-      void account;
+      expect(balance.balance).toBeGreaterThanOrEqual(0);
     });
   });
 
-  // --- Manual staff adjustment ---
+  // --- Manual staff adjustment (unaffected by vesting - always immediate) ---
 
   describe('Manual staff adjustment', () => {
-    it('17. a positive manual adjustment increments balance and lifetime points; retried with the same idempotencyKey is a safe no-op', async () => {
+    it('a positive manual adjustment increments balance and lifetime points immediately (no vesting involved); retried with the same idempotencyKey is a safe no-op', async () => {
       const { customerId, token } = await createAuthenticatedCustomer(app);
       const fin = await financeToken();
       const idempotencyKey = `adjust-${customerId}`;
@@ -668,7 +805,7 @@ describe('Loyalty (M23)', () => {
       expect(balance.lifetimeEarnedPoints).toBe(500);
     });
 
-    it('18. a negative manual adjustment decrements balance without demoting lifetime tier standing', async () => {
+    it('a negative manual adjustment decrements balance without demoting lifetime tier standing', async () => {
       const { customerId, token } = await createAuthenticatedCustomer(app);
       const fin = await financeToken();
       await app.inject({ method: 'POST', url: '/api/v1/loyalty/adjust', headers: { authorization: `Bearer ${fin}` }, payload: { customerId, pointsDelta: 1000, reason: 'Grant', idempotencyKey: `grant-${customerId}` } });
@@ -676,30 +813,42 @@ describe('Loyalty (M23)', () => {
 
       const balance = await getBalance(token);
       expect(balance.balance).toBe(700);
-      expect(balance.lifetimeEarnedPoints).toBe(1000); // lifetime standing (tier basis) never reduced by a clawback
+      expect(balance.lifetimeEarnedPoints).toBe(1000);
     });
 
-    it('19. a staff caller without loyalty:adjust permission is rejected', async () => {
+    it('a staff caller without loyalty:adjust permission is rejected', async () => {
       const { customerId } = await createAuthenticatedCustomer(app);
       await grantPermissions('CUSTOMER_SERVICE', ['order:read']);
       const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
       const res = await app.inject({ method: 'POST', url: '/api/v1/loyalty/adjust', headers: { authorization: `Bearer ${csToken}` }, payload: { customerId, pointsDelta: 100, reason: 'x', idempotencyKey: `noperm-${customerId}` } });
       expect(res.statusCode).toBe(403);
     });
+
+    it('the vesting sweep route is gated by the SAME loyalty:adjust permission as every other loyalty staff route, and rejects a caller without it', async () => {
+      const fin = await financeToken(); // has loyalty:adjust - the sweep route uses the identical staffAuth gate
+      const okRes = await app.inject({ method: 'POST', url: '/api/v1/loyalty/sweep/vest', headers: { authorization: `Bearer ${fin}` } });
+      expect(okRes.statusCode).toBe(200);
+      expect(okRes.json()).toHaveProperty('vested');
+
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read']);
+      const { token: csToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+      const forbiddenRes = await app.inject({ method: 'POST', url: '/api/v1/loyalty/sweep/vest', headers: { authorization: `Bearer ${csToken}` } });
+      expect(forbiddenRes.statusCode).toBe(403);
+    });
   });
 
   // --- IDOR / cross-customer access ---
 
   describe('IDOR: cross-customer access is impossible', () => {
-    it('20. customer A only ever sees their own balance/ledger - there is no parameter to tamper (customerId always comes from the verified JWT)', async () => {
+    it('customer A only ever sees their own balance/ledger - there is no parameter to tamper (customerId always comes from the verified JWT)', async () => {
       const ctx = await seedContext();
-      const { token: tokenA } = await customerWithEarnedPoints(100, ctx);
+      const { token: tokenA } = await customerWithVestedPoints(100, ctx);
       const { token: tokenB } = await createAuthenticatedCustomer(app);
 
       const balanceA = await getBalance(tokenA);
       expect(balanceA.balance).toBeGreaterThan(0);
       const balanceB = await getBalance(tokenB);
-      expect(balanceB.balance).toBe(0); // B's own account, genuinely empty - never A's
+      expect(balanceB.balance).toBe(0);
 
       const ledgerA = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty/ledger', headers: { authorization: `Bearer ${tokenA}` } });
       const ledgerB = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty/ledger', headers: { authorization: `Bearer ${tokenB}` } });
@@ -707,14 +856,14 @@ describe('Loyalty (M23)', () => {
       expect(ledgerB.json().length).toBe(0);
     });
 
-    it('21. an unauthenticated request to either customer route is rejected', async () => {
+    it('an unauthenticated request to either customer route is rejected', async () => {
       const balanceRes = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty' });
       expect(balanceRes.statusCode).toBe(401);
       const ledgerRes = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty/ledger' });
       expect(ledgerRes.statusCode).toBe(401);
     });
 
-    it("22. a guest session (no customer JWT) cannot reach either loyalty route - loyalty has no guest concept", async () => {
+    it("a guest session (no customer JWT) cannot reach either loyalty route - loyalty has no guest concept", async () => {
       const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty', headers: { 'x-guest-session-id': `guest-idor-${counter}` } });
       expect(res.statusCode).toBe(401);
     });

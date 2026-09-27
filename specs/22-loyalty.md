@@ -1,10 +1,11 @@
 # 22. Loyalty
 
 **Status:** IMPLEMENTED (built 2026-09-27 under the "START BUILD — M23 +
-M24 + M25 OVERNIGHT COMMERCIAL-ENGAGEMENT PHASE" authorization — see
-`acceptance/m23-loyalty.md` for the Definition of Done and
-`CLAUDE.md` §0 for the build record. Not yet independently reviewed —
-`VERIFIED` is set only after that review.)
+M24 + M25 OVERNIGHT COMMERCIAL-ENGAGEMENT PHASE" authorization; LOY-006
+resolved by the Product Owner and the vesting-lifecycle repair applied
+2026-09-27 — see `acceptance/m23-loyalty.md` for the Definition of Done
+and `CLAUDE.md` §0 for the build record. Not yet independently
+reviewed — `VERIFIED` is set only after that review.)
 
 ## Purpose
 
@@ -49,7 +50,96 @@ loyalty value, backed by an auditable ledger.
 Exact earn/redemption/expiry *rates* remain intentionally configurable
 business parameters, not open decisions blocking build.
 
+## LOY-006 RESOLUTION (2026-09-27, Product Owner)
+
+**Decision (verbatim):** "Loyalty points from a purchase MUST NOT
+become redeemable immediately after order confirmation or immediately
+after delivery. Points become redeemable ONLY AFTER: 1. the relevant
+order line has been DELIVERED; AND 2. the applicable return/exchange
+eligibility window for that line has CLOSED. Until BOTH conditions are
+satisfied, earned points are: PENDING / NON-REDEEMABLE. They must not
+contribute to the customer's AVAILABLE/SPENDABLE loyalty balance."
+
+**Lifecycle implemented:** `PENDING → VESTED → REDEEMED/EXPIRED`, or
+`PENDING → CANCELLED` if the qualifying line is cancelled, or its
+qualifying return/exchange is QC-accepted, before vesting. A cancelled
+entitlement can never later become available.
+
+- **Earning** still calculates the point entitlement at order
+  confirmation, but now **per order line** (not per order — vesting
+  must be line-aware, since different lines on the same order can
+  deliver, and close their own return/exchange window, on different
+  dates). The entitlement is recorded PENDING; it does not touch the
+  customer's spendable balance, lifetime tier standing, checkout
+  redemption eligibility, or FIFO draw-down until it vests.
+- **Vesting** requires the line to be DELIVERED *and* its own
+  return/exchange eligibility window to have closed (reusing the
+  SAME `resolveReturnPolicy`/`isWithinWindow` source of truth Return/
+  Exchange already use — never a second, independently invented window
+  rule), with no still-open (unresolved QC, not cancelled) Return or
+  Exchange on that line. An idempotent, concurrency-safe callable sweep
+  (`vestEligiblePoints`) performs the PENDING → VESTED transition;
+  exactly one vesting event occurs per entitlement even under genuine
+  concurrent/duplicate sweep execution.
+- **Expiry** clock starts at VESTING, not at the original purchase
+  date — the configured usable lifetime (`LOYALTY_POINTS_EXPIRY_DAYS`)
+  is never silently shortened by time spent PENDING.
+- **Cancellation/return before vesting** cancels the PENDING
+  entitlement outright (the balance was never credited, so the
+  balance-affecting amount is truthfully zero) — but the reversal
+  ledger entry, the full required-reversal amount, and an audit event
+  are still always recorded, never silently skipped.
+- **Exchange** reuses the ALREADY-DECIDED "reverse on a QC-accepted
+  return" rule at Exchange's own certified QC-PASS gate for the
+  original item (Exchange's design already reuses M19's identical QC
+  machinery for that physical item) — not a new invented policy.
+- **Checkout redemption** (minimum-redemption check, available-balance
+  check, FIFO draw-down, hold reservation) uses ONLY vested/available
+  points — a customer with 100 available + 500 pending can redeem at
+  most 100.
+
+See `blueprint/DECISION_REGISTER.md`'s `LOY-006` entry for the complete
+resolution record, including the narrow remaining
+ADMIN-EXCEPTION open item below.
+
+## DECISION_REQUIRED — POST-VEST ADMIN-EXCEPTION SHORTFALL
+
+**Question:** If a future exceptional/administrative process reverses
+an ALREADY-VESTED entry whose points were already spent elsewhere
+(something no normal customer-facing cancellation/return/exchange flow
+in this codebase can trigger, now that vesting only happens once a
+line's cancellation/return/exchange paths have all closed), what
+should happen to the resulting shortfall?
+
+**Why it matters:** guessing wrong invents commercial policy (negative
+balance/customer debt, future-earn clawback, a cash/store-credit
+offset, or blocking the return) with real customer-facing and
+financial consequences.
+
+**Current behavior:** the balance-affecting reversal is capped at
+whatever remains unconsumed in that specific EARN entry (never driving
+the balance negative); the FULL required reversal and a distinct
+shortfall audit event are ALWAYS recorded, truthfully, even when the
+balance-affecting amount is zero. No debt, clawback, or blocking is
+implemented. This is the same "accept the loss, but always audit it
+honestly" behavior the original LOY-006 repair established, now scoped
+down to this one genuinely exceptional path.
+
+**Options considered:** identical to the original LOY-006 analysis
+(accept the loss / negative balance-debt / future-earn clawback /
+cash-store-credit offset) — none selected. This spec does not decide
+this narrow case; see `blueprint/DECISION_REGISTER.md`'s `LOY-006`
+entry for the full record.
+
 ## DECISION_REQUIRED — LOYALTY CLAWBACK AFTER POINTS ALREADY SPENT
+**(HISTORICAL — superseded 2026-09-27 by the LOY-006 resolution above
+for the normal customer lifecycle; preserved unchanged below as the
+original record of the question this decision resolved, per this
+project's "never rewrite history" discipline. The vesting model above
+makes the scenario described here structurally unreachable for a
+standard cancellation/return — see the LOY-006 resolution's own
+explanation. The one still-open exceptional case is the separate
+`POST-VEST ADMIN-EXCEPTION SHORTFALL` block immediately above.)**
 
 **Question:** Requirement §20/§43-45 above states "any loyalty points
 earned on an order MUST be reversed via a ledger entry if that order is

@@ -223,6 +223,25 @@ spec's second test) and adversarially at the integration level
 proofs for both the checkout redemption race and a double-fired expiry
 sweep).
 
+**LOY-006 vesting-lifecycle repair note (2026-09-27):** step 1's EARN
+now only CALCULATES the point entitlement, PENDING — it is not
+redeemable until the line is delivered and its return/exchange window
+closes. This flow's own E2E test (`test/e2e-storefront/loyalty.spec.ts`)
+was updated to genuinely drive that lifecycle: after step 1, the line
+is delivered via the real staff pick/pack/ship/deliver routes, its
+delivery date is backdated past the configured return window (the same
+documented time-manipulation idiom the expiry step already used, since
+waiting out a real window is not meaningful for a browser test), and
+the real staff-gated vesting sweep (`POST /api/v1/loyalty/sweep/vest`)
+is called before step 2 redeems the now-genuinely-available points.
+Step 3's cancellation now targets step 2's own order (still PENDING,
+since it was never delivered) — the normal pre-vesting cancellation
+path — and asserts the balance-affecting reversal is truthfully zero
+(nothing was ever credited) while the full required-reversal amount is
+still recorded. See `specs/22-loyalty.md`'s `## LOY-006 RESOLUTION`
+section and `acceptance/m23-loyalty.md`'s vesting-lifecycle test matrix
+for the complete design record.
+
 ## FLOW 18 — Coupon + Compatible Promotion + Loyalty + Store Credit
 
 **Preconditions:** An active automatic promotion; a coupon marked
@@ -260,6 +279,17 @@ compatible `PromotionRedemption` rows exist for the resulting order
 (never the rejected one), and that the confirmation page's
 `amountPayable` equals `grandTotal` minus the applied store credit,
 computed from the UI's own displayed numbers — 1/1 passing.
+
+**LOY-006 vesting-lifecycle repair note (2026-09-27):** the loyalty-
+seed purchase this flow's E2E test places (`test/e2e-storefront/
+promotions.spec.ts`) now earns PENDING, not immediately-available,
+points. The test was updated to genuinely deliver that line, backdate
+its delivery past the return window, and call the real staff-gated
+vesting sweep (`POST /api/v1/loyalty/sweep/vest`) before redeeming -
+this flow continues to prove genuine loyalty+promotion stacking using
+real, actually-available points, never the now-obsolete
+immediately-available assumption. See `specs/22-loyalty.md`'s
+`## LOY-006 RESOLUTION` section.
 
 **M24/M25 independent-review certification-repair note (2026-09-27,
 Blocker 2):** the original flow above never actually proved loyalty

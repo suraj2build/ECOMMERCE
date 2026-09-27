@@ -1924,16 +1924,15 @@ model Order {
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
-  customer         Customer?           @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  checkoutSession  CheckoutSession     @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
-  lines            OrderLine[]
-  fulfilments      OrderFulfilment[]
-  pickTasks        PickTask[]
-  shipments        Shipment[]
-  returns          Return[]
-  refunds          Refund[]
-  exchanges        Exchange[]
-  loyaltyEarnEntry LoyaltyLedgerEntry?
+  customer        Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  checkoutSession CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
+  lines           OrderLine[]
+  fulfilments     OrderFulfilment[]
+  pickTasks       PickTask[]
+  shipments       Shipment[]
+  returns         Return[]
+  refunds         Refund[]
+  exchanges       Exchange[]
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -1996,7 +1995,8 @@ model OrderLine {
   returnLine           ReturnLine?
   refund               Refund?
   exchange             Exchange?
-  loyaltyReversalEntry LoyaltyLedgerEntry?
+  loyaltyEarnEntry     LoyaltyLedgerEntry? @relation("QualifyingOrderLine")
+  loyaltyReversalEntry LoyaltyLedgerEntry? @relation("ReversalOrderLine")
 
   @@index([orderId])
   @@map("order_lines")
@@ -2747,15 +2747,15 @@ model Exchange {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  order                       Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  orderLine                   OrderLine         @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  originalSku                 Sku               @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
-  originalLocation            Location          @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
-  replacementSku              Sku               @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
-  initiatedStaff              StaffUser?        @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
-  qcActorStaff                StaffUser?        @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
-  replacementFulfilledByStaff StaffUser?        @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
-  storeCreditEntry            StoreCreditEntry? @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
+  order                       Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLine                   OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  originalSku                 Sku                 @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
+  originalLocation            Location            @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
+  replacementSku              Sku                 @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
+  initiatedStaff              StaffUser?          @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
+  qcActorStaff                StaffUser?          @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  replacementFulfilledByStaff StaffUser?          @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
+  storeCreditEntry            StoreCreditEntry?   @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
   paymentEvents               PaymentEvent[]
   // EXC-004 Option 2 repair (2026-09-26): the replacement's physical
   // forward fulfilment - one PickTask (auto-created the instant this
@@ -2766,6 +2766,10 @@ model Exchange {
   // PickTask/OrderFulfilment above).
   pickTask                    PickTask?
   fulfilment                  OrderFulfilment?
+  // 2026-09-27 LOY-006 resolution: set the instant this Exchange's QC
+  // result is PASS (LoyaltyService.reverseForExchangeLine, mirroring
+  // ReturnService's own reverseForReturnLine call exactly).
+  loyaltyReversalEntry        LoyaltyLedgerEntry?
 
   @@index([orderId])
   @@map("exchanges")
@@ -2910,32 +2914,40 @@ model CommunicationPreference {
 // (SELECT ... FOR UPDATE), the same row-lock-as-serialization-point idiom
 // used throughout this codebase since StoreCreditService.lockOrCreateAccount.
 //
-// EARN triggers at ORDER CONFIRMATION (Order creation - the qualifying
-// payment already succeeded, COD-accepted or PREPAID-captured), not at
-// delivery. This is a deliberate engineering decision, not a guess: a
-// SHIPPED/DELIVERED OrderLine can never be cancelled again (M18's own
-// certified boundary - "Cannot cancel a line that has already shipped/
-// delivered - use a return instead"), so earning at delivery would make
-// it structurally IMPOSSIBLE to ever reverse points via cancellation -
-// yet FLOW17 explicitly requires "cancel a different, separate order
-// that HAD earned points -> points reverse" as a real, reachable scenario.
-// Earning at order-confirmation keeps both reversal paths reachable
-// (CANCELLATION for a not-yet-shipped line, RETURN for a delivered one)
-// without touching the certified M18 cancellation-eligibility boundary.
-// The qualifying value is Order.subtotal (the existing, already-frozen,
-// pre-tax/pre-shipping merchandise value) - earning is based on what was
-// genuinely purchased, independent of how it was PAID for (cash/store-
-// credit/points-partial), since store credit/loyalty redemption are
-// payment-method components, not price reductions, in this build.
+// EARN's POINT ENTITLEMENT is CALCULATED at ORDER CONFIRMATION (Order
+// creation - the qualifying payment already succeeded, COD-accepted or
+// PREPAID-captured), one EARN entry per ORDER LINE (qualifyingOrderLineId
+// is the idempotency anchor - a retried order-creation call, or a webhook
+// replay, can never double-earn). The qualifying value is that line's own
+// frozen lineTotalInclusive (which sums exactly to Order.subtotal across
+// all lines, since CheckoutService.priceLines builds both from the same
+// per-line accumulation) - earning is based on what was genuinely
+// purchased, independent of how it was PAID for.
 //
-// One EARN entry per Order (qualifyingOrderId is the idempotency anchor -
-// a retried order-creation call, or a webhook replay, can never double-
-// earn). remainingPoints on that EARN entry is decremented (FIFO, oldest
-// batch first) as REDEEM/EXPIRE/REVERSE draw against it - see
-// LoyaltyPointAllocation. A partial-line cancellation/return reverses
-// only that line's proportional share of the order's single EARN batch,
-// never the whole batch, via a partial allocation - see
-// LoyaltyService.reverseForOrderLine's own docblock.
+// 2026-09-27 PRODUCT OWNER DECISION (LOY-006 resolution): calculating the
+// entitlement at confirmation time is NOT the same as making it
+// redeemable. Points are PENDING/non-redeemable until BOTH (1) the
+// specific OrderLine has been DELIVERED and (2) that line's own
+// return/exchange eligibility window (per-SKU, via the SAME
+// `resolveReturnPolicy`/`isWithinWindow` source of truth
+// returns/policy.ts already established - never a second, duplicated
+// window rule) has CLOSED - see LoyaltyService's own vesting docblock.
+// `LoyaltyLedgerEntry.vestingStatus` carries this state (PENDING -> VESTED
+// -> spent via REDEEM/EXPIRE, or PENDING -> CANCELLED if the line is
+// cancelled/returned before vesting). `LoyaltyAccount.balance` reflects
+// ONLY vested-and-unspent points (i.e. genuinely available/spendable) -
+// a PENDING entry never touches balance/lifetimeEarnedPoints, checkout
+// redemption, or FIFO draw-down until it vests. `expiresAt` is set ONLY
+// at vesting time, not at EARN creation, so the customer's full
+// configured usable lifetime starts from when points actually become
+// spendable, never silently shortened by time spent PENDING.
+//
+// Because entitlement is now per-line (not a shared order-level batch),
+// a cancellation/return reverses/cancels exactly ONE entry - the
+// proportional-share math the original build used is gone entirely; see
+// LoyaltyService.reverseForOrderLine's own docblock. remainingPoints on
+// a VESTED EARN entry is still decremented (FIFO, oldest-vested-first) as
+// REDEEM/EXPIRE/REVERSE draw against it - see LoyaltyPointAllocation.
 enum LoyaltyLedgerEntryType {
   EARN
   REDEEM
@@ -2944,10 +2956,28 @@ enum LoyaltyLedgerEntryType {
   ADJUST
 }
 
+// 2026-09-27 LOY-006 resolution: the vesting lifecycle of an EARN entry's
+// point entitlement. Meaningful ONLY on EARN entries - null on every
+// other entry type. PENDING -> VESTED (LoyaltyService.vestEligiblePoints)
+// -> stays VESTED as remainingPoints is drawn down by REDEEM/EXPIRE.
+// PENDING -> CANCELLED if the qualifying line is cancelled or its
+// qualifying return/exchange is QC-accepted BEFORE vesting - a cancelled
+// entitlement can NEVER later become VESTED (see LoyaltyService.reverse's
+// own docblock for why this is enforced by a lock+re-check, not just an
+// application-level assumption).
+enum LoyaltyEntitlementStatus {
+  PENDING
+  VESTED
+  CANCELLED
+}
+
 model LoyaltyAccount {
   id                   String   @id @default(uuid())
   customerId           String   @unique
-  // Denormalized cache of SUM(pointsDelta) - see docblock above.
+  // Denormalized cache of SUM(pointsDelta) across VESTED entries only -
+  // see docblock above. A PENDING entry never contributes here; this is
+  // therefore already the customer's genuine available/spendable balance
+  // (modulo active LoyaltyRedemptionHold rows - see availableBalance()).
   balance              Int      @default(0)
   // Lifetime points ever legitimately earned - the tier basis (LOY-001).
   // Decremented only on REVERSE (a cancelled/returned purchase never
@@ -2993,62 +3023,88 @@ model LoyaltyTier {
 // ledger" requirement) - balance is ALWAYS derivable as SUM(pointsDelta)
 // for the account, never trust-me-bro mutated directly.
 model LoyaltyLedgerEntry {
-  id                   String                 @id @default(uuid())
-  accountId            String
-  type                 LoyaltyLedgerEntryType
+  id                    String                    @id @default(uuid())
+  accountId             String
+  type                  LoyaltyLedgerEntryType
   // Signed: positive for EARN/ADJUST-credit, negative for REDEEM/EXPIRE/
-  // REVERSE/ADJUST-debit.
-  pointsDelta          Int
+  // REVERSE/ADJUST-debit. For a PENDING EARN entry this is the calculated
+  // entitlement, NOT yet reflected in LoyaltyAccount.balance - see
+  // vestingStatus.
+  pointsDelta           Int
+  // EARN-only: PENDING/VESTED/CANCELLED (2026-09-27 LOY-006 resolution -
+  // see model-group docblock and LoyaltyService.vestEligiblePoints). Null
+  // for every non-EARN entry type.
+  vestingStatus         LoyaltyEntitlementStatus?
+  // EARN-only: when this entry actually transitioned PENDING -> VESTED.
+  // Null while PENDING or CANCELLED.
+  vestedAt              DateTime?
   // EARN-only batch-tracking fields (FIFO redemption/expiry - see the
   // model-group docblock above and LoyaltyPointAllocation below).
-  remainingPoints      Int?
-  expiresAt            DateTime?
-  // Idempotency anchor for EARN: one Order produces at most one EARN
+  // `expiresAt` is set ONLY at vesting time (not at EARN creation) so the
+  // customer's configured usable lifetime starts from when the points
+  // actually became spendable, never from the original purchase date.
+  remainingPoints       Int?
+  expiresAt             DateTime?
+  // Idempotency anchor for EARN: one OrderLine produces at most one EARN
   // entry, enforced at the database level (never just an application
   // check) - mirrors Refund.orderLineId's own @unique idempotency-anchor
-  // idiom.
-  qualifyingOrderId    String?                @unique
-  // Idempotency anchor for REVERSE: a given cancelled OrderLine or
-  // processed ReturnLine can trigger at most one REVERSE entry, ever -
-  // a retried cancellation/return-processing call is a safe no-op, never
-  // a double-reversal (m23 acceptance negative scenario #3).
-  reversalOrderLineId  String?                @unique
-  reversalReturnLineId String?                @unique
-  // REVERSE-only: the FULL line-share reversal this cancellation/return
+  // idiom. Replaces the original build's order-level qualifyingOrderId
+  // now that entitlement is calculated per-line (LOY-006 resolution -
+  // vesting must be line-aware, since lines can deliver/close their
+  // return window at different times).
+  qualifyingOrderLineId String?                   @unique
+  // Idempotency anchor for REVERSE: a given cancelled OrderLine, QC-
+  // accepted ReturnLine, or QC-accepted Exchange can trigger at most one
+  // REVERSE entry, ever - a retried cancellation/return/exchange-
+  // processing call is a safe no-op, never a double-reversal (m23
+  // acceptance negative scenario #3).
+  reversalOrderLineId   String?                   @unique
+  reversalReturnLineId  String?                   @unique
+  // Exchange QC-PASS reversal anchor (2026-09-27 LOY-006 resolution) -
+  // Exchange reuses M19's own QC-gated original-item processing exactly
+  // (see the Exchange model's own schema comment), so the ALREADY-DECIDED
+  // "reverse on QC-accepted return" rule (specs/22-loyalty.md) is applied
+  // at the identical QC-PASS gate ExchangeService already implements for
+  // the same physical item - not a new invented policy.
+  reversalExchangeId    String?                   @unique
+  // REVERSE-only: the FULL reversal this cancellation/return/exchange
   // actually required, independent of `pointsDelta` (what was actually
-  // applied - capped at the specific EARN batch's remainingPoints, so
-  // the account balance/ledger SUM invariant never goes negative).
-  // `pointsDelta` and this field differ only when the customer had
-  // already spent/lost some of the points that batch earned before this
-  // reversal was triggered - a genuine, fully-audited shortfall, never
-  // silently absorbed. See LOY-001's independent-review repair note in
-  // blueprint/DECISION_REGISTER.md and specs/22-loyalty.md's own
-  // DECISION_REQUIRED block: whether/how to make the customer whole for
-  // that shortfall (negative balance, debt, future-earn clawback, a
-  // cash/store-credit adjustment, or accepting the loss) is an
-  // unresolved commercial policy question this build does not decide.
-  requiredPointsDelta  Int?
-  reason               String
-  actorStaffId         String?
+  // applied to the balance). Under the LOY-006 vesting model this always
+  // equals `-pointsDelta` in magnitude for a PENDING-entry cancellation
+  // (nothing was ever in the balance to cap against), so this field is
+  // ALWAYS recorded, even when the balance-affecting amount is zero -
+  // never silently skipped (2026-09-27 critical repair: the original
+  // `if (actualReverse <= 0) return` early-return bug is fixed). It can
+  // still exceed `-pointsDelta` in magnitude only for the narrow,
+  // exceptional ADMIN-OVERRIDE post-vesting reversal path (a VESTED entry
+  // whose points were already partly/fully spent elsewhere) - see
+  // LOY-006's own "post-vest exception returns" addendum in
+  // blueprint/DECISION_REGISTER.md for why that remains a documented,
+  // unresolved exceptional-policy case, never guessed.
+  requiredPointsDelta   Int?
+  reason                String
+  actorStaffId          String?
   // General-purpose idempotency guard for every entry type (defense in
   // depth alongside the structural anchors above) - REDEEM in particular
   // has no single structural anchor of its own (one redeem action can
   // span multiple EARN batches, producing multiple rows - see
   // LoyaltyService.redeem's own docblock), so this is its primary
   // idempotency mechanism.
-  idempotencyKey       String                 @unique
-  createdAt            DateTime               @default(now())
+  idempotencyKey        String                    @unique
+  createdAt             DateTime                  @default(now())
 
-  account            LoyaltyAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  actorStaff         StaffUser?               @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
-  qualifyingOrder    Order?                   @relation(fields: [qualifyingOrderId], references: [id], onDelete: Restrict)
-  reversalOrderLine  OrderLine?               @relation(fields: [reversalOrderLineId], references: [id], onDelete: Restrict)
-  reversalReturnLine ReturnLine?              @relation(fields: [reversalReturnLineId], references: [id], onDelete: Restrict)
-  allocationsSpent   LoyaltyPointAllocation[] @relation("SpendingEntry")
-  allocationsEarned  LoyaltyPointAllocation[] @relation("EarnEntry")
+  account             LoyaltyAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  actorStaff          StaffUser?               @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
+  qualifyingOrderLine OrderLine?               @relation("QualifyingOrderLine", fields: [qualifyingOrderLineId], references: [id], onDelete: Restrict)
+  reversalOrderLine   OrderLine?               @relation("ReversalOrderLine", fields: [reversalOrderLineId], references: [id], onDelete: Restrict)
+  reversalReturnLine  ReturnLine?              @relation(fields: [reversalReturnLineId], references: [id], onDelete: Restrict)
+  reversalExchange    Exchange?                @relation(fields: [reversalExchangeId], references: [id], onDelete: Restrict)
+  allocationsSpent    LoyaltyPointAllocation[] @relation("SpendingEntry")
+  allocationsEarned   LoyaltyPointAllocation[] @relation("EarnEntry")
 
   @@index([accountId])
   @@index([accountId, type])
+  @@index([type, vestingStatus])
   @@map("loyalty_ledger_entries")
 }
 

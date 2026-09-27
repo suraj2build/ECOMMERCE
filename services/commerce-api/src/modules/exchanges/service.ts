@@ -11,6 +11,7 @@ import { resolveShippingProvider, type ShippingProvider } from '../shipping/prov
 import { resolvePaymentProvider, type WebhookEvent } from '../checkout/payment-provider.js';
 import { StoreCreditService } from '../refunds/store-credit-service.js';
 import { resolveReturnPolicy, isWithinWindow } from '../returns/policy.js';
+import { LoyaltyService } from '../loyalty/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
 export interface InitiateExchangeInput {
@@ -95,6 +96,7 @@ export class ExchangeService {
   private readonly inventory: InventoryService;
   private readonly catalog: CatalogService;
   private readonly storeCredit: StoreCreditService;
+  private readonly loyalty: LoyaltyService;
   private readonly provider: ShippingProvider;
 
   constructor(
@@ -106,6 +108,7 @@ export class ExchangeService {
     this.inventory = new InventoryService(fastify);
     this.catalog = new CatalogService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
+    this.loyalty = new LoyaltyService(fastify);
     this.provider = provider ?? resolveShippingProvider(loadEnv().SHIPPING_PROVIDER);
   }
 
@@ -584,6 +587,20 @@ export class ExchangeService {
         newValue: { qcResult: input.qcResult, disposition: input.disposition },
         reference: exchangeId,
       });
+
+      // 2026-09-27 (LOY-006): reverse/cancel this line's loyalty
+      // entitlement at the identical QC-PASS gate ReturnService already
+      // uses (reverseForReturnLine) - Exchange reuses M19's own QC
+      // machinery for the ORIGINAL item exactly, so the ALREADY-DECIDED
+      // "reverse on a QC-accepted return" rule applies here without
+      // inventing a new policy. A FAILED QC never reverses points, same
+      // as it never makes a cash refund eligible on a Return. Safe no-op
+      // for a guest order or a line that earned zero points.
+      if (input.qcResult === 'PASS') {
+        const orderLine = await tx.orderLine.findUniqueOrThrow({ where: { id: full.orderLineId } });
+        const order = await tx.order.findUniqueOrThrow({ where: { id: full.orderId } });
+        await this.loyalty.reverseForExchangeLine(tx, order, orderLine, { id: exchangeId }, input.notes?.trim() || 'Exchange QC-accepted');
+      }
     });
 
     if (input.qcResult === 'PASS') await this.tryComplete(exchangeId);

@@ -39,7 +39,12 @@ export default function LoyaltyPage() {
 
       {balance && (
         <>
-          <p className="mt-4 text-2xl font-medium text-ink">{balance.balance} pts</p>
+          <p className="mt-4 text-2xl font-medium text-ink">{balance.balance} pts available</p>
+          {balance.pendingPoints > 0 && (
+            <p className="mt-1 text-sm text-ink-muted">
+              + {balance.pendingPoints} pts pending - becomes available once your order is delivered and its return window closes
+            </p>
+          )}
           <p className="text-sm text-ink-muted">
             {balance.tier ? `${balance.tier.name} tier` : 'No tier yet'} - {balance.lifetimeEarnedPoints} lifetime points earned
           </p>
@@ -54,13 +59,17 @@ export default function LoyaltyPage() {
                   <div>
                     <span className="block text-sm text-ink">{entry.reason}</span>
                     <span className="block text-xs text-ink-muted">
-                      {ENTRY_LABEL[entry.type]} - {new Date(entry.createdAt).toLocaleDateString()}
+                      {ENTRY_LABEL[entry.type]}
+                      {entry.vestingStatus === 'PENDING' ? ' - pending' : ''}
+                      {entry.vestingStatus === 'CANCELLED' ? ' - cancelled (never vested)' : ''}
+                      {' - '}
+                      {new Date(entry.createdAt).toLocaleDateString()}
+                      {entry.vestedAt ? ` - vested ${new Date(entry.vestedAt).toLocaleDateString()}` : ''}
                       {entry.expiresAt ? ` - expires ${new Date(entry.expiresAt).toLocaleDateString()}` : ''}
                     </span>
                   </div>
                   <span className={`text-sm font-medium ${entry.pointsDelta >= 0 ? 'text-ink' : 'text-ink-muted'}`}>
-                    {entry.pointsDelta >= 0 ? '+' : ''}
-                    {entry.pointsDelta}
+                    {entry.vestingStatus === 'PENDING' ? `(${entry.pointsDelta} pending)` : `${entry.pointsDelta >= 0 ? '+' : ''}${entry.pointsDelta}`}
                   </span>
                 </li>
               ))}

@@ -6,19 +6,151 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-27: `M23 DECISION REQUIRED — M24/M25
-CERTIFICATION REPAIRS COMPLETE — AWAITING PRODUCT DECISION +
-INDEPENDENT RE-REVIEW. M26+ NOT AUTHORIZED.`** An independent review of
-the M23+M24+M25 Overnight Commercial-Engagement Phase build (reviewed
-head `77bd1946703704d36b505214eb2c66223c4bef0f`) returned four
-certification-repair blockers, fixed the same day — see the
+**Status as of 2026-09-27: `M23 LOYALTY VESTING REPAIR COMPLETE —
+AWAITING INDEPENDENT RE-REVIEW. M26+ NOT AUTHORIZED.`** An independent
+review of the M23+M24+M25 Overnight Commercial-Engagement Phase build
+(reviewed head `77bd1946703704d36b505214eb2c66223c4bef0f`) returned
+four certification-repair blockers, fixed the same day — see the
 "M23–M25 independent-review certification-repair" narrative below for
-the complete record. Blocker 1 (M23) surfaced a genuine unresolved
-commercial-policy question (`LOY-006`, spent-points clawback) that this
-repair pass correctly did NOT guess an answer to; M23 therefore remains
-at `DECISION_REQUIRED`, not certified, pending an explicit Product
-Owner decision. M24 and M25's own repairs (Blockers 2/3/4) are complete
-and awaiting independent re-review.
+that record. Blocker 1 (M23) surfaced a genuine unresolved
+commercial-policy question (`LOY-006`, spent-points clawback) that
+repair pass correctly did NOT guess an answer to. **Later that same
+day, the Product Owner resolved `LOY-006` directly** with an explicit
+business rule and a follow-on "M23 LOYALTY — PRODUCT OWNER DECISION +
+FINAL CERTIFICATION REPAIR" authorization, scoped specifically to this
+one repair — see the "M23 LOYALTY VESTING REPAIR" narrative immediately
+below for the complete record. M24 and M25's own repairs (Blockers
+2/3/4) remain complete, unchanged by this pass, and awaiting the same
+independent re-review as M23.
+
+**M23 LOYALTY VESTING REPAIR (2026-09-27, Product Owner decision +
+final certification repair):** the Product Owner resolved `LOY-006`
+with an explicit, verbatim business rule: "Loyalty points from a
+purchase MUST NOT become redeemable immediately after order
+confirmation or immediately after delivery. Points become redeemable
+ONLY AFTER: 1. the relevant order line has been DELIVERED; AND 2. the
+applicable return/exchange eligibility window for that line has
+CLOSED." Implemented the smallest correct lifecycle:
+`LoyaltyEntitlementStatus` (PENDING → VESTED, or PENDING → CANCELLED)
+on each EARN entry — never a generic workflow engine, never a new
+microservice, preserving the existing auditable ledger architecture and
+its structural separation from Store Credit/Promotions/Payments/
+Refunds. Entitlement is now calculated PER ORDER LINE
+(`LoyaltyLedgerEntry.qualifyingOrderLineId`, a genuine schema change
+replacing the original per-order `qualifyingOrderId`) rather than per
+order, since vesting must be line-aware — different lines on the same
+order can deliver, and close their own return/exchange window, on
+different dates (proven with a genuine two-line-order test, matrix
+items #12/#13). This also eliminates the original build's
+"proportional line-share of a shared order-level batch" math entirely:
+one EARN entry now IS one line, so a reversal's required amount is
+simply that entry's own `pointsDelta`, never a computed fraction.
+`LoyaltyAccount.balance`/`lifetimeEarnedPoints` reflect ONLY vested
+points — a PENDING entry never increases the redeemable balance, is
+never usable at checkout, never satisfies the minimum-redemption
+check, and is never drawn down by FIFO redemption (proven for all
+three, matrix items #8/#9/#10). The customer-facing loyalty page and
+the checkout redemption panel both now show AVAILABLE and PENDING
+points as two clearly distinct numbers, never summed.
+
+Vesting eligibility genuinely reuses the EXISTING
+`resolveReturnPolicy`/`isWithinWindow` source of truth
+(`returns/policy.ts`) Return/Exchange already established — never a
+second, independently invented window rule — plus an additional check
+for any still-unresolved (no QC decision yet, not CANCELLED) Return or
+Exchange on the line, since one can be initiated right up to the last
+day of the calendar window and take longer than that to resolve. A new
+idempotent, concurrency-safe callable sweep,
+`LoyaltyService.vestEligiblePoints()` (`POST /loyalty/sweep/vest`,
+staff-gated identically to every other loyalty sweep — no general
+scheduling platform was built; a future cron can call the same route a
+staff operator can call manually today), performs the PENDING → VESTED
+transition. Each candidate is vested inside its own transaction that
+locks the `LoyaltyAccount` row FIRST — the exact same serialization
+point `LoyaltyService.reverse()` already locks first — so two
+concurrent sweep invocations, a retried sweep, and a sweep racing a
+concurrent QC-PASS reversal all converge to exactly one outcome, proven
+under genuine `Promise.all` concurrency (matrix item #4) rather than a
+sequential simulation. `expiresAt` is now set ONLY at vesting time
+(never at EARN creation), so the configured expiry duration is measured
+from when points actually became spendable, never silently shortened by
+time spent PENDING (matrix item #11).
+
+Cancellation (M18, pre-shipment only) or a QC-accepted return/exchange
+against a still-PENDING entry now CANCELS it outright — the balance-
+affecting amount is truthfully zero, since nothing was ever credited,
+but the REVERSE ledger entry, the full `requiredPointsDelta`, and a
+distinct audit event (`loyalty.pending.cancelled`) are still ALWAYS
+recorded, never silently skipped (matrix items #6/#7). Exchange is
+handled by extending the ALREADY-DECIDED "reverse on a QC-accepted
+return" rule to Exchange's own certified QC-PASS gate for the original
+item (`ExchangeService.recordQcAndDisposition`, mirroring
+`ReturnService`'s identical PASS-only gating exactly) — not a new
+invented commercial policy, since Exchange's own certified design
+already reuses M19's QC machinery for that physical item; no separate
+Exchange `DECISION_REQUIRED` was needed, since once QC-PASS fires the
+entry is already CANCELLED and structurally removed from the vesting
+sweep's candidate pool, and while an Exchange is still open the sweep's
+own in-flight check already blocks vesting.
+
+**Critical repair applied in this same pass:** the M23 independent-
+review certification-repair (Blocker 1, described below) had left a
+genuine accounting-honesty bug in `LoyaltyService.reverse()`:
+`const actualReverse = Math.min(lineShare, freshEarn.remainingPoints ?? 0); if (actualReverse <= 0) return;`
+returned BEFORE creating the REVERSE ledger entry, `requiredPointsDelta`,
+or the shortfall audit event — meaning a 100%-shortfall case could
+silently record nothing at all, directly contradicting that repair's
+own claim that the required reversal is "always recorded." Fixed: the
+exceptional/admin-override VESTED-entry reversal branch (structurally
+unreachable via any NORMAL customer-facing flow under the vesting
+model — cancellation requires not-yet-shipped, which can never be
+DELIVERED; a Return/Exchange can only be INITIATED while the window is
+open, while vesting only happens once it has closed) now ALWAYS creates
+the REVERSE entry and posts `loyalty.reverse.postvest` or
+`loyalty.reverse.postvest.shortfall`, even when the balance-affecting
+amount computes to exactly zero — proven with a direct adversarial
+test that manufactures this exact scenario via the service method
+itself (matrix item #16), since the normal customer-facing routes
+correctly refuse to reach it. This build does NOT invent negative-
+balance/customer-debt/clawback semantics for that narrow exceptional
+case — it records the shortfall honestly and stops there, exactly as
+instructed; a separate, narrower `DECISION_REQUIRED — POST-VEST
+ADMIN-EXCEPTION SHORTFALL` remains open in `specs/22-loyalty.md` for
+that one hypothetical future path, without weakening the primary
+vesting invariant this repair establishes.
+
+Data migration: since this system is not yet production-certified/live
+(no real customer loyalty ledger exists anywhere), the migration
+(`20260927120000_loyalty_vesting_lifecycle`) truncates the dev/test
+loyalty ledger tables and resets denormalized account balances/tiers to
+zero — the cleanest safe option given the old order-level EARN rows
+have no line-level attribution to reconstruct from, explicitly NOT a
+production migration assumption (none is needed, since no production
+system exists yet). 25 adversarial integration tests
+(`test/integration/loyalty.test.ts`, covering all 16 items of the
+required test matrix plus supporting coverage — idempotent EARN,
+guest/zero-point no-ops, QC-FAIL non-reversal, manual staff adjustment,
+cross-customer IDOR, and staff RBAC on the new sweep route), with
+`test/integration/promotions.test.ts`'s own cross-domain loyalty-
+compatibility tests (M24, Blocker 2's own repair) updated to seed
+genuinely AVAILABLE points via the staff manual-adjustment route
+(immediate by design, unaffected by vesting) rather than relying on the
+now-obsolete immediate-earn assumption. Both `test/e2e-storefront/
+loyalty.spec.ts` (FLOW 17) and `promotions.spec.ts` (FLOW 18) were
+updated to genuinely deliver a line, backdate its window closed, and
+call the real vesting sweep before redeeming — proving the full
+PENDING → AVAILABLE lifecycle in the browser, never simulated. Full
+clean-state validation: migration-from-zero, zero schema drift,
+lint/typecheck/build clean across every touched workspace, the complete
+pre-existing integration suite re-run with zero regressions, and the
+full Playwright storefront E2E suite green. See `acceptance/
+m23-loyalty.md`'s 2026-09-27 addendum, `specs/22-loyalty.md`'s
+`## LOY-006 RESOLUTION` section, and `blueprint/DECISION_REGISTER.md`'s
+`LOY-006` entry for the complete design record. **This agent does not
+self-declare this repair certified** — the same discipline as every
+milestone since Phase 1. This agent has stopped and is awaiting
+independent re-review. M26+ remains unauthorized regardless of how
+this review resolves.
 
 **On 2026-09-26 the independent reviewer recorded the M22 certification-
 repair build — commit `137429a485899a188b97d6549c14d47f55090152` on
@@ -1084,7 +1216,14 @@ Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
   M25 remains unauthorized.** See §0 above and the per-milestone
   acceptance docs (`acceptance/m23-loyalty.md`,
   `acceptance/m24-promotions.md`, `acceptance/m25-marketing.md`) for
-  each milestone's Definition of Done.
+  each milestone's Definition of Done. An independent review of this
+  phase returned four certification-repair blockers; a follow-on
+  **"M23 LOYALTY — PRODUCT OWNER DECISION + FINAL CERTIFICATION
+  REPAIR"** authorization on 2026-09-27, scoped specifically to
+  resolving `LOY-006` and its resulting vesting-lifecycle repair,
+  explicitly did NOT authorize M26+, modifying M24/M25 behavior beyond
+  what a regression test required, or any other scope expansion — see
+  §0's "M23 LOYALTY VESTING REPAIR" narrative for the complete record.
 - **M22 (Customer 360) was explicitly authorized on 2026-09-26**,
   scoped only to that milestone, building on the
   `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED` baseline at commit

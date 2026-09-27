@@ -149,20 +149,31 @@ describe('Promotions (M24)', () => {
     });
   }
 
-  /** Earns `targetPoints` (or more) for a fresh customer via one confirmed COD order at the default 1-point-per-100-INR rate, BEFORE any promotion exists so the earn amount is never itself discounted - mirrors loyalty.test.ts's own `customerWithEarnedPoints`. */
-  async function customerWithLoyaltyPoints(targetPoints: number, ctx: Awaited<ReturnType<typeof seedContext>>) {
-    const subtotalNeeded = targetPoints * 100 + 200; // headroom past floor() rounding
-    const { skuId } = await setupCheckoutableSku(subtotalNeeded, ctx, 50);
-    const { token } = await createAuthenticatedCustomer(app);
-    const headers = { authorization: `Bearer ${token}` };
-    await addToCart(skuId, headers);
+/**
+   * Gives a fresh customer `points` genuinely AVAILABLE/spendable loyalty
+   * points, via the staff manual-adjustment route (`loyalty:adjust`) -
+   * NOT via an earned COD order. 2026-09-27 LOY-006 (see
+   * loyalty.test.ts for the full vesting-lifecycle certification):
+   * points earned on a purchase are PENDING/non-redeemable until the
+   * qualifying line is delivered AND its return/exchange window closes -
+   * a manual staff adjustment is the one loyalty mutation this build
+   * always treats as immediately available (it is not an entitlement
+   * calculated from a purchase at all), so it is the correct, honest way
+   * for THIS file's own cross-domain compatibility tests to set up a
+   * real, spendable balance without re-implementing loyalty's own
+   * deliver+vest cycle here.
+   */
+  async function customerWithLoyaltyPoints(points: number, _ctx: Awaited<ReturnType<typeof seedContext>>) {
+    const { token, customerId } = await createAuthenticatedCustomer(app);
+    await grantPermissions('FINANCE', ['loyalty:adjust']);
+    const fin = (await createAuthenticatedStaff(app, ['FINANCE'])).token;
     const res = await app.inject({
       method: 'POST',
-      url: '/api/v1/storefront/checkout',
-      headers,
-      payload: checkoutPayload({ idempotencyKey: `idem-loyalty-seed-${counter}-${Math.random()}` }),
+      url: '/api/v1/loyalty/adjust',
+      headers: { authorization: `Bearer ${fin}` },
+      payload: { customerId, pointsDelta: points, reason: 'Test seed - available loyalty points', idempotencyKey: `promo-loyalty-seed-${counter}-${Math.random()}` },
     });
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(200);
     return { token };
   }
 
@@ -618,20 +629,19 @@ describe('Promotions (M24)', () => {
 
     it('24. a coupon stacking with a compatible automatic promotion, both compatible with loyalty AND store credit, combined with real loyalty redemption and store credit at the same real checkout produces exactly the expected redemptions and deterministic server-authoritative totals', async () => {
       const ctx = await seedContext();
-      const { token, accountId: scAccountId } = await customerWithStoreCreditBalance(500);
-      // Give the SAME customer real earned loyalty points too, via a
-      // second confirmed order on their own token (before any promotion
-      // exists, so the earn amount is never itself discounted).
-      const { skuId: seedSkuId } = await setupCheckoutableSku(100 * 100 + 200, ctx, 50);
-      const seedHeaders = { authorization: `Bearer ${token}` };
-      await addToCart(seedSkuId, seedHeaders);
+      const { token, customerId, accountId: scAccountId } = await customerWithStoreCreditBalance(500);
+      // Give the SAME customer real AVAILABLE loyalty points too (LOY-006:
+      // a manual staff adjustment, not an earned-but-still-PENDING order -
+      // see customerWithLoyaltyPoints's own docblock for why).
+      await grantPermissions('FINANCE', ['loyalty:adjust']);
+      const fin = (await createAuthenticatedStaff(app, ['FINANCE'])).token;
       const seedRes = await app.inject({
         method: 'POST',
-        url: '/api/v1/storefront/checkout',
-        headers: seedHeaders,
-        payload: checkoutPayload({ idempotencyKey: `idem-xd-24-seed-${counter}` }),
+        url: '/api/v1/loyalty/adjust',
+        headers: { authorization: `Bearer ${fin}` },
+        payload: { customerId, pointsDelta: 100, reason: 'Test seed - available loyalty points', idempotencyKey: `promo-loyalty-seed-24-${counter}` },
       });
-      expect(seedRes.statusCode).toBe(201);
+      expect(seedRes.statusCode).toBe(200);
 
       const { skuId } = await setupCheckoutableSku(6000, ctx);
       await createPromotion({ name: 'Auto sitewide (compatible)', discountType: 'PERCENTAGE', discountValue: 5, stackGroup: 'AUTO', minCartValue: 1000 });

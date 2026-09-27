@@ -169,16 +169,26 @@ export interface StoreCreditBalance {
 export const getStoreCredit = () => accountFetch<StoreCreditBalance>('/api/v1/storefront/store-credit');
 
 export interface LoyaltyBalance {
+  // AVAILABLE/SPENDABLE points only (LOY-006) - what checkout redemption
+  // actually draws against.
   balance: number;
+  // Calculated but NOT YET REDEEMABLE - the qualifying line hasn't both
+  // delivered and closed its return/exchange window yet. Never usable at
+  // checkout, never summed into `balance` - shown separately so a
+  // customer never mistakes it for spendable value.
+  pendingPoints: number;
   lifetimeEarnedPoints: number;
   tier: { id: string; name: string } | null;
 }
 
 export type LoyaltyLedgerEntryType = 'EARN' | 'REDEEM' | 'REVERSE' | 'EXPIRE' | 'ADJUST';
+export type LoyaltyVestingStatus = 'PENDING' | 'VESTED' | 'CANCELLED' | null;
 export interface LoyaltyLedgerEntry {
   id: string;
   type: LoyaltyLedgerEntryType;
   pointsDelta: number;
+  vestingStatus: LoyaltyVestingStatus;
+  vestedAt: string | null;
   reason: string;
   createdAt: string;
   expiresAt: string | null;

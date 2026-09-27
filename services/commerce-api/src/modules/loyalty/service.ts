@@ -3,17 +3,27 @@ import { Prisma, type PrismaClient, type LoyaltyAccount, type LoyaltyLedgerEntry
 import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { resolveReturnPolicy, isWithinWindow } from '../returns/policy.js';
 
 /**
- * Loyalty (M23, specs/22-loyalty.md, LOY-001-005). Structurally SEPARATE
+ * Loyalty (M23, specs/22-loyalty.md, LOY-001-006). Structurally SEPARATE
  * from StoreCreditAccount/Entry (REF-002) and from Promotion/Coupon (M24)
  * - four distinct concepts, never collapsed into one shared table (LOY-001).
- * See the schema docblock above the M23 model group for the full design
- * rationale: why EARN triggers at order confirmation rather than
- * delivery, the FIFO batch/allocation mechanism, and the checkout-time
- * redemption HOLD (mirroring InventoryReservation's own ACTIVE/CONVERTED/
- * EXPIRED lifecycle) that makes two concurrent checkouts unable to
- * double-spend the same points.
+ *
+ * 2026-09-27 LOY-006 PRODUCT OWNER DECISION: an EARN entry's point
+ * entitlement is CALCULATED at order confirmation (one entry per ORDER
+ * LINE, never per order - vesting must be line-aware), but is NOT
+ * spendable until it VESTS: the qualifying line must be DELIVERED *and*
+ * its own return/exchange eligibility window (the SAME
+ * `resolveReturnPolicy`/`isWithinWindow` source of truth returns/policy.ts
+ * already established for Return/Exchange - never a second, independently
+ * invented window rule) must have CLOSED, with no still-open Return or
+ * Exchange on that line. `LoyaltyAccount.balance`/`lifetimeEarnedPoints`,
+ * checkout redemption, and FIFO draw-down all reflect ONLY VESTED points -
+ * a PENDING entitlement never counts as available/spendable, never
+ * satisfies a minimum-redemption check, and is never drawn down. See the
+ * schema's own M23 model-group docblock for the full design rationale and
+ * `vestEligiblePoints` below for the vesting sweep itself.
  *
  * Every rate/threshold this service reads (loadEnv()) is an intentionally
  * CONFIGURABLE engineering default (LOY-002/003/004) - never a Product
@@ -65,11 +75,23 @@ export class LoyaltyService {
     }
   }
 
-  async getBalanceForCustomer(customerId: string): Promise<{ balance: number; lifetimeEarnedPoints: number; tier: { id: string; name: string } | null }> {
+  /**
+   * Public balance read. `balance` (VESTED, available/spendable) and
+   * `pendingPoints` (calculated but not yet redeemable) are reported
+   * SEPARATELY, never summed - a customer-facing surface must never
+   * present pending points as though they were already spendable
+   * (LOY-006).
+   */
+  async getBalanceForCustomer(customerId: string): Promise<{ balance: number; pendingPoints: number; lifetimeEarnedPoints: number; tier: { id: string; name: string } | null }> {
     const account = await this.prisma.loyaltyAccount.findUnique({ where: { customerId }, include: { currentTier: true } });
-    if (!account) return { balance: 0, lifetimeEarnedPoints: 0, tier: null };
+    if (!account) return { balance: 0, pendingPoints: 0, lifetimeEarnedPoints: 0, tier: null };
+    const pending = await this.prisma.loyaltyLedgerEntry.aggregate({
+      where: { accountId: account.id, type: 'EARN', vestingStatus: 'PENDING' },
+      _sum: { pointsDelta: true },
+    });
     return {
       balance: account.balance,
+      pendingPoints: pending._sum.pointsDelta ?? 0,
       lifetimeEarnedPoints: account.lifetimeEarnedPoints,
       tier: account.currentTier ? { id: account.currentTier.id, name: account.currentTier.name } : null,
     };
@@ -87,13 +109,15 @@ export class LoyaltyService {
       id: e.id,
       type: e.type,
       pointsDelta: e.pointsDelta,
+      vestingStatus: e.vestingStatus,
+      vestedAt: e.vestedAt,
       reason: e.reason,
       expiresAt: e.expiresAt,
       createdAt: e.createdAt,
     }));
   }
 
-  /** Available-to-spend balance = ledger balance minus every currently-ACTIVE hold (mirrors inventory's onHand-vs-reserved-vs-available split). */
+  /** Available-to-spend balance = VESTED ledger balance minus every currently-ACTIVE hold (mirrors inventory's onHand-vs-reserved-vs-available split). PENDING points never contribute - `account.balance` itself already excludes them. */
   private async availableBalance(
     tx: Prisma.TransactionClient | PrismaClient,
     account: { id: string; balance: number },
@@ -137,36 +161,52 @@ export class LoyaltyService {
     return value;
   }
 
-  // --- EARN (order confirmation) ---
+  // --- EARN (order confirmation - entitlement CALCULATED, PENDING until vested) ---
 
   /**
-   * Posts the ONE EARN ledger entry for a newly-confirmed order. Called
-   * from inside OrderService.createOrderFromCheckoutSession's own
-   * transaction (never a separate, forgettable step). No-op for a guest
-   * order (no customerId - loyalty requires a persistent identity to
-   * earn/redeem against on a FUTURE purchase, which a guest session does
-   * not have) and for a zero-point result (e.g. a very small order under
-   * the configured earn rate's rounding floor).
+   * Posts one PENDING EARN ledger entry PER ORDER LINE for a newly-
+   * confirmed order (LOY-006: vesting must be line-aware, since lines can
+   * deliver - and close their own return window - on different dates, so
+   * a single order-level batch can no longer represent entitlement
+   * correctly). Called from inside OrderService.createOrderFromCheckoutSession's
+   * own transaction (never a separate, forgettable step). No-op for a
+   * guest order (no customerId) and per-line for a zero-point result
+   * (e.g. a very small line under the configured earn rate's rounding
+   * floor).
    *
-   * Idempotent via `qualifyingOrderId`'s unique constraint - a retried
-   * call for an order that already has an EARN entry is a safe no-op
-   * (OrderService's own top-level idempotency on checkoutSessionId
-   * already prevents this from being reached twice in practice; this is
-   * defense in depth, matching every other mutation in this codebase).
+   * CRITICAL: this only CALCULATES the entitlement and records it
+   * PENDING. It deliberately does NOT touch `LoyaltyAccount.balance`,
+   * `lifetimeEarnedPoints`, or `expiresAt` - none of that happens until
+   * `vestEligiblePoints` actually vests the entry. `remainingPoints` is
+   * still set at creation (mirroring the pre-vesting build) since it is
+   * simply "this entry's own total", not yet meaningfully drawn against
+   * until vested.
+   *
+   * Idempotent via `qualifyingOrderLineId`'s unique constraint - a
+   * retried call for a line that already has an EARN entry is a safe
+   * no-op (OrderService's own top-level idempotency on
+   * checkoutSessionId already prevents this from being reached twice in
+   * practice; this is defense in depth, matching every other mutation in
+   * this codebase).
    */
-  async earnForOrder(tx: Prisma.TransactionClient, order: Order): Promise<void> {
+  async earnForOrder(tx: Prisma.TransactionClient, order: Order & { lines: OrderLine[] }): Promise<void> {
     if (!order.customerId) return;
 
-    const existing = await tx.loyaltyLedgerEntry.findUnique({ where: { qualifyingOrderId: order.id } });
+    for (const line of order.lines) {
+      await this.earnForOrderLine(tx, order.customerId, order.orderNumber, line);
+    }
+  }
+
+  private async earnForOrderLine(tx: Prisma.TransactionClient, customerId: string, orderNumber: string, line: OrderLine): Promise<void> {
+    const existing = await tx.loyaltyLedgerEntry.findUnique({ where: { qualifyingOrderLineId: line.id } });
     if (existing) return;
 
     const env = loadEnv();
-    const qualifyingValue = order.subtotal; // tax-inclusive merchandise value, excluding shipping - see model-group docblock
+    const qualifyingValue = line.lineTotalInclusive; // tax-inclusive merchandise value for THIS line
     const points = Math.floor((Number(qualifyingValue) * env.LOYALTY_EARN_POINTS_PER_100_INR) / 100);
     if (points <= 0) return;
 
-    const account = await this.lockOrCreateAccountByCustomerId(tx, order.customerId);
-    const expiresAt = new Date(Date.now() + env.LOYALTY_POINTS_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    const account = await this.lockOrCreateAccountByCustomerId(tx, customerId);
 
     try {
       await tx.loyaltyLedgerEntry.create({
@@ -175,10 +215,10 @@ export class LoyaltyService {
           type: 'EARN',
           pointsDelta: points,
           remainingPoints: points,
-          expiresAt,
-          qualifyingOrderId: order.id,
-          reason: `Order ${order.orderNumber} confirmed`,
-          idempotencyKey: `loyalty-earn:${order.id}`,
+          vestingStatus: 'PENDING',
+          qualifyingOrderLineId: line.id,
+          reason: `Order ${orderNumber} confirmed (line ${line.id})`,
+          idempotencyKey: `loyalty-earn:${line.id}`,
         },
       });
     } catch (err) {
@@ -186,90 +226,294 @@ export class LoyaltyService {
       throw err;
     }
 
-    await tx.loyaltyAccount.update({
-      where: { id: account.id },
-      data: { balance: { increment: points }, lifetimeEarnedPoints: { increment: points } },
-    });
-    await this.recomputeTier(tx, account.id);
-    await tx.order.update({ where: { id: order.id }, data: { loyaltyPointsEarned: points } });
+    // Order.loyaltyPointsEarned is a customer-facing "how many points did
+    // this order earn" summary - it reflects the CALCULATED total
+    // (PENDING + VESTED), never just the vested subset, since that field
+    // predates vesting and the order-detail UI already labels it
+    // alongside the account's own PENDING/AVAILABLE split.
+    await tx.order.update({ where: { id: line.orderId }, data: { loyaltyPointsEarned: { increment: points } } });
 
     await recordAudit(tx, {
       actorType: 'SYSTEM',
-      action: 'loyalty.earn',
+      action: 'loyalty.earn.pending',
       entityType: 'LoyaltyAccount',
       entityId: account.id,
-      newValue: { points },
-      reference: order.id,
+      newValue: { points, orderLineId: line.id },
+      reference: line.orderId,
     });
   }
 
-  // --- REVERSE (cancellation / return) ---
+  // --- VESTING (LOY-006) ---
 
   /**
-   * Reverses the proportional share of loyalty points a single cancelled
-   * OrderLine contributed to its order's EARN batch. See the model-group
-   * schema docblock for why earning-at-confirmation (not delivery) is
-   * what makes this reachable at all without weakening M18's certified
-   * "cannot cancel a shipped/delivered line" boundary.
+   * Is this specific qualifying OrderLine currently eligible to vest?
+   * Reuses the SAME resolveReturnPolicy/isWithinWindow source of truth
+   * Return/Exchange already use - never a second, independently invented
+   * window rule (explicit LOY-006 instruction).
    *
-   * Independent-review certification-repair (LOY-001, Blocker 1): the
-   * BALANCE-AFFECTING portion of a reversal (`pointsDelta`) is still
-   * capped at whatever remains unconsumed in that specific EARN batch -
-   * this is a genuine, deliberate safety floor: applying more than that
-   * would make LoyaltyAccount.balance negative, and this build does not
-   * invent negative-balance/customer-debt semantics. But the FULL
-   * required reversal (the line's whole share, uncapped) is now ALWAYS
-   * recorded separately as `requiredPointsDelta` on the same REVERSE
-   * entry, so a shortfall (the customer having already spent/lost some
-   * of the points this line contributed) is fully visible and audited,
-   * never silently absorbed or hidden behind a capped number that reads
-   * as "fully reversed" when it was not. Whether/how to make the
-   * customer whole for that shortfall is an unresolved commercial policy
-   * question - see specs/22-loyalty.md's own `DECISION_REQUIRED —
-   * LOYALTY CLAWBACK AFTER POINTS ALREADY SPENT` block.
+   * Delivered AND (the SKU is not returnable at all, OR its return window
+   * has closed) AND no still-open Return/Exchange on this line (a
+   * Return/Exchange can be INITIATED right up to the last day of the
+   * calendar window and take longer than that to resolve - the calendar
+   * check alone is not enough; see this method's own two additional
+   * clauses). Once a Return/Exchange reaches a QC decision, either it
+   * already triggered `reverse` (PASS - the entry is CANCELLED, so it
+   * will never reach this check as PENDING again) or it did not (FAIL -
+   * no block), so checking "unresolved" is exactly the same test as
+   * "would a PASS still change anything if it happened right now".
+   */
+  private async isLineEligibleToVest(
+    tx: Prisma.TransactionClient | PrismaClient,
+    line: {
+      id: string;
+      skuId: string;
+      status: string;
+      fulfilment: { deliveredAt: Date | null } | null;
+      returnLine: { disposition: string | null; return: { status: string } } | null;
+      exchange: { qcResult: string | null; status: string } | null;
+    },
+  ): Promise<boolean> {
+    if (line.status !== 'DELIVERED' || !line.fulfilment?.deliveredAt) return false;
+    if (line.returnLine && line.returnLine.disposition === null && line.returnLine.return.status !== 'CANCELLED') return false;
+    if (line.exchange && line.exchange.qcResult === null && line.exchange.status !== 'CANCELLED') return false;
+
+    const policy = await resolveReturnPolicy(tx as PrismaClient, line.skuId);
+    if (!policy.returnable) return true; // never returnable at all - nothing to wait for
+    return !isWithinWindow(line.fulfilment.deliveredAt, policy.windowDays);
+  }
+
+  /**
+   * Idempotent, concurrency-safe sweep: finds every PENDING EARN entry
+   * whose line has become eligible (per isLineEligibleToVest) and
+   * transitions it to VESTED exactly once. Callable directly or by a
+   * future scheduler (no general scheduling platform is built here -
+   * LOY-006's own explicit instruction).
+   *
+   * Concurrency: each candidate is processed in its OWN transaction that
+   * locks the LoyaltyAccount row FIRST (the same row-lock-as-
+   * serialization-point idiom `reverse` also follows, in that same
+   * order, so the two can never deadlock against each other), then
+   * re-reads the entry fresh under that lock. Two concurrent sweep runs
+   * (or a retried/duplicated sweep call) racing the SAME entry: whichever
+   * transaction acquires the account lock first vests it; the other
+   * re-reads the fresh row, finds it already VESTED (or CANCELLED, if a
+   * cancellation/reversal won the race instead), and safely no-ops -
+   * exactly one vesting transition per entry, ever, proven under genuine
+   * `Promise.all` concurrency (test/integration/loyalty.test.ts).
+   */
+  async vestEligiblePoints(): Promise<number> {
+    const candidates = await this.prisma.loyaltyLedgerEntry.findMany({
+      where: { type: 'EARN', vestingStatus: 'PENDING' },
+      include: {
+        qualifyingOrderLine: {
+          include: {
+            fulfilment: { select: { deliveredAt: true } },
+            returnLine: { include: { return: { select: { status: true } } } },
+            exchange: { select: { qcResult: true, status: true } },
+          },
+        },
+      },
+    });
+
+    let vestedCount = 0;
+    for (const entry of candidates) {
+      const line = entry.qualifyingOrderLine;
+      if (!line) continue; // defensive - every EARN entry has a qualifying line by construction
+      const eligible = await this.isLineEligibleToVest(this.prisma, line);
+      if (!eligible) continue;
+
+      const didVest = await this.prisma.$transaction((tx) => this.vestOne(tx, entry.id));
+      if (didVest) vestedCount += 1;
+    }
+    return vestedCount;
+  }
+
+  private async vestOne(tx: Prisma.TransactionClient, entryId: string): Promise<boolean> {
+    const entryAccountId = await tx.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: entryId }, select: { accountId: true } });
+    const account = await this.lockAccountById(tx, entryAccountId.accountId);
+
+    // Re-read the entry AND its qualifying line's FULL current state only
+    // AFTER acquiring the account lock - the serialization point every
+    // mutation to this account (including a concurrent QC-PASS reversal
+    // via `reverse`, which locks this SAME account row first) goes
+    // through, so this read can never observe a stale in-between state.
+    const fresh = await tx.loyaltyLedgerEntry.findUniqueOrThrow({
+      where: { id: entryId },
+      include: {
+        qualifyingOrderLine: {
+          include: {
+            fulfilment: { select: { deliveredAt: true } },
+            returnLine: { include: { return: { select: { status: true } } } },
+            exchange: { select: { qcResult: true, status: true } },
+          },
+        },
+      },
+    });
+    if (fresh.vestingStatus !== 'PENDING') return false; // already vested or cancelled by a racing transaction
+    if (!fresh.qualifyingOrderLine) return false; // defensive - every EARN entry has a qualifying line by construction
+
+    const stillEligible = await this.isLineEligibleToVest(tx, fresh.qualifyingOrderLine);
+    if (!stillEligible) return false;
+
+    const env = loadEnv();
+    const expiresAt = new Date(Date.now() + env.LOYALTY_POINTS_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+    await tx.loyaltyLedgerEntry.update({
+      where: { id: entryId },
+      data: { vestingStatus: 'VESTED', vestedAt: new Date(), expiresAt },
+    });
+    await tx.loyaltyAccount.update({
+      where: { id: account.id },
+      data: { balance: { increment: fresh.pointsDelta }, lifetimeEarnedPoints: { increment: fresh.pointsDelta } },
+    });
+    await this.recomputeTier(tx, account.id);
+
+    await recordAudit(tx, {
+      actorType: 'SYSTEM',
+      action: 'loyalty.vest',
+      entityType: 'LoyaltyAccount',
+      entityId: account.id,
+      newValue: { points: fresh.pointsDelta, entryId },
+      reference: fresh.qualifyingOrderLineId ?? undefined,
+    });
+    return true;
+  }
+
+  // --- REVERSE (cancellation / return / exchange) ---
+
+  /**
+   * Reverses/cancels the single per-line EARN entry a cancelled OrderLine
+   * produced. Under LOY-006, since entitlement is now per-line (never a
+   * shared order-level batch), the "proportional share" math the
+   * original build used is gone entirely - the full entry either is or
+   * is not this line's, so the full required reversal is simply
+   * `entry.pointsDelta`.
    *
    * Idempotent via `reversalOrderLineId`'s unique constraint - a retried
    * cancellation (M18's own idempotency key convention) never
    * double-reverses.
    */
   async reverseForOrderLine(tx: Prisma.TransactionClient, order: Order, orderLine: OrderLine, reason: string): Promise<void> {
-    await this.reverse(tx, order, Number(orderLine.lineTotalInclusive), { reversalOrderLineId: orderLine.id }, reason);
+    await this.reverse(tx, order.id, orderLine.id, { reversalOrderLineId: orderLine.id }, reason);
   }
 
   /**
-   * Same mechanism as reverseForOrderLine, keyed on the ReturnLine instead
-   * - see that method's docblock. Takes just `{ id }` rather than a full
-   * ReturnLine since that's the only field this needs, and the caller
-   * (ReturnService.recordQcAndDisposition) only has the narrow row shape
-   * returned by its own `lockReturnLine` row-lock helper, not a full
-   * Prisma ReturnLine.
+   * Same mechanism as reverseForOrderLine, keyed on the ReturnLine
+   * instead - see that method's docblock. Called only when
+   * `refundEligible` (QC PASS) - see ReturnService.recordQcAndDisposition's
+   * own docblock for why a FAILED-QC return must not ALSO claw back
+   * loyalty points.
    */
   async reverseForReturnLine(tx: Prisma.TransactionClient, order: Order, orderLine: OrderLine, returnLine: { id: string }, reason: string): Promise<void> {
-    await this.reverse(tx, order, Number(orderLine.lineTotalInclusive), { reversalReturnLineId: returnLine.id }, reason);
+    await this.reverse(tx, order.id, orderLine.id, { reversalReturnLineId: returnLine.id }, reason);
+  }
+
+  /**
+   * Same mechanism, keyed on the Exchange instead - called ONLY at QC
+   * PASS on the exchange's original item (ExchangeService.recordQcAndDisposition,
+   * mirroring ReturnService's identical PASS-only gate exactly). This is
+   * NOT a newly invented commercial policy: Exchange's own certified
+   * design already reuses M19's identical QC-gated original-item
+   * processing for the physical item (see the Exchange model's own
+   * schema comment - "QC + disposition of the ORIGINAL item - reuses
+   * InventoryService's postReturnReceipt/postReturnDisposition exactly as
+   * ReturnLine does"), so applying the ALREADY-DECIDED "reverse on a
+   * QC-accepted return" rule (specs/22-loyalty.md) at that identical gate
+   * is a direct, principled extension, not a guess.
+   */
+  async reverseForExchangeLine(tx: Prisma.TransactionClient, order: Order, orderLine: OrderLine, exchange: { id: string }, reason: string): Promise<void> {
+    await this.reverse(tx, order.id, orderLine.id, { reversalExchangeId: exchange.id }, reason);
   }
 
   private async reverse(
     tx: Prisma.TransactionClient,
-    order: Order,
-    lineValue: number,
-    anchor: { reversalOrderLineId: string } | { reversalReturnLineId: string },
+    orderId: string,
+    orderLineId: string,
+    anchor: { reversalOrderLineId: string } | { reversalReturnLineId: string } | { reversalExchangeId: string },
     reason: string,
   ): Promise<void> {
-    const earnEntry = await tx.loyaltyLedgerEntry.findUnique({ where: { qualifyingOrderId: order.id } });
-    if (!earnEntry || Number(order.subtotal) <= 0) return; // guest order, or nothing was ever earned
+    const earnEntry = await tx.loyaltyLedgerEntry.findUnique({ where: { qualifyingOrderLineId: orderLineId } });
+    if (!earnEntry) return; // guest order, or nothing was ever earned on this line
 
     const idempotencyKey =
-      'reversalOrderLineId' in anchor ? `loyalty-reverse:orderline:${anchor.reversalOrderLineId}` : `loyalty-reverse:returnline:${anchor.reversalReturnLineId}`;
+      'reversalOrderLineId' in anchor
+        ? `loyalty-reverse:orderline:${anchor.reversalOrderLineId}`
+        : 'reversalReturnLineId' in anchor
+          ? `loyalty-reverse:returnline:${anchor.reversalReturnLineId}`
+          : `loyalty-reverse:exchange:${anchor.reversalExchangeId}`;
     const prior = await tx.loyaltyLedgerEntry.findFirst({ where: anchor });
     if (prior) return; // already reversed for this exact trigger - idempotent no-op
 
-    const lineShare = Math.floor((earnEntry.pointsDelta * lineValue) / Number(order.subtotal));
-    if (lineShare <= 0) return;
-
     const account = await this.lockAccountById(tx, earnEntry.accountId);
     const freshEarn = await tx.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: earnEntry.id } });
-    const actualReverse = Math.min(lineShare, freshEarn.remainingPoints ?? 0);
-    if (actualReverse <= 0) return;
+
+    if (freshEarn.vestingStatus === 'CANCELLED') return; // already cancelled by a racing operation - idempotent no-op
+
+    const requiredReverse = freshEarn.pointsDelta; // no proportional math under LOY-006 - one entry IS one line
+
+    if (freshEarn.vestingStatus === 'PENDING') {
+      // The normal, expected path under LOY-006: the points were never
+      // vested, so nothing was ever in the balance to reverse. The
+      // entitlement is simply CANCELLED - it can never later vest. The
+      // balance-affecting amount is genuinely zero, but the REVERSE
+      // ledger entry, `requiredPointsDelta`, and audit trail are ALWAYS
+      // recorded regardless (2026-09-27 critical repair: never return
+      // before recording a required reversal, even when the
+      // balance-affecting amount is zero).
+      let reverseEntry: LoyaltyLedgerEntry;
+      try {
+        reverseEntry = await tx.loyaltyLedgerEntry.create({
+          data: {
+            accountId: account.id,
+            type: 'REVERSE',
+            pointsDelta: 0,
+            requiredPointsDelta: -requiredReverse,
+            reason,
+            idempotencyKey,
+            ...anchor,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return; // lost a genuine race to another reversal of the SAME trigger
+        throw err;
+      }
+
+      await tx.loyaltyPointAllocation.create({
+        data: { spendingEntryId: reverseEntry.id, earnEntryId: freshEarn.id, pointsConsumed: 0 },
+      });
+      await tx.loyaltyLedgerEntry.update({ where: { id: freshEarn.id }, data: { vestingStatus: 'CANCELLED', remainingPoints: 0 } });
+
+      await recordAudit(tx, {
+        actorType: 'SYSTEM',
+        action: 'loyalty.pending.cancelled',
+        entityType: 'LoyaltyAccount',
+        entityId: account.id,
+        newValue: { pointsNeverVested: requiredReverse },
+        reference: orderId,
+      });
+      return;
+    }
+
+    // EXCEPTIONAL / ADMIN-OVERRIDE PATH: the entry was already VESTED.
+    // Under the certified system as it exists today this should be
+    // structurally unreachable for a NORMAL customer lifecycle
+    // (cancellation only applies to a not-yet-shipped line, which can
+    // never be DELIVERED, and a Return/Exchange can only be INITIATED
+    // while the calendar window is still open - by the time vesting has
+    // happened, neither path can still be triggered through the normal
+    // customer-facing flows). It remains possible only via some future
+    // exceptional/admin override this build does not implement. The
+    // BALANCE-AFFECTING portion is still capped at whatever remains
+    // unconsumed in this specific EARN entry (this build does not invent
+    // negative-balance/customer-debt semantics), but - fixing the
+    // 2026-09-27 critical-repair finding - the REVERSE entry,
+    // `requiredPointsDelta`, and a distinct shortfall audit event are
+    // ALWAYS recorded, even when the balance-affecting amount computes to
+    // zero. See specs/22-loyalty.md's own "post-vest exception returns"
+    // DECISION_REQUIRED block for why this shortfall is never further
+    // resolved (no debt, no clawback, no blocking) without explicit
+    // Product Owner approval.
+    const actualReverse = Math.min(requiredReverse, freshEarn.remainingPoints ?? 0);
 
     let reverseEntry: LoyaltyLedgerEntry;
     try {
@@ -278,10 +522,7 @@ export class LoyaltyService {
           accountId: account.id,
           type: 'REVERSE',
           pointsDelta: -actualReverse,
-          // Always recorded, even when it equals pointsDelta (no
-          // shortfall) - a fully-audited, never-hidden historical record
-          // of what this reversal was actually required to be.
-          requiredPointsDelta: -lineShare,
+          requiredPointsDelta: -requiredReverse,
           reason,
           idempotencyKey,
           ...anchor,
@@ -296,28 +537,32 @@ export class LoyaltyService {
       data: { spendingEntryId: reverseEntry.id, earnEntryId: freshEarn.id, pointsConsumed: actualReverse },
     });
     await tx.loyaltyLedgerEntry.update({ where: { id: freshEarn.id }, data: { remainingPoints: { decrement: actualReverse } } });
-    await tx.loyaltyAccount.update({
-      where: { id: account.id },
-      data: { balance: { decrement: actualReverse }, lifetimeEarnedPoints: { decrement: actualReverse } },
-    });
-    await this.recomputeTier(tx, account.id);
+    if (actualReverse > 0) {
+      await tx.loyaltyAccount.update({
+        where: { id: account.id },
+        data: { balance: { decrement: actualReverse }, lifetimeEarnedPoints: { decrement: actualReverse } },
+      });
+      await this.recomputeTier(tx, account.id);
+    }
 
-    const shortfall = lineShare - actualReverse;
+    const shortfall = requiredReverse - actualReverse;
     await recordAudit(tx, {
       actorType: 'SYSTEM',
       // A distinct action when a shortfall occurs, so this is never
       // findable only by diffing two numbers in a JSON payload - a
       // shortfall is a genuinely different, more significant event than
-      // a clean full reversal (LOY-001 repair, Blocker 1).
-      action: shortfall > 0 ? 'loyalty.reverse.shortfall' : 'loyalty.reverse',
+      // a clean full reversal (LOY-001 repair, Blocker 1; ALWAYS
+      // recorded per the 2026-09-27 critical repair, even at
+      // actualReverse === 0).
+      action: shortfall > 0 ? 'loyalty.reverse.postvest.shortfall' : 'loyalty.reverse.postvest',
       entityType: 'LoyaltyAccount',
       entityId: account.id,
-      newValue: shortfall > 0 ? { pointsApplied: actualReverse, pointsRequired: lineShare, shortfall } : { points: actualReverse },
-      reference: order.id,
+      newValue: shortfall > 0 ? { pointsApplied: actualReverse, pointsRequired: requiredReverse, shortfall } : { points: actualReverse },
+      reference: orderId,
     });
   }
 
-  // --- FIFO draw-down (shared by REDEEM conversion and EXPIRE sweep) ---
+  // --- FIFO draw-down (shared by REDEEM conversion and EXPIRE sweep) - VESTED entries only ---
 
   private async drawDownFifo(
     tx: Prisma.TransactionClient,
@@ -328,8 +573,8 @@ export class LoyaltyService {
     idempotencyKeyPrefix: string,
   ): Promise<void> {
     const batches = await tx.loyaltyLedgerEntry.findMany({
-      where: { accountId: account.id, type: 'EARN', remainingPoints: { gt: 0 } },
-      orderBy: { createdAt: 'asc' },
+      where: { accountId: account.id, type: 'EARN', vestingStatus: 'VESTED', remainingPoints: { gt: 0 } },
+      orderBy: { vestedAt: 'asc' },
     });
 
     let remaining = points;
@@ -350,7 +595,7 @@ export class LoyaltyService {
     await tx.loyaltyAccount.update({ where: { id: account.id }, data: { balance: { decrement: actuallyDrawn } } });
   }
 
-  // --- Checkout-time redemption hold ---
+  // --- Checkout-time redemption hold (VESTED/available points only) ---
 
   /**
    * Validates a requested redemption and creates its HOLD row, called
@@ -362,7 +607,8 @@ export class LoyaltyService {
    * NOT touch the ledger or the account balance - see
    * LoyaltyRedemptionHold's own schema docblock for why: this is a
    * RESERVATION, not a spend; the actual REDEEM ledger entries only post
-   * at order confirmation (convertRedemptionHold).
+   * at order confirmation (convertRedemptionHold). `availableBalance`
+   * already excludes PENDING points entirely (LOY-006).
    *
    * Checkout in this codebase is a single, synchronous, one-shot call
    * (address + payment method in, a fully-priced/reserved/payment-
@@ -481,13 +727,13 @@ export class LoyaltyService {
     return released;
   }
 
-  // --- EXPIRE (sweep) ---
+  // --- EXPIRE (sweep) - VESTED entries only, clock starts from vesting ---
 
-  /** Expires every EARN batch past its configured retention window - callable directly or by a future scheduler. Idempotent per batch (idempotencyKey `expire:<batchId>`), safe to run repeatedly or concurrently. */
+  /** Expires every VESTED EARN entry past its configured retention window (which starts from vestedAt - LOY-006) - callable directly or by a future scheduler. Idempotent per entry (idempotencyKey `expire:<entryId>`), safe to run repeatedly or concurrently. A PENDING entry has no `expiresAt` set at all, so it is structurally excluded from this query already. */
   async expirePoints(): Promise<number> {
     const now = new Date();
     const stale = await this.prisma.loyaltyLedgerEntry.findMany({
-      where: { type: 'EARN', remainingPoints: { gt: 0 }, expiresAt: { lt: now } },
+      where: { type: 'EARN', vestingStatus: 'VESTED', remainingPoints: { gt: 0 }, expiresAt: { lt: now } },
     });
 
     let count = 0;
@@ -496,7 +742,7 @@ export class LoyaltyService {
         .$transaction(async (tx) => {
           const account = await this.lockAccountById(tx, batch.accountId);
           const fresh = await tx.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: batch.id } });
-          if (!fresh.remainingPoints || fresh.remainingPoints <= 0 || !fresh.expiresAt || fresh.expiresAt >= now) return false;
+          if (fresh.vestingStatus !== 'VESTED' || !fresh.remainingPoints || fresh.remainingPoints <= 0 || !fresh.expiresAt || fresh.expiresAt >= now) return false;
 
           const take = fresh.remainingPoints;
           const entry = await tx.loyaltyLedgerEntry.create({

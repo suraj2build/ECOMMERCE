@@ -239,6 +239,30 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await expect(page).toHaveURL(/\/checkout\/[0-9a-f-]+$/, { timeout: 10_000 });
     await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible();
 
+    // LOY-006: the points just earned above are calculated but PENDING
+    // (not yet redeemable) until the line is delivered and its return
+    // window closes - deliver it, backdate the window closed, and run
+    // the real staff-gated vesting sweep, so this test still genuinely
+    // proves loyalty stacking with a promotion using real AVAILABLE
+    // points (never a fabricated balance and never the now-obsolete
+    // "immediately available" assumption).
+    const loyaltyStaffLoginRes = await api.post('/api/v1/auth/staff/login', { data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
+    const { token: loyaltyStaffToken } = (await expectOk(loyaltyStaffLoginRes, 'Staff login (loyalty vesting)')) as { token: string };
+    const loyaltyStaffHeaders = { authorization: `Bearer ${loyaltyStaffToken}` };
+    const loyaltySeedOrder = await prisma.order.findFirstOrThrow({ where: { customerId: customer.id }, orderBy: { createdAt: 'asc' } });
+    const loyaltySeedLine = await prisma.orderLine.findFirstOrThrow({ where: { orderId: loyaltySeedOrder.id } });
+    const pickTask = await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: loyaltySeedLine.id } });
+    await expectOk(await api.post(`/api/v1/warehouse/pick-tasks/${pickTask.id}/pick`, { headers: loyaltyStaffHeaders, data: { idempotencyKey: `e2e-promo-pick-${loyaltySeedLine.id}`, outcome: 'FULL', pickedQuantity: loyaltySeedLine.quantity } }), 'Pick loyalty-seed line');
+    const seedFulfilRes = await expectOk(await api.post(`/api/v1/orders/${loyaltySeedOrder.id}/fulfilments`, { headers: loyaltyStaffHeaders, data: { lineIds: [loyaltySeedLine.id] } }), 'Create loyalty-seed fulfilment');
+    const seedFulfilmentId = (seedFulfilRes as { id: string }).id;
+    await expectOk(await api.post(`/api/v1/orders/fulfilments/${seedFulfilmentId}/pack`, { headers: loyaltyStaffHeaders }), 'Pack loyalty-seed fulfilment');
+    await expectOk(await api.post(`/api/v1/orders/fulfilments/${seedFulfilmentId}/ready-to-ship`, { headers: loyaltyStaffHeaders }), 'Ready-to-ship loyalty-seed fulfilment');
+    await expectOk(await api.post(`/api/v1/orders/fulfilments/${seedFulfilmentId}/ship`, { headers: loyaltyStaffHeaders, data: {} }), 'Ship loyalty-seed fulfilment');
+    await expectOk(await api.post(`/api/v1/orders/fulfilments/${seedFulfilmentId}/deliver`, { headers: loyaltyStaffHeaders }), 'Deliver loyalty-seed fulfilment');
+    await prisma.orderFulfilment.update({ where: { id: seedFulfilmentId }, data: { deliveredAt: new Date(Date.now() - 10 * 86_400_000) } });
+    const vestRes = await expectOk(await api.post('/api/v1/loyalty/sweep/vest', { headers: loyaltyStaffHeaders }), 'Vest loyalty-seed points');
+    expect((vestRes as { vested: number }).vested).toBeGreaterThanOrEqual(1);
+
     const loyaltyAccount = await prisma.loyaltyAccount.findUniqueOrThrow({ where: { customerId: customer.id } });
     expect(loyaltyAccount.balance).toBeGreaterThanOrEqual(100);
     const balanceBeforeRedeem = loyaltyAccount.balance;
@@ -341,11 +365,15 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     const account = await prisma.storeCreditAccount.findUniqueOrThrow({ where: { id: storeCreditAccount.id } });
     expect(Number(account.balance)).toBe(200);
 
-    // Server-authoritative net loyalty balance: spent minus whatever this
-    // very order itself just earned on its own subtotal (EARN runs for
-    // every confirmed order, redemption or not) - never a bare
-    // `before - redeemed`.
+    // Server-authoritative net loyalty balance: spend-only. This very
+    // order also earns its own new points on its own subtotal (EARN
+    // still runs for every confirmed order, redemption or not), but
+    // under LOY-006 those are freshly-created PENDING entries that never
+    // touch `balance` until the line is delivered and its return window
+    // closes - never added here (that would be the now-obsolete
+    // immediately-available assumption).
     const loyaltyAfter = await prisma.loyaltyAccount.findUniqueOrThrow({ where: { id: loyaltyAccount.id } });
-    expect(loyaltyAfter.balance).toBe(balanceBeforeRedeem - redeemPoints + order.loyaltyPointsEarned);
+    expect(loyaltyAfter.balance).toBe(balanceBeforeRedeem - redeemPoints);
+    expect(order.loyaltyPointsEarned).toBeGreaterThan(0); // calculated, but genuinely PENDING
   });
 });
