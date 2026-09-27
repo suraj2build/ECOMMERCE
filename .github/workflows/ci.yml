@@ -134,3 +134,14 @@ jobs:
           # test-relevant reference data" step's values above.
           SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
           SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
+          # test/e2e-storefront/loyalty.spec.ts places a real ₹12,000 COD
+          # order (well above the ₹5,000 default) specifically to earn
+          # more than the 100-point minimum redemption threshold at the
+          # default 1-point-per-₹100 earn rate - a genuine, documented,
+          # test-environment-only relaxation of this business threshold
+          # (never a production value), the same one local development's
+          # gitignored .env already applies. Its absence here was a real
+          # gap: this E2E step failed on every CI run since M23 first
+          # introduced this test, undetected because this workflow's own
+          # run result was never actually checked until this fix.
+          COD_MAX_ORDER_VALUE_INR: '50000'
