@@ -58,6 +58,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'search:reindex',
     'catalog:cross_sell:manage',
     'inventory:read',
+    // M24: promotion/coupon catalog management is a merchandising action.
+    'promotion:manage',
+    'promotion:read',
   ],
   CATALOG: ['product:read', 'product:write', 'product:taxonomy:manage', 'inventory:read'],
   WAREHOUSE_MANAGER: [
@@ -130,6 +133,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // M21: CS-assisted exchange initiation.
     'exchange:read',
     'exchange:initiate',
+    // M23: CS-assisted manual loyalty-point adjustment (goodwill credit/
+    // correction) - the customer's own earn/redeem/reverse/expire
+    // activity needs no staff permission at all (self-service).
+    'loyalty:adjust',
   ],
   MARKETING: [
     'marketing:manage',
@@ -139,6 +146,12 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'content:moderate',
     'content:read',
     'review:moderate',
+    // M24: promotions are frequently a marketing-owned lever too (read
+    // access to see what's live; MERCHANDISING owns creation/management).
+    'promotion:read',
+    // M25: campaign create/schedule/cancel is Marketing-only.
+    'campaign:manage',
+    'campaign:read',
   ],
   FINANCE: [
     'po:approve',
@@ -152,6 +165,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'invoice:create',
     'payment:refund',
     'order:read',
+    // M23: Finance may also action a manual loyalty adjustment
+    // (mirrors payment:refund's own Finance ownership of value corrections).
+    'loyalty:adjust',
   ],
   ANALYTICS: ['analytics:read', 'product:read', 'inventory:read', 'order:read'],
 };
@@ -224,6 +240,22 @@ async function main() {
       update: {},
       create: { label, sortOrder: i },
     });
+  }
+
+  // --- Loyalty tiers (M23, specs/22-loyalty.md, LOY-001) ---
+  // Illustrative ENGINEERING-DEFAULT tier thresholds for test/demo
+  // purposes only - no repository decision defines real tier economics
+  // (LOY-001 explicitly leaves tier thresholds to a future business
+  // decision). A DB table, never hard-coded in application logic, so a
+  // Product Owner can change names/thresholds/count without a code
+  // deployment - see LoyaltyTier's own schema docblock.
+  const LOYALTY_TIERS = [
+    { name: 'Bronze', minLifetimePoints: 0, sortOrder: 0 },
+    { name: 'Silver', minLifetimePoints: 1000, sortOrder: 1 },
+    { name: 'Gold', minLifetimePoints: 5000, sortOrder: 2 },
+  ];
+  for (const tier of LOYALTY_TIERS) {
+    await prisma.loyaltyTier.upsert({ where: { name: tier.name }, update: {}, create: tier });
   }
 
   // --- Bootstrap Super Admin staff user (dev/test only) ---

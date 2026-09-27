@@ -167,3 +167,24 @@ export interface StoreCreditBalance {
 // accountFetch's auth header even though the underlying route also
 // accepts guests via a different header.
 export const getStoreCredit = () => accountFetch<StoreCreditBalance>('/api/v1/storefront/store-credit');
+
+export interface LoyaltyBalance {
+  balance: number;
+  lifetimeEarnedPoints: number;
+  tier: { id: string; name: string } | null;
+}
+
+export type LoyaltyLedgerEntryType = 'EARN' | 'REDEEM' | 'REVERSE' | 'EXPIRE' | 'ADJUST';
+export interface LoyaltyLedgerEntry {
+  id: string;
+  type: LoyaltyLedgerEntryType;
+  pointsDelta: number;
+  reason: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+// M23 Loyalty (specs/22-loyalty.md) - real balance/tier/ledger, replacing
+// the earlier DEPENDENCY_DEFERRED "Coming soon" placeholder.
+export const getLoyaltyBalance = () => accountFetch<LoyaltyBalance>('/api/v1/storefront/account/loyalty');
+export const getLoyaltyLedger = () => accountFetch<LoyaltyLedgerEntry[]>('/api/v1/storefront/account/loyalty/ledger');

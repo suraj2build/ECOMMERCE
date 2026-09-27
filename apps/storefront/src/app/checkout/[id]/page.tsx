@@ -191,9 +191,19 @@ export default function CheckoutConfirmationPage() {
             <span className="text-ink-muted">Shipping</span>
             <span className="text-ink">{session.shippingCost === 0 ? 'Free' : `₹${session.shippingCost}`}</span>
           </div>
-          <div className="flex justify-between font-medium">
-            <span className="text-ink">Total</span>
+          <div className="flex justify-between">
+            <span className="text-ink-muted">Total</span>
             <span className="text-ink">&#8377;{session.grandTotal}</span>
+          </div>
+          {session.loyaltyPointsRedeemed > 0 && (
+            <div className="flex justify-between">
+              <span className="text-ink-muted">Loyalty points redeemed ({session.loyaltyPointsRedeemed} pts)</span>
+              <span className="text-ink">-&#8377;{session.loyaltyRedemptionValue}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-border pt-2 font-medium">
+            <span className="text-ink">Amount payable</span>
+            <span className="text-ink">&#8377;{session.amountPayable}</span>
           </div>
         </div>
       </div>

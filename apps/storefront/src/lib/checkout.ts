@@ -80,6 +80,9 @@ export interface StartCheckoutInput {
   shippingAddress: Address;
   paymentMethod: 'PREPAID' | 'COD';
   idempotencyKey: string;
+  // M23 (specs/22-loyalty.md) - ignored for a guest checkout (loyalty
+  // requires a signed-in customer identity).
+  loyaltyPointsToRedeem?: number;
 }
 
 export interface CheckoutSessionView {
@@ -101,6 +104,10 @@ export interface CheckoutSessionView {
   subtotal: number;
   taxAmount: number;
   grandTotal: number;
+  loyaltyPointsRedeemed: number;
+  loyaltyRedemptionValue: number;
+  storeCreditApplied: number;
+  amountPayable: number;
   currency: string;
   lines: { skuId: string; styleName: string; colourName: string; sizeLabel: string; quantity: number; unitPriceInclusive: number; lineTotalInclusive: number }[];
   createdAt: string;

@@ -15,17 +15,17 @@ const NAV = [
   { label: 'My Sizes', href: '/account/sizes' },
   { label: 'Reviews', href: '/account/reviews' },
   { label: 'Store Credit', href: '/account/store-credit' },
+  // M23 (Loyalty) is now built - real balance/tier/ledger, replacing the
+  // earlier DEPENDENCY_DEFERRED "Coming soon" placeholder.
+  { label: 'Loyalty', href: '/account/loyalty' },
   { label: 'Communication Preferences', href: '/account/preferences' },
 ];
 
-// M23 (Loyalty) and M24 (Promotions/Coupons) are not authorized/built -
-// these two sections are represented honestly as a disabled,
-// not-yet-available state (DEPENDENCY_DEFERRED - M23/M24), never a
-// fabricated balance or coupon list.
-const DEFERRED_NAV = [
-  { label: 'Loyalty', reason: 'Coming soon' },
-  { label: 'Coupons', reason: 'Coming soon' },
-];
+// M24 (Promotions/Coupons) is authorized but not yet built within this
+// phase's own sequencing (M23 -> M24 -> M25) - represented honestly as
+// a disabled, not-yet-available state (DEPENDENCY_DEFERRED - M24), never
+// a fabricated coupon list.
+const DEFERRED_NAV = [{ label: 'Coupons', reason: 'Coming soon' }];
 
 export default function AccountLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();

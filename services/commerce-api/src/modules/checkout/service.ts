@@ -13,6 +13,7 @@ import { ShippingService } from './shipping-service.js';
 import { resolvePaymentProvider } from './payment-provider.js';
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
+import { LoyaltyService } from '../loyalty/service.js';
 
 export interface AddressInput {
   line1: string;
@@ -32,6 +33,12 @@ export interface StartCheckoutInput {
   shippingAddress: AddressInput;
   paymentMethod: 'PREPAID' | 'COD';
   idempotencyKey: string;
+  // M23 (specs/22-loyalty.md §8): the customer's own choice, validated
+  // and RESERVED (never spent yet - see LoyaltyService.
+  // reserveRedemptionForCheckout's own docblock) inside this same
+  // synchronous checkout call. Ignored for a guest identity - loyalty
+  // requires a persistent customer identity.
+  loyaltyPointsToRedeem?: number;
 }
 
 interface PricedLine {
@@ -65,6 +72,7 @@ export class CheckoutService {
   private readonly taxConfig: TaxConfigService;
   private readonly shipping: ShippingService;
   private readonly order: OrderService;
+  private readonly loyalty: LoyaltyService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.cart = new CartService(fastify);
@@ -73,6 +81,7 @@ export class CheckoutService {
     this.taxConfig = new TaxConfigService(fastify);
     this.shipping = new ShippingService(fastify);
     this.order = new OrderService(fastify);
+    this.loyalty = new LoyaltyService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -247,6 +256,26 @@ export class CheckoutService {
       throw err;
     }
 
+    // M23 (specs/22-loyalty.md §8): a non-authoritative preview, purely
+    // to compute the reduced amount to hand the payment provider below
+    // (a Razorpay "order" created for a slightly-wrong amount is
+    // harmless - no money moves until a later capture - see
+    // LoyaltyService.previewRedemptionValue's own docblock for why the
+    // REAL enforcement happens later, inside the transaction below).
+    let loyaltyRedemptionValue = 0;
+    if (input.loyaltyPointsToRedeem && input.loyaltyPointsToRedeem > 0) {
+      if (!identity.customerId) throw new ValidationError('Loyalty points can only be redeemed by a signed-in customer');
+      try {
+        loyaltyRedemptionValue = await this.loyalty.previewRedemptionValue(identity.customerId, input.loyaltyPointsToRedeem, grandTotal);
+      } catch (err) {
+        for (const reserved of reservedLineData) {
+          await this.inventory.releaseReservation(reserved.reservationId, 'checkout attempt failed');
+        }
+        throw err;
+      }
+    }
+    const amountPayable = Math.round((grandTotal - loyaltyRedemptionValue) * 100) / 100;
+
     // Generated up front (rather than left to Prisma's own default) so
     // it can be handed to the payment provider as the order `receipt`
     // before the CheckoutSession row exists - Razorpay order creation
@@ -256,7 +285,7 @@ export class CheckoutService {
     const paymentProvider = resolvePaymentProvider(input.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY');
     const paymentResult = await paymentProvider.initiate({
       checkoutSessionId: sessionIdCandidate,
-      amount: grandTotal,
+      amount: amountPayable,
       idempotencyKey: `${input.idempotencyKey}:payment`,
     });
 
@@ -287,6 +316,8 @@ export class CheckoutService {
             subtotal,
             taxAmount,
             grandTotal,
+            loyaltyPointsRedeemed: input.loyaltyPointsToRedeem && loyaltyRedemptionValue > 0 ? input.loyaltyPointsToRedeem : 0,
+            loyaltyRedemptionValue,
             paymentMethod: input.paymentMethod,
             status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'RESERVED',
             idempotencyKey: input.idempotencyKey,
@@ -308,13 +339,26 @@ export class CheckoutService {
               create: {
                 provider: input.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY',
                 status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'INITIATED',
-                amount: grandTotal,
+                amount: amountPayable,
                 providerReferenceId: paymentResult.providerReferenceId,
                 idempotencyKey: `${input.idempotencyKey}:payment`,
               },
             },
           },
         });
+
+        // M23 (specs/22-loyalty.md §8): the AUTHORITATIVE, row-locked
+        // validation+hold-creation - see reserveRedemptionForCheckout's
+        // own docblock for why this can only happen here, inside this
+        // transaction, after the CheckoutSession row it attaches to
+        // already exists. On the rare race this rejects (see
+        // previewRedemptionValue's docblock), the whole transaction
+        // rolls back and the catch block below releases every
+        // reservation made in this attempt, exactly like an
+        // insufficient-stock failure.
+        if (input.loyaltyPointsToRedeem && loyaltyRedemptionValue > 0 && identity.customerId) {
+          await this.loyalty.reserveRedemptionForCheckout(tx, identity.customerId, session.id, input.loyaltyPointsToRedeem, grandTotal);
+        }
 
         await recordAudit(tx, {
           actorType: identity.customerId ? 'CUSTOMER' : 'SYSTEM',
@@ -336,6 +380,14 @@ export class CheckoutService {
           throw err;
         }
       } else {
+        // M23: the session transaction rolled back (most likely the
+        // rare loyalty-hold race described above) - release every
+        // reservation made in this attempt, same as the insufficient-
+        // stock catch block earlier, rather than leaving them orphaned
+        // against a session that was never actually created.
+        for (const reserved of reservedLineData) {
+          await this.inventory.releaseReservation(reserved.reservationId, 'checkout attempt failed');
+        }
         throw err;
       }
     }
@@ -387,10 +439,16 @@ export class CheckoutService {
       }
     }
 
+    // M23: reuse the SAME redemption/credit already committed on this
+    // session at startCheckout (never re-validated or re-applied here -
+    // the hold from the original attempt is still ACTIVE and unaffected
+    // by a payment-only retry).
+    const amountPayable = Number(session.grandTotal) - Number(session.loyaltyRedemptionValue) - Number(session.storeCreditApplied);
+
     const paymentProvider = resolvePaymentProvider(session.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY');
     const paymentResult = await paymentProvider.initiate({
       checkoutSessionId: session.id,
-      amount: Number(session.grandTotal),
+      amount: amountPayable,
       idempotencyKey: paymentIdempotencyKey,
     });
 
@@ -401,7 +459,7 @@ export class CheckoutService {
             checkoutSessionId: session.id,
             provider: session.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY',
             status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'INITIATED',
-            amount: session.grandTotal,
+            amount: amountPayable,
             providerReferenceId: paymentResult.providerReferenceId,
             idempotencyKey: paymentIdempotencyKey,
           },
@@ -490,6 +548,10 @@ export class CheckoutService {
       subtotal: Number(session.subtotal),
       taxAmount: Number(session.taxAmount),
       grandTotal: Number(session.grandTotal),
+      loyaltyPointsRedeemed: session.loyaltyPointsRedeemed,
+      loyaltyRedemptionValue: Number(session.loyaltyRedemptionValue),
+      storeCreditApplied: Number(session.storeCreditApplied),
+      amountPayable: Math.round((Number(session.grandTotal) - Number(session.loyaltyRedemptionValue) - Number(session.storeCreditApplied)) * 100) / 100,
       currency: session.currency,
       lines: session.lines.map((l) => ({
         skuId: l.skuId,

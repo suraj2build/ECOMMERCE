@@ -4,6 +4,7 @@ import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { InvoiceService } from '../tax/invoice-service.js';
 import { WarehouseService } from '../warehouse/service.js';
+import { LoyaltyService } from '../loyalty/service.js';
 import { recordAudit } from '../audit/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
@@ -25,11 +26,13 @@ export class OrderService {
   private readonly inventory: InventoryService;
   private readonly invoice: InvoiceService;
   private readonly warehouse: WarehouseService;
+  private readonly loyalty: LoyaltyService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
     this.invoice = new InvoiceService(fastify);
     this.warehouse = new WarehouseService(fastify);
+    this.loyalty = new LoyaltyService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -131,6 +134,17 @@ export class OrderService {
       // transaction - never a separate, forgettable manual step, and
       // never at risk of existing without the order line it belongs to.
       await this.warehouse.createPickTasksForOrder(tx, created.id, created.lines);
+
+      // M23 (specs/22-loyalty.md): EARN posts the order's single ledger
+      // entry (guest orders/zero-point results are safe no-ops - see
+      // LoyaltyService.earnForOrder's own docblock for why earning
+      // triggers here, at confirmation, rather than at delivery).
+      // convertRedemptionHold finalizes any points the customer applied
+      // to this checkout session, inside this SAME transaction, so a
+      // captured PREPAID payment and a redeemed-points spend either both
+      // commit or both roll back together.
+      await this.loyalty.earnForOrder(tx, created);
+      await this.loyalty.convertRedemptionHold(tx, created);
 
       await recordAudit(tx, {
         actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',
@@ -1137,6 +1151,13 @@ export class OrderService {
           newValue: { reason: reason?.trim() || null, refundRequired, idempotencyKey },
           reference: orderId,
         });
+
+        // M23 (specs/22-loyalty.md): reverse this line's proportional
+        // share of its order's earned points - a safe no-op for a guest
+        // order or an order that earned zero points. Only reachable at
+        // all because EARN triggers at order confirmation, not delivery
+        // - see LoyaltyService.reverseForOrderLine's own docblock.
+        await this.loyalty.reverseForOrderLine(tx, order, fullLine, reason?.trim() || 'Order line cancelled');
 
         await this.recomputeOrderStatus(tx, orderId);
         return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });

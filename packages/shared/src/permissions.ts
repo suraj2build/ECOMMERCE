@@ -115,6 +115,28 @@ export const PERMISSION_KEYS = [
   // reuse warehouse:pick/order:fulfil unchanged (see
   // OrderService.assignExchangeToFulfilment/markFulfilment* docblocks).
   'exchange:fulfil',
+  // M23 (specs/22-loyalty.md): a customer's own earn/redeem/reverse/
+  // expire activity needs no staff permission at all (ownership-checked
+  // customer self-service, same pattern as M18 cancellation/M19 return
+  // self-service). loyalty:adjust gates only the ONE staff-initiated
+  // mutation - a manual ledger ADJUST (goodwill credit/correction) -
+  // deliberately separate from any read permission since CS/Finance
+  // already see customer order context via order:read/customer_service:manage.
+  'loyalty:adjust',
+  // M24 (specs/23-promotions.md): managing the promotion/coupon
+  // catalog itself (create/update/enable/disable) is a merchandising/
+  // marketing action, distinct from a customer applying an existing
+  // coupon at checkout (which needs no staff permission - the coupon's
+  // own validity rules gate that, not RBAC).
+  'promotion:manage',
+  'promotion:read',
+  // M25 (specs/24-marketing.md): campaign create/schedule/cancel is
+  // Marketing-only - deliberately NOT bundled into the existing
+  // marketing:manage permission (which predates M25 and covers content/
+  // collections) so a future audit can distinguish "content operations"
+  // from "customer messaging campaigns" by permission alone.
+  'campaign:manage',
+  'campaign:read',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

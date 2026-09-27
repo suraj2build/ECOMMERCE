@@ -6,9 +6,93 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-26: `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED —
-M22 CUSTOMER 360 CERTIFICATION-REPAIR COMPLETE — AWAITING INDEPENDENT
-RE-REVIEW. M23+ NOT AUTHORIZED.`**
+**Status as of 2026-09-27: `M22_ENGINEERING_CERTIFIED — M23 (LOYALTY)
+BUILD COMPLETE, AWAITING INDEPENDENT REVIEW — M24/M25 OVERNIGHT
+COMMERCIAL-ENGAGEMENT PHASE IN PROGRESS. M26+ NOT AUTHORIZED.`**
+
+**On 2026-09-26 the independent reviewer recorded the M22 certification-
+repair build — commit `137429a485899a188b97d6549c14d47f55090152` on
+`claude/loving-fermat-cyucke` — as `M22_ENGINEERING_CERTIFIED`**
+(engineering-implementation scope only, not production-readiness — the
+same open pre-production gates listed throughout this file —
+`TAX-001`–`006`, `CUST-001`, `AUD-002`, `CART-004`, `SEC-001`,
+production performance verification — remain open, none resolved by
+this certification). This commit is the **protected starting
+baseline** for all work below; it must not be regressed.
+
+The human project owner then gave explicit **"START BUILD — M23 + M24
++ M25 OVERNIGHT COMMERCIAL-ENGAGEMENT PHASE"** authorization on
+2026-09-26, scoped specifically and only to milestones **M23 (Loyalty),
+M24 (Promotions), and M25 (Marketing)**, built sequentially (M23 → M24
+→ M25) on the `M22_ENGINEERING_CERTIFIED` baseline above, with an
+explicit instruction not to continue automatically past M25. **M26 and
+every later milestone (Channel Publishing, SEO, Analytics, Admin/CMS,
+Gift Cards, Notifications, Security Hardening, Performance, Final
+Certification) remain unauthorized** regardless of how cleanly
+M23–M25 land. See the per-milestone build narrative appended below as
+each milestone completes.
+
+**M23 (Loyalty) is now built** (2026-09-27), the first of the three
+authorized milestones. A first-class `LoyaltyAccount`/`LoyaltyTier`/
+`LoyaltyLedgerEntry` (EARN/REDEEM/REVERSE/EXPIRE/ADJUST)/
+`LoyaltyPointAllocation`/`LoyaltyRedemptionHold` model group — kept
+structurally separate from `StoreCreditAccount`/`StoreCreditEntry`
+(M20) and from Promotion/Coupon (M24, not yet built), per `LOY-001`.
+EARN triggers at order **confirmation**, never delivery — a
+deliberate design choice: under M18's certified invariant a shipped/
+delivered `OrderLine` can never be cancelled, so earning at delivery
+would make cancellation-based point reversal (a hard financial-
+integrity requirement) structurally unreachable for every order that
+ships; confirmation-time earning keeps both the cancellation-reversal
+and return-reversal paths reachable. A FIFO batch/allocation mechanism
+makes expiry (oldest-earned batch expires first) and partial-line
+reversal (capped at whatever remains unconsumed in that specific EARN
+batch) correct by construction. Checkout-time redemption is modeled as
+a `LoyaltyRedemptionHold` (ACTIVE/CONVERTED/RELEASED) mirroring
+`InventoryReservation`'s own reservation lifecycle exactly — available-
+to-redeem = ledger balance minus every currently-ACTIVE hold, so the
+ledger is never mutated until the hold converts to real REDEEM entries
+at order confirmation, making two genuinely concurrent checkouts
+against the same account structurally unable to double-spend the same
+points (proven under real Postgres concurrency, not simulated). Return-
+side reversal is gated identically to `refundEligible` (QC PASS only),
+mirroring `RET-005`'s existing reasoning. All rates/thresholds
+(`LOYALTY_EARN_POINTS_PER_100_INR`, `LOYALTY_REDEMPTION_PAISE_PER_POINT`,
+`LOYALTY_MIN_REDEMPTION_POINTS`, `LOYALTY_MAX_REDEMPTION_POINTS_PER_ORDER`,
+`LOYALTY_POINTS_EXPIRY_DAYS`) are configurable engineering defaults,
+never invented commercial policy (`LOY-002`/`003`/`004`). Customer
+360's earlier "Coming soon" loyalty placeholder (`DEPENDENCY_DEFERRED
+— M23/M24`) is now a real `/account/loyalty` balance/tier/ledger page;
+the checkout page gained a real points-redemption input with server-
+side authoritative revalidation, never trusting a client-computed
+discount. Manual staff adjustment and both sweeps (expire, release-
+stale-holds) are exposed as staff-gated, idempotent, callable routes —
+the same shape as the existing `InventoryService`/`RefundService`
+sweeps. 22 new adversarial integration tests
+(`test/integration/loyalty.test.ts`, including 2 genuine `Promise.all`
+concurrency tests — the checkout double-spend race and a double-fired
+expiry sweep — and cross-customer IDOR) plus 2 new browser E2E tests
+(`test/e2e-storefront/loyalty.spec.ts`, FLOW 17) driving a real
+mobile-OTP sign-in through a real COD earn, a real checkout-page
+redemption, a real self-service cancellation reversal, and a real
+staff-gated expire-sweep HTTP call — each stage verified both in the
+browser and against the real ledger via Prisma. Full clean-state
+validation: lint/typecheck/build clean across every touched package;
+the full pre-existing backend integration suite re-run with zero
+regressions (505/518 passing, the same 13 pre-existing Meilisearch-
+unavailable-in-sandbox failures, unrelated to this build); the full
+Playwright storefront E2E suite green (29/29, including the new
+loyalty flows and every pre-existing flow). See
+`acceptance/m23-loyalty.md` for the complete Definition of Done and
+`LOY-001`–`005` in `blueprint/DECISION_REGISTER.md` for the design
+record, now including each decision's M23 implementation note. **This
+agent does not self-declare M23 certified** — per the same discipline
+applied at every milestone since Phase 1, that determination belongs
+to the independent reviewer. This agent continues on to M24
+(Promotions) per the same overnight authorization, without stopping
+for M23's own review, exactly as that authorization specifies
+("built sequentially... without stopping for approval between those
+milestones").
 
 **On 2026-09-26 the independent reviewer recorded the repaired
 Post-Purchase Phase build — commit
@@ -618,23 +702,36 @@ reconciliation, order-invoice recovery). Every Phase 1 and Phase 2
 test remains mandatory and must stay green — M16's own build kept all
 of them green throughout.
 
-**This authorization does NOT extend beyond M22.**
+**This authorization does NOT extend beyond M25.**
 Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
 1–3) remains a separate thing from implementation authorization
 (Layer 4):
 
-- **M23 and every later milestone remain unauthorized.** No
-  application code for M23+ (Loyalty, Promotions, Marketing, Channels,
-  SEO, Analytics, Admin/CMS, Gift Cards, Security Hardening,
+- **M26 and every later milestone remain unauthorized.** No
+  application code for M26+ (Channel Publishing, SEO, Analytics,
+  Admin/CMS, Gift Cards, Notifications, Security Hardening,
   Performance, Final Certification) should be added until the human
   project owner gives a new, separate, explicit **START BUILD**
   authorization for that phase — neither the Phase 2 authorization,
   nor the M16/M17/M18 authorizations, nor the Post-Purchase Phase
-  (M19–M21) authorization, nor the M22 authorization carries forward
-  automatically, regardless of how cleanly M08–M22 land.
-- Do **not** interpret "M22 shipped cleanly" as authorization for the
+  (M19–M21) authorization, nor the M22 authorization, nor the M23/M24/
+  M25 Overnight Commercial-Engagement Phase authorization carries
+  forward automatically, regardless of how cleanly M08–M25 land.
+- Do **not** interpret "M25 shipped cleanly" as authorization for the
   next milestone. Authorization must be explicit and human-given for
   each milestone/phase.
+- **M23 (Loyalty), M24 (Promotions), and M25 (Marketing) were
+  explicitly authorized on 2026-09-26** as a single bounded
+  "Overnight Commercial-Engagement Phase" pass, scoped only to those
+  three milestones, worked sequentially (M23 → M24 → M25) with
+  per-milestone validation and commit, building on the
+  `M22_ENGINEERING_CERTIFIED` baseline at commit
+  `137429a485899a188b97d6549c14d47f55090152`, without stopping for
+  approval between those three milestones. **M26 and everything after
+  M25 remains unauthorized.** See §0 above and the per-milestone
+  acceptance docs (`acceptance/m23-loyalty.md`,
+  `acceptance/m24-promotions.md`, `acceptance/m25-marketing.md`) for
+  each milestone's Definition of Done.
 - **M22 (Customer 360) was explicitly authorized on 2026-09-26**,
   scoped only to that milestone, building on the
   `POST_PURCHASE_PHASE_ENGINEERING_CERTIFIED` baseline at commit

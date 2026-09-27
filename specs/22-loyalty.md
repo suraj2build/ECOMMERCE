@@ -1,6 +1,10 @@
 # 22. Loyalty
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `LOY-001`–`005`)
+**Status:** IMPLEMENTED (built 2026-09-27 under the "START BUILD — M23 +
+M24 + M25 OVERNIGHT COMMERCIAL-ENGAGEMENT PHASE" authorization — see
+`acceptance/m23-loyalty.md` for the Definition of Done and
+`CLAUDE.md` §0 for the build record. Not yet independently reviewed —
+`VERIFIED` is set only after that review.)
 
 ## Purpose
 

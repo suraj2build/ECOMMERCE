@@ -110,6 +110,9 @@ model Customer {
   communicationPreferences CommunicationPreference[]
   auditLogEntries          AuditLog[]
 
+  // M23 Loyalty (specs/22-loyalty.md)
+  loyaltyAccount LoyaltyAccount?
+
   @@map("customers")
 }
 
@@ -177,6 +180,7 @@ model StaffUser {
   initiatedExchanges            Exchange[]              @relation("ExchangeInitiatedBy")
   qcExchanges                   Exchange[]              @relation("ExchangeQcBy")
   replacementFulfilledExchanges Exchange[]              @relation("ExchangeReplacementFulfilledBy")
+  loyaltyLedgerAdjustments      LoyaltyLedgerEntry[]
 
   @@map("staff_users")
 }
@@ -1502,36 +1506,52 @@ enum CheckoutPaymentMethod {
 }
 
 model CheckoutSession {
-  id                   String                @id @default(uuid())
-  customerId           String?
-  guestSessionId       String?
-  contactName          String
-  contactMobile        String
-  contactEmail         String?
-  billingAddress       Json
-  shippingAddress      Json
-  shippingStateCode    String
-  shippingMethodCode   String                @default("STANDARD")
-  shippingCost         Decimal               @db.Decimal(10, 2)
-  subtotal             Decimal               @db.Decimal(10, 2) // tax-inclusive sum of lines
-  taxAmount            Decimal               @db.Decimal(10, 2) // informational - already included within subtotal
-  grandTotal           Decimal               @db.Decimal(10, 2)
-  currency             String                @default("INR")
-  paymentMethod        CheckoutPaymentMethod
-  status               CheckoutSessionStatus @default(STARTED)
-  idempotencyKey       String                @unique
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  confirmedAt          DateTime?
+  id                     String                @id @default(uuid())
+  customerId             String?
+  guestSessionId         String?
+  contactName            String
+  contactMobile          String
+  contactEmail           String?
+  billingAddress         Json
+  shippingAddress        Json
+  shippingStateCode      String
+  shippingMethodCode     String                @default("STANDARD")
+  shippingCost           Decimal               @db.Decimal(10, 2)
+  subtotal               Decimal               @db.Decimal(10, 2) // tax-inclusive sum of lines
+  taxAmount              Decimal               @db.Decimal(10, 2) // informational - already included within subtotal
+  grandTotal             Decimal               @db.Decimal(10, 2)
+  currency               String                @default("INR")
+  paymentMethod          CheckoutPaymentMethod
+  status                 CheckoutSessionStatus @default(STARTED)
+  idempotencyKey         String                @unique
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  confirmedAt            DateTime?
   // Set only when status = CAPTURE_RECONCILIATION_REQUIRED (independent-
   // review finding #3) - the operator-facing explanation of why a
   // genuinely-captured payment did not result in an order.
-  reconciliationReason String?
+  reconciliationReason   String?
+  // M23 Loyalty checkout integration (specs/22-loyalty.md §8): mutable
+  // while the session is STARTED/RESERVED (before payment), frozen once
+  // the Order is created. loyaltyRedemptionValue is the INR value the
+  // redeemed points are worth at the CURRENT LOYALTY_REDEMPTION_PAISE_PER_POINT
+  // rate, computed and stored at redeem-application time (never
+  // re-derived at a later, possibly-different rate). storeCreditApplied
+  // (M20 StoreCreditAccount reuse - needed for LOY-005/PROMO stacking,
+  // not a new gift-card milestone) is likewise the amount actually
+  // reserved from the customer's existing balance at application time.
+  // The amount actually charged to the payment method is always
+  // grandTotal - loyaltyRedemptionValue - storeCreditApplied, computed
+  // on demand, never stored as a separate column.
+  loyaltyPointsRedeemed  Int                   @default(0)
+  loyaltyRedemptionValue Decimal               @default(0) @db.Decimal(10, 2)
+  storeCreditApplied     Decimal               @default(0) @db.Decimal(10, 2)
 
-  customer Customer?             @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  lines    CheckoutSessionLine[]
-  payments Payment[]
-  order    Order?
+  customer              Customer?              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines                 CheckoutSessionLine[]
+  payments              Payment[]
+  order                 Order?
+  loyaltyRedemptionHold LoyaltyRedemptionHold?
 
   @@index([status])
   @@map("checkout_sessions")
@@ -1830,29 +1850,29 @@ model PickTask {
 // "M15 calls issueInvoice() in-process... once the Order model exists"
 // pattern the M08 InvoiceService docblock already anticipated.
 model Order {
-  id                   String                @id @default(uuid())
-  orderNumber          String                @unique
-  checkoutSessionId    String                @unique
-  customerId           String?
-  guestSessionId       String?
-  contactName          String
-  contactMobile        String
-  contactEmail         String?
-  billingAddress       Json
-  shippingAddress      Json
-  shippingCost         Decimal               @db.Decimal(10, 2)
-  subtotal             Decimal               @db.Decimal(10, 2)
-  taxAmount            Decimal               @db.Decimal(10, 2)
-  grandTotal           Decimal               @db.Decimal(10, 2)
-  currency             String                @default("INR")
-  paymentMethod        CheckoutPaymentMethod
-  status               OrderStatus           @default(CONFIRMED)
+  id                     String                @id @default(uuid())
+  orderNumber            String                @unique
+  checkoutSessionId      String                @unique
+  customerId             String?
+  guestSessionId         String?
+  contactName            String
+  contactMobile          String
+  contactEmail           String?
+  billingAddress         Json
+  shippingAddress        Json
+  shippingCost           Decimal               @db.Decimal(10, 2)
+  subtotal               Decimal               @db.Decimal(10, 2)
+  taxAmount              Decimal               @db.Decimal(10, 2)
+  grandTotal             Decimal               @db.Decimal(10, 2)
+  currency               String                @default("INR")
+  paymentMethod          CheckoutPaymentMethod
+  status                 OrderStatus           @default(CONFIRMED)
   // Set true when a cancellation/RTO on a PREPAID order requires a
   // refund that this milestone deliberately does not execute (M19's own
   // scope) - an honest marker for Finance/CS to action, never silently
   // dropped.
-  refundRequired       Boolean               @default(false)
-  invoiceId            String?               @unique
+  refundRequired         Boolean               @default(false)
+  invoiceId              String?               @unique
   // Durable invoice-generation recovery state (independent-review
   // finding #2, binding): "an invoice document is generated at order
   // confirmation" MUST hold even after a transient failure, without
@@ -1861,21 +1881,36 @@ model Order {
   // restart - a fresh process just queries `invoiceId IS NULL AND
   // invoiceStatus IN (PENDING, FAILED)` and retries, no in-memory
   // queue/timer required. See OrderService.reconcilePendingInvoices().
-  invoiceStatus        OrderInvoiceStatus    @default(PENDING)
-  invoiceFailureReason String?
-  invoiceAttempts      Int                   @default(0)
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  invoiceStatus          OrderInvoiceStatus    @default(PENDING)
+  invoiceFailureReason   String?
+  invoiceAttempts        Int                   @default(0)
+  // M23 Loyalty (specs/22-loyalty.md): frozen snapshot of the value
+  // components §28 requires being independently explainable per order.
+  // loyaltyPointsEarned is set once, when LoyaltyService.earnForOrder
+  // posts this order's single EARN ledger entry (see that model's own
+  // docblock for why earning triggers at confirmation, not delivery).
+  // loyaltyPointsRedeemed/loyaltyRedemptionValue/storeCreditApplied are
+  // copied from the CheckoutSession at order-creation time (frozen,
+  // never re-derived) - the amount actually charged to the payment
+  // method is grandTotal - loyaltyRedemptionValue - storeCreditApplied
+  // (computed on demand, never stored redundantly).
+  loyaltyPointsEarned    Int                   @default(0)
+  loyaltyPointsRedeemed  Int                   @default(0)
+  loyaltyRedemptionValue Decimal               @default(0) @db.Decimal(10, 2)
+  storeCreditApplied     Decimal               @default(0) @db.Decimal(10, 2)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
-  customer        Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  checkoutSession CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
-  lines           OrderLine[]
-  fulfilments     OrderFulfilment[]
-  pickTasks       PickTask[]
-  shipments       Shipment[]
-  returns         Return[]
-  refunds         Refund[]
-  exchanges       Exchange[]
+  customer         Customer?           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  checkoutSession  CheckoutSession     @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
+  lines            OrderLine[]
+  fulfilments      OrderFulfilment[]
+  pickTasks        PickTask[]
+  shipments        Shipment[]
+  returns          Return[]
+  refunds          Refund[]
+  exchanges        Exchange[]
+  loyaltyEarnEntry LoyaltyLedgerEntry?
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -1927,14 +1962,15 @@ model OrderLine {
   // as a genuine misuse rather than a legitimate retry.
   cancellationIdempotencyKey String?         @unique
 
-  order      Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  sku        Sku              @relation(fields: [skuId], references: [id], onDelete: Restrict)
-  location   Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  fulfilment OrderFulfilment? @relation(fields: [fulfilmentId], references: [id], onDelete: SetNull)
-  pickTask   PickTask?
-  returnLine ReturnLine?
-  refund     Refund?
-  exchange   Exchange?
+  order                Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku                  Sku                 @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location             Location            @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  fulfilment           OrderFulfilment?    @relation(fields: [fulfilmentId], references: [id], onDelete: SetNull)
+  pickTask             PickTask?
+  returnLine           ReturnLine?
+  refund               Refund?
+  exchange             Exchange?
+  loyaltyReversalEntry LoyaltyLedgerEntry?
 
   @@index([orderId])
   @@map("order_lines")
@@ -2253,13 +2289,14 @@ model ReturnLine {
   refundEligibleAt DateTime?
   createdAt        DateTime           @default(now())
 
-  return       Return           @relation(fields: [returnId], references: [id], onDelete: Cascade)
-  orderLine    OrderLine        @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  sku          Sku              @relation(fields: [skuId], references: [id], onDelete: Restrict)
-  location     Location         @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  qcActorStaff StaffUser?       @relation("ReturnLineQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
-  refund       Refund?
-  evidence     ReturnEvidence[]
+  return               Return              @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderLine            OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  sku                  Sku                 @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  location             Location            @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  qcActorStaff         StaffUser?          @relation("ReturnLineQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  refund               Refund?
+  evidence             ReturnEvidence[]
+  loyaltyReversalEntry LoyaltyLedgerEntry?
 
   @@index([returnId])
   @@map("return_lines")
@@ -2819,4 +2856,212 @@ model CommunicationPreference {
 
   @@unique([customerId, channel, messageType])
   @@map("communication_preferences")
+}
+
+// ============================================================
+// M23 — Loyalty (specs/22-loyalty.md, LOY-001-005)
+// ============================================================
+//
+// Structurally SEPARATE from StoreCreditAccount/StoreCreditEntry (REF-002)
+// and from Promotion/Coupon (M24) - four distinct concepts, per LOY-001's
+// explicit instruction, never collapsed into one shared "balance" or
+// "benefit" table. Loyalty points are never treated as money: they have
+// their own unit (points, not currency), their own ledger, and their own
+// expiry semantics (contrast with store credit, which never expires).
+//
+// Ledger discipline mirrors StoreCreditAccount/Entry (ADR-0012 lineage):
+// LoyaltyAccount.balance is a denormalized cache, always mutated in the
+// SAME transaction as, and by the exact pointsDelta of, the
+// LoyaltyLedgerEntry row that justifies it - the entry is the source of
+// truth, the balance is a read optimization kept in lockstep, never
+// independently written. Every mutation locks the account row FIRST
+// (SELECT ... FOR UPDATE), the same row-lock-as-serialization-point idiom
+// used throughout this codebase since StoreCreditService.lockOrCreateAccount.
+//
+// EARN triggers at ORDER CONFIRMATION (Order creation - the qualifying
+// payment already succeeded, COD-accepted or PREPAID-captured), not at
+// delivery. This is a deliberate engineering decision, not a guess: a
+// SHIPPED/DELIVERED OrderLine can never be cancelled again (M18's own
+// certified boundary - "Cannot cancel a line that has already shipped/
+// delivered - use a return instead"), so earning at delivery would make
+// it structurally IMPOSSIBLE to ever reverse points via cancellation -
+// yet FLOW17 explicitly requires "cancel a different, separate order
+// that HAD earned points -> points reverse" as a real, reachable scenario.
+// Earning at order-confirmation keeps both reversal paths reachable
+// (CANCELLATION for a not-yet-shipped line, RETURN for a delivered one)
+// without touching the certified M18 cancellation-eligibility boundary.
+// The qualifying value is Order.subtotal (the existing, already-frozen,
+// pre-tax/pre-shipping merchandise value) - earning is based on what was
+// genuinely purchased, independent of how it was PAID for (cash/store-
+// credit/points-partial), since store credit/loyalty redemption are
+// payment-method components, not price reductions, in this build.
+//
+// One EARN entry per Order (qualifyingOrderId is the idempotency anchor -
+// a retried order-creation call, or a webhook replay, can never double-
+// earn). remainingPoints on that EARN entry is decremented (FIFO, oldest
+// batch first) as REDEEM/EXPIRE/REVERSE draw against it - see
+// LoyaltyPointAllocation. A partial-line cancellation/return reverses
+// only that line's proportional share of the order's single EARN batch,
+// never the whole batch, via a partial allocation - see
+// LoyaltyService.reverseForOrderLine's own docblock.
+enum LoyaltyLedgerEntryType {
+  EARN
+  REDEEM
+  REVERSE
+  EXPIRE
+  ADJUST
+}
+
+model LoyaltyAccount {
+  id                   String   @id @default(uuid())
+  customerId           String   @unique
+  // Denormalized cache of SUM(pointsDelta) - see docblock above.
+  balance              Int      @default(0)
+  // Lifetime points ever legitimately earned - the tier basis (LOY-001).
+  // Decremented only on REVERSE (a cancelled/returned purchase never
+  // should have counted toward tier achievement); NEVER decremented by
+  // REDEEM/EXPIRE (spending points, or letting them lapse, does not
+  // demote a customer's tier - tiers reflect historical earning, not
+  // current balance, an intentional and common loyalty-program design).
+  lifetimeEarnedPoints Int      @default(0)
+  currentTierId        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  customer    Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  currentTier LoyaltyTier?            @relation(fields: [currentTierId], references: [id], onDelete: SetNull)
+  entries     LoyaltyLedgerEntry[]
+  holds       LoyaltyRedemptionHold[]
+
+  @@map("loyalty_accounts")
+}
+
+// Configurable tier thresholds (LOY-001: "Model: POINTS + TIERS") - a DB
+// table, never a hard-coded Bronze/Silver/Gold enum/if-chain in
+// application code, so tier names/thresholds/count can change without a
+// code deployment. The specific illustrative thresholds this build seeds
+// (see prisma/seed.ts) are an ENGINEERING DEFAULT for test/demo purposes,
+// explicitly not an approved commercial tier policy - no repository
+// decision defines real tier economics.
+model LoyaltyTier {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  minLifetimePoints Int
+  sortOrder         Int      @unique
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  accounts LoyaltyAccount[]
+
+  @@map("loyalty_tiers")
+}
+
+// Append-only ledger (LOY-001's own explicit "MUST use an auditable
+// ledger" requirement) - balance is ALWAYS derivable as SUM(pointsDelta)
+// for the account, never trust-me-bro mutated directly.
+model LoyaltyLedgerEntry {
+  id                   String                 @id @default(uuid())
+  accountId            String
+  type                 LoyaltyLedgerEntryType
+  // Signed: positive for EARN/ADJUST-credit, negative for REDEEM/EXPIRE/
+  // REVERSE/ADJUST-debit.
+  pointsDelta          Int
+  // EARN-only batch-tracking fields (FIFO redemption/expiry - see the
+  // model-group docblock above and LoyaltyPointAllocation below).
+  remainingPoints      Int?
+  expiresAt            DateTime?
+  // Idempotency anchor for EARN: one Order produces at most one EARN
+  // entry, enforced at the database level (never just an application
+  // check) - mirrors Refund.orderLineId's own @unique idempotency-anchor
+  // idiom.
+  qualifyingOrderId    String?                @unique
+  // Idempotency anchor for REVERSE: a given cancelled OrderLine or
+  // processed ReturnLine can trigger at most one REVERSE entry, ever -
+  // a retried cancellation/return-processing call is a safe no-op, never
+  // a double-reversal (m23 acceptance negative scenario #3).
+  reversalOrderLineId  String?                @unique
+  reversalReturnLineId String?                @unique
+  reason               String
+  actorStaffId         String?
+  // General-purpose idempotency guard for every entry type (defense in
+  // depth alongside the structural anchors above) - REDEEM in particular
+  // has no single structural anchor of its own (one redeem action can
+  // span multiple EARN batches, producing multiple rows - see
+  // LoyaltyService.redeem's own docblock), so this is its primary
+  // idempotency mechanism.
+  idempotencyKey       String                 @unique
+  createdAt            DateTime               @default(now())
+
+  account            LoyaltyAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  actorStaff         StaffUser?               @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
+  qualifyingOrder    Order?                   @relation(fields: [qualifyingOrderId], references: [id], onDelete: Restrict)
+  reversalOrderLine  OrderLine?               @relation(fields: [reversalOrderLineId], references: [id], onDelete: Restrict)
+  reversalReturnLine ReturnLine?              @relation(fields: [reversalReturnLineId], references: [id], onDelete: Restrict)
+  allocationsSpent   LoyaltyPointAllocation[] @relation("SpendingEntry")
+  allocationsEarned  LoyaltyPointAllocation[] @relation("EarnEntry")
+
+  @@index([accountId])
+  @@index([accountId, type])
+  @@map("loyalty_ledger_entries")
+}
+
+// Records which EARN batch(es) a REDEEM/EXPIRE/REVERSE entry drew down,
+// and by how much - the mechanism that makes FIFO-by-earn-date expiry
+// correct even when redemption has already partially consumed some
+// batches (oldest-earned is also oldest-to-expire, since the expiry
+// period is a constant configurable duration applied uniformly, so
+// simple earn-order FIFO is sufficient and correct). A single spending
+// entry (e.g. one REDEEM covering 300 points that happens to span two
+// EARN batches of 150 each) produces two allocation rows, never a single
+// row with an ambiguous "which batch" answer.
+model LoyaltyPointAllocation {
+  id              String   @id @default(uuid())
+  spendingEntryId String
+  earnEntryId     String
+  pointsConsumed  Int
+  createdAt       DateTime @default(now())
+
+  spendingEntry LoyaltyLedgerEntry @relation("SpendingEntry", fields: [spendingEntryId], references: [id], onDelete: Restrict)
+  earnEntry     LoyaltyLedgerEntry @relation("EarnEntry", fields: [earnEntryId], references: [id], onDelete: Restrict)
+
+  @@unique([spendingEntryId, earnEntryId])
+  @@map("loyalty_point_allocations")
+}
+
+// Checkout-time redemption HOLD (LOY-003, build instruction §8: "Do not
+// reserve loyalty value at cart... model it explicitly and release it on
+// timeout/failure"). Deliberately mirrors InventoryReservation's own
+// ACTIVE/CONVERTED/EXPIRED lifecycle exactly - a hold does NOT touch the
+// ledger or the account balance at all (an "available" read is
+// `balance - SUM(active holds)`, the same onHand-vs-reserved-vs-available
+// distinction inventory already uses); the actual REDEEM ledger entries
+// (and the real FIFO batch draw-down) are only ever posted when a hold
+// CONVERTS at order confirmation - see LoyaltyService.convertRedemptionHold.
+// This is what makes two simultaneous checkouts for the same account
+// unable to double-spend the same points: the SECOND concurrent
+// apply-redemption call computes "available" against the FIRST call's
+// already-committed hold.
+enum LoyaltyHoldStatus {
+  ACTIVE
+  CONVERTED
+  RELEASED
+}
+
+model LoyaltyRedemptionHold {
+  id                String            @id @default(uuid())
+  accountId         String
+  checkoutSessionId String            @unique
+  points            Int
+  value             Decimal           @db.Decimal(10, 2)
+  status            LoyaltyHoldStatus @default(ACTIVE)
+  expiresAt         DateTime
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  account         LoyaltyAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, status])
+  @@index([status, expiresAt])
+  @@map("loyalty_redemption_holds")
 }

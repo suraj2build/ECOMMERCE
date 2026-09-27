@@ -1618,7 +1618,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** Granular, per-channel (SMS/WhatsApp/Email/Push — matching the required notification-channel architecture, `NOTIF-001`) and per-message-type, not a single global toggle.
 - **Affected specs:** `specs/21-customer-profile.md`, `specs/24-marketing.md`
-- **M22 implementation note (2026-09-26):** built as `CommunicationPreference` (customer × channel × message type, unique per triple), with a controlled `CommunicationMessageType` vocabulary (`ORDER_UPDATES`, `OFFERS_AND_PROMOTIONS`, `PRODUCT_RECOMMENDATIONS`, `NEWSLETTER`). `ORDER_UPDATES` is treated as the one transactional/essential type in this vocabulary and is rejected from opt-out (400) — an engineering default reflecting operational reality (order confirmations must be deliverable), not a legal-consent-basis determination; `CUST-001`/`AUD-002` remain the actual compliance authority on consent.
+- **M22 implementation note (2026-09-26, corrected by the same-day certification repair):** built as `CommunicationPreference` (customer × channel × message type, unique per triple), with a controlled `CommunicationMessageType` vocabulary (`ORDER_UPDATES`, `OFFERS_AND_PROMOTIONS`, `PRODUCT_RECOMMENDATIONS`, `NEWSLETTER`). `ORDER_UPDATES` is the one transactional type in this vocabulary and defaults to opted-in, but the original build's HTTP-400 rejection of opting out of it was an invented rule this spec never actually authorized (this decision only requires granularity, not a non-opt-outable type) — removed in the 2026-09-26 certification repair; the customer can now set any value for it, same as every other message type. `CUST-001`/`AUD-002` remain the actual compliance authority on consent, and downstream notification-delivery enforcement for legally-required transactional messages remains a separate, undecided policy question.
 
 #### CUST-003 — Internal Customer 360 view vs. self-service profile scope split · **P2**
 - **Question:** Distinct internal view, or the same screen?
@@ -1638,6 +1638,7 @@ of what is still needed from anyone, and from whom.
 - **Final decision:** **Loyalty IS required. Model: POINTS + TIERS** (explicit, §20). The broader benefit ecosystem (cashback, coupons, promotional/onboarding coupons) is also supported but **kept conceptually separate**, never collapsed into one data structure: `LOYALTY POINTS`, `TIER/STATUS`, `STORE CREDIT/CASHBACK VALUE`, and `PROMOTIONS/COUPONS` are four distinct concepts.
 - **Affected specs:** `specs/22-loyalty.md`
 - **M22 note (2026-09-26):** M23 (Loyalty) remains unauthorized and unbuilt. The M22 Customer 360 account UI represents the Loyalty section honestly as a disabled "Coming soon" navigation item (`DEPENDENCY_DEFERRED — M23/M24`) rather than fabricating a points/tier balance — see `acceptance/m22-customer-360.md`.
+- **M23 implementation note (2026-09-27):** built as `LoyaltyAccount`/`LoyaltyTier`/`LoyaltyLedgerEntry`/`LoyaltyPointAllocation`/`LoyaltyRedemptionHold` — structurally separate models from `StoreCreditAccount`/`StoreCreditEntry` (M20) and from Promotion/Coupon (M24, not yet built), exactly as decided. See `acceptance/m23-loyalty.md`.
 
 #### LOY-002 — Earn rate rules · **P0**
 - **Question:** How are points earned?
@@ -1645,6 +1646,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (rate configurable) · **Decision date:** 2026-09-22
 - **Final decision:** **Points are earned based on qualifying purchase value** (explicit, §20). The exact earning rate is an intentionally **configurable business parameter — no fixed commercial percentage is invented here** (explicit instruction, §20).
 - **Affected specs:** `specs/22-loyalty.md`
+- **M23 implementation note (2026-09-27):** qualifying value = `Order.subtotal` (the existing, already-frozen "tax-inclusive sum of lines" field — excludes only shipping), used directly without inventing a new formula. Earn rate is `LOYALTY_EARN_POINTS_PER_100_INR` (engineering default: 1), a configurable env var, never a fixed commercial percentage. EARN triggers at order **confirmation**, not delivery — a deliberate design choice: under M18's certified invariant a shipped/delivered `OrderLine` can never be cancelled, so triggering EARN at delivery would make cancellation-based point reversal (a hard financial-integrity requirement) structurally unreachable for every order that ships. Confirmation-time earning keeps both the cancellation-reversal and return-reversal paths reachable.
 
 #### LOY-003 — Redemption mechanics & minimum redemption · **P0**
 - **Question:** How do points convert to discount?
@@ -1652,6 +1654,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (mechanics configurable) · **Decision date:** 2026-09-22
 - **Final decision:** **Points may be redeemed on future purchases** (explicit, §20). Exact conversion rate, minimum redemption, and maximum redemption cap per order are configurable business parameters, not invented here.
 - **Affected specs:** `specs/22-loyalty.md`
+- **M23 implementation note (2026-09-27):** `LOYALTY_REDEMPTION_PAISE_PER_POINT` (default 25), `LOYALTY_MIN_REDEMPTION_POINTS` (default 100), `LOYALTY_MAX_REDEMPTION_POINTS_PER_ORDER` (default 2000) — all configurable engineering defaults. Redemption is modeled as a checkout-time `LoyaltyRedemptionHold` (ACTIVE/CONVERTED/RELEASED), mirroring `InventoryReservation`'s own reservation lifecycle exactly: available-to-redeem = ledger balance minus every currently-ACTIVE hold, so the ledger itself is never mutated until the hold converts to real REDEEM entries at order confirmation. This makes two genuinely concurrent checkouts against the same account structurally unable to double-spend the same points (proven under real Postgres concurrency, `test/integration/loyalty.test.ts` test #14) — never a read-then-unlocked-write.
 
 #### LOY-004 — Expiry policy · **P1**
 - **Question:** Do points expire?
@@ -1659,6 +1662,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **Points expire. The expiry period MUST be configurable** (explicit, §20). This explicitly **contrasts with store credit, which does NOT expire** (`REF-002`) — the two ledgers have different expiry semantics by design.
 - **Affected specs:** `specs/22-loyalty.md`
+- **M23 implementation note (2026-09-27):** `LOYALTY_POINTS_EXPIRY_DAYS` (default 365), tracked per EARN batch (`LoyaltyLedgerEntry.expiresAt`), never as row deletion — expiry posts a real `EXPIRE` ledger entry. A FIFO batch/allocation mechanism (`LoyaltyPointAllocation`) means the oldest-earned batch always expires (and is always drawn down for redemption) first, and expiry is idempotent per batch (`expire:<batchId>`) so a doubly-fired sweep never double-expires the same batch (proven under real concurrency, test #15). Exposed as a callable, staff-gated sweep (`POST /api/v1/loyalty/sweep/expire`), the same shape as the existing `InventoryService.expireStaleReservations`/`RefundService.reconcilePendingRefunds` sweeps.
 
 #### LOY-005 — Loyalty + promotion stacking · **P1**
 - **Question:** Can loyalty redemption combine with promotions?
@@ -1666,6 +1670,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **Store credit may be used together with loyalty and coupon/promotions, subject to promotion/loyalty eligibility and stacking rules** (explicit, §19). Stacking compatibility **MUST be rule-driven/configurable**, mirroring `PROMO-002`.
 - **Affected specs:** `specs/22-loyalty.md`, `specs/23-promotions.md`
+- **M23 implementation note (2026-09-27):** loyalty redemption and store credit can already combine on the same order — `CheckoutSession`/`Order` carry independent `loyaltyRedemptionValue` and `storeCreditApplied` fields, each computed and applied independently, with `amountPayable` netting both. The promotion/coupon side of this stacking (`PROMO-002`) is `DEPENDENCY_DEFERRED — M24` — M24 (Promotions) is the next milestone in this same authorized phase and has not been built yet at the time this note is written.
 
 ---
 

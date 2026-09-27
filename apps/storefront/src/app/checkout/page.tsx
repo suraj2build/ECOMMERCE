@@ -7,6 +7,8 @@ import { buttonClassName } from '@/components/ui/Button';
 import { getCart, type CartView } from '@/lib/cart';
 import { previewCheckout, startCheckout, type Address, type CheckoutPreview } from '@/lib/checkout';
 import { INDIAN_STATES } from '@/lib/indian-states';
+import { getStoredSession } from '@/lib/customer-auth';
+import { getLoyaltyBalance, type LoyaltyBalance } from '@/lib/account';
 
 const EMPTY_ADDRESS: Address = { line1: '', line2: '', landmark: '', city: '', state: '', stateCode: '', pincode: '' };
 
@@ -38,8 +40,19 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
 
+  // M23 (specs/22-loyalty.md §8): only a signed-in customer has a
+  // LoyaltyAccount to redeem against - a guest checkout simply never
+  // shows this section (loyaltyPointsToRedeem is omitted entirely).
+  const [loyaltyBalance, setLoyaltyBalance] = useState<LoyaltyBalance | null>(null);
+  const [redeemPointsInput, setRedeemPointsInput] = useState('');
+
   useEffect(() => {
     void getCart().then(setCart);
+    if (getStoredSession()) {
+      getLoyaltyBalance()
+        .then(setLoyaltyBalance)
+        .catch(() => setLoyaltyBalance(null));
+    }
   }, []);
 
   useEffect(() => {
@@ -77,6 +90,7 @@ export default function CheckoutPage() {
       return;
     }
     setSubmitting(true);
+    const redeemPoints = loyaltyBalance ? parseInt(redeemPointsInput, 10) : NaN;
     try {
       const session = await startCheckout({
         contactName,
@@ -86,6 +100,7 @@ export default function CheckoutPage() {
         billingAddress: billingSameAsShipping ? shippingAddress : billingAddress,
         paymentMethod,
         idempotencyKey,
+        loyaltyPointsToRedeem: Number.isFinite(redeemPoints) && redeemPoints > 0 ? redeemPoints : undefined,
       });
       window.dispatchEvent(new Event('fcp:cart-updated'));
       router.push(`/checkout/${session.id}`);
@@ -175,6 +190,26 @@ export default function CheckoutPage() {
               </p>
             )}
           </fieldset>
+
+          {loyaltyBalance && loyaltyBalance.balance > 0 && (
+            <fieldset className="space-y-2">
+              <legend className="font-display text-lg text-ink">Loyalty points</legend>
+              <p className="text-sm text-ink-muted">You have {loyaltyBalance.balance} points available to redeem.</p>
+              <label htmlFor="redeem-points" className="sr-only">
+                Points to redeem
+              </label>
+              <input
+                id="redeem-points"
+                type="number"
+                min={0}
+                max={loyaltyBalance.balance}
+                placeholder="Points to redeem"
+                value={redeemPointsInput}
+                onChange={(e) => setRedeemPointsInput(e.target.value.replace(/\D/g, ''))}
+                className="block min-h-[44px] w-full max-w-[200px] rounded-sm border border-border px-3 text-sm text-ink"
+              />
+            </fieldset>
+          )}
         </div>
 
         <div className="h-fit rounded-sm border border-border p-6">
@@ -206,6 +241,12 @@ export default function CheckoutPage() {
                 <span className="text-ink">Total (tax incl.)</span>
                 <span className="text-ink">&#8377;{preview.grandTotal}</span>
               </div>
+              {loyaltyBalance && parseInt(redeemPointsInput, 10) > 0 && (
+                <p className="text-xs text-ink-muted">
+                  {parseInt(redeemPointsInput, 10)} loyalty points will be applied at checkout - the final amount payable is
+                  shown on your order confirmation.
+                </p>
+              )}
             </div>
           )}
 

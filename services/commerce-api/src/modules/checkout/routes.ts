@@ -27,6 +27,7 @@ const startCheckoutSchema = z.object({
   shippingAddress: addressSchema,
   paymentMethod: z.enum(['PREPAID', 'COD']),
   idempotencyKey: z.string().min(1),
+  loyaltyPointsToRedeem: z.number().int().positive().optional(),
 });
 
 const shippingRuleSchema = z.object({

@@ -7,6 +7,7 @@ import { resolvePaymentProvider, type WebhookEvent } from '../checkout/payment-p
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
 import { ExchangeService } from '../exchanges/service.js';
+import { LoyaltyService } from '../loyalty/service.js';
 
 export interface WebhookResult {
   ok: boolean;
@@ -28,10 +29,13 @@ export class PaymentService {
   private readonly order: OrderService;
   private readonly exchange: ExchangeService;
 
+  private readonly loyalty: LoyaltyService;
+
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
     this.order = new OrderService(fastify);
     this.exchange = new ExchangeService(fastify);
+    this.loyalty = new LoyaltyService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -519,6 +523,11 @@ export class PaymentService {
             await this.inventory.releaseReservation(line.reservationId, 'payment expired', tx);
           }
         }
+        // M23: release any loyalty-points hold alongside the inventory
+        // reservations it was created next to - a payment that never
+        // completed must never leave a customer's points permanently
+        // stuck as unavailable.
+        await this.loyalty.releaseHoldForCheckoutSession(tx, fresh.checkoutSessionId);
 
         return true;
       });

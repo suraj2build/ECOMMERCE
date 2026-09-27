@@ -5,6 +5,7 @@ import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
 import { InventoryService } from '../inventory/service.js';
+import { LoyaltyService } from '../loyalty/service.js';
 import { resolveShippingProvider, type ShippingProvider } from '../shipping/provider.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 import { resolveReturnPolicy, isWithinWindow } from './policy.js';
@@ -35,6 +36,7 @@ export interface InitiateReturnLineInput {
 export class ReturnService {
   private readonly order: OrderService;
   private readonly inventory: InventoryService;
+  private readonly loyalty: LoyaltyService;
   private readonly provider: ShippingProvider;
   private readonly evidenceStorage: EvidenceStorageProvider;
 
@@ -45,6 +47,7 @@ export class ReturnService {
   ) {
     this.order = new OrderService(fastify);
     this.inventory = new InventoryService(fastify);
+    this.loyalty = new LoyaltyService(fastify);
     this.provider = provider ?? resolveShippingProvider(loadEnv().SHIPPING_PROVIDER);
     this.evidenceStorage = evidenceStorage ?? resolveEvidenceStorageProvider();
   }
@@ -567,6 +570,20 @@ export class ReturnService {
         newValue: { qcResult: input.qcResult, disposition: input.disposition, refundEligible },
         reference: returnId,
       });
+
+      // M23 (specs/22-loyalty.md): reverse this line's proportional
+      // share of loyalty points, mirroring refundEligible's own PASS-only
+      // gating exactly (the same DECISION_REQUIRED reasoning above
+      // applies: a FAILED-QC return already denies the money refund, so
+      // it must not ALSO claw back loyalty points on top of that - only
+      // a genuinely accepted PASS return reverses points, same as it
+      // only a PASS makes a cash refund eligible). Safe no-op for a
+      // guest order or an order that earned zero points.
+      if (refundEligible) {
+        const orderLine = await tx.orderLine.findUniqueOrThrow({ where: { id: line.orderLineId } });
+        const order = await tx.order.findUniqueOrThrow({ where: { id: orderLine.orderId } });
+        await this.loyalty.reverseForReturnLine(tx, order, orderLine, line, input.notes?.trim() || 'Return processed');
+      }
 
       const remaining = await tx.returnLine.count({ where: { returnId, disposition: null } });
       if (remaining === 0) {

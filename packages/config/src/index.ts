@@ -155,6 +155,29 @@ const envSchema = z.object({
   // retention/deletion policy), which remain UNDER_REVIEW. A
   // conservative 90-day default.
   RECENTLY_VIEWED_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
+  // --- Loyalty (M23, specs/22-loyalty.md, LOY-002/003/004) ---
+  // Every rate/threshold below is an intentionally CONFIGURABLE
+  // engineering default (LOY-002/003 explicitly: "no fixed commercial
+  // percentage/rate is invented here") - never a Product Owner-approved
+  // commercial policy. Real launch economics require a separate,
+  // explicit business decision before these are changed in production.
+  //
+  // Points earned per 100 (integer) currency-minor-units-free INR spent
+  // on the qualifying (pre-tax, pre-shipping) order subtotal - default
+  // "1 point per Rs.100" is a conservative, illustrative rate.
+  LOYALTY_EARN_POINTS_PER_100_INR: z.coerce.number().int().nonnegative().default(1),
+  // Redemption conversion: each point is worth this many paise (1/100
+  // INR) when redeemed - default 25 paise/point (4 points = Rs.1).
+  LOYALTY_REDEMPTION_PAISE_PER_POINT: z.coerce.number().int().positive().default(25),
+  // A redemption action must draw at least this many points at once.
+  LOYALTY_MIN_REDEMPTION_POINTS: z.coerce.number().int().positive().default(100),
+  // Per-order ceiling on points redeemable in a single checkout.
+  LOYALTY_MAX_REDEMPTION_POINTS_PER_ORDER: z.coerce.number().int().positive().default(2000),
+  // Points expire this many days after they were earned (LOY-004:
+  // "MUST be configurable" - explicitly contrasted with store credit,
+  // which never expires, REF-002).
+  LOYALTY_POINTS_EXPIRY_DAYS: z.coerce.number().int().positive().default(365),
 });
 
 export type Env = z.infer<typeof envSchema>;

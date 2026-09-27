@@ -197,7 +197,7 @@ documented rule, not ad hoc.
 **Preconditions:** Loyalty program active; customer has an order
 history.
 **Steps:**
-1. Place and deliver a qualifying order → points earn.
+1. Place a qualifying order → points earn.
 2. Redeem points on a subsequent order.
 3. Cancel a different, separate order that had earned points → points
    reverse.
@@ -207,6 +207,21 @@ history.
 correctly-typed ledger transaction; balance is always correctly
 derivable from the ledger; reversal and expiry each occur exactly once
 per triggering event (no double-reversal on a retried cancellation).
+
+**M23 implementation note (2026-09-27):** EARN triggers at order
+**confirmation**, not delivery — this flow's original "place and
+deliver" wording predates implementation. Triggering EARN at delivery
+would make step 3 (cancellation reversal) structurally unreachable for
+any order that ships, since M18's certified invariant already forbids
+cancelling a shipped/delivered line — see `LOY-002`'s implementation
+note in `blueprint/DECISION_REGISTER.md` for the full reasoning. Proven
+end to end (steps 1-3 in the browser via `test/e2e-storefront/
+loyalty.spec.ts`; step 4 against the real database plus the real
+staff-gated `POST /api/v1/loyalty/sweep/expire` route in that same
+spec's second test) and adversarially at the integration level
+(`test/integration/loyalty.test.ts`, including genuine-concurrency
+proofs for both the checkout redemption race and a double-fired expiry
+sweep).
 
 ## FLOW 18 — Coupon + Compatible Promotion + Store Credit
 
