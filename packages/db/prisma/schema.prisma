@@ -116,6 +116,9 @@ model Customer {
   // M24 Promotions (specs/23-promotions.md)
   promotionRedemptions PromotionRedemption[]
 
+  // M25 Marketing (specs/24-marketing.md)
+  campaignDeliveries CampaignDelivery[]
+
   @@map("customers")
 }
 
@@ -2981,6 +2984,7 @@ model LoyaltyTier {
   updatedAt         DateTime @updatedAt
 
   accounts LoyaltyAccount[]
+  segments CustomerSegment[]
 
   @@map("loyalty_tiers")
 }
@@ -3251,4 +3255,115 @@ model StoreCreditRedemptionHold {
   @@index([accountId, status])
   @@index([status, expiresAt])
   @@map("store_credit_redemption_holds")
+}
+
+// ============================================================
+// M25 — Marketing (specs/24-marketing.md, MKT-001)
+// ============================================================
+//
+// Segmentation, campaign scheduling, and outbound messaging via a
+// provider abstraction - deliberately distinct from transactional
+// notifications (specs/29-notifications.md, unbuilt/M26+), reusing the
+// EXISTING CommunicationChannel/CommunicationMessageType enums (M22)
+// rather than inventing a second vocabulary. A campaign's messageType
+// MUST be a genuine marketing type (OFFERS_AND_PROMOTIONS/
+// PRODUCT_RECOMMENDATIONS/NEWSLETTER) - never ORDER_UPDATES, which is
+// reserved for transactional flows this milestone does not touch;
+// enforced in MarketingService, not at the DB layer, since the enum
+// itself is legitimately shared.
+//
+// Segment membership is a LIVE query (minLifetimeOrderCount/
+// minLifetimeSpend/loyaltyTierId are filter criteria, never a stored
+// membership snapshot) - deliberately no generalized query DSL/rule
+// engine per this phase's own "no general workflow engine" boundary;
+// a null segmentId on a campaign means "all customers" (still filtered
+// by each customer's own per-channel/per-message-type opt-in, CUST-002).
+model CustomerSegment {
+  id                    String   @id @default(uuid())
+  name                  String
+  description           String?
+  minLifetimeOrderCount Int?
+  minLifetimeSpend      Decimal? @db.Decimal(10, 2)
+  loyaltyTierId         String?
+  createdByStaffId      String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  loyaltyTier LoyaltyTier?        @relation(fields: [loyaltyTierId], references: [id], onDelete: SetNull)
+  campaigns   MarketingCampaign[]
+
+  @@map("customer_segments")
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// A campaign's status transition DRAFT/SCHEDULED -> SENDING is a
+// concurrency-safe compare-and-swap (MarketingService.sendCampaign),
+// the same idiom RefundService.settle()'s PROCESSING claim uses (M21
+// repair, Finding 4) - two genuinely concurrent send triggers on the
+// same campaign must converge to exactly one sender, never a
+// double-send.
+model MarketingCampaign {
+  id               String                   @id @default(uuid())
+  name             String
+  channel          CommunicationChannel
+  messageType      CommunicationMessageType
+  subject          String?
+  content          String
+  segmentId        String?
+  status           CampaignStatus           @default(DRAFT)
+  scheduledAt      DateTime?
+  sentAt           DateTime?
+  createdByStaffId String
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  segment    CustomerSegment?   @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  deliveries CampaignDelivery[]
+
+  @@map("marketing_campaigns")
+}
+
+enum CampaignDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  // The recipient has opted out of this channel/messageType combination
+  // (CUST-002) - never sent, never a fake success.
+  SKIPPED_OPTOUT
+  // No reachable address exists for this channel: EMAIL with a null
+  // Customer.email, or PUSH (this codebase has no device-token
+  // registration flow anywhere - an honest, documented scope boundary,
+  // the same kind M19 (photo upload) and M08 (S3 client) each recorded
+  // rather than fabricating a fake destination).
+  SKIPPED_NO_ADDRESS
+}
+
+// One row per (campaign, customer) - the @@unique below is what makes
+// re-triggering a send on an already-SENDING/SENT campaign a safe
+// no-op rather than a double-send, mirroring PromotionRedemption's own
+// per-checkout-session uniqueness idiom.
+model CampaignDelivery {
+  id                String                 @id @default(uuid())
+  campaignId        String
+  customerId        String
+  status            CampaignDeliveryStatus @default(PENDING)
+  providerMessageId String?
+  errorMessage      String?
+  sentAt            DateTime?
+  createdAt         DateTime               @default(now())
+
+  campaign MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, customerId])
+  @@index([customerId])
+  @@map("campaign_deliveries")
 }

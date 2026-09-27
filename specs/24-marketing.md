@@ -1,6 +1,6 @@
 # 24. Marketing
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `MKT-001`, `CUST-002`)
+**Status:** IMPLEMENTED (built 2026-09-27; not yet independently reviewed — see `acceptance/m25-marketing.md`; decided 2026-09-22, see `blueprint/DECISION_REGISTER.md` `MKT-001`, `CUST-002`)
 
 ## Purpose
 

@@ -189,6 +189,20 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((v) => v === 'true'),
+
+  // --- Marketing (M25, specs/24-marketing.md, MKT-001) ---
+  // Provider abstraction, same pattern as SHIPPING_PROVIDER/PAYMENT_PROVIDER
+  // - marketing/notification logic never couples to one messaging vendor's
+  // SDK directly. No launch provider selected (MKT-001: "deferred to
+  // operational decision") - the only implementation shipped is MOCK, a
+  // genuine deterministic test/reference double, never presented as a
+  // production SMS/WhatsApp/Email/Push integration.
+  MARKETING_PROVIDER: z.string().default('MOCK'),
+  // A campaign stuck in SENDING for longer than this (the process that
+  // claimed it crashed mid-send) is safe to reclaim - the same age-based
+  // recovery idiom RefundService.claimProcessing/PaymentService.
+  // expireStalePayments already established.
+  MARKETING_SENDING_STALE_SECONDS: z.coerce.number().int().positive().default(600),
 });
 
 export type Env = z.infer<typeof envSchema>;

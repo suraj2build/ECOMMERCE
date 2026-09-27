@@ -37,7 +37,10 @@ const COMMUNICATION_MESSAGE_TYPES: CommunicationMessageType[] = [
 // notification-delivery enforcement for legally-required transactional
 // messages is a separate, not-yet-defined policy question - see the
 // M22 certification-repair note on setCommunicationPreferences below.
-const TRANSACTIONAL_MESSAGE_TYPES: ReadonlySet<CommunicationMessageType> = new Set(['ORDER_UPDATES']);
+// Exported for reuse by MarketingService (M25) - a campaign send must
+// resolve the SAME opted-in default this preference center itself uses,
+// never a second, independently-drifting definition of it.
+export const TRANSACTIONAL_MESSAGE_TYPES: ReadonlySet<CommunicationMessageType> = new Set(['ORDER_UPDATES']);
 
 /**
  * M22 Customer 360 (specs/21-customer-profile.md): profile, address book,

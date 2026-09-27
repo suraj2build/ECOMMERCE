@@ -6,10 +6,10 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-27: `M22_ENGINEERING_CERTIFIED — M23 (LOYALTY)
-AND M24 (PROMOTIONS) BUILD COMPLETE, AWAITING INDEPENDENT REVIEW — M25
-OVERNIGHT COMMERCIAL-ENGAGEMENT PHASE IN PROGRESS. M26+ NOT
-AUTHORIZED.`**
+**Status as of 2026-09-27: `M22_ENGINEERING_CERTIFIED — M23 (LOYALTY),
+M24 (PROMOTIONS) AND M25 (MARKETING) BUILD COMPLETE, AWAITING
+INDEPENDENT REVIEW — THE M23+M24+M25 OVERNIGHT COMMERCIAL-ENGAGEMENT
+PHASE IS NOW COMPLETE. M26+ NOT AUTHORIZED.`**
 
 **On 2026-09-26 the independent reviewer recorded the M22 certification-
 repair build — commit `137429a485899a188b97d6549c14d47f55090152` on
@@ -183,6 +183,83 @@ discipline applied at every milestone since Phase 1, that determination
 belongs to the independent reviewer. This agent continues on to M25
 (Marketing) per the same overnight authorization, without stopping for
 M23's or M24's own review, exactly as that authorization specifies.
+
+**M25 (Marketing) is now built** (2026-09-27), the third and final
+milestone of this authorized phase, on top of M23's and M24's own
+(not-yet-independently-reviewed) builds. Customer segmentation
+(`CustomerSegment`: `minLifetimeOrderCount`/`minLifetimeSpend`/
+`loyaltyTierId` criteria) resolves membership as a LIVE query against
+real `Order`/`LoyaltyAccount` data — deliberately never a stored
+membership snapshot or a generalized query DSL/rule engine, per this
+phase's own explicit "no general workflow engine" boundary. Campaign
+scheduling and outbound messaging (`MarketingCampaign`/
+`CampaignDelivery`) go through a `MarketingProvider` abstraction
+(`services/commerce-api/src/modules/marketing/provider.ts`) — the same
+boundary discipline as `ShippingProvider`/`PaymentProvider`:
+`MarketingService` depends only on the interface, never a vendor SDK
+directly. No launch provider was selected (`MKT-001`: "deferred to
+operational decision") — the only implementation shipped is
+`MockMarketingProvider`, a genuine deterministic double that genuinely
+fails on a malformed/empty destination address rather than
+unconditionally fabricating success, satisfying this phase's own "no
+fake campaign delivery success" rule. `MarketingCampaign`/
+`CampaignDelivery` reuse the EXISTING M22 `CommunicationChannel`/
+`CommunicationMessageType` enums and `CommunicationPreference` opt-in
+matrix (`CUST-002`) verbatim — never a second, parallel consent model;
+a campaign's `messageType` is restricted at creation time to genuine
+marketing types (`OFFERS_AND_PROMOTIONS`/`PRODUCT_RECOMMENDATIONS`/
+`NEWSLETTER`) — `ORDER_UPDATES` is rejected, since it is reserved for
+transactional messaging this milestone does not touch. A campaign send
+is a concurrency-safe compare-and-swap on `MarketingCampaign.status`
+(DRAFT/SCHEDULED → SENDING), the exact idiom
+`RefundService.claimProcessing` already established, with per-recipient
+idempotency via `CampaignDelivery`'s own `(campaignId, customerId)`
+uniqueness — proven under genuine `Promise.all` concurrency (two
+simultaneous send triggers on the same campaign, no intervening
+`await`) to converge to exactly one sender, never a double-send; a
+re-send of an already-SENT campaign is a safe no-op. Every delivery
+outcome is honest, never fabricated: an opted-out recipient is
+`SKIPPED_OPTOUT`; a recipient with no reachable address for the channel
+(a null `Customer.email` for EMAIL, or PUSH — which has no device-token
+registration flow anywhere in this codebase, an honest documented scope
+boundary the same kind as M19's photo-upload and M08's S3-client gaps)
+is `SKIPPED_NO_ADDRESS`; a genuine provider failure is `FAILED`. Segment
+and campaign read routes return recipient COUNTS only
+(`GET /marketing/segments/:id/recipient-count`), never the underlying
+customer list, satisfying this milestone's own data-minimization
+requirement. No dedicated admin frontend exists anywhere in this
+codebase (only `apps/storefront`) — the minimal staff API surface,
+gated by newly-separated `campaign:manage`/`campaign:read` permissions
+(deliberately not bundled into the pre-existing `marketing:manage`,
+which covers content/collections, so a future audit can distinguish
+"content operations" from "customer messaging campaigns" by permission
+alone), is the complete deliverable, consistent with every other
+staff-only milestone in this codebase. 15 new adversarial integration
+tests (`test/integration/marketing.test.ts`: segmentation by real
+order-count/spend/loyalty-tier data, campaign-messageType validation,
+opt-out/no-address/PUSH honest-skip enforcement, a genuine SENT
+delivery with a real `MockMarketingProvider` call recording a real
+`providerMessageId`, idempotent re-send, 1 genuine `Promise.all`
+concurrency test, cancel/send terminal-state guards, and staff RBAC) —
+zero regressions to the full M00–M24 suite (537/550 backend tests
+passing, the same 13 pre-existing Meilisearch-unavailable-in-sandbox
+failures, unrelated to this build). No dedicated browser E2E flow was
+required or built: M25 is a staff-only capability with no
+storefront-facing surface at all (`acceptance/e2e-commerce-flows.md`
+has no Marketing flow to cover). Full clean-state validation: lint and
+build clean across every workspace; migration-from-zero (29
+migrations, zero schema drift, confirmed via a direct `prisma migrate
+diff --exit-code` check against a freshly-created database). See
+`acceptance/m25-marketing.md` for the complete Definition of Done and
+`MKT-001` in `blueprint/DECISION_REGISTER.md` for the design record,
+now including this milestone's implementation note. **This agent does
+not self-declare M25 certified** — per the same discipline applied at
+every milestone since Phase 1, that determination belongs to the
+independent reviewer. **This concludes the M23+M24+M25 Overnight
+Commercial-Engagement Phase authorization in full.** This agent has
+stopped and is awaiting independent review of all three milestones.
+M26 and every later milestone remain unauthorized regardless of how
+cleanly this phase lands.
 
 **On 2026-09-26 the independent reviewer recorded the repaired
 Post-Purchase Phase build — commit

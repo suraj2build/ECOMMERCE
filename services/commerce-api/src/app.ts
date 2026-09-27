@@ -35,6 +35,7 @@ import exchangeRoutes from './modules/exchanges/routes.js';
 import customerProfileRoutes from './modules/customer-profile/routes.js';
 import loyaltyRoutes from './modules/loyalty/routes.js';
 import promotionsRoutes from './modules/promotions/routes.js';
+import marketingRoutes from './modules/marketing/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -147,6 +148,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(customerProfileRoutes, { prefix: '/api/v1' });
   await app.register(loyaltyRoutes, { prefix: '/api/v1' });
   await app.register(promotionsRoutes, { prefix: '/api/v1' });
+  await app.register(marketingRoutes, { prefix: '/api/v1' });
 
   return app;
 }
