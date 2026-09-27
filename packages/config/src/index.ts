@@ -178,6 +178,17 @@ const envSchema = z.object({
   // "MUST be configurable" - explicitly contrasted with store credit,
   // which never expires, REF-002).
   LOYALTY_POINTS_EXPIRY_DAYS: z.coerce.number().int().positive().default(365),
+
+  // --- Promotions (M24, specs/23-promotions.md, TAX-006) ---
+  // Pre-tax by default (common practice) - a configurable computation
+  // flag so it can be switched post-TAX-001-verification, per TAX-006's
+  // own explicit decision. Never a per-promotion setting - this is a
+  // single system-wide invoice-presentation/compliance flag, not a
+  // marketing parameter.
+  PROMOTIONS_DISCOUNT_PRETAX: z
+    .string()
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

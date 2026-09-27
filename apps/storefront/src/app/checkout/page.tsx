@@ -8,7 +8,7 @@ import { getCart, type CartView } from '@/lib/cart';
 import { previewCheckout, startCheckout, type Address, type CheckoutPreview } from '@/lib/checkout';
 import { INDIAN_STATES } from '@/lib/indian-states';
 import { getStoredSession } from '@/lib/customer-auth';
-import { getLoyaltyBalance, type LoyaltyBalance } from '@/lib/account';
+import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance } from '@/lib/account';
 
 const EMPTY_ADDRESS: Address = { line1: '', line2: '', landmark: '', city: '', state: '', stateCode: '', pincode: '' };
 
@@ -46,6 +46,16 @@ export default function CheckoutPage() {
   const [loyaltyBalance, setLoyaltyBalance] = useState<LoyaltyBalance | null>(null);
   const [redeemPointsInput, setRedeemPointsInput] = useState('');
 
+  // M24 (specs/23-promotions.md): the customer types a code and applies
+  // it explicitly; `appliedCouponCode` (not the raw input) drives the
+  // live server-revalidated preview, so a half-typed code never looks
+  // like it's already discounting the order.
+  const [couponCodeInput, setCouponCodeInput] = useState('');
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | undefined>(undefined);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [storeCreditBalance, setStoreCreditBalance] = useState<StoreCreditBalance | null>(null);
+  const [storeCreditInput, setStoreCreditInput] = useState('');
+
   useEffect(() => {
     void getCart().then(setCart);
     if (getStoredSession()) {
@@ -53,6 +63,9 @@ export default function CheckoutPage() {
         .then(setLoyaltyBalance)
         .catch(() => setLoyaltyBalance(null));
     }
+    getStoreCredit()
+      .then(setStoreCreditBalance)
+      .catch(() => setStoreCreditBalance(null));
   }, []);
 
   useEffect(() => {
@@ -62,17 +75,35 @@ export default function CheckoutPage() {
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      void previewCheckout(shippingAddress)
+      void previewCheckout(shippingAddress, appliedCouponCode)
         .then((p) => {
           if (!cancelled) {
             setPreview(p);
             setPreviewError(null);
+            // A successful preview (with or without a coupon) always
+            // supersedes any earlier coupon-specific error.
+            setCouponError(null);
           }
         })
         .catch((err) => {
           if (!cancelled) {
-            setPreview(null);
-            setPreviewError(err instanceof Error ? err.message : 'Could not calculate your order total.');
+            const message = err instanceof Error ? err.message : 'Could not calculate your order total.';
+            if (appliedCouponCode) {
+              // A coupon that failed revalidation (expired/usage-cap
+              // reached between typing and this preview) is reported
+              // as a coupon-specific error and removed - the order
+              // review itself is left showing whatever it last
+              // successfully computed (e.g. an automatic promotion
+              // that's still valid on its own), never blanked out just
+              // because the coupon attempt failed. Removing it re-runs
+              // this same effect (appliedCouponCode is a dependency),
+              // which re-fetches a coupon-free preview immediately.
+              setCouponError(message);
+              setAppliedCouponCode(undefined);
+            } else {
+              setPreview(null);
+              setPreviewError(message);
+            }
           }
         });
     }, 400);
@@ -80,7 +111,19 @@ export default function CheckoutPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [shippingAddress.line1, shippingAddress.city, shippingAddress.stateCode, shippingAddress.pincode]);
+  }, [shippingAddress.line1, shippingAddress.city, shippingAddress.stateCode, shippingAddress.pincode, appliedCouponCode]);
+
+  function handleApplyCoupon() {
+    setCouponError(null);
+    if (!couponCodeInput.trim()) return;
+    setAppliedCouponCode(couponCodeInput.trim());
+  }
+
+  function handleRemoveCoupon() {
+    setAppliedCouponCode(undefined);
+    setCouponCodeInput('');
+    setCouponError(null);
+  }
 
   async function handlePlaceOrder(e: React.FormEvent) {
     e.preventDefault();
@@ -91,6 +134,7 @@ export default function CheckoutPage() {
     }
     setSubmitting(true);
     const redeemPoints = loyaltyBalance ? parseInt(redeemPointsInput, 10) : NaN;
+    const storeCreditToApply = storeCreditBalance ? parseFloat(storeCreditInput) : NaN;
     try {
       const session = await startCheckout({
         contactName,
@@ -101,6 +145,8 @@ export default function CheckoutPage() {
         paymentMethod,
         idempotencyKey,
         loyaltyPointsToRedeem: Number.isFinite(redeemPoints) && redeemPoints > 0 ? redeemPoints : undefined,
+        couponCode: appliedCouponCode,
+        storeCreditToApply: Number.isFinite(storeCreditToApply) && storeCreditToApply > 0 ? storeCreditToApply : undefined,
       });
       window.dispatchEvent(new Event('fcp:cart-updated'));
       router.push(`/checkout/${session.id}`);
@@ -210,6 +256,63 @@ export default function CheckoutPage() {
               />
             </fieldset>
           )}
+
+          <fieldset className="space-y-2">
+            <legend className="font-display text-lg text-ink">Coupon code</legend>
+            {appliedCouponCode ? (
+              <div className="flex min-h-[44px] items-center justify-between rounded-sm border border-border px-3">
+                <span className="text-sm text-ink">
+                  {appliedCouponCode} applied
+                  {preview && preview.promotionDiscountTotal > 0 ? ` - you saved ₹${preview.promotionDiscountTotal}` : ''}
+                </span>
+                <button type="button" onClick={handleRemoveCoupon} className="text-xs font-medium text-ink underline underline-offset-2">
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <label htmlFor="coupon-code" className="sr-only">
+                  Coupon code
+                </label>
+                <input
+                  id="coupon-code"
+                  type="text"
+                  placeholder="Coupon code"
+                  value={couponCodeInput}
+                  onChange={(e) => setCouponCodeInput(e.target.value.toUpperCase())}
+                  className="block min-h-[44px] w-full max-w-[200px] rounded-sm border border-border px-3 text-sm text-ink"
+                />
+                <button type="button" onClick={handleApplyCoupon} className={buttonClassName('secondary', 'min-h-[44px]')}>
+                  Apply
+                </button>
+              </div>
+            )}
+            {couponError && (
+              <p role="alert" className="text-xs text-danger">
+                {couponError}
+              </p>
+            )}
+          </fieldset>
+
+          {storeCreditBalance && storeCreditBalance.balance > 0 && (
+            <fieldset className="space-y-2">
+              <legend className="font-display text-lg text-ink">Store credit</legend>
+              <p className="text-sm text-ink-muted">You have ₹{storeCreditBalance.balance} of store credit available.</p>
+              <label htmlFor="store-credit-amount" className="sr-only">
+                Store credit to apply
+              </label>
+              <input
+                id="store-credit-amount"
+                type="number"
+                min={0}
+                max={storeCreditBalance.balance}
+                placeholder="Amount to apply"
+                value={storeCreditInput}
+                onChange={(e) => setStoreCreditInput(e.target.value.replace(/[^0-9.]/g, ''))}
+                className="block min-h-[44px] w-full max-w-[200px] rounded-sm border border-border px-3 text-sm text-ink"
+              />
+            </fieldset>
+          )}
         </div>
 
         <div className="h-fit rounded-sm border border-border p-6">
@@ -229,6 +332,12 @@ export default function CheckoutPage() {
                   Delivery is not currently available to this PIN code.
                 </p>
               )}
+              {preview.promotionDiscountTotal > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">Discount ({preview.appliedPromotions.map((p) => p.name).join(', ')})</span>
+                  <span className="text-ink">-&#8377;{preview.promotionDiscountTotal}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-ink-muted">Subtotal</span>
                 <span className="text-ink">&#8377;{preview.subtotal}</span>
@@ -245,6 +354,12 @@ export default function CheckoutPage() {
                 <p className="text-xs text-ink-muted">
                   {parseInt(redeemPointsInput, 10)} loyalty points will be applied at checkout - the final amount payable is
                   shown on your order confirmation.
+                </p>
+              )}
+              {storeCreditBalance && parseFloat(storeCreditInput) > 0 && (
+                <p className="text-xs text-ink-muted">
+                  ₹{storeCreditInput} of store credit will be applied at checkout - the final amount payable is shown on
+                  your order confirmation.
                 </p>
               )}
             </div>

@@ -237,6 +237,23 @@ incompatible second coupon is rejected with a clear reason while the
 first remains applied; final charged amount is arithmetically correct
 across all three reductions.
 
+**M24 implementation note (2026-09-27):** proven end to end in
+`test/e2e-storefront/promotions.spec.ts` — a real mobile-OTP sign-in
+drives an automatic 10%-off promotion applying with no code, then an
+incompatible coupon (sharing the automatic promotion's `stackGroup`)
+being rejected in the browser with a "cannot be combined" message
+while the automatic promotion's own discount line remains visible,
+then a compatible coupon (a different `stackGroup`) successfully
+stacking with it (combined discount amount explicitly waited for
+before any total is read, since the real preview re-fetch is
+debounced/network-backed and the "applied" chip appears optimistically
+sooner), then store credit applied on top, then a real COD order
+placed. Server-side, verified via Prisma that exactly the two
+compatible `PromotionRedemption` rows exist for the resulting order
+(never the rejected one), and that the confirmation page's
+`amountPayable` equals `grandTotal` minus the applied store credit,
+computed from the UI's own displayed numbers — 1/1 passing.
+
 ## FLOW 19 — Unauthorized Admin Action Blocked
 
 **Preconditions:** Authenticated sessions for at least: Warehouse

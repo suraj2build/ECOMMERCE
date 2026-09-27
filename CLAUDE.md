@@ -7,8 +7,9 @@ including future sessions that have no memory of this one.
 ## 0. Current project stage — READ FIRST
 
 **Status as of 2026-09-27: `M22_ENGINEERING_CERTIFIED — M23 (LOYALTY)
-BUILD COMPLETE, AWAITING INDEPENDENT REVIEW — M24/M25 OVERNIGHT
-COMMERCIAL-ENGAGEMENT PHASE IN PROGRESS. M26+ NOT AUTHORIZED.`**
+AND M24 (PROMOTIONS) BUILD COMPLETE, AWAITING INDEPENDENT REVIEW — M25
+OVERNIGHT COMMERCIAL-ENGAGEMENT PHASE IN PROGRESS. M26+ NOT
+AUTHORIZED.`**
 
 **On 2026-09-26 the independent reviewer recorded the M22 certification-
 repair build — commit `137429a485899a188b97d6549c14d47f55090152` on
@@ -93,6 +94,95 @@ to the independent reviewer. This agent continues on to M24
 for M23's own review, exactly as that authorization specifies
 ("built sequentially... without stopping for approval between those
 milestones").
+
+**M24 (Promotions) is now built** (2026-09-27), the second of the
+three authorized milestones, on top of M23's own (not-yet-independently-
+reviewed) build. An extensible `PromotionType` reference table (`id`,
+`key` @unique, `name` — never a fixed enum, satisfying `PROMO-001`'s
+explicit extensibility requirement, seeded illustratively with
+`PROMOTIONAL`/`CAMPAIGN`/`ONBOARDING`/`CASHBACK`) plus `Promotion`
+(coupon-code or automatic, `discountType` PERCENTAGE/FLAT_AMOUNT,
+`minCartValue`, `maxDiscountAmount`, `usageLimitTotal`/
+`usageLimitPerCustomer`) and `PromotionRedemption`
+(HOLD/CONVERTED/RELEASED — the same reservation-lifecycle idiom M23's
+own `LoyaltyRedemptionHold` and M06's `InventoryReservation` already
+use). Stacking compatibility is rule-driven via `Promotion.stackGroup`
+(nullable) + `priority` (int, tie-broken by `id`), per `PROMO-002` —
+never a hard-coded per-combination table: two promotions sharing a
+non-null `stackGroup` are mutually exclusive; automatic promotions
+resolve first, greedily by priority; a requested coupon sharing a
+`stackGroup` with an already-chosen automatic promotion is rejected by
+name (the automatic promotion is never silently dropped), giving
+deterministic precedence independent of DB iteration order. Each
+promotion's discount is computed independently against the original
+pre-discount subtotal (never sequentially compounded); the combined
+total is capped at the subtotal, with any capping-overage removed from
+the lowest-priority promotion first — a documented engineering
+default. Concurrency-safe usage caps: `reserveForCheckout` row-locks
+each candidate `Promotion` (`SELECT ... FOR UPDATE`) and COUNTS
+existing HOLD/CONVERTED `PromotionRedemption` rows under that lock,
+deliberately never a separately-incrementing counter — proven to
+converge to exactly one winner under a genuine `Promise.all`
+single-use-coupon race. Discounts apply pre-tax by default
+(`PROMOTIONS_DISCOUNT_PRETAX`, default `true`, per `TAX-006`):
+`CheckoutService.priceLines` computes the resolved discount total,
+allocates it pro-rata across lines by each line's undiscounted share
+(rounding remainder assigned to the last line for an exact-sum
+guarantee), and reduces each line's taxable value by that share
+**before** calling the pre-existing, unmodified `splitTax` function —
+satisfying "without rewriting tax logic" without ever touching
+`splitTax` itself; `unitPriceInclusive` is preserved unchanged for
+invoice presentation, and a new `discountAmountSnapshot` field records
+each line's own discount share separately, copied onto `OrderLine` at
+order creation. Net-new checkout-time store-credit redemption (M20
+only ever built ISSUE) is modeled as `StoreCreditRedemptionHold`, a
+structural mirror of `LoyaltyRedemptionHold` — this build's own
+adversarial testing caught and fixed a genuine bug where the REDEEM
+ledger entry initially stored a negative `amount`, violating the
+pre-existing `store_credit_entries_amount_positive_check` DB
+constraint (written when only ISSUE existed); fixed by storing a
+positive magnitude, since the entry's `type` column, not the sign of
+`amount`, is what determines balance direction — the constraint's
+original design intent. A real customer-facing coupon apply/remove UI
+on the checkout page re-fetches the server-authoritative preview on
+every coupon change — a stale or rejected coupon never silently keeps
+a client-computed discount displayed. 17 new adversarial integration
+tests (`test/integration/promotions.test.ts`: automatic-promotion
+eligibility/exclusion, coupon validation/stacking/conflict, pre-tax
+line-level exactness with no rounding drift, store-credit reserve/
+convert/over-request, 2 genuine `Promise.all` concurrency tests — a
+store-credit overspend race and a single-use-coupon race — and staff
+RBAC) plus 1 new browser E2E test
+(`test/e2e-storefront/promotions.spec.ts`, FLOW 18) driving a real
+mobile-OTP sign-in through an automatic promotion applying with no
+code, an incompatible coupon being rejected in the browser while the
+automatic promotion's discount line remains visible, a compatible
+coupon then stacking with it, store credit applying on top, and a real
+COD order placed — verified server-side via Prisma that exactly the
+two compatible `PromotionRedemption` rows exist (never the incompatible
+one) and that the confirmation page's `amountPayable` matches the UI's
+own displayed arithmetic. One honest scope boundary was documented
+rather than guessed, in `specs/23-promotions.md`'s own
+`## DECISION_REQUIRED` block: whether a coupon's usage count should be
+restored after the order that consumed it is later cancelled is
+explicitly unresolved — current behavior (a `CONVERTED`
+`PromotionRedemption` is permanent once an order confirms) is option
+(a)'s behavior by omission, not a considered choice. Full clean-state
+validation: lint/build clean across every touched package; migration-
+from-zero (28 migrations, zero schema drift, confirmed via a direct
+`prisma migrate diff --exit-code` check against a freshly-created
+database); the full pre-existing backend integration suite re-run with
+zero regressions (522/535 passing, the same 13 pre-existing
+Meilisearch-unavailable-in-sandbox failures, unrelated to this build);
+the full Playwright storefront E2E suite green. See
+`acceptance/m24-promotions.md` for the complete Definition of Done and
+`PROMO-001`/`002`/`TAX-006` in `blueprint/DECISION_REGISTER.md` for the
+design record, now including each decision's M24 implementation note.
+**This agent does not self-declare M24 certified** — per the same
+discipline applied at every milestone since Phase 1, that determination
+belongs to the independent reviewer. This agent continues on to M25
+(Marketing) per the same overnight authorization, without stopping for
+M23's or M24's own review, exactly as that authorization specifies.
 
 **On 2026-09-26 the independent reviewer recorded the repaired
 Post-Purchase Phase build — commit

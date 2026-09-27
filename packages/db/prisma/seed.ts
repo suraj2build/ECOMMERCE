@@ -258,6 +258,21 @@ async function main() {
     await prisma.loyaltyTier.upsert({ where: { name: tier.name }, update: {}, create: tier });
   }
 
+  // --- Promotion types (M24, specs/23-promotions.md, PROMO-001) ---
+  // A reference TABLE, not a fixed enum - PROMO-001's own explicit
+  // "extensible" requirement. This seed list is illustrative starter
+  // data (the exact set PROMO-001 names), never a closed/hard-coded
+  // set - staff can add a new type via data alone.
+  const PROMOTION_TYPES = [
+    { key: 'PROMOTIONAL', name: 'Promotional coupon' },
+    { key: 'CAMPAIGN', name: 'Campaign coupon' },
+    { key: 'ONBOARDING', name: 'Onboarding coupon' },
+    { key: 'CASHBACK', name: 'Cashback-related benefit' },
+  ];
+  for (const type of PROMOTION_TYPES) {
+    await prisma.promotionType.upsert({ where: { key: type.key }, update: {}, create: type });
+  }
+
   // --- Bootstrap Super Admin staff user (dev/test only) ---
   const superAdminEmail = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@example.com';
   const superAdminPassword = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe123!';

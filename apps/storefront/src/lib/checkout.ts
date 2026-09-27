@@ -61,6 +61,13 @@ export interface Address {
   pincode: string;
 }
 
+export interface AppliedPromotion {
+  promotionId: string;
+  name: string;
+  isCoupon: boolean;
+  discountAmount: number;
+}
+
 export interface CheckoutPreview {
   isServiceable: boolean;
   codAvailable: boolean;
@@ -68,6 +75,8 @@ export interface CheckoutPreview {
   lines: { skuId: string; quantity: number; unitPriceInclusive: number; lineTotalInclusive: number }[];
   subtotal: number;
   taxAmount: number;
+  promotionDiscountTotal: number;
+  appliedPromotions: AppliedPromotion[];
   shippingCost: number;
   grandTotal: number;
 }
@@ -83,6 +92,10 @@ export interface StartCheckoutInput {
   // M23 (specs/22-loyalty.md) - ignored for a guest checkout (loyalty
   // requires a signed-in customer identity).
   loyaltyPointsToRedeem?: number;
+  // M24 (specs/23-promotions.md) - server-revalidated at submission,
+  // never trusted from a client-side preview computation alone.
+  couponCode?: string;
+  storeCreditToApply?: number;
 }
 
 export interface CheckoutSessionView {
@@ -107,6 +120,7 @@ export interface CheckoutSessionView {
   loyaltyPointsRedeemed: number;
   loyaltyRedemptionValue: number;
   storeCreditApplied: number;
+  promotionDiscountTotal: number;
   amountPayable: number;
   currency: string;
   lines: { skuId: string; styleName: string; colourName: string; sizeLabel: string; quantity: number; unitPriceInclusive: number; lineTotalInclusive: number }[];
@@ -114,10 +128,10 @@ export interface CheckoutSessionView {
   confirmedAt: string | null;
 }
 
-export const previewCheckout = (shippingAddress: Address) =>
+export const previewCheckout = (shippingAddress: Address, couponCode?: string) =>
   checkoutFetch<CheckoutPreview>('/api/v1/storefront/checkout/preview', {
     method: 'POST',
-    body: JSON.stringify({ shippingAddress }),
+    body: JSON.stringify({ shippingAddress, couponCode: couponCode || undefined }),
   });
 
 export const startCheckout = (input: StartCheckoutInput) =>

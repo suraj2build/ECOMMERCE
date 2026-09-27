@@ -113,6 +113,9 @@ model Customer {
   // M23 Loyalty (specs/22-loyalty.md)
   loyaltyAccount LoyaltyAccount?
 
+  // M24 Promotions (specs/23-promotions.md)
+  promotionRedemptions PromotionRedemption[]
+
   @@map("customers")
 }
 
@@ -1546,12 +1549,19 @@ model CheckoutSession {
   loyaltyPointsRedeemed  Int                   @default(0)
   loyaltyRedemptionValue Decimal               @default(0) @db.Decimal(10, 2)
   storeCreditApplied     Decimal               @default(0) @db.Decimal(10, 2)
+  // M24 (specs/23-promotions.md): sum of every PromotionRedemption's
+  // discountAmount applied to this session - informational rollup only,
+  // the per-line discountAmountSnapshot values are the source of truth
+  // for invoice presentation (TAX-006).
+  promotionDiscountTotal Decimal               @default(0) @db.Decimal(10, 2)
 
-  customer              Customer?              @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  lines                 CheckoutSessionLine[]
-  payments              Payment[]
-  order                 Order?
-  loyaltyRedemptionHold LoyaltyRedemptionHold?
+  customer                  Customer?                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines                     CheckoutSessionLine[]
+  payments                  Payment[]
+  order                     Order?
+  loyaltyRedemptionHold     LoyaltyRedemptionHold?
+  promotionRedemptions      PromotionRedemption[]
+  storeCreditRedemptionHold StoreCreditRedemptionHold?
 
   @@index([status])
   @@map("checkout_sessions")
@@ -1560,17 +1570,24 @@ model CheckoutSession {
 // Frozen line-item snapshot, the same discipline as InvoiceLine - never
 // re-derived from current product/price data after creation.
 model CheckoutSessionLine {
-  id                   String  @id @default(uuid())
-  checkoutSessionId    String
-  skuId                String
-  locationId           String
-  quantity             Int
-  unitPriceInclusive   Decimal @db.Decimal(10, 2)
-  taxableValueSnapshot Decimal @db.Decimal(10, 2)
-  gstRatePercent       Decimal @db.Decimal(5, 2)
-  taxAmountSnapshot    Decimal @db.Decimal(10, 2)
-  lineTotalInclusive   Decimal @db.Decimal(10, 2)
-  reservationId        String? // plain reference to InventoryReservation.id
+  id                     String  @id @default(uuid())
+  checkoutSessionId      String
+  skuId                  String
+  locationId             String
+  quantity               Int
+  unitPriceInclusive     Decimal @db.Decimal(10, 2)
+  // M24 (specs/23-promotions.md, TAX-006): this line's own pro-rata
+  // share of the order-level promotion discount, applied PRE-TAX -
+  // taxableValueSnapshot/taxAmountSnapshot/lineTotalInclusive below are
+  // already computed on the POST-discount value; unitPriceInclusive
+  // above stays the ORIGINAL undiscounted price, so both numbers
+  // remain independently visible for invoice presentation.
+  discountAmountSnapshot Decimal @default(0) @db.Decimal(10, 2)
+  taxableValueSnapshot   Decimal @db.Decimal(10, 2)
+  gstRatePercent         Decimal @db.Decimal(5, 2)
+  taxAmountSnapshot      Decimal @db.Decimal(10, 2)
+  lineTotalInclusive     Decimal @db.Decimal(10, 2)
+  reservationId          String? // plain reference to InventoryReservation.id
 
   checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
   sku             Sku             @relation(fields: [skuId], references: [id], onDelete: Restrict)
@@ -1898,6 +1915,9 @@ model Order {
   loyaltyPointsRedeemed  Int                   @default(0)
   loyaltyRedemptionValue Decimal               @default(0) @db.Decimal(10, 2)
   storeCreditApplied     Decimal               @default(0) @db.Decimal(10, 2)
+  // M24 (specs/23-promotions.md): frozen copy of the CheckoutSession's
+  // own total at order-creation time - never re-derived.
+  promotionDiscountTotal Decimal               @default(0) @db.Decimal(10, 2)
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
@@ -1936,6 +1956,9 @@ model OrderLine {
   locationId                 String
   quantity                   Int
   unitPriceInclusive         Decimal         @db.Decimal(10, 2)
+  // M24 (specs/23-promotions.md, TAX-006) - see CheckoutSessionLine's
+  // own docblock; copied unchanged from that row at order creation.
+  discountAmountSnapshot     Decimal         @default(0) @db.Decimal(10, 2)
   taxableValueSnapshot       Decimal         @db.Decimal(10, 2)
   gstRatePercent             Decimal         @db.Decimal(5, 2)
   taxAmountSnapshot          Decimal         @db.Decimal(10, 2)
@@ -2421,6 +2444,11 @@ enum RefundStatus {
 // design was finalized and so were kept rather than reset).
 enum StoreCreditEntryType {
   ISSUE
+  // M24: checkout-time redemption (specs/23-promotions.md stacking,
+  // LOY-005) - the first REDEEM this codebase's store-credit ledger
+  // has ever needed; posted only at order confirmation, mirroring
+  // ISSUE's own transactional balance-update discipline exactly.
+  REDEEM
 }
 
 // One row per (orderId, orderLineId) that has ever qualified for a refund
@@ -2505,8 +2533,9 @@ model StoreCreditAccount {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  customer Customer?          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customer Customer?                   @relation(fields: [customerId], references: [id], onDelete: Restrict)
   entries  StoreCreditEntry[]
+  holds    StoreCreditRedemptionHold[]
 
   @@map("store_credit_accounts")
 }
@@ -3064,4 +3093,162 @@ model LoyaltyRedemptionHold {
   @@index([accountId, status])
   @@index([status, expiresAt])
   @@map("loyalty_redemption_holds")
+}
+
+// --- M24 Promotions (specs/23-promotions.md, PROMO-001/002, TAX-006) ---
+//
+// Structurally separate from Loyalty (points/tiers) and from
+// StoreCredit (cashback/refund value) - PROMO-001's own four-distinct-
+// concepts requirement. The promotion TYPE system is a reference table
+// (PromotionType), not a fixed enum, so a new coupon category
+// (promotional/campaign/onboarding/cashback/etc, or a future one) is
+// data, never a schema/code change - PROMO-001's explicit
+// "extensible, not a fixed enum" requirement.
+//
+// Stacking/precedence (PROMO-002, "rule-driven, not hard-coded per
+// combination"): `stackGroup` is a nullable free-text label - two
+// Promotions sharing the SAME non-null stackGroup are mutually
+// exclusive (at most one from that group may apply to one order); a
+// null stackGroup means "no exclusivity group" (stacks with
+// everything it's otherwise eligible to combine with). `priority`
+// gives deterministic application order (lower applies first),
+// tie-broken by `id` - never dependent on database iteration order.
+//
+// Usage caps are enforced with a single atomic conditional UPDATE
+// (`UPDATE ... SET usageCountTotal = usageCountTotal + 1 WHERE ... AND
+// (usageLimitTotal IS NULL OR usageCountTotal < usageLimitTotal)`) -
+// never a read-then-increment - so the last-use race under genuine
+// concurrency has exactly one winner (PromotionService.claimUsage).
+//
+// Checkout-time application is modeled as a PromotionRedemption HOLD
+// (PENDING/CONVERTED/RELEASED), the identical lifecycle idiom
+// LoyaltyRedemptionHold and (below) StoreCreditRedemptionHold already
+// use - never a direct ledger/counter mutation until the order
+// actually confirms.
+//
+// Discount presentation (TAX-006, "pre-tax by default, configurable"):
+// CheckoutSessionLine/OrderLine.discountAmountSnapshot records each
+// line's own discount share separately from its (already-reduced)
+// taxableValueSnapshot - the ORIGINAL undiscounted price
+// (unitPriceInclusive) is preserved unchanged, so an invoice can show
+// original price, discount, and taxable value as three distinct
+// numbers, never just a silently-reduced one with no trace.
+model PromotionType {
+  id   String @id @default(uuid())
+  key  String @unique // e.g. 'PROMOTIONAL', 'CAMPAIGN', 'ONBOARDING', 'CASHBACK' - extensible via data, never a fixed enum
+  name String
+
+  promotions Promotion[]
+
+  @@map("promotion_types")
+}
+
+enum PromotionDiscountType {
+  PERCENTAGE
+  FLAT_AMOUNT
+}
+
+enum PromotionRedemptionStatus {
+  HOLD
+  CONVERTED
+  RELEASED
+}
+
+model Promotion {
+  id                    String                @id @default(uuid())
+  name                  String
+  description           String?
+  promotionTypeId       String
+  // Only a coupon-type Promotion carries a couponCode; an automatic
+  // promotion (isCoupon = false) has couponCode = null and applies
+  // whenever its own eligibility (active window, minCartValue) is met,
+  // with no code entry required (PROMO-001: "support BOTH coupon-code
+  // promotions AND automatic promotions").
+  isCoupon              Boolean               @default(false)
+  couponCode            String?               @unique
+  discountType          PromotionDiscountType
+  discountValue         Decimal               @db.Decimal(10, 2) // percentage (0-100) or a flat INR amount, per discountType
+  maxDiscountAmount     Decimal?              @db.Decimal(10, 2) // cap, meaningful for PERCENTAGE
+  minCartValue          Decimal?              @db.Decimal(10, 2)
+  stackGroup            String?
+  priority              Int                   @default(100)
+  startsAt              DateTime
+  endsAt                DateTime?
+  isActive              Boolean               @default(true)
+  usageLimitTotal       Int?
+  usageCountTotal       Int                   @default(0)
+  usageLimitPerCustomer Int?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  promotionType PromotionType         @relation(fields: [promotionTypeId], references: [id], onDelete: Restrict)
+  redemptions   PromotionRedemption[]
+
+  @@index([isActive, startsAt, endsAt])
+  @@map("promotions")
+}
+
+// One row per Promotion applied to one checkout attempt - HOLD at
+// checkout-session-creation time (mirrors LoyaltyRedemptionHold's own
+// ACTIVE-hold docblock: reserved, never yet counted against
+// usageCountTotal), CONVERTED at order confirmation (the moment
+// usageCountTotal's atomic claim actually posts), RELEASED if the
+// session never confirms (payment failure/expiry sweep). A checkout
+// with both a coupon and one or more eligible automatic promotions
+// gets one row PER promotion, never a single combined row - each is
+// independently traceable/auditable.
+model PromotionRedemption {
+  id                String                    @id @default(uuid())
+  promotionId       String
+  checkoutSessionId String
+  customerId        String?
+  guestSessionId    String?
+  discountAmount    Decimal                   @db.Decimal(10, 2)
+  status            PromotionRedemptionStatus @default(HOLD)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  promotion       Promotion       @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
+  customer        Customer?       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@unique([checkoutSessionId, promotionId])
+  @@index([promotionId, customerId])
+  @@index([status])
+  @@map("promotion_redemptions")
+}
+
+// --- M24 store-credit-at-checkout (specs/33-store-credit-gift-cards.md
+// reuse, PROMO/LOY-005 stacking) ---
+//
+// M20 built ISSUE only (store credit is created as a refund/exchange
+// settlement); no checkout-time REDEEM existed until M24 needed it for
+// FLOW 18's three-way stacking proof. Mirrors LoyaltyRedemptionHold's
+// own ACTIVE/CONVERTED/RELEASED lifecycle exactly, for the identical
+// reason: a HOLD reserves the amount without touching the ledger/
+// balance until the order actually confirms, so two genuinely
+// concurrent checkouts against the same account cannot double-spend
+// the same store credit balance.
+enum StoreCreditHoldStatus {
+  ACTIVE
+  CONVERTED
+  RELEASED
+}
+
+model StoreCreditRedemptionHold {
+  id                String                @id @default(uuid())
+  accountId         String
+  checkoutSessionId String                @unique
+  amount            Decimal               @db.Decimal(10, 2)
+  status            StoreCreditHoldStatus @default(ACTIVE)
+  expiresAt         DateTime
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  account         StoreCreditAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  checkoutSession CheckoutSession    @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, status])
+  @@index([status, expiresAt])
+  @@map("store_credit_redemption_holds")
 }

@@ -1671,6 +1671,7 @@ of what is still needed from anyone, and from whom.
 - **Final decision:** **Store credit may be used together with loyalty and coupon/promotions, subject to promotion/loyalty eligibility and stacking rules** (explicit, §19). Stacking compatibility **MUST be rule-driven/configurable**, mirroring `PROMO-002`.
 - **Affected specs:** `specs/22-loyalty.md`, `specs/23-promotions.md`
 - **M23 implementation note (2026-09-27):** loyalty redemption and store credit can already combine on the same order — `CheckoutSession`/`Order` carry independent `loyaltyRedemptionValue` and `storeCreditApplied` fields, each computed and applied independently, with `amountPayable` netting both. The promotion/coupon side of this stacking (`PROMO-002`) is `DEPENDENCY_DEFERRED — M24` — M24 (Promotions) is the next milestone in this same authorized phase and has not been built yet at the time this note is written.
+- **M24 implementation note (2026-09-27):** promotions/coupons now combine on the same order too — `PromotionService.reserveForCheckout` runs alongside (not instead of) the pre-existing loyalty/store-credit reservation calls inside the same `startCheckout` transaction, and `CheckoutSession`/`Order.promotionDiscountTotal` is a fully independent field from `loyaltyRedemptionValue`/`storeCreditApplied` — no shared "total discount" bucket. See `PROMO-002`'s M24 note for the stacking-compatibility mechanics themselves.
 
 ---
 
@@ -1682,6 +1683,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **Support BOTH coupon-code promotions AND automatic promotions** (explicit, §10). Required types: promotional coupons, campaign coupons, onboarding coupons, cashback-related benefits, and other **configurable** coupon types — the type system itself must be extensible, not a fixed enum.
 - **Affected specs:** `specs/23-promotions.md`
+- **M24 implementation note (2026-09-27):** `PromotionType` is a genuine reference table (`id`, `key` @unique, `name`), never a fixed enum — a new type is a data row, not a code change. Seeded illustratively with `PROMOTIONAL`/`CAMPAIGN`/`ONBOARDING`/`CASHBACK`, satisfying PROMO-001's minimum list. `Promotion.isCoupon` distinguishes a coupon-code promotion from an automatic one; `couponCode` is `@unique` and only set when `isCoupon = true`. See `acceptance/m24-promotions.md`.
 
 #### PROMO-002 — Stacking/precedence rules · **P1**
 - **Question:** Can multiple promotions apply?
@@ -1689,6 +1691,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **One coupon may coexist with explicitly compatible automatic promotions** (explicit, §10). Compatibility/stacking **MUST be rule-driven/configurable** — do not hard-code every promotion combination.
 - **Affected specs:** `specs/23-promotions.md`
+- **M24 implementation note (2026-09-27):** compatibility is rule-driven via `Promotion.stackGroup` (nullable string) + `Promotion.priority` (int, lower = applied first, tie-broken by `id`) — never a hard-coded per-combination table. Two promotions sharing the same non-null `stackGroup` are mutually exclusive; automatic promotions are resolved first, greedily, in priority order (the first-by-priority member of a stackGroup wins it); a requested coupon is then checked against the survivors and rejected (with a reason naming the conflicting promotion) if it shares a stackGroup with one already chosen — the coupon is rejected, never the already-applied automatic promotion silently dropped. Each promotion's discount is computed independently against the original pre-discount subtotal (never sequentially compounded); the combined total is capped at the subtotal, with overage removed from the lowest-priority promotion first — a documented engineering default. Concurrency-safe usage caps: `reserveForCheckout` row-locks each candidate `Promotion` (`SELECT ... FOR UPDATE`) and COUNTS existing HOLD/CONVERTED `PromotionRedemption` rows under that lock, rather than a separately-incrementing counter — proven under genuine `Promise.all` concurrency for a single-use coupon race (`test/integration/promotions.test.ts` test #15). See `acceptance/m24-promotions.md` and `specs/23-promotions.md`'s `DECISION_REQUIRED` block for the one open item (coupon-usage restoration after order cancellation — not yet defined or implemented).
 
 ---
 
@@ -1837,6 +1840,7 @@ spec at minimum).
 - **Status:** DECIDED (engineering default; subject to TAX-001 verification) · **Decision date:** 2026-09-22
 - **Final decision:** Pre-tax discount application by default (common practice), implemented as a configurable computation flag so it can be switched if legal verification under `TAX-001` indicates otherwise.
 - **Affected specs:** `specs/32-india-tax-invoicing.md`, `specs/23-promotions.md`
+- **M24 implementation note (2026-09-27):** `PROMOTIONS_DISCOUNT_PRETAX` (default `true`) gates `CheckoutService.priceLines`. When enabled, the resolved discount total is allocated pro-rata across lines by each line's undiscounted share (rounding remainder assigned to the last line for exact-sum guarantee), and each line's taxable value is reduced by its share **before** calling the pre-existing, unmodified `splitTax` function — `TAX-006`'s "without rewriting tax logic" requirement is satisfied by never touching `splitTax` itself, only its input. `unitPriceInclusive` is preserved unchanged for invoice presentation; a new `discountAmountSnapshot` field records each line's own discount share separately, copied onto `OrderLine` at order creation so the invoice can always independently reconstruct pre-discount vs. post-discount taxable value. Proven exact (no rounding drift across lines) in `test/integration/promotions.test.ts` test #11. Still subject to `TAX-001` legal verification, per this decision's own caveat.
 
 ---
 

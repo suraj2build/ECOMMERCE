@@ -1,6 +1,6 @@
 # 23. Promotions
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `PROMO-001`, `PROMO-002`, `TAX-006`)
+**Status:** IMPLEMENTED (built 2026-09-27; not yet independently reviewed — see `acceptance/m24-promotions.md`; decided 2026-09-22, see `blueprint/DECISION_REGISTER.md` `PROMO-001`, `PROMO-002`, `TAX-006`)
 
 ## Purpose
 
@@ -35,7 +35,30 @@ discounts, and their stacking/precedence rules.
 
 ## Remaining open items
 
-None within this spec's own scope.
+## DECISION_REQUIRED
+
+Question: When an order that redeemed a usage-capped coupon/promotion
+is later cancelled or returned, should that redemption's usage-cap
+"slot" be restored (freeing it for reuse by the same or another
+customer), or does a cancelled order permanently consume its slot?
+
+Why it matters: guessing wrong either lets a customer effectively
+bypass a usage cap via cancel-and-reorder abuse (if restoration is
+wrongly assumed), or unfairly and permanently burns a limited coupon's
+supply on an order that never actually completed (if non-restoration
+is wrongly assumed) - a real financial/marketing-budget impact either
+way, not a cosmetic detail.
+
+Options considered: (a) never restore - conservative default, the one
+implemented pending this decision; (b) restore on cancellation only if
+QC/return-eligibility conditions mirror `RET-005`'s existing
+refund-eligibility gating; (c) restore always, unconditionally.
+
+Current build status (2026-09-27, M24): NOT implemented either way -
+`PromotionService` has no cancellation/return hook at all. A
+CONVERTED `PromotionRedemption` row is permanent once an order
+confirms; this is option (a)'s behavior by omission, not a considered
+choice, and must not be read as this spec settling the question.
 
 ## Acceptance criteria
 

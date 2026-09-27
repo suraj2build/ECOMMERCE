@@ -17,7 +17,7 @@ const addressSchema = z.object({
   pincode: z.string().regex(/^[0-9]{6}$/),
 });
 
-const previewSchema = z.object({ shippingAddress: addressSchema });
+const previewSchema = z.object({ shippingAddress: addressSchema, couponCode: z.string().min(1).max(50).optional() });
 
 const startCheckoutSchema = z.object({
   contactName: z.string().min(1),
@@ -28,6 +28,8 @@ const startCheckoutSchema = z.object({
   paymentMethod: z.enum(['PREPAID', 'COD']),
   idempotencyKey: z.string().min(1),
   loyaltyPointsToRedeem: z.number().int().positive().optional(),
+  couponCode: z.string().min(1).max(50).optional(),
+  storeCreditToApply: z.number().positive().optional(),
 });
 
 const shippingRuleSchema = z.object({
@@ -51,7 +53,7 @@ const checkoutRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/storefront/checkout/preview', identityAuth, async (request, reply) => {
     const identity = resolveCartIdentity(request);
     const body = previewSchema.parse(request.body);
-    reply.status(200).send(await checkoutService.previewCheckout(identity, body.shippingAddress));
+    reply.status(200).send(await checkoutService.previewCheckout(identity, body.shippingAddress, body.couponCode));
   });
 
   fastify.post('/storefront/checkout', identityAuth, async (request, reply) => {

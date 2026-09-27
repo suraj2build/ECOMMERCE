@@ -8,6 +8,8 @@ import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
 import { ExchangeService } from '../exchanges/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
+import { PromotionService } from '../promotions/service.js';
+import { StoreCreditService } from '../refunds/store-credit-service.js';
 
 export interface WebhookResult {
   ok: boolean;
@@ -30,12 +32,16 @@ export class PaymentService {
   private readonly exchange: ExchangeService;
 
   private readonly loyalty: LoyaltyService;
+  private readonly promotions: PromotionService;
+  private readonly storeCredit: StoreCreditService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
     this.order = new OrderService(fastify);
     this.exchange = new ExchangeService(fastify);
     this.loyalty = new LoyaltyService(fastify);
+    this.promotions = new PromotionService(fastify);
+    this.storeCredit = new StoreCreditService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -528,6 +534,12 @@ export class PaymentService {
         // completed must never leave a customer's points permanently
         // stuck as unavailable.
         await this.loyalty.releaseHoldForCheckoutSession(tx, fresh.checkoutSessionId);
+        // M24: same release for a promotion/coupon usage-cap HOLD and a
+        // store-credit redemption HOLD - a payment that ultimately
+        // fails/expires must free every value-reduction it reserved,
+        // not just the loyalty one.
+        await this.promotions.releaseHoldsForCheckoutSession(tx, fresh.checkoutSessionId);
+        await this.storeCredit.releaseHoldForCheckoutSession(tx, fresh.checkoutSessionId);
 
         return true;
       });

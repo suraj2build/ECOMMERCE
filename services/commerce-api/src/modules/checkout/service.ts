@@ -14,6 +14,8 @@ import { resolvePaymentProvider } from './payment-provider.js';
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
+import { PromotionService } from '../promotions/service.js';
+import { StoreCreditService } from '../refunds/store-credit-service.js';
 
 export interface AddressInput {
   line1: string;
@@ -39,12 +41,22 @@ export interface StartCheckoutInput {
   // synchronous checkout call. Ignored for a guest identity - loyalty
   // requires a persistent customer identity.
   loyaltyPointsToRedeem?: number;
+  // M24 (specs/23-promotions.md §checkout integration): validated and
+  // RESERVED the same two-stage preview/reserve way as loyalty points -
+  // see PromotionService.reserveForCheckout's own docblock. An invalid/
+  // expired/incompatible coupon code throws immediately (surfaced as a
+  // clear inline error), it is never silently ignored.
+  couponCode?: string;
+  // Store credit applied at checkout (M24 - store credit previously
+  // only existed as a refund/exchange settlement destination, M20).
+  storeCreditToApply?: number;
 }
 
 interface PricedLine {
   skuId: string;
   quantity: number;
   unitPriceInclusive: number;
+  discountAmount: number;
   taxableValue: number;
   gstRatePercent: number;
   taxAmount: number;
@@ -73,6 +85,8 @@ export class CheckoutService {
   private readonly shipping: ShippingService;
   private readonly order: OrderService;
   private readonly loyalty: LoyaltyService;
+  private readonly promotions: PromotionService;
+  private readonly storeCredit: StoreCreditService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.cart = new CartService(fastify);
@@ -82,6 +96,8 @@ export class CheckoutService {
     this.shipping = new ShippingService(fastify);
     this.order = new OrderService(fastify);
     this.loyalty = new LoyaltyService(fastify);
+    this.promotions = new PromotionService(fastify);
+    this.storeCredit = new StoreCreditService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -109,20 +125,43 @@ export class CheckoutService {
    * (tax-inclusive, matching CAT-001's display convention) - the same
    * computation used for both the review preview and the real
    * checkout submission, so the two can never silently disagree.
+   *
+   * M24 (specs/23-promotions.md, TAX-006): if a promotion discount
+   * applies, it is allocated pro-rata across lines by their
+   * (undiscounted) inclusive share, applied PRE-TAX by reducing each
+   * line's own taxableValue BEFORE `splitTax` runs - `splitTax` itself
+   * is never modified, only fed a smaller input, per TAX-006's
+   * "without rewriting tax logic" requirement. Any leftover paisa from
+   * pro-rata rounding across lines is assigned to the LAST line, the
+   * same "remainder goes to the last one" discipline this codebase
+   * already uses elsewhere (e.g. FIFO batch draw-down).
+   *
+   * A coupon code that fails validation (invalid/expired/incompatible)
+   * throws immediately - callers (previewCheckout AND startCheckout)
+   * both want that surfaced as a clear inline error, never silently
+   * ignored (acceptance/m24-promotions.md).
    */
   private async priceLines(
     items: Awaited<ReturnType<CartService['getCartView']>>['items'],
     shippingStateCode: string,
-  ): Promise<{ lines: PricedLine[]; subtotal: number; taxAmount: number }> {
+    couponCode?: string,
+  ): Promise<{ lines: PricedLine[]; subtotal: number; taxAmount: number; baseSubtotal: number; promotionDiscountTotal: number; appliedPromotions: import('../promotions/service.js').AppliedPromotion[] }> {
     const registration = await this.resolveSupplierRegistration();
     const { isIntraState } = determinePlaceOfSupply({
       supplierStateCode: registration.stateCode,
       shippingStateCode,
     });
 
-    const lines: PricedLine[] = [];
-    let subtotal = 0;
-    let taxAmount = 0;
+    interface BaseLine {
+      skuId: string;
+      quantity: number;
+      unitPriceInclusive: number;
+      lineInclusive: number;
+      gstRatePercent: number;
+      cessPercent: number | null;
+    }
+    const baseLines: BaseLine[] = [];
+    let baseSubtotal = 0;
 
     for (const item of items) {
       if (!item.isPurchasable) {
@@ -142,34 +181,75 @@ export class CheckoutService {
 
       const sellingPriceInclusive = item.currentPrice ?? item.priceAtAdd;
       const lineInclusive = sellingPriceInclusive * item.quantity;
-      const gstRatePercent = Number(rate.gstRatePercent);
+      baseLines.push({
+        skuId: item.skuId,
+        quantity: item.quantity,
+        unitPriceInclusive: sellingPriceInclusive,
+        lineInclusive,
+        gstRatePercent: Number(rate.gstRatePercent),
+        cessPercent: rate.cessPercent ? Number(rate.cessPercent) : null,
+      });
+      baseSubtotal += lineInclusive;
+    }
+    baseSubtotal = Math.round(baseSubtotal * 100) / 100;
+
+    const env = loadEnv();
+    const evaluation = await this.promotions.previewApplication(baseSubtotal, couponCode);
+    if (couponCode?.trim() && evaluation.couponRejectedReason) {
+      throw new ValidationError(evaluation.couponRejectedReason);
+    }
+    const promotionDiscountTotal = env.PROMOTIONS_DISCOUNT_PRETAX ? evaluation.totalDiscount : 0;
+
+    const lines: PricedLine[] = [];
+    let subtotal = 0;
+    let taxAmount = 0;
+    let discountAllocated = 0;
+
+    baseLines.forEach((base, index) => {
+      const isLast = index === baseLines.length - 1;
+      const share = baseSubtotal > 0 ? base.lineInclusive / baseSubtotal : 0;
+      const discountAmount = isLast
+        ? Math.round((promotionDiscountTotal - discountAllocated) * 100) / 100
+        : Math.round(promotionDiscountTotal * share * 100) / 100;
+      discountAllocated = Math.round((discountAllocated + discountAmount) * 100) / 100;
+
+      const discountedInclusive = Math.round((base.lineInclusive - discountAmount) * 100) / 100;
       // Storefront prices are tax-inclusive (CAT-001); reverse the split
-      // to get the tax-exclusive taxable value the tax engine expects.
-      const taxableValue = Math.round((lineInclusive / (1 + gstRatePercent / 100)) * 100) / 100;
+      // to get the tax-exclusive taxable value the tax engine expects,
+      // computed from the DISCOUNTED inclusive amount (pre-tax discount).
+      const taxableValue = Math.round((discountedInclusive / (1 + base.gstRatePercent / 100)) * 100) / 100;
       const split = splitTax({
         taxableValue,
-        gstRatePercent,
-        cessPercent: rate.cessPercent ? Number(rate.cessPercent) : null,
+        gstRatePercent: base.gstRatePercent,
+        cessPercent: base.cessPercent,
         isIntraState,
       });
 
       lines.push({
-        skuId: item.skuId,
-        quantity: item.quantity,
-        unitPriceInclusive: sellingPriceInclusive,
+        skuId: base.skuId,
+        quantity: base.quantity,
+        unitPriceInclusive: base.unitPriceInclusive,
+        discountAmount,
         taxableValue,
-        gstRatePercent,
+        gstRatePercent: base.gstRatePercent,
         taxAmount: split.totalTax,
         lineTotalInclusive: taxableValue + split.totalTax,
       });
       subtotal += taxableValue + split.totalTax;
       taxAmount += split.totalTax;
-    }
+    });
 
-    return { lines, subtotal: Math.round(subtotal * 100) / 100, taxAmount: Math.round(taxAmount * 100) / 100 };
+    return {
+      lines,
+      subtotal: Math.round(subtotal * 100) / 100,
+      taxAmount: Math.round(taxAmount * 100) / 100,
+      baseSubtotal,
+      promotionDiscountTotal,
+      appliedPromotions: evaluation.applied,
+    };
   }
 
-  async previewCheckout(identity: CartOwnerIdentity, shippingAddress: AddressInput) {
+  async previewCheckout(identity: CartOwnerIdentity, shippingAddress: AddressInput, couponCode?: string) {
     const cartView = await this.cart.getCartView(identity);
     if (cartView.items.length === 0) throw new ValidationError('Your bag is empty');
     if (cartView.hasBlockingChanges) {
@@ -177,7 +257,11 @@ export class CheckoutService {
     }
 
     const serviceability = await this.serviceability.checkServiceability(shippingAddress.pincode);
-    const { lines, subtotal, taxAmount } = await this.priceLines(cartView.items, shippingAddress.stateCode);
+    const { lines, subtotal, taxAmount, promotionDiscountTotal, appliedPromotions } = await this.priceLines(
+      cartView.items,
+      shippingAddress.stateCode,
+      couponCode,
+    );
     const shippingCost = await this.shipping.calculateShippingCost(subtotal);
 
     return {
@@ -187,6 +271,8 @@ export class CheckoutService {
       lines,
       subtotal,
       taxAmount,
+      promotionDiscountTotal,
+      appliedPromotions,
       shippingCost,
       grandTotal: Math.round((subtotal + shippingCost) * 100) / 100,
     };
@@ -220,7 +306,11 @@ export class CheckoutService {
       throw new ValidationError('Your bag has changes that need your attention before checkout - review it first');
     }
 
-    const { lines, subtotal, taxAmount } = await this.priceLines(cartView.items, input.shippingAddress.stateCode);
+    const { lines, subtotal, taxAmount, baseSubtotal, promotionDiscountTotal } = await this.priceLines(
+      cartView.items,
+      input.shippingAddress.stateCode,
+      input.couponCode,
+    );
     const shippingCost = await this.shipping.calculateShippingCost(subtotal);
     const grandTotal = Math.round((subtotal + shippingCost) * 100) / 100;
 
@@ -274,7 +364,23 @@ export class CheckoutService {
         throw err;
       }
     }
-    const amountPayable = Math.round((grandTotal - loyaltyRedemptionValue) * 100) / 100;
+
+    // M24 (specs/23-promotions.md, LOY-005 stacking): same non-
+    // authoritative-preview-then-authoritative-reserve split as
+    // loyalty, checked against whatever remains AFTER the loyalty
+    // reduction above (store credit is the last reduction applied).
+    let storeCreditApplied = 0;
+    if (input.storeCreditToApply && input.storeCreditToApply > 0) {
+      try {
+        storeCreditApplied = await this.storeCredit.previewRedemptionValue(identity, input.storeCreditToApply, grandTotal - loyaltyRedemptionValue);
+      } catch (err) {
+        for (const reserved of reservedLineData) {
+          await this.inventory.releaseReservation(reserved.reservationId, 'checkout attempt failed');
+        }
+        throw err;
+      }
+    }
+    const amountPayable = Math.round((grandTotal - loyaltyRedemptionValue - storeCreditApplied) * 100) / 100;
 
     // Generated up front (rather than left to Prisma's own default) so
     // it can be handed to the payment provider as the order `receipt`
@@ -318,6 +424,8 @@ export class CheckoutService {
             grandTotal,
             loyaltyPointsRedeemed: input.loyaltyPointsToRedeem && loyaltyRedemptionValue > 0 ? input.loyaltyPointsToRedeem : 0,
             loyaltyRedemptionValue,
+            storeCreditApplied,
+            promotionDiscountTotal,
             paymentMethod: input.paymentMethod,
             status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'RESERVED',
             idempotencyKey: input.idempotencyKey,
@@ -328,6 +436,7 @@ export class CheckoutService {
                 locationId: l.locationId,
                 quantity: l.quantity,
                 unitPriceInclusive: l.unitPriceInclusive,
+                discountAmountSnapshot: l.discountAmount,
                 taxableValueSnapshot: l.taxableValue,
                 gstRatePercent: l.gstRatePercent,
                 taxAmountSnapshot: l.taxAmount,
@@ -358,6 +467,21 @@ export class CheckoutService {
         // insufficient-stock failure.
         if (input.loyaltyPointsToRedeem && loyaltyRedemptionValue > 0 && identity.customerId) {
           await this.loyalty.reserveRedemptionForCheckout(tx, identity.customerId, session.id, input.loyaltyPointsToRedeem, grandTotal);
+        }
+
+        // M24: same authoritative, row-locked re-validation pattern -
+        // a coupon that lost the usage-cap race throws here (aborting
+        // the whole transaction, reservations released by the catch
+        // block below); an automatic promotion that lost it is safely
+        // dropped (see PromotionService.reserveForCheckout's own
+        // docblock for the documented narrow limitation this implies
+        // for a CAPPED automatic promotion specifically).
+        if (promotionDiscountTotal > 0 || input.couponCode) {
+          await this.promotions.reserveForCheckout(tx, baseSubtotal, input.couponCode, identity, session.id);
+        }
+
+        if (storeCreditApplied > 0) {
+          await this.storeCredit.reserveRedemptionForCheckout(tx, identity, session.id, input.storeCreditToApply!, grandTotal - loyaltyRedemptionValue);
         }
 
         await recordAudit(tx, {
@@ -551,6 +675,7 @@ export class CheckoutService {
       loyaltyPointsRedeemed: session.loyaltyPointsRedeemed,
       loyaltyRedemptionValue: Number(session.loyaltyRedemptionValue),
       storeCreditApplied: Number(session.storeCreditApplied),
+      promotionDiscountTotal: Number(session.promotionDiscountTotal),
       amountPayable: Math.round((Number(session.grandTotal) - Number(session.loyaltyRedemptionValue) - Number(session.storeCreditApplied)) * 100) / 100,
       currency: session.currency,
       lines: session.lines.map((l) => ({

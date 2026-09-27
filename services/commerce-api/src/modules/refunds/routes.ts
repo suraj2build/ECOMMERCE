@@ -41,6 +41,14 @@ const refundRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await refunds.reconcilePendingRefunds());
   });
 
+  // M24: callable sweep for an abandoned checkout's store-credit
+  // redemption hold, same shape as the existing loyalty/inventory
+  // sweeps - defense in depth alongside expireStalePayments's own
+  // per-session release.
+  fastify.post('/store-credit/sweep/release-stale-holds', { preHandler: refundAuth }, async (_request, reply) => {
+    reply.status(200).send({ released: await storeCredit.releaseStaleRedemptionHolds() });
+  });
+
   fastify.get('/refunds/:id', { preHandler: refundAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await refunds.getRefund(id));

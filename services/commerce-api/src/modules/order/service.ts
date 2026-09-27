@@ -5,6 +5,8 @@ import { InventoryService } from '../inventory/service.js';
 import { InvoiceService } from '../tax/invoice-service.js';
 import { WarehouseService } from '../warehouse/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
+import { PromotionService } from '../promotions/service.js';
+import { StoreCreditService } from '../refunds/store-credit-service.js';
 import { recordAudit } from '../audit/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
@@ -27,12 +29,16 @@ export class OrderService {
   private readonly invoice: InvoiceService;
   private readonly warehouse: WarehouseService;
   private readonly loyalty: LoyaltyService;
+  private readonly promotions: PromotionService;
+  private readonly storeCredit: StoreCreditService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
     this.invoice = new InvoiceService(fastify);
     this.warehouse = new WarehouseService(fastify);
     this.loyalty = new LoyaltyService(fastify);
+    this.promotions = new PromotionService(fastify);
+    this.storeCredit = new StoreCreditService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -97,6 +103,7 @@ export class OrderService {
           subtotal: session.subtotal,
           taxAmount: session.taxAmount,
           grandTotal: session.grandTotal,
+          promotionDiscountTotal: session.promotionDiscountTotal,
           currency: session.currency,
           paymentMethod: session.paymentMethod,
           status: 'CONFIRMED',
@@ -106,6 +113,7 @@ export class OrderService {
               locationId: l.locationId,
               quantity: l.quantity,
               unitPriceInclusive: l.unitPriceInclusive,
+              discountAmountSnapshot: l.discountAmountSnapshot,
               taxableValueSnapshot: l.taxableValueSnapshot,
               gstRatePercent: l.gstRatePercent,
               taxAmountSnapshot: l.taxAmountSnapshot,
@@ -145,6 +153,14 @@ export class OrderService {
       // commit or both roll back together.
       await this.loyalty.earnForOrder(tx, created);
       await this.loyalty.convertRedemptionHold(tx, created);
+      // M24 (specs/23-promotions.md, LOY-005 stacking): converts every
+      // HOLD redemption made at checkout - both the coupon and any
+      // automatic promotions - to CONVERTED, in the SAME transaction
+      // as the order/loyalty conversion above, so a captured payment
+      // and every value-reduction it relied on either all commit or
+      // all roll back together.
+      await this.promotions.convertHolds(tx, created);
+      await this.storeCredit.convertRedemptionHold(tx, created);
 
       await recordAudit(tx, {
         actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',

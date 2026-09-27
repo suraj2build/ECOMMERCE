@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { Prisma, type PrismaClient, type StoreCreditAccount } from '@fcp/db';
+import { Prisma, type PrismaClient, type StoreCreditAccount, type Order } from '@fcp/db';
+import { loadEnv } from '@fcp/config';
 import { ValidationError, ConflictError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
@@ -30,10 +31,14 @@ export interface IssueStoreCreditInput {
  * the source of truth, the balance is a read optimization kept in
  * lockstep, never independently written.
  *
- * Only ISSUE exists (see the StoreCreditEntryType schema comment) - this
- * service has no redeem/expire method because no checkout-redemption or
- * expiry flow exists yet (REF-002: store credit does NOT expire - there
- * is deliberately no expiry job anywhere in this codebase to remove).
+ * M20 built ISSUE only. M24 (specs/23-promotions.md stacking, LOY-005)
+ * adds checkout-time REDEEM, modeled as a `StoreCreditRedemptionHold`
+ * (ACTIVE/CONVERTED/RELEASED) mirroring `LoyaltyRedemptionHold`'s own
+ * lifecycle exactly - see that model's schema docblock for the full
+ * "why a hold, not a direct balance edit" reasoning. Store credit still
+ * has NO expiry method (REF-002: it does NOT expire) - only the
+ * checkout-hold's own TTL (an abandoned/failed checkout's RESERVATION
+ * expiring, not the underlying value) needed a sweep.
  */
 export class StoreCreditService {
   constructor(private readonly fastify: FastifyInstance) {}
@@ -173,5 +178,122 @@ export class StoreCreditService {
         : null;
     if (!account) return { balance: 0, entries: [] };
     return { balance: Number(account.balance), entries: account.entries };
+  }
+
+  // --- M24 checkout-time redemption ---
+
+  private async availableBalance(tx: Prisma.TransactionClient | PrismaClient, account: { id: string; balance: unknown }): Promise<number> {
+    const held = await tx.storeCreditRedemptionHold.aggregate({ where: { accountId: account.id, status: 'ACTIVE' }, _sum: { amount: true } });
+    return Number(account.balance) - Number(held._sum.amount ?? 0);
+  }
+
+  /** Non-authoritative preview - mirrors LoyaltyService.previewRedemptionValue's own docblock exactly. */
+  async previewRedemptionValue(identity: CartOwnerIdentity, requestedAmount: number, grandTotal: number): Promise<number> {
+    if (requestedAmount <= 0) throw new ValidationError('Store credit to apply must be positive');
+    const account = identity.customerId
+      ? await this.prisma.storeCreditAccount.findUnique({ where: { customerId: identity.customerId } })
+      : identity.guestSessionId
+        ? await this.prisma.storeCreditAccount.findUnique({ where: { guestSessionId: identity.guestSessionId } })
+        : null;
+    const available = account ? await this.availableBalance(this.prisma, account) : 0;
+    if (requestedAmount > available) throw new ValidationError(`Only ₹${available} of store credit is available`);
+    return Math.min(requestedAmount, grandTotal);
+  }
+
+  /**
+   * Authoritative reserve, called from inside CheckoutService.startCheckout's
+   * own transaction, right after the CheckoutSession row exists - see
+   * LoyaltyService.reserveRedemptionForCheckout's own docblock for why
+   * this two-stage preview/reserve split exists at all (checkout is a
+   * single synchronous call; the payment-provider amount must be known
+   * before the session row - and therefore this hold - can exist).
+   */
+  async reserveRedemptionForCheckout(
+    tx: Prisma.TransactionClient,
+    identity: CartOwnerIdentity,
+    checkoutSessionId: string,
+    requestedAmount: number,
+    grandTotal: number,
+  ): Promise<number> {
+    if (requestedAmount <= 0) throw new ValidationError('Store credit to apply must be positive');
+    const account = await this.lockOrCreateAccount(tx, identity);
+    const available = await this.availableBalance(tx, account);
+    if (requestedAmount > available) throw new ValidationError(`Only ₹${available} of store credit is available`);
+
+    const amount = Math.min(requestedAmount, grandTotal);
+    const env = loadEnv();
+    const expiresAt = new Date(Date.now() + env.INVENTORY_RESERVATION_TTL_SECONDS * 1000);
+    await tx.storeCreditRedemptionHold.create({ data: { accountId: account.id, checkoutSessionId, amount, expiresAt } });
+    return amount;
+  }
+
+  /** Releases an ACTIVE hold without spending anything - same shape as LoyaltyService.releaseHoldForCheckoutSession. */
+  async releaseHoldForCheckoutSession(tx: Prisma.TransactionClient, checkoutSessionId: string): Promise<void> {
+    await tx.storeCreditRedemptionHold.updateMany({ where: { checkoutSessionId, status: 'ACTIVE' }, data: { status: 'RELEASED' } });
+  }
+
+  /**
+   * Converts an ACTIVE hold into a real REDEEM ledger entry at order
+   * confirmation - called from inside
+   * OrderService.createOrderFromCheckoutSession's own transaction, right
+   * after the Order row itself is created. Safe no-op if no hold
+   * exists. Idempotent via a deterministic `idempotencyKey` (defense in
+   * depth - OrderService's own top-level checkoutSessionId uniqueness
+   * already prevents this from being reached twice in practice).
+   */
+  async convertRedemptionHold(tx: Prisma.TransactionClient, order: Order): Promise<void> {
+    const hold = await tx.storeCreditRedemptionHold.findUnique({ where: { checkoutSessionId: order.checkoutSessionId } });
+    if (!hold || hold.status !== 'ACTIVE') return;
+
+    const idempotencyKey = `storecredit-redeem:${order.checkoutSessionId}`;
+    const existing = await tx.storeCreditEntry.findUnique({ where: { idempotencyKey } });
+    if (!existing) {
+      await tx.storeCreditEntry.create({
+        data: {
+          accountId: hold.accountId,
+          type: 'REDEEM',
+          // `amount` is always a positive MAGNITUDE (the pre-existing
+          // `store_credit_entries_amount_positive_check` constraint,
+          // written when only ISSUE existed, enforces this) - the
+          // ledger entry's `type` is what determines the balance's
+          // direction, never the sign of `amount` itself. The decrement
+          // below is explicit about that direction.
+          amount: Number(hold.amount),
+          reason: `Redeemed at order ${order.orderNumber}`,
+          referenceType: 'ORDER',
+          referenceId: order.id,
+          idempotencyKey,
+        },
+      });
+      await tx.storeCreditAccount.update({ where: { id: hold.accountId }, data: { balance: { decrement: hold.amount } } });
+      await recordAudit(tx, {
+        actorType: order.customerId ? 'CUSTOMER' : 'SYSTEM',
+        action: 'store_credit.redeem',
+        entityType: 'StoreCreditAccount',
+        entityId: hold.accountId,
+        newValue: { amount: Number(hold.amount) },
+        reference: order.id,
+      });
+    }
+
+    await tx.storeCreditRedemptionHold.update({ where: { id: hold.id }, data: { status: 'CONVERTED' } });
+    await tx.order.update({ where: { id: order.id }, data: { storeCreditApplied: hold.amount } });
+  }
+
+  /** Releases every hold whose checkout session never converted before the hold's own TTL elapsed - same shape as LoyaltyService.releaseStaleRedemptionHolds. */
+  async releaseStaleRedemptionHolds(): Promise<number> {
+    const stale = await this.prisma.storeCreditRedemptionHold.findMany({ where: { status: 'ACTIVE', expiresAt: { lt: new Date() } } });
+    let released = 0;
+    for (const hold of stale) {
+      const didRelease = await this.prisma.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<{ id: string; status: string }[]>`SELECT "id", "status" FROM "store_credit_redemption_holds" WHERE "id" = ${hold.id} FOR UPDATE`;
+        const fresh = rows[0];
+        if (!fresh || fresh.status !== 'ACTIVE') return false;
+        await tx.storeCreditRedemptionHold.update({ where: { id: hold.id }, data: { status: 'RELEASED' } });
+        return true;
+      });
+      if (didRelease) released += 1;
+    }
+    return released;
   }
 }

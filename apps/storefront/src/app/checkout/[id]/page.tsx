@@ -183,6 +183,12 @@ export default function CheckoutConfirmationPage() {
         </ul>
 
         <div className="mt-4 space-y-1 border-t border-border pt-4 text-sm">
+          {session.promotionDiscountTotal > 0 && (
+            <div className="flex justify-between">
+              <span className="text-ink-muted">Promotion discount</span>
+              <span className="text-ink">-&#8377;{session.promotionDiscountTotal}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-ink-muted">Subtotal</span>
             <span className="text-ink">&#8377;{session.subtotal}</span>
@@ -199,6 +205,12 @@ export default function CheckoutConfirmationPage() {
             <div className="flex justify-between">
               <span className="text-ink-muted">Loyalty points redeemed ({session.loyaltyPointsRedeemed} pts)</span>
               <span className="text-ink">-&#8377;{session.loyaltyRedemptionValue}</span>
+            </div>
+          )}
+          {session.storeCreditApplied > 0 && (
+            <div className="flex justify-between">
+              <span className="text-ink-muted">Store credit applied</span>
+              <span className="text-ink">-&#8377;{session.storeCreditApplied}</span>
             </div>
           )}
           <div className="flex justify-between border-t border-border pt-2 font-medium">
