@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "CampaignDeliveryStatus" ADD VALUE 'AMBIGUOUS_RECONCILIATION_REQUIRED';
+
+-- AlterTable
+ALTER TABLE "campaign_deliveries" ADD COLUMN     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

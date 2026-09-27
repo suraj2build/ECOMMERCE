@@ -1,6 +1,6 @@
 # 23. Promotions
 
-**Status:** IMPLEMENTED (built 2026-09-27; not yet independently reviewed — see `acceptance/m24-promotions.md`; decided 2026-09-22, see `blueprint/DECISION_REGISTER.md` `PROMO-001`, `PROMO-002`, `TAX-006`)
+**Status:** IMPLEMENTED (built 2026-09-27; independent-review certification-repair applied 2026-09-27 — cross-domain promotion↔loyalty/store-credit compatibility, see `PROMO-002`'s Blocker 2 repair note; not yet independently re-reviewed — see `acceptance/m24-promotions.md`; decided 2026-09-22, see `blueprint/DECISION_REGISTER.md` `PROMO-001`, `PROMO-002`, `TAX-006`)
 
 ## Purpose
 
@@ -28,6 +28,12 @@ discounts, and their stacking/precedence rules.
 - Loyalty redemption and store credit MAY also combine with
   promotions, subject to the same configurable stacking-rule engine
   (`specs/22-loyalty.md` `LOY-005`, `specs/33-store-credit-gift-cards.md`).
+  Implemented (2026-09-27, independent-review certification-repair,
+  Blocker 2) as two plain per-promotion booleans —
+  `Promotion.loyaltyCompatible`/`storeCreditCompatible`, both
+  defaulting `true` — never a general rules DSL, never a hard-coded
+  promotion ID/type check; enforced server-side at checkout. See
+  `PROMO-002`'s Blocker 2 repair note in `blueprint/DECISION_REGISTER.md`.
 - Discounts are applied **pre-tax** on the invoice by default
   (engineering default per `TAX-006`), implemented as a configurable
   flag switchable if `specs/32-india-tax-invoicing.md`'s legal
@@ -64,7 +70,7 @@ choice, and must not be read as this spec settling the question.
 
 See `acceptance/m24-promotions.md`. See
 `acceptance/e2e-commerce-flows.md` FLOW 18 (coupon + compatible
-promotion + store credit).
+promotion + loyalty + store credit).
 
 ## Dependencies
 

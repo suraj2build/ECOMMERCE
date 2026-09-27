@@ -362,6 +362,66 @@ describe('Loyalty (M23)', () => {
     });
   });
 
+  // --- Blocker 1 reproduction (independent-review certification repair) ---
+
+  describe('REVERSE after points already spent (Blocker 1 reproduction)', () => {
+    it('22. cancelling a line whose earned points were already redeemed on a LATER order posts a SHORT reversal - proves the current cap-at-remaining behavior does not satisfy "points earned on a cancelled/returned qualifying purchase must be reversed"', async () => {
+      const ctx = await seedContext();
+      // Order A earns ~200 points (its own, sole EARN batch) - the exact
+      // amount depends on the headroom customerWithEarnedPoints adds past
+      // the rounding floor, so read it back rather than hardcoding it.
+      const { token, order: orderA } = await customerWithEarnedPoints(200, ctx);
+      const earnEntryA = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderId: orderA.id } });
+      const earnedPoints = earnEntryA.pointsDelta;
+      expect(earnedPoints).toBeGreaterThanOrEqual(200);
+
+      // The customer then spends most (but not all) of those points on
+      // Order B - FIFO consumption draws from Order A's batch (the only
+      // one that exists at this point), leaving only a small remainder
+      // of remainingPoints on it.
+      const redeemAmount = 150;
+      const expectedRemaining = earnedPoints - redeemAmount;
+      const { skuId: skuB } = await setupCheckoutableSku(3000, ctx);
+      const redeemRes = await customerCheckout(skuB, token, `idem-blocker1-redeem-${counter}`, { loyaltyPointsToRedeem: redeemAmount });
+      expect(redeemRes.statusCode).toBe(201);
+
+      const freshEarnA = await testPrisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { id: earnEntryA.id } });
+      expect(freshEarnA.remainingPoints).toBe(expectedRemaining);
+
+      // Order A's line is now cancelled - a qualifying reversal event.
+      // The FULL `earnedPoints` Order A earned must be reversed through
+      // the ledger (the approved requirement), never merely "whatever is
+      // still unconsumed in that one batch".
+      const lineA = await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: orderA.id } });
+      const cancelRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/storefront/orders/${orderA.id}/lines/${lineA.id}/cancel`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { reason: 'Blocker 1 repro', idempotencyKey: `blocker1-cancel-${lineA.id}` },
+      });
+      expect(cancelRes.statusCode).toBe(200);
+
+      const reverseEntry = await testPrisma.loyaltyLedgerEntry.findFirst({ where: { reversalOrderLineId: lineA.id } });
+      expect(reverseEntry).toBeTruthy();
+      // The balance-affecting reversal is still capped at whatever
+      // remains unconsumed in the EARN batch (`expectedRemaining`) -
+      // applying more would make the balance negative, which this build
+      // does not invent semantics for.
+      expect(reverseEntry!.pointsDelta).toBe(-expectedRemaining); // short by redeemAmount of the required -earnedPoints
+      expect(-reverseEntry!.pointsDelta).not.toBe(earnedPoints);
+      // LOY-001 repair (Blocker 1): the FULL required reversal is now
+      // ALWAYS recorded too, separately, so the shortfall is fully
+      // visible/audited rather than silently hidden behind a capped
+      // number - see DECISION_REQUIRED - LOYALTY CLAWBACK AFTER POINTS
+      // ALREADY SPENT in specs/22-loyalty.md for the unresolved business
+      // question of what (if anything) should be done about it.
+      expect(reverseEntry!.requiredPointsDelta).toBe(-earnedPoints);
+      const shortfallAudit = await testPrisma.auditLog.findFirst({ where: { action: 'loyalty.reverse.shortfall', reference: orderA.id } });
+      expect(shortfallAudit).toBeTruthy();
+      expect((shortfallAudit!.newValue as { shortfall: number }).shortfall).toBe(redeemAmount);
+    });
+  });
+
   // --- Checkout-time redemption HOLD ---
 
   describe('Redemption hold: reserve / convert / release', () => {

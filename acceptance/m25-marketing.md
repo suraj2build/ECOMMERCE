@@ -1,7 +1,10 @@
 # M25 — Marketing Acceptance Criteria
 
 **Spec(s):** `specs/24-marketing.md`
-**Status:** IMPLEMENTED (built 2026-09-27; not yet independently reviewed)
+**Status:** IMPLEMENTED (built 2026-09-27); independent-review
+certification-repair applied 2026-09-27 (Blocker 3 — scheduling was not
+genuinely implemented; Blocker 4 — per-recipient dispatch had a
+crash-then-duplicate-send gap); not yet independently re-reviewed.
 
 ## Business acceptance
 
@@ -34,12 +37,52 @@
       recipient COUNT only (`GET /marketing/segments/:id/recipient-
       count`) — never the underlying customer list — proven in test #1
       (the response has no `customers` key).
-- [x] Campaign scheduling works (create, schedule, send at configured
-      time). `MarketingCampaign.scheduledAt` is recorded at creation;
-      `POST /marketing/campaigns/:id/send` is the explicit staff-gated
-      trigger (no background scheduler was built — sending itself is
-      always an explicit, audited staff action, matching this phase's
-      own "no general workflow engine" boundary).
+- [x] **(Corrected 2026-09-27, independent-review certification-repair,
+      Blocker 3)** Campaign scheduling works (create, schedule, send at
+      configured time). **The original claim here was incorrect**: the
+      original build persisted `MarketingCampaign.scheduledAt` at
+      creation but left every campaign in `DRAFT` regardless, and the
+      ONLY send path was the manual staff `POST .../send` route, which
+      claimed any `DRAFT`/`SCHEDULED` campaign immediately regardless
+      of `scheduledAt` — there was no genuine due-campaign execution
+      mechanism at all, so this box was checked on a capability that
+      did not exist. Now genuinely implemented: `createCampaign` sets
+      `status: 'SCHEDULED'` (not `DRAFT`) whenever a `scheduledAt` is
+      supplied; a new `MarketingService.processDueCampaigns()`
+      (`POST /marketing/sweep/send-due`, staff-gated, callable, the
+      same shape as `POST /loyalty/sweep/expire`) claims and sends ONLY
+      campaigns where `status = SCHEDULED AND scheduledAt <= now` —
+      literally that condition and nothing broader; a `DRAFT` campaign
+      (no schedule committed) or a `SCHEDULED` campaign whose
+      `scheduledAt` is still in the future is never touched by it. The
+      pre-existing manual `POST .../send` route is unchanged and
+      remains available as a SEPARATE, explicit immediate-send
+      operation that does not redefine what the automatic sweep itself
+      picks up. No background scheduler/job platform was built — the
+      sweep is a plain callable function compatible with a future
+      external scheduler/cron trigger, matching this phase's own "no
+      general workflow engine" boundary. See `MKT-001`'s Blocker 3
+      repair note in `blueprint/DECISION_REGISTER.md` for the full
+      design record.
+- [x] **(Added 2026-09-27, independent-review certification-repair,
+      Blocker 4)** Per-recipient dispatch is durably claimed BEFORE the
+      external provider call, closing a genuine crash-then-duplicate-
+      send gap the original build had (provider accepts a message →
+      process crashes before the `CampaignDelivery` row is written →
+      a later reclaim finds no row and calls the provider again).
+      `CampaignDelivery` now durably claims each recipient with a
+      `PENDING` row (its own `@@unique([campaignId, customerId])`
+      constraint is the atomicity guarantee) before ever calling
+      `provider.send()`. A stale `PENDING` claim, or a provider call
+      that itself throws/times out, is recorded as a new honest
+      terminal state, `AMBIGUOUS_RECONCILIATION_REQUIRED` — never
+      silently retried and never conflated with a provider's own
+      definite `FAILED` rejection. This build does not claim universal
+      exactly-once delivery (the provider abstraction does not
+      guarantee that); it claims no INTENTIONAL duplicate dispatch, and
+      every genuinely unknown outcome is labeled as such. See
+      `MKT-001`'s Blocker 4 repair note in
+      `blueprint/DECISION_REGISTER.md` for the full design record.
 
 ## Negative scenarios / edge cases
 
@@ -65,10 +108,32 @@
 
 - [x] Integration test: opt-out correctly excludes a customer from the
       relevant channel's next campaign send —
-      `test/integration/marketing.test.ts` tests #6, #9, #10 (15 tests
+      `test/integration/marketing.test.ts` tests #6, #9, #10 (27 tests
       total: 3 segmentation, 2 campaign-creation validation, 8
       campaign-send including 2 genuine `Promise.all` concurrency
+      tests, 7 scheduling/due-sweep tests including 2 genuine
+      `Promise.all` concurrency tests, 5 durable per-recipient dispatch
       tests, 2 staff RBAC).
+- [x] **(Blocker 3)** Controlled-time scheduling tests: a future
+      campaign is not sent by the due sweep; a campaign is picked up
+      the instant its `scheduledAt <= now` boundary is reached
+      (inclusive); a genuinely past-due campaign is sent; a `DRAFT`
+      campaign (no `scheduledAt`) is never touched by the sweep; a
+      `CANCELLED` scheduled campaign is never sent by the sweep; two
+      genuinely concurrent due-sweep invocations racing the SAME due
+      campaign converge to exactly one sender; a customer opted-in at
+      schedule time who opts out before the due time is suppressed by
+      the sweep (preference checked at send time, never snapshotted) —
+      tests #16–#22.
+- [x] **(Blocker 4)** Adversarial per-recipient dispatch tests: two
+      workers racing to durably claim the same recipient converge to
+      exactly one winner; a fresh (non-stale) `PENDING` claim is never
+      redispatched; a stale `PENDING` claim (simulated crash after the
+      provider call, before recording the outcome) is reclaimed as
+      ambiguous WITHOUT calling the provider again; a provider's
+      definite rejection is recorded `FAILED`; a provider call that
+      throws is recorded ambiguous and never auto-resolved/redispatched
+      by a later send — tests #23–#27.
 
 ## Additional coverage beyond the original acceptance criteria
 

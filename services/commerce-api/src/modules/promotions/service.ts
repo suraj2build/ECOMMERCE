@@ -20,6 +20,10 @@ export interface CreatePromotionInput {
   endsAt?: string;
   usageLimitTotal?: number;
   usageLimitPerCustomer?: number;
+  // Blocker 2 repair: default true (matches existing behavior) - only
+  // set false to mark a promotion incompatible with that value system.
+  loyaltyCompatible?: boolean;
+  storeCreditCompatible?: boolean;
 }
 
 export interface AppliedPromotion {
@@ -27,6 +31,8 @@ export interface AppliedPromotion {
   name: string;
   isCoupon: boolean;
   discountAmount: number;
+  loyaltyCompatible: boolean;
+  storeCreditCompatible: boolean;
 }
 
 export interface EvaluationResult {
@@ -110,6 +116,8 @@ export class PromotionService {
         endsAt: input.endsAt ? new Date(input.endsAt) : null,
         usageLimitTotal: input.usageLimitTotal,
         usageLimitPerCustomer: input.usageLimitPerCustomer,
+        loyaltyCompatible: input.loyaltyCompatible ?? true,
+        storeCreditCompatible: input.storeCreditCompatible ?? true,
       },
     });
 
@@ -239,7 +247,14 @@ export class PromotionService {
     }
 
     return {
-      applied: amounts.map((a) => ({ promotionId: a.promotion.id, name: a.promotion.name, isCoupon: a.promotion.isCoupon, discountAmount: a.amount })),
+      applied: amounts.map((a) => ({
+        promotionId: a.promotion.id,
+        name: a.promotion.name,
+        isCoupon: a.promotion.isCoupon,
+        discountAmount: a.amount,
+        loyaltyCompatible: a.promotion.loyaltyCompatible,
+        storeCreditCompatible: a.promotion.storeCreditCompatible,
+      })),
       totalDiscount: total,
       couponRejectedReason,
     };

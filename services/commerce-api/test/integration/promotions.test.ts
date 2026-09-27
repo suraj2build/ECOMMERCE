@@ -143,8 +143,34 @@ describe('Promotions (M24)', () => {
         isActive: (input.isActive as boolean) ?? true,
         usageLimitTotal: input.usageLimitTotal as number | undefined,
         usageLimitPerCustomer: input.usageLimitPerCustomer as number | undefined,
+        loyaltyCompatible: (input.loyaltyCompatible as boolean) ?? true,
+        storeCreditCompatible: (input.storeCreditCompatible as boolean) ?? true,
       },
     });
+  }
+
+  /** Earns `targetPoints` (or more) for a fresh customer via one confirmed COD order at the default 1-point-per-100-INR rate, BEFORE any promotion exists so the earn amount is never itself discounted - mirrors loyalty.test.ts's own `customerWithEarnedPoints`. */
+  async function customerWithLoyaltyPoints(targetPoints: number, ctx: Awaited<ReturnType<typeof seedContext>>) {
+    const subtotalNeeded = targetPoints * 100 + 200; // headroom past floor() rounding
+    const { skuId } = await setupCheckoutableSku(subtotalNeeded, ctx, 50);
+    const { token } = await createAuthenticatedCustomer(app);
+    const headers = { authorization: `Bearer ${token}` };
+    await addToCart(skuId, headers);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: checkoutPayload({ idempotencyKey: `idem-loyalty-seed-${counter}-${Math.random()}` }),
+    });
+    expect(res.statusCode).toBe(201);
+    return { token };
+  }
+
+  async function customerWithStoreCreditBalance(amount: number) {
+    const { customerId, token } = await createAuthenticatedCustomer(app);
+    const account = await testPrisma.storeCreditAccount.create({ data: { customerId, balance: amount } });
+    await testPrisma.storeCreditEntry.create({ data: { accountId: account.id, type: 'ISSUE', amount, reason: 'Test credit', idempotencyKey: `test-issue-xd-${customerId}` } });
+    return { customerId, token, accountId: account.id };
   }
 
   // --- Automatic promotions ---
@@ -444,6 +470,199 @@ describe('Promotions (M24)', () => {
 
       const redemptions = await testPrisma.promotionRedemption.count({ where: { status: { in: ['HOLD', 'CONVERTED'] } } });
       expect(redemptions).toBe(1); // exactly one winner, never both, never neither
+    });
+  });
+
+  // --- Cross-domain compatibility: promotion <-> loyalty / store credit
+  // (M23/M24/M25 independent-review certification-repair, Blocker 2,
+  // LOY-005/PROMO-002) ---
+
+  describe('Cross-domain compatibility (promotion <-> loyalty / store credit)', () => {
+    it('18. a promotion marked loyaltyCompatible (default true) combines with loyalty point redemption - both discounts apply, deterministic totals', async () => {
+      const ctx = await seedContext();
+      const { token } = await customerWithLoyaltyPoints(100, ctx);
+      const { skuId } = await setupCheckoutableSku(4000, ctx);
+      await createPromotion({ name: 'Auto 10% (loyalty ok)', discountType: 'PERCENTAGE', discountValue: 10, minCartValue: 1000 });
+
+      const headers = { authorization: `Bearer ${token}` };
+      await addToCart(skuId, headers);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-18-${counter}`, loyaltyPointsToRedeem: 100 }),
+      });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.promotionDiscountTotal).toBeGreaterThan(0);
+      expect(body.loyaltyPointsRedeemed).toBe(100);
+      // Server-authoritative: amountPayable must equal grandTotal minus the
+      // loyalty redemption value minus store credit (0 here) - never a
+      // client-trusted figure.
+      expect(body.amountPayable).toBe(Math.round((body.grandTotal - (100 * 25) / 100) * 100) / 100);
+    });
+
+    it('19. a promotion marked loyaltyCompatible=false rejects a checkout attempting to combine it with loyalty redemption, naming the promotion; the same order succeeds with zero points redeemed', async () => {
+      const ctx = await seedContext();
+      const { token } = await customerWithLoyaltyPoints(100, ctx);
+      const { skuId } = await setupCheckoutableSku(4000, ctx);
+      await createPromotion({ name: 'Auto 10% (no loyalty)', discountType: 'PERCENTAGE', discountValue: 10, minCartValue: 1000, loyaltyCompatible: false });
+
+      const headers = { authorization: `Bearer ${token}` };
+      await addToCart(skuId, headers);
+      const rejectedRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-19a-${counter}`, loyaltyPointsToRedeem: 100 }),
+      });
+      expect(rejectedRes.statusCode).toBe(400);
+      expect(rejectedRes.json().error.message).toMatch(/cannot be combined with loyalty/i);
+      expect(rejectedRes.json().error.message).toContain('Auto 10% (no loyalty)');
+
+      const acceptedRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-19b-${counter}` }),
+      });
+      expect(acceptedRes.statusCode).toBe(201);
+      expect(acceptedRes.json().promotionDiscountTotal).toBeGreaterThan(0);
+      expect(acceptedRes.json().loyaltyPointsRedeemed).toBe(0);
+    });
+
+    it('20. a coupon marked loyaltyCompatible (default true) combines with loyalty point redemption', async () => {
+      const ctx = await seedContext();
+      const { token } = await customerWithLoyaltyPoints(100, ctx);
+      const { skuId } = await setupCheckoutableSku(4000, ctx);
+      await createPromotion({ name: 'Coupon (loyalty ok)', isCoupon: true, couponCode: 'XDLOY10', discountValue: 10 });
+
+      const headers = { authorization: `Bearer ${token}` };
+      await addToCart(skuId, headers);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-20-${counter}`, couponCode: 'XDLOY10', loyaltyPointsToRedeem: 100 }),
+      });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().promotionDiscountTotal).toBeGreaterThan(0);
+      expect(res.json().loyaltyPointsRedeemed).toBe(100);
+    });
+
+    it('21. a coupon marked loyaltyCompatible=false rejects a checkout attempting to combine it with loyalty redemption', async () => {
+      const ctx = await seedContext();
+      const { token } = await customerWithLoyaltyPoints(100, ctx);
+      const { skuId } = await setupCheckoutableSku(4000, ctx);
+      await createPromotion({ name: 'Coupon (no loyalty)', isCoupon: true, couponCode: 'XDNOLOY10', discountValue: 10, loyaltyCompatible: false });
+
+      const headers = { authorization: `Bearer ${token}` };
+      await addToCart(skuId, headers);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-21-${counter}`, couponCode: 'XDNOLOY10', loyaltyPointsToRedeem: 100 }),
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toMatch(/cannot be combined with loyalty/i);
+    });
+
+    it('22. a promotion marked storeCreditCompatible (default true) combines with store credit at checkout', async () => {
+      const ctx = await seedContext();
+      const { skuId } = await setupCheckoutableSku(4000, ctx);
+      const { token } = await customerWithStoreCreditBalance(500);
+      await createPromotion({ name: 'Auto 10% (SC ok)', discountType: 'PERCENTAGE', discountValue: 10, minCartValue: 1000 });
+
+      const headers = { authorization: `Bearer ${token}` };
+      await addToCart(skuId, headers);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-22-${counter}`, storeCreditToApply: 300 }),
+      });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().promotionDiscountTotal).toBeGreaterThan(0);
+      expect(res.json().storeCreditApplied).toBe(300);
+    });
+
+    it('23. a promotion marked storeCreditCompatible=false rejects a checkout attempting to combine it with store credit; the same order succeeds with zero store credit applied', async () => {
+      const ctx = await seedContext();
+      const { skuId } = await setupCheckoutableSku(4000, ctx);
+      const { token } = await customerWithStoreCreditBalance(500);
+      await createPromotion({ name: 'Auto 10% (no SC)', discountType: 'PERCENTAGE', discountValue: 10, minCartValue: 1000, storeCreditCompatible: false });
+
+      const headers = { authorization: `Bearer ${token}` };
+      await addToCart(skuId, headers);
+      const rejectedRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-23a-${counter}`, storeCreditToApply: 300 }),
+      });
+      expect(rejectedRes.statusCode).toBe(400);
+      expect(rejectedRes.json().error.message).toMatch(/cannot be combined with store credit/i);
+      expect(rejectedRes.json().error.message).toContain('Auto 10% (no SC)');
+
+      const acceptedRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-23b-${counter}` }),
+      });
+      expect(acceptedRes.statusCode).toBe(201);
+      expect(acceptedRes.json().promotionDiscountTotal).toBeGreaterThan(0);
+      expect(acceptedRes.json().storeCreditApplied).toBe(0);
+    });
+
+    it('24. a coupon stacking with a compatible automatic promotion, both compatible with loyalty AND store credit, combined with real loyalty redemption and store credit at the same real checkout produces exactly the expected redemptions and deterministic server-authoritative totals', async () => {
+      const ctx = await seedContext();
+      const { token, accountId: scAccountId } = await customerWithStoreCreditBalance(500);
+      // Give the SAME customer real earned loyalty points too, via a
+      // second confirmed order on their own token (before any promotion
+      // exists, so the earn amount is never itself discounted).
+      const { skuId: seedSkuId } = await setupCheckoutableSku(100 * 100 + 200, ctx, 50);
+      const seedHeaders = { authorization: `Bearer ${token}` };
+      await addToCart(seedSkuId, seedHeaders);
+      const seedRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers: seedHeaders,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-24-seed-${counter}` }),
+      });
+      expect(seedRes.statusCode).toBe(201);
+
+      const { skuId } = await setupCheckoutableSku(6000, ctx);
+      await createPromotion({ name: 'Auto sitewide (compatible)', discountType: 'PERCENTAGE', discountValue: 5, stackGroup: 'AUTO', minCartValue: 1000 });
+      await createPromotion({ name: 'Coupon (compatible)', isCoupon: true, couponCode: 'XDALL10', discountValue: 10, stackGroup: 'COUPON' });
+
+      const headers = { authorization: `Bearer ${token}` };
+      await addToCart(skuId, headers);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-xd-24-${counter}`, couponCode: 'XDALL10', loyaltyPointsToRedeem: 100, storeCreditToApply: 300 }),
+      });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+
+      expect(body.promotionDiscountTotal).toBeGreaterThan(0);
+      expect(body.loyaltyPointsRedeemed).toBe(100);
+      expect(body.storeCreditApplied).toBe(300);
+      // amountPayable is fully server-derived: grandTotal (already net of
+      // both promotions, pre-tax per TAX-006) minus the loyalty redemption
+      // value minus store credit applied - never a client-computed figure.
+      const expectedLoyaltyValue = (100 * 25) / 100; // LOYALTY_REDEMPTION_PAISE_PER_POINT default = 25
+      expect(body.amountPayable).toBe(Math.round((body.grandTotal - expectedLoyaltyValue - 300) * 100) / 100);
+
+      const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: body.id } });
+      const redemptions = await testPrisma.promotionRedemption.findMany({ where: { checkoutSessionId: order.checkoutSessionId } });
+      expect(redemptions).toHaveLength(2); // exactly the automatic promotion + the coupon, never a third
+
+      const scAccount = await testPrisma.storeCreditAccount.findUniqueOrThrow({ where: { id: scAccountId } });
+      expect(Number(scAccount.balance)).toBe(200); // 500 - 300
     });
   });
 

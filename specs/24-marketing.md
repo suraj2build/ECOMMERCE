@@ -1,6 +1,6 @@
 # 24. Marketing
 
-**Status:** IMPLEMENTED (built 2026-09-27; not yet independently reviewed — see `acceptance/m25-marketing.md`; decided 2026-09-22, see `blueprint/DECISION_REGISTER.md` `MKT-001`, `CUST-002`)
+**Status:** IMPLEMENTED (built 2026-09-27; independent-review certification-repair applied 2026-09-27 — genuine due-campaign scheduling and a durable per-recipient dispatch claim, see `MKT-001`'s repair notes; not yet independently re-reviewed — see `acceptance/m25-marketing.md`; decided 2026-09-22, see `blueprint/DECISION_REGISTER.md` `MKT-001`, `CUST-002`)
 
 ## Purpose
 

@@ -69,6 +69,14 @@ const marketingRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await marketing.cancelCampaign(id, request.staffUser!.id));
   });
+
+  // The automatic due-campaign sweep (Blocker 3, M25 certification
+  // repair) - staff-gated, idempotent, callable, the same shape as
+  // `POST /loyalty/sweep/expire`. A future scheduler calls this same
+  // route on a timer; this build does not add a scheduler itself.
+  fastify.post('/marketing/sweep/send-due', { preHandler: manageAuth }, async (request, reply) => {
+    reply.status(200).send(await marketing.processDueCampaigns(request.staffUser!.id));
+  });
 };
 
 export default marketingRoutes;

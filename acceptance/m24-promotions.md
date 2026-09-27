@@ -1,7 +1,9 @@
 # M24 — Promotions Acceptance Criteria
 
 **Spec(s):** `specs/23-promotions.md`
-**Status:** IMPLEMENTED (built 2026-09-27; not yet independently reviewed)
+**Status:** IMPLEMENTED (built 2026-09-27); independent-review certification-
+repair applied 2026-09-27 (Blocker 2 — cross-domain promotion↔loyalty/
+store-credit compatibility); not yet independently re-reviewed.
 
 ## Business acceptance
 
@@ -26,6 +28,36 @@
       `stackGroup` with an already-chosen automatic promotion — never a
       hard-coded combination table. Proven in
       `test/integration/promotions.test.ts` tests #3/#4/#5/#8.
+- [x] **(Independent-review certification-repair, Blocker 2, 2026-09-27)**
+      Loyalty redemption and store credit MAY combine with a promotion
+      SUBJECT TO configurable eligibility/stacking rules — the original
+      build allowed these three value systems to combine
+      unconditionally, with no promotion-level control over
+      promotion↔loyalty or promotion↔store-credit combination at all.
+      Repaired with the smallest correct design per the reviewer's own
+      instruction: two plain booleans on `Promotion` —
+      `loyaltyCompatible`/`storeCreditCompatible`, both `@default(true)`
+      (preserving every existing promotion's free-combination behavior
+      unchanged) — never a general rules DSL, never a hard-coded
+      promotion ID/type check. `CheckoutService.startCheckout` enforces
+      this server-side, immediately after `priceLines()` resolves the
+      applied promotions and before any inventory reservation begins:
+      if the customer is actually attempting to redeem loyalty points
+      or apply store credit (redemption amount > 0) and ANY applied
+      promotion is marked incompatible with that value system, the
+      whole checkout attempt is rejected with a `ValidationError` naming
+      the specific promotion and the conflicting value system — the
+      same "reject by name, never silently drop" precedent PROMO-002's
+      own promotion↔promotion stacking conflict already established. A
+      promotion marked incompatible with loyalty still applies normally
+      on an order that redeems zero points. See LOY-005/PROMO-002 in
+      `blueprint/DECISION_REGISTER.md` for the full design record and
+      `test/integration/promotions.test.ts` tests #18–#24 for the
+      required cross-domain matrix (compatible/incompatible × automatic
+      promotion/coupon × loyalty/store-credit, plus a single real
+      checkout combining a coupon + a compatible automatic promotion +
+      real loyalty redemption + real store credit together with
+      deterministic server-authoritative totals).
 
 ## Functional acceptance
 
@@ -99,16 +131,23 @@ overlap, not sequential simulation)
 
 ## Test requirements
 
-- [x] E2E: `acceptance/e2e-commerce-flows.md` FLOW 18 —
-      `test/e2e-storefront/promotions.spec.ts`, driving a real
-      mobile-OTP sign-in, an automatic 10%-off promotion applying with
-      no code, an incompatible coupon rejected while the automatic
-      promotion's discount remains visible, a compatible coupon then
-      stacking with it, store credit applied on top, and a real COD
-      order placed — verified server-side via Prisma that exactly the
-      two compatible `PromotionRedemption` rows exist (never the
-      incompatible one) and that the confirmation page's
-      `amountPayable` matches the UI's own arithmetic, 1/1 passing.
+- [x] E2E: `acceptance/e2e-commerce-flows.md` FLOW 18 (updated
+      2026-09-27, Blocker 2 repair — now genuinely "Coupon + Compatible
+      Promotion + Loyalty + Store Credit", not just "...+ Store
+      Credit") — `test/e2e-storefront/promotions.spec.ts`, driving a
+      real mobile-OTP sign-in, a genuine COD purchase that EARNS real
+      loyalty points on a separate product (never a fabricated
+      balance), an automatic 10%-off promotion applying with no code on
+      the main purchase, an incompatible coupon rejected while the
+      automatic promotion's discount remains visible, a compatible
+      coupon then stacking with it, real loyalty points AND real store
+      credit both applied on top through the checkout page's own
+      redemption inputs, and a real COD order placed — verified
+      server-side via Prisma that exactly the two compatible
+      `PromotionRedemption` rows exist (never the incompatible one),
+      that a real `REDEEM` `LoyaltyLedgerEntry` was posted, and that the
+      confirmation page's `amountPayable` matches the UI's own
+      arithmetic across all three reductions, 1/1 passing.
 
 ## Security / privacy
 

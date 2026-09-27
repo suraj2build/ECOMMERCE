@@ -18,6 +18,8 @@ const createPromotionSchema = z.object({
   endsAt: z.string().datetime().optional(),
   usageLimitTotal: z.number().int().positive().optional(),
   usageLimitPerCustomer: z.number().int().positive().optional(),
+  loyaltyCompatible: z.boolean().optional(),
+  storeCreditCompatible: z.boolean().optional(),
 });
 
 const setActiveSchema = z.object({ isActive: z.boolean() });

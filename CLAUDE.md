@@ -6,10 +6,19 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-27: `M22_ENGINEERING_CERTIFIED — M23 (LOYALTY),
-M24 (PROMOTIONS) AND M25 (MARKETING) BUILD COMPLETE, AWAITING
-INDEPENDENT REVIEW — THE M23+M24+M25 OVERNIGHT COMMERCIAL-ENGAGEMENT
-PHASE IS NOW COMPLETE. M26+ NOT AUTHORIZED.`**
+**Status as of 2026-09-27: `M23 DECISION REQUIRED — M24/M25
+CERTIFICATION REPAIRS COMPLETE — AWAITING PRODUCT DECISION +
+INDEPENDENT RE-REVIEW. M26+ NOT AUTHORIZED.`** An independent review of
+the M23+M24+M25 Overnight Commercial-Engagement Phase build (reviewed
+head `77bd1946703704d36b505214eb2c66223c4bef0f`) returned four
+certification-repair blockers, fixed the same day — see the
+"M23–M25 independent-review certification-repair" narrative below for
+the complete record. Blocker 1 (M23) surfaced a genuine unresolved
+commercial-policy question (`LOY-006`, spent-points clawback) that this
+repair pass correctly did NOT guess an answer to; M23 therefore remains
+at `DECISION_REQUIRED`, not certified, pending an explicit Product
+Owner decision. M24 and M25's own repairs (Blockers 2/3/4) are complete
+and awaiting independent re-review.
 
 **On 2026-09-26 the independent reviewer recorded the M22 certification-
 repair build — commit `137429a485899a188b97d6549c14d47f55090152` on
@@ -296,6 +305,147 @@ regressed by this finding** — both milestones' code, integration tests,
 and design records stand as documented; only the CI workflow's own
 environment configuration was incomplete, and only the record of
 "CI verified green" needed this correction.
+
+**M23–M25 independent-review certification-repair (2026-09-27, review
+head `77bd1946703704d36b505214eb2c66223c4bef0f`):** an independent
+review of the full M23+M24+M25 Overnight Commercial-Engagement Phase
+build (the same commit the "Post-phase CI correction" above was pushed
+on) returned four certification-repair blockers, all fixed the same
+day under a repair authorization scoped specifically to these four
+findings. **Blocker 1 (M23, loyalty reversal shortfall):**
+`LoyaltyService.reverse()` capped the balance-affecting reversal at the
+earning batch's `remainingPoints`, so if a customer had already spent
+the points earned on an order elsewhere, a later qualifying
+cancellation/return of THAT order could reverse fewer points than the
+approved requirement demands — potentially zero — and engineering was
+never authorized to decide that previously-spent points are exempt
+from reversal. Reproduced with a genuine adversarial integration test
+(`test/integration/loyalty.test.ts`, new test #22: Order A earns
+points → customer spends those points on Order B → Order A is later
+returned → the existing implementation posts a REVERSE entry short of
+the full required amount). Repaired with the only safe fix identified
+that does not itself invent a commercial policy: every REVERSE entry
+now records BOTH the balance-affecting amount actually applied (capped
+at what remains available, never negative) AND a new
+`requiredPointsDelta` field recording the FULL amount the reversal
+should have been — with a distinct `loyalty.reverse.shortfall` audit
+event whenever the two differ, so the shortfall is always visible and
+reconstructible, never silently absorbed. This separates "the required
+historical reversal" from "the customer's spendable balance" without
+deciding what happens to the shortfall itself (negative balance?
+customer debt? future-earn clawback? a cash/store-credit offset? — all
+four are explicitly what this repair declined to invent). Recorded as
+`LOY-006` (`DECISION_REQUIRED — LOYALTY CLAWBACK AFTER POINTS ALREADY
+SPENT`) in `blueprint/DECISION_REGISTER.md` and in
+`specs/22-loyalty.md`'s own `## DECISION_REQUIRED` block, with the
+corresponding `acceptance/m23-loyalty.md` financial-integrity criterion
+correctly marked `[~]` (partial), never falsely `[x]`. **M23 remains at
+`DECISION_REQUIRED`, not certified, until the Product Owner decides
+this question.** **Blocker 2 (M24, cross-domain stacking):** the
+approved requirement that loyalty redemption and store credit MAY
+combine with promotions "SUBJECT TO configurable eligibility/stacking
+rules" was only ever enforced for promotion↔promotion stacking
+(`PROMO-002`) — the original build let every promotion combine freely
+with loyalty/store-credit redemption, with no eligibility gate at all.
+Repaired with the smallest correct design, per the reviewer's own
+explicit instruction against a general rules DSL: two plain booleans,
+`Promotion.loyaltyCompatible`/`storeCreditCompatible` (both
+`@default(true)`, preserving every existing promotion's free-
+combination behavior), enforced server-side in
+`CheckoutService.startCheckout` immediately after pricing resolves the
+applied promotions and before any inventory reservation begins — an
+incompatible combination is rejected by name, never silently dropped,
+the same precedent `PROMO-002`'s own promotion↔promotion conflict
+handling already established. 7 new adversarial tests
+(`test/integration/promotions.test.ts` tests #18–#24: compatible/
+incompatible × automatic-promotion/coupon × loyalty/store-credit, plus
+one real checkout combining a coupon, a compatible automatic
+promotion, real loyalty redemption, AND real store credit together
+with deterministic server-authoritative totals), and FLOW 18
+(`test/e2e-storefront/promotions.spec.ts`) now genuinely proves loyalty
+redemption stacking with a promotion for the first time — the original
+FLOW 18 never actually exercised loyalty at all, a real gap this repair
+closed by adding a genuine separate COD purchase that earns real
+points before the main scenario. **Blocker 3 (M25, scheduling was not
+actually implemented):** the original build persisted
+`MarketingCampaign.scheduledAt` at creation but left every campaign in
+`DRAFT` regardless, and the only send path was the manual staff
+`POST .../send` route, which claimed any `DRAFT`/`SCHEDULED` campaign
+immediately regardless of `scheduledAt` — there was no genuine
+due-campaign execution mechanism at all, so `acceptance/
+m25-marketing.md`'s "campaign scheduling works" checkbox had been
+checked on a capability that did not exist, a real documentation-
+honesty gap this repair corrects rather than leaves standing. Repaired:
+`createCampaign` now sets `status: 'SCHEDULED'` (not `DRAFT`) whenever
+a `scheduledAt` is supplied; a new `MarketingService.processDueCampaigns()`
+(`POST /marketing/sweep/send-due`, staff-gated, the same shape as the
+existing `POST /loyalty/sweep/expire`) is a plain callable sweep
+function — never a general job platform — that claims and sends ONLY
+campaigns where `status = SCHEDULED AND scheduledAt <= now`, literally
+that condition and nothing broader; a `DRAFT` campaign or a not-yet-due
+`SCHEDULED` campaign is never touched by it. The pre-existing manual
+send route is unchanged and remains a separate, explicit immediate-send
+operation that does not redefine what the automatic sweep itself picks
+up. 7 new controlled-time/concurrency tests
+(`test/integration/marketing.test.ts` tests #16–#22): a future campaign
+is never sent early; the inclusive `scheduledAt <= now` boundary is
+proven, not just the obviously-past-due case; a `DRAFT` campaign is
+never touched by the sweep; a cancelled scheduled campaign is never
+sent by it; two genuinely concurrent due-sweep invocations racing the
+SAME due campaign converge to exactly one sender
+(`Promise.all`, real Postgres row-level CAS); and a customer opted-in
+at schedule time who opts out before the due time is correctly
+suppressed — proving preference is checked at SEND time, never
+snapshotted at schedule time, the one thing the original build already
+had right. **Blocker 4 (M25, per-recipient dispatch crash-then-
+duplicate-send gap):** the original per-recipient flow checked no
+`CampaignDelivery` row existed, called the provider, THEN created the
+delivery row — leaving a genuine distributed-systems hole where a
+process crash between a provider's acceptance of a message and the
+row's insert would let a later reclaim call the provider again for the
+same recipient, a real duplicate-dispatch risk the campaign-level
+`SENDING` compare-and-swap alone does not close. Repaired with a
+durable per-recipient claim taken BEFORE the external provider call:
+`dispatchToRecipient` now `create()`s a `PENDING` `CampaignDelivery` row
+first — its own `@@unique([campaignId, customerId])` constraint is what
+makes the claim atomic under real concurrency (a concurrent worker's
+own `create()` for the same recipient fails with a unique-constraint
+violation and safely no-ops) — only then calls the provider, then
+records the real outcome. A stale `PENDING` claim (the crash scenario),
+or a provider call that itself throws/times out, is recorded as a new
+honest terminal state, `AMBIGUOUS_RECONCILIATION_REQUIRED` — never
+silently retried, since this codebase's provider abstraction does not
+guarantee the idempotent-retry contract a blind resend would need, and
+never conflated with a provider's own genuine, definite `FAILED`
+rejection (proven distinguishable via a new `AlwaysFailsMarketingProvider`
+test double, since the existing `MockMarketingProvider` can never
+itself reach `FAILED` for a valid-looking address). This build does
+NOT claim universal exactly-once delivery — it claims the honest,
+correct, weaker thing: no INTENTIONAL duplicate dispatch, and every
+genuinely unknown outcome is labeled as such rather than guessed. 5 new
+adversarial tests (`test/integration/marketing.test.ts` tests #23–#27):
+two workers racing to durably claim the same recipient converge to
+exactly one winner; a fresh non-stale `PENDING` claim is never
+redispatched; a stale `PENDING` claim is reclaimed as ambiguous WITHOUT
+a second provider call (proven by the `providerMessageId` staying
+null); a provider's definite rejection is recorded `FAILED`; and a
+provider call that throws is recorded ambiguous and never auto-
+resolved or redispatched by a later send. See `LOY-006` and the Blocker
+2/3/4 repair notes under `PROMO-002`/`MKT-001` in
+`blueprint/DECISION_REGISTER.md` for the complete per-blocker design
+records, and `acceptance/m23-loyalty.md`/`m24-promotions.md`/
+`m25-marketing.md` for the corrected Definitions of Done. Full
+clean-state validation: migration-from-zero (32 migrations, zero
+schema drift), lint/typecheck/build clean across every touched
+workspace, the full pre-existing integration suite re-run with zero
+regressions, and the full Playwright storefront E2E suite (including
+the updated FLOW 18) green. **This agent does not self-declare any of
+these four repairs certified** — the same discipline as every
+milestone since Phase 1. **M23 remains at `DECISION_REQUIRED`
+(`LOY-006`) pending an explicit Product Owner decision; M24 and M25's
+own repairs are complete and awaiting independent re-review.** M26 and
+every later milestone remain unauthorized regardless of how this
+re-review or the pending Product Owner decision resolves.
 
 **On 2026-09-26 the independent reviewer recorded the repaired
 Post-Purchase Phase build — commit

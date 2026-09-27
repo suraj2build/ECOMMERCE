@@ -306,11 +306,33 @@ export class CheckoutService {
       throw new ValidationError('Your bag has changes that need your attention before checkout - review it first');
     }
 
-    const { lines, subtotal, taxAmount, baseSubtotal, promotionDiscountTotal } = await this.priceLines(
+    const { lines, subtotal, taxAmount, baseSubtotal, promotionDiscountTotal, appliedPromotions } = await this.priceLines(
       cartView.items,
       input.shippingAddress.stateCode,
       input.couponCode,
     );
+
+    // M24/M25 independent-review certification-repair (Blocker 2,
+    // PROMO-002/LOY-005): a promotion's cross-domain compatibility with
+    // loyalty redemption / store credit is enforced HERE, before any
+    // reservation is made, so an incompatible combination fails fast
+    // with a clear reason rather than requiring a rollback. Only fires
+    // when the customer is actually ATTEMPTING to combine (redemption
+    // amount > 0) - a promotion marked incompatible with loyalty still
+    // applies normally on an order that redeems no points at all.
+    if (input.loyaltyPointsToRedeem && input.loyaltyPointsToRedeem > 0) {
+      const incompatible = appliedPromotions.find((p) => !p.loyaltyCompatible);
+      if (incompatible) {
+        throw new ValidationError(`The promotion "${incompatible.name}" cannot be combined with loyalty point redemption`);
+      }
+    }
+    if (input.storeCreditToApply && input.storeCreditToApply > 0) {
+      const incompatible = appliedPromotions.find((p) => !p.storeCreditCompatible);
+      if (incompatible) {
+        throw new ValidationError(`The promotion "${incompatible.name}" cannot be combined with store credit`);
+      }
+    }
+
     const shippingCost = await this.shipping.calculateShippingCost(subtotal);
     const grandTotal = Math.round((subtotal + shippingCost) * 100) / 100;
 

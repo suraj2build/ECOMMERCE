@@ -203,6 +203,14 @@ const envSchema = z.object({
   // recovery idiom RefundService.claimProcessing/PaymentService.
   // expireStalePayments already established.
   MARKETING_SENDING_STALE_SECONDS: z.coerce.number().int().positive().default(600),
+  // M25 independent-review certification-repair (Blocker 4): a single
+  // recipient's CampaignDelivery claim (PENDING) stuck longer than this
+  // (the process that claimed it crashed between the provider call and
+  // recording SENT/FAILED) is reclaimed as
+  // AMBIGUOUS_RECONCILIATION_REQUIRED, never silently retried - a
+  // shorter window than MARKETING_SENDING_STALE_SECONDS since a single
+  // provider call should complete far faster than an entire campaign send.
+  MARKETING_DELIVERY_STALE_SECONDS: z.coerce.number().int().positive().default(120),
 });
 
 export type Env = z.infer<typeof envSchema>;

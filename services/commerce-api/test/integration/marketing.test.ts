@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { Prisma } from '@fcp/db';
+import { __resetEnvCacheForTests } from '@fcp/config';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff, createAuthenticatedCustomer } from '../helpers/auth.js';
@@ -38,6 +40,11 @@ describe('Marketing (M25)', () => {
   });
 
   beforeEach(async () => {
+    // Defensive reset (Blocker 4 tests temporarily switch MARKETING_PROVIDER
+    // to a test-only double and always restore it in their own `finally`,
+    // but this guards against a leaked override if a test throws first).
+    delete process.env.MARKETING_PROVIDER;
+    __resetEnvCacheForTests();
     await resetDatabase();
     await seedRbac();
     await testPrisma.serviceablePincode.create({
@@ -133,6 +140,32 @@ describe('Marketing (M25)', () => {
 
   async function createTier(name: string, sortOrder: number) {
     return testPrisma.loyaltyTier.create({ data: { name, minLifetimePoints: 0, sortOrder } });
+  }
+
+  async function createCampaign(token: string, overrides: Record<string, unknown> = {}) {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/marketing/campaigns',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Test campaign', channel: 'EMAIL', messageType: 'NEWSLETTER', content: 'Hello!', ...overrides },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json() as { id: string; status: string };
+  }
+
+  async function sendCampaign(token: string, campaignId: string) {
+    return app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+  }
+
+  async function sweepDueCampaigns(token: string) {
+    return app.inject({ method: 'POST', url: '/api/v1/marketing/sweep/send-due', headers: { authorization: `Bearer ${token}` } });
+  }
+
+  async function optedInCustomerWithEmail(email: string) {
+    const { customerId } = await createAuthenticatedCustomer(app);
+    await testPrisma.customer.update({ where: { id: customerId }, data: { email } });
+    await testPrisma.communicationPreference.create({ data: { customerId, channel: 'EMAIL', messageType: 'NEWSLETTER', optedIn: true } });
+    return customerId;
   }
 
   // --- Segmentation ---
@@ -232,17 +265,6 @@ describe('Marketing (M25)', () => {
   // --- Send-time opt-out enforcement + honest skip reasons ---
 
   describe('Campaign send', () => {
-    async function createCampaign(token: string, overrides: Record<string, unknown> = {}) {
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/v1/marketing/campaigns',
-        headers: { authorization: `Bearer ${token}` },
-        payload: { name: 'Test campaign', channel: 'EMAIL', messageType: 'NEWSLETTER', content: 'Hello!', ...overrides },
-      });
-      expect(res.statusCode).toBe(201);
-      return res.json().id as string;
-    }
-
     it('6. a customer opted out of the channel/messageType is SKIPPED_OPTOUT, never sent', async () => {
       const { customerId } = await createAuthenticatedCustomer(app);
       await testPrisma.customer.update({ where: { id: customerId }, data: { email: 'optedout@example.com' } });
@@ -251,8 +273,8 @@ describe('Marketing (M25)', () => {
       });
 
       const token = await marketingToken();
-      const campaignId = await createCampaign(token);
-      const sendRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const { id: campaignId } = await createCampaign(token);
+      const sendRes = await sendCampaign(token, campaignId);
       expect(sendRes.statusCode).toBe(200);
       expect(sendRes.json().sentCount).toBe(0);
       expect(sendRes.json().skippedCount).toBe(1);
@@ -268,8 +290,8 @@ describe('Marketing (M25)', () => {
       });
 
       const token = await marketingToken();
-      const campaignId = await createCampaign(token);
-      const sendRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const { id: campaignId } = await createCampaign(token);
+      const sendRes = await sendCampaign(token, campaignId);
       expect(sendRes.json().sentCount).toBe(0);
 
       const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
@@ -283,8 +305,8 @@ describe('Marketing (M25)', () => {
       });
 
       const token = await marketingToken();
-      const campaignId = await createCampaign(token, { channel: 'PUSH' });
-      const sendRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const { id: campaignId } = await createCampaign(token, { channel: 'PUSH' });
+      const sendRes = await sendCampaign(token, campaignId);
       expect(sendRes.json().sentCount).toBe(0);
 
       const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
@@ -299,8 +321,8 @@ describe('Marketing (M25)', () => {
       });
 
       const token = await marketingToken();
-      const campaignId = await createCampaign(token);
-      const sendRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const { id: campaignId } = await createCampaign(token);
+      const sendRes = await sendCampaign(token, campaignId);
       expect(sendRes.json().sentCount).toBe(1);
       expect(sendRes.json().campaign.status).toBe('SENT');
 
@@ -315,8 +337,8 @@ describe('Marketing (M25)', () => {
       // No CommunicationPreference row at all - marketing types default opted-OUT.
 
       const token = await marketingToken();
-      const campaignId = await createCampaign(token);
-      const sendRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const { id: campaignId } = await createCampaign(token);
+      const sendRes = await sendCampaign(token, campaignId);
       expect(sendRes.json().sentCount).toBe(0);
 
       const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
@@ -329,11 +351,11 @@ describe('Marketing (M25)', () => {
       await testPrisma.communicationPreference.create({ data: { customerId, channel: 'EMAIL', messageType: 'NEWSLETTER', optedIn: true } });
 
       const token = await marketingToken();
-      const campaignId = await createCampaign(token);
-      const firstSend = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const { id: campaignId } = await createCampaign(token);
+      const firstSend = await sendCampaign(token, campaignId);
       expect(firstSend.json().sentCount).toBe(1);
 
-      const secondSend = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const secondSend = await sendCampaign(token, campaignId);
       expect(secondSend.statusCode).toBe(200);
       expect(secondSend.json().sentCount).toBe(0); // already SENT - safe no-op, not reprocessed
 
@@ -347,12 +369,9 @@ describe('Marketing (M25)', () => {
       await testPrisma.communicationPreference.create({ data: { customerId, channel: 'EMAIL', messageType: 'NEWSLETTER', optedIn: true } });
 
       const token = await marketingToken();
-      const campaignId = await createCampaign(token);
+      const { id: campaignId } = await createCampaign(token);
 
-      const [resA, resB] = await Promise.all([
-        app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } }),
-        app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } }),
-      ]);
+      const [resA, resB] = await Promise.all([sendCampaign(token, campaignId), sendCampaign(token, campaignId)]);
 
       expect(resA.statusCode).toBe(200);
       expect(resB.statusCode).toBe(200);
@@ -368,18 +387,244 @@ describe('Marketing (M25)', () => {
 
     it('13. a cancelled campaign cannot be sent, and an already-SENT campaign cannot be cancelled', async () => {
       const token = await marketingToken();
-      const campaignId = await createCampaign(token);
+      const { id: campaignId } = await createCampaign(token);
       const cancelRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/cancel`, headers: { authorization: `Bearer ${token}` } });
       expect(cancelRes.statusCode).toBe(200);
       expect(cancelRes.json().status).toBe('CANCELLED');
 
-      const sendRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/send`, headers: { authorization: `Bearer ${token}` } });
-      expect(sendRes.json().sentCount).toBe(0); // CANCELLED is terminal - claimSending never claims it
+      const sendRes = await sendCampaign(token, campaignId);
+      expect(sendRes.json().sentCount).toBe(0); // CANCELLED is terminal - claimForSend never claims it
 
-      const secondCampaignId = await createCampaign(token);
-      await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${secondCampaignId}/send`, headers: { authorization: `Bearer ${token}` } });
+      const { id: secondCampaignId } = await createCampaign(token);
+      await sendCampaign(token, secondCampaignId);
       const cancelAfterSendRes = await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${secondCampaignId}/cancel`, headers: { authorization: `Bearer ${token}` } });
       expect(cancelAfterSendRes.statusCode).toBe(400);
+    });
+  });
+
+  // --- Automatic due-campaign scheduling sweep (M25 independent-review
+  // certification-repair, Blocker 3) ---
+
+  describe('Scheduling: the automatic due-campaign sweep', () => {
+    it('16. a campaign created WITH a future scheduledAt is SCHEDULED (not DRAFT) and is NOT sent by the due sweep before its time', async () => {
+      await optedInCustomerWithEmail('future@example.com');
+      const token = await marketingToken();
+      const { id: campaignId, status } = await createCampaign(token, { scheduledAt: new Date(Date.now() + 3_600_000).toISOString() });
+      expect(status).toBe('SCHEDULED');
+
+      const sweepRes = await sweepDueCampaigns(token);
+      expect(sweepRes.statusCode).toBe(200);
+      expect(sweepRes.json().processedCount).toBe(0);
+
+      const campaign = await testPrisma.marketingCampaign.findUniqueOrThrow({ where: { id: campaignId } });
+      expect(campaign.status).toBe('SCHEDULED'); // untouched
+      expect(await testPrisma.campaignDelivery.count({ where: { campaignId } })).toBe(0);
+    });
+
+    it('17. a campaign is picked up by the due sweep the instant its scheduledAt is reached (an inclusive scheduledAt <= now boundary, not exclusive)', async () => {
+      await optedInCustomerWithEmail('boundary@example.com');
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token, { scheduledAt: new Date(Date.now() + 60_000).toISOString() });
+
+      // Move the boundary to "right now" - by the time the sweep actually
+      // runs a moment later, scheduledAt <= now holds true.
+      await testPrisma.marketingCampaign.update({ where: { id: campaignId }, data: { scheduledAt: new Date() } });
+
+      const sweepRes = await sweepDueCampaigns(token);
+      expect(sweepRes.json().processedCount).toBe(1);
+
+      const campaign = await testPrisma.marketingCampaign.findUniqueOrThrow({ where: { id: campaignId } });
+      expect(campaign.status).toBe('SENT');
+    });
+
+    it('18. a genuinely past-due SCHEDULED campaign is sent by the due sweep', async () => {
+      await optedInCustomerWithEmail('pastdue@example.com');
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token, { scheduledAt: new Date(Date.now() - 60_000).toISOString() });
+
+      const sweepRes = await sweepDueCampaigns(token);
+      expect(sweepRes.json().processedCount).toBe(1);
+      const result = sweepRes.json().results[0];
+      expect(result.sentCount).toBe(1);
+
+      const campaign = await testPrisma.marketingCampaign.findUniqueOrThrow({ where: { id: campaignId } });
+      expect(campaign.status).toBe('SENT');
+    });
+
+    it('19. a DRAFT campaign (no scheduledAt at all) is never touched by the automatic due sweep - only an explicit manual send dispatches it', async () => {
+      await optedInCustomerWithEmail('draft@example.com');
+      const token = await marketingToken();
+      const { id: campaignId, status } = await createCampaign(token); // no scheduledAt
+      expect(status).toBe('DRAFT');
+
+      const sweepRes = await sweepDueCampaigns(token);
+      expect(sweepRes.json().processedCount).toBe(0);
+      expect((await testPrisma.marketingCampaign.findUniqueOrThrow({ where: { id: campaignId } })).status).toBe('DRAFT');
+
+      // An explicit manual send still works on a DRAFT campaign - a
+      // separate, intentional operation from the automatic due sweep.
+      const sendRes = await sendCampaign(token, campaignId);
+      expect(sendRes.json().sentCount).toBe(1);
+    });
+
+    it('20. a CANCELLED (formerly scheduled, now past-due) campaign is never sent by the due sweep', async () => {
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token, { scheduledAt: new Date(Date.now() - 60_000).toISOString() });
+      await app.inject({ method: 'POST', url: `/api/v1/marketing/campaigns/${campaignId}/cancel`, headers: { authorization: `Bearer ${token}` } });
+
+      const sweepRes = await sweepDueCampaigns(token);
+      expect(sweepRes.json().processedCount).toBe(0);
+      expect((await testPrisma.marketingCampaign.findUniqueOrThrow({ where: { id: campaignId } })).status).toBe('CANCELLED');
+      expect(await testPrisma.campaignDelivery.count({ where: { campaignId } })).toBe(0);
+    });
+
+    it('21. two genuinely concurrent due-sweep invocations racing the SAME due campaign converge to exactly one sender', async () => {
+      const customerId = await optedInCustomerWithEmail('sweep-race@example.com');
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token, { scheduledAt: new Date(Date.now() - 60_000).toISOString() });
+
+      const [a, b] = await Promise.all([sweepDueCampaigns(token), sweepDueCampaigns(token)]);
+      expect(a.statusCode).toBe(200);
+      expect(b.statusCode).toBe(200);
+      const totalProcessed = a.json().processedCount + b.json().processedCount;
+      expect(totalProcessed).toBe(1); // exactly one of the two actually claimed and sent it
+
+      const deliveries = await testPrisma.campaignDelivery.findMany({ where: { campaignId, customerId } });
+      expect(deliveries).toHaveLength(1); // never a double-send
+
+      const campaign = await testPrisma.marketingCampaign.findUniqueOrThrow({ where: { id: campaignId } });
+      expect(campaign.status).toBe('SENT');
+    });
+
+    it('22. a customer opted-IN at the time a campaign was scheduled but opts OUT before the due time arrives is suppressed by the due sweep (preference is checked at SEND time, never snapshotted at schedule time)', async () => {
+      const customerId = await optedInCustomerWithEmail('optin-then-out@example.com');
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token, { scheduledAt: new Date(Date.now() + 3_600_000).toISOString() });
+
+      // The customer opts out before the campaign's due time arrives.
+      await testPrisma.communicationPreference.update({
+        where: { customerId_channel_messageType: { customerId, channel: 'EMAIL', messageType: 'NEWSLETTER' } },
+        data: { optedIn: false },
+      });
+
+      // The due time arrives.
+      await testPrisma.marketingCampaign.update({ where: { id: campaignId }, data: { scheduledAt: new Date() } });
+      const sweepRes = await sweepDueCampaigns(token);
+      expect(sweepRes.json().processedCount).toBe(1);
+
+      const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
+      expect(delivery.status).toBe('SKIPPED_OPTOUT');
+    });
+  });
+
+  // --- Durable per-recipient dispatch (M25 independent-review
+  // certification-repair, Blocker 4) ---
+
+  describe('Durable per-recipient dispatch', () => {
+    it('23. two workers racing to durably claim the SAME recipient converge to exactly one winner - the atomicity dispatchToRecipient depends on', async () => {
+      const { customerId } = await createAuthenticatedCustomer(app);
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token);
+
+      const claim = () =>
+        testPrisma.campaignDelivery
+          .create({ data: { campaignId, customerId, status: 'PENDING' } })
+          .then(() => 'WON' as const)
+          .catch((err) => {
+            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return 'LOST' as const;
+            throw err;
+          });
+
+      const [a, b] = await Promise.all([claim(), claim()]);
+      expect([a, b].sort()).toEqual(['LOST', 'WON']);
+      expect(await testPrisma.campaignDelivery.count({ where: { campaignId, customerId } })).toBe(1);
+    });
+
+    it('24. a recipient with an existing FRESH (non-stale) PENDING claim from a moment ago is skipped, never redispatched', async () => {
+      const customerId = await optedInCustomerWithEmail('fresh-pending@example.com');
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token);
+      // Simulate: another worker durably claimed this recipient a moment
+      // ago and is still (genuinely) mid-flight - never stale.
+      await testPrisma.campaignDelivery.create({ data: { campaignId, customerId, status: 'PENDING' } });
+
+      const sendRes = await sendCampaign(token, campaignId);
+      expect(sendRes.json().sentCount).toBe(0);
+
+      const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
+      expect(delivery.status).toBe('PENDING'); // untouched - still owned by "the other worker"
+      expect(await testPrisma.campaignDelivery.count({ where: { campaignId, customerId } })).toBe(1); // never a second row
+    });
+
+    it('25. a stale PENDING claim (the process that made the provider call crashed before recording SENT/FAILED) is reclaimed as AMBIGUOUS_RECONCILIATION_REQUIRED WITHOUT calling the provider again', async () => {
+      const customerId = await optedInCustomerWithEmail('stale-pending@example.com');
+      const token = await marketingToken();
+      const { id: campaignId } = await createCampaign(token);
+
+      const staleRow = await testPrisma.campaignDelivery.create({ data: { campaignId, customerId, status: 'PENDING' } });
+      await testPrisma.campaignDelivery.update({ where: { id: staleRow.id }, data: { updatedAt: new Date(Date.now() - 1_000_000) } });
+
+      const sendRes = await sendCampaign(token, campaignId);
+      expect(sendRes.json().sentCount).toBe(0);
+      expect(sendRes.json().ambiguousCount).toBe(1);
+
+      const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { id: staleRow.id } });
+      expect(delivery.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+      expect(delivery.providerMessageId).toBeNull(); // never actually redispatched
+      expect(await testPrisma.campaignDelivery.count({ where: { campaignId, customerId } })).toBe(1); // never a second row
+    });
+
+    it('26. a provider that definitely rejects the message is recorded FAILED, never confused with an ambiguous/unknown outcome', async () => {
+      const customerId = await optedInCustomerWithEmail('definite-fail@example.com');
+
+      process.env.MARKETING_PROVIDER = 'MOCK_ALWAYS_FAILS';
+      __resetEnvCacheForTests();
+      try {
+        const token = await marketingToken();
+        const { id: campaignId } = await createCampaign(token);
+        const sendRes = await sendCampaign(token, campaignId);
+        expect(sendRes.json().sentCount).toBe(0);
+        expect(sendRes.json().failedCount).toBe(1);
+        expect(sendRes.json().ambiguousCount).toBe(0);
+
+        const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
+        expect(delivery.status).toBe('FAILED');
+        expect(delivery.errorMessage).toMatch(/definite provider rejection/i);
+      } finally {
+        delete process.env.MARKETING_PROVIDER;
+        __resetEnvCacheForTests();
+      }
+    });
+
+    it('27. a provider call that throws/times out is recorded AMBIGUOUS_RECONCILIATION_REQUIRED - never FAILED, and is never auto-resolved or redispatched by a later send', async () => {
+      const customerId = await optedInCustomerWithEmail('ambiguous@example.com');
+
+      process.env.MARKETING_PROVIDER = 'MOCK_UNRELIABLE';
+      __resetEnvCacheForTests();
+      try {
+        const token = await marketingToken();
+        const { id: campaignId } = await createCampaign(token);
+        const sendRes = await sendCampaign(token, campaignId);
+        expect(sendRes.json().sentCount).toBe(0);
+        expect(sendRes.json().failedCount).toBe(0);
+        expect(sendRes.json().ambiguousCount).toBe(1);
+        expect(sendRes.json().campaign.status).toBe('FAILED'); // no genuine SENT - never counted as an overall success
+
+        const delivery = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
+        expect(delivery.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+
+        // A later re-send attempt never auto-resolves or redispatches it -
+        // the campaign itself is now FAILED (terminal), so claimForSend
+        // does not even reclaim it.
+        const secondSend = await sendCampaign(token, campaignId);
+        expect(secondSend.json().claimed).toBe(false);
+        const deliveryAfter = await testPrisma.campaignDelivery.findUniqueOrThrow({ where: { campaignId_customerId: { campaignId, customerId } } });
+        expect(deliveryAfter.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED'); // unchanged
+        expect(await testPrisma.campaignDelivery.count({ where: { campaignId, customerId } })).toBe(1);
+      } finally {
+        delete process.env.MARKETING_PROVIDER;
+        __resetEnvCacheForTests();
+      }
     });
   });
 

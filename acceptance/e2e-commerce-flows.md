@@ -223,19 +223,26 @@ spec's second test) and adversarially at the integration level
 proofs for both the checkout redemption race and a double-fired expiry
 sweep).
 
-## FLOW 18 — Coupon + Compatible Promotion + Store Credit
+## FLOW 18 — Coupon + Compatible Promotion + Loyalty + Store Credit
 
 **Preconditions:** An active automatic promotion; a coupon marked
-compatible with it; customer has a store-credit balance.
+compatible with it; customer has real earned loyalty points and a
+store-credit balance; both the automatic promotion and the coupon are
+marked compatible with loyalty redemption and store credit
+(`Promotion.loyaltyCompatible`/`storeCreditCompatible`).
 **Steps:**
 1. Add items to cart triggering the automatic promotion.
 2. Apply the compatible coupon.
-3. Apply store credit at checkout.
-**Assertions:** All three discounts/credits apply correctly together
-per the configured stacking rules; attempting to also apply an
-incompatible second coupon is rejected with a clear reason while the
-first remains applied; final charged amount is arithmetically correct
-across all three reductions.
+3. Apply loyalty points at checkout.
+4. Apply store credit at checkout.
+**Assertions:** All four discounts/credits apply correctly together
+per the configured stacking AND cross-domain compatibility rules;
+attempting to also apply an incompatible second coupon is rejected
+with a clear reason while the first remains applied; attempting to
+combine an incompatible promotion with loyalty redemption or store
+credit is rejected with a clear reason naming the promotion and the
+conflicting value system; final charged amount is arithmetically
+correct across all four reductions.
 
 **M24 implementation note (2026-09-27):** proven end to end in
 `test/e2e-storefront/promotions.spec.ts` — a real mobile-OTP sign-in
@@ -253,6 +260,28 @@ compatible `PromotionRedemption` rows exist for the resulting order
 (never the rejected one), and that the confirmation page's
 `amountPayable` equals `grandTotal` minus the applied store credit,
 computed from the UI's own displayed numbers — 1/1 passing.
+
+**M24/M25 independent-review certification-repair note (2026-09-27,
+Blocker 2):** the original flow above never actually proved loyalty
+redemption combined with a promotion at all — a genuine gap, since the
+approved requirement ("loyalty redemption and store credit MAY combine
+with promotions SUBJECT TO configurable eligibility/stacking rules")
+was only ever enforced/tested for store credit. FLOW 18 is now
+genuinely "Coupon + Compatible Promotion + Loyalty + Store Credit":
+before the scenario above, the same signed-in customer places a
+SEPARATE real COD purchase (a different, higher-priced product) that
+genuinely EARNS loyalty points — never a fabricated balance — then, in
+the main scenario, redeems those real points through the checkout
+page's own "Points to redeem" input alongside the coupon, the
+automatic promotion, and store credit, all at once. Server-side,
+verified via Prisma that a real `REDEEM` `LoyaltyLedgerEntry` was
+posted for the resulting order and that the confirmation page's
+`amountPayable` equals `grandTotal` minus the loyalty redemption value
+minus the applied store credit — 1/1 passing. See
+`test/integration/promotions.test.ts` tests #18–#24 for the full
+adversarial cross-domain compatibility matrix (compatible/incompatible
+× automatic promotion/coupon × loyalty/store-credit) this flow's own
+E2E scenario is backed by.
 
 ## FLOW 19 — Unauthorized Admin Action Blocked
 

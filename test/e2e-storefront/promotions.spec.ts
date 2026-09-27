@@ -28,20 +28,27 @@ function bruteForceOtp(codeHash: string, length = 6): string {
 }
 
 /**
- * Promotions browser E2E (M24, specs/23-promotions.md, PROMO-001/002;
+ * Promotions browser E2E (M24/M25 independent-review certification-
+ * repair, Blocker 2; specs/23-promotions.md, PROMO-001/002/LOY-005;
  * acceptance/e2e-commerce-flows.md FLOW 18 "Coupon + Compatible
- * Promotion + Store Credit"). Drives a real mobile-OTP sign-in, adds an
- * item that triggers a real automatic promotion, applies a real
- * compatible coupon through the checkout page's own apply/remove UI
- * (server-revalidated, never a client-computed discount), applies real
- * store credit, places the order, and verifies the final charged
- * amount is arithmetically correct across all three reductions -
- * then, in a second scenario, proves an incompatible coupon is
- * rejected with a clear reason while the automatic promotion remains
- * applied.
+ * Promotion + Loyalty + Store Credit"). Drives a real mobile-OTP
+ * sign-in, a genuine COD purchase that EARNS real loyalty points
+ * (never a fabricated balance), then a second real checkout where an
+ * automatic promotion applies with no code, an incompatible coupon is
+ * rejected in the browser while the automatic promotion's discount
+ * line remains visible, a compatible coupon then stacks with it, real
+ * loyalty points AND real store credit both apply on top through the
+ * checkout page's own redemption inputs (server-revalidated, never a
+ * client-computed discount), and a real COD order is placed - verified
+ * server-side via Prisma that exactly the two compatible
+ * `PromotionRedemption` rows exist (never the incompatible one) and
+ * that the confirmation page's `amountPayable` matches the UI's own
+ * displayed arithmetic across all three reductions (promotion,
+ * loyalty, store credit).
  */
 test.describe('Promotions (M24) - FLOW 18', () => {
   let styleId: string;
+  let loyaltySeedStyleId: string;
   let api: APIRequestContext;
   const prisma = new PrismaClient();
 
@@ -152,6 +159,31 @@ test.describe('Promotions (M24) - FLOW 18', () => {
         isActive: true,
       },
     });
+
+    // A second, separate, high-value product used ONLY to genuinely EARN
+    // real loyalty points for the test customer via one real COD
+    // purchase (Blocker 2 repair) - never a fabricated balance. Priced
+    // well above the 100-point minimum redemption at the default
+    // 1-point-per-100-INR earn rate even after the automatic 10%
+    // promotion above also applies to it: floor((12000 - 1200) / 100) =
+    // 108 points, still >= LOYALTY_MIN_REDEMPTION_POINTS (100).
+    const loyaltySeedStyleRes = await api.post('/api/v1/products/styles', {
+      headers: authHeaders,
+      data: { styleCode: `E2E-PROMO-LOY-${Date.now()}`, name: 'E2E Promo Loyalty Seed Jacket', brandId: brand.id, categoryId: category.id, season: 'SS26', collection: 'Core', hsnCode },
+    });
+    const loyaltySeedStyle = (await expectOk(loyaltySeedStyleRes, 'Create loyalty-seed style')) as { id: string };
+    loyaltySeedStyleId = loyaltySeedStyle.id;
+    const loyaltySeedColourRes = await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/colours`, { headers: authHeaders, data: { name: 'Black', colourCode: 'BLK' } });
+    const loyaltySeedColour = (await expectOk(loyaltySeedColourRes, 'Add loyalty-seed colour')) as { id: string };
+    const loyaltySeedSkuRes = await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/skus/generate`, { headers: authHeaders, data: { sizeIds: [size.id] } });
+    const loyaltySeedSkus = (await expectOk(loyaltySeedSkuRes, 'Generate loyalty-seed SKUs')) as { skuId: string }[];
+
+    await expectOk(await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/media`, { headers: authHeaders, data: { colourId: loyaltySeedColour.id, url: FIXTURE_IMAGE_URL } }), 'Add loyalty-seed media');
+    await expectOk(await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/ready-for-enrichment`, { headers: authHeaders }), 'Loyalty-seed ready for enrichment');
+    await expectOk(await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/qa-check`, { headers: authHeaders }), 'Loyalty-seed QA check');
+    await expectOk(await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/publish`, { headers: authHeaders }), 'Publish loyalty-seed style');
+    await expectOk(await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId: loyaltySeedStyleId, mrp: 12000, sellingPrice: 12000 } }), 'Set loyalty-seed price');
+    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: loyaltySeedSkus[0]!.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }), 'Loyalty-seed inventory adjustment');
   });
 
   test.afterAll(async () => {
@@ -173,7 +205,7 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible({ timeout: 10_000 });
   }
 
-  test('automatic promotion + compatible coupon + store credit all apply together; an incompatible second coupon is rejected while the automatic promotion remains applied; the final charged amount is arithmetically correct', async ({ page }) => {
+  test('automatic promotion + compatible coupon + real loyalty redemption + real store credit all apply together; an incompatible second coupon is rejected while the automatic promotion remains applied; the final charged amount is arithmetically correct', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     const mobile = `9${String(Date.now()).slice(-9)}`;
     await signIn(page, mobile);
@@ -184,6 +216,40 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await prisma.storeCreditEntry.create({
       data: { accountId: storeCreditAccount.id, type: 'ISSUE', amount: 500, reason: 'E2E test credit', idempotencyKey: `e2e-promo-${customer.id}` },
     });
+
+    // --- EARN: a genuine real COD purchase of a different product earns
+    // real loyalty points for this same customer (Blocker 2 repair) -
+    // never a fabricated balance. ---
+    await page.goto(`/product/${loyaltySeedStyleId}`);
+    await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
+    await page.getByRole('button', { name: 'Add to Bag' }).first().click();
+    await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });
+    await page.goto('/bag');
+    await page.getByRole('link', { name: 'Checkout' }).click();
+    await expect(page).toHaveURL(/\/checkout$/);
+    await page.getByPlaceholder('Full name').fill('E2E Promo Buyer');
+    await page.getByPlaceholder('10-digit mobile number').fill(mobile);
+    await page.getByPlaceholder('House / Flat, Building, Street').first().fill('19 Promo Lane');
+    await page.getByPlaceholder('City').first().fill('New Delhi');
+    await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
+    await page.locator('select').first().selectOption('Delhi');
+    await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
+    await page.getByLabel('Cash on Delivery').check();
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page).toHaveURL(/\/checkout\/[0-9a-f-]+$/, { timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible();
+
+    const loyaltyAccount = await prisma.loyaltyAccount.findUniqueOrThrow({ where: { customerId: customer.id } });
+    expect(loyaltyAccount.balance).toBeGreaterThanOrEqual(100);
+    const balanceBeforeRedeem = loyaltyAccount.balance;
+
+    // Placing an order does NOT clear the bag (a separate, pre-existing
+    // product behavior, not something this repair changes) - remove the
+    // loyalty-seed item so the main scenario's cart holds only the
+    // promo product below.
+    await page.goto('/bag');
+    await page.getByRole('button', { name: 'Remove' }).first().click();
+    await expect(page.getByText('Your bag is empty.')).toBeVisible({ timeout: 10_000 });
 
     await page.goto(`/product/${styleId}`);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
@@ -228,6 +294,12 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await expect(discountLine).toContainText('Compatible coupon', { timeout: 10_000 });
     await expect(discountLine.locator('xpath=following-sibling::span')).toHaveText('-₹400', { timeout: 10_000 });
 
+    // Real loyalty points redeemed on top - both value systems are
+    // compatible with both promotions in this scenario (Blocker 2).
+    const redeemPoints = 100;
+    await expect(page.getByText(`You have ${balanceBeforeRedeem} points available to redeem.`)).toBeVisible({ timeout: 10_000 });
+    await page.getByLabel('Points to redeem').fill(String(redeemPoints));
+
     // Store credit applied on top.
     await page.getByLabel('Store credit to apply').fill('300');
 
@@ -238,26 +310,42 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await page.getByRole('button', { name: 'Place Order' }).click();
     await expect(page).toHaveURL(/\/checkout\/[0-9a-f-]+$/, { timeout: 10_000 });
     await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible();
+    await expect(page.getByText(`Loyalty points redeemed (${redeemPoints} pts)`)).toBeVisible({ timeout: 10_000 });
 
-    const order = await prisma.order.findFirstOrThrow({ where: { customerId: customer.id } });
+    const order = await prisma.order.findFirstOrThrow({ where: { customerId: customer.id }, orderBy: { createdAt: 'desc' } });
     expect(Number(order.promotionDiscountTotal)).toBeGreaterThan(0);
     expect(Number(order.storeCreditApplied)).toBe(300);
+    expect(order.loyaltyPointsRedeemed).toBe(redeemPoints);
 
     const redemptions = await prisma.promotionRedemption.findMany({ where: { checkoutSessionId: order.checkoutSessionId }, include: { promotion: true } });
     expect(redemptions).toHaveLength(2); // the automatic promotion AND the compatible coupon - never the incompatible one
     expect(redemptions.map((r) => r.promotion.name).sort()).toEqual(['Automatic 10% off', 'Compatible coupon']);
 
+    const loyaltyRedeemEntry = await prisma.loyaltyLedgerEntry.findFirst({ where: { accountId: loyaltyAccount.id, type: 'REDEEM' } });
+    expect(loyaltyRedeemEntry).toBeTruthy();
+    expect(loyaltyRedeemEntry!.pointsDelta).toBe(-redeemPoints);
+
     // Final arithmetic: grandTotal (already net of the promotion
     // discount, per TAX-006's pre-tax reduction of subtotal/grandTotal
-    // itself) minus store credit equals the real amountPayable shown on
-    // the confirmation page - server-authoritative, never a client
-    // computation trusted at face value.
+    // itself) minus the loyalty redemption value minus store credit
+    // equals the real amountPayable shown on the confirmation page -
+    // server-authoritative, never a client computation trusted at face
+    // value. LOYALTY_REDEMPTION_PAISE_PER_POINT's default (25) is a
+    // documented engineering default (LOY-002), not guessed here.
+    const loyaltyRedemptionValue = (redeemPoints * 25) / 100;
     await expect(page.getByText('Amount payable')).toBeVisible({ timeout: 10_000 });
     const amountPayableText = await page.getByText('Amount payable').locator('xpath=following-sibling::span').textContent();
     const amountPayable = Number(amountPayableText!.replace(/[^0-9.]/g, ''));
-    expect(Math.round((grandTotal - 300) * 100) / 100).toBe(amountPayable);
+    expect(Math.round((grandTotal - loyaltyRedemptionValue - 300) * 100) / 100).toBe(amountPayable);
 
     const account = await prisma.storeCreditAccount.findUniqueOrThrow({ where: { id: storeCreditAccount.id } });
     expect(Number(account.balance)).toBe(200);
+
+    // Server-authoritative net loyalty balance: spent minus whatever this
+    // very order itself just earned on its own subtotal (EARN runs for
+    // every confirmed order, redemption or not) - never a bare
+    // `before - redeemed`.
+    const loyaltyAfter = await prisma.loyaltyAccount.findUniqueOrThrow({ where: { id: loyaltyAccount.id } });
+    expect(loyaltyAfter.balance).toBe(balanceBeforeRedeem - redeemPoints + order.loyaltyPointsEarned);
   });
 });

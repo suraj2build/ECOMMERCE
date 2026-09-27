@@ -3014,6 +3014,20 @@ model LoyaltyLedgerEntry {
   // a double-reversal (m23 acceptance negative scenario #3).
   reversalOrderLineId  String?                @unique
   reversalReturnLineId String?                @unique
+  // REVERSE-only: the FULL line-share reversal this cancellation/return
+  // actually required, independent of `pointsDelta` (what was actually
+  // applied - capped at the specific EARN batch's remainingPoints, so
+  // the account balance/ledger SUM invariant never goes negative).
+  // `pointsDelta` and this field differ only when the customer had
+  // already spent/lost some of the points that batch earned before this
+  // reversal was triggered - a genuine, fully-audited shortfall, never
+  // silently absorbed. See LOY-001's independent-review repair note in
+  // blueprint/DECISION_REGISTER.md and specs/22-loyalty.md's own
+  // DECISION_REQUIRED block: whether/how to make the customer whole for
+  // that shortfall (negative balance, debt, future-earn clawback, a
+  // cash/store-credit adjustment, or accepting the loss) is an
+  // unresolved commercial policy question this build does not decide.
+  requiredPointsDelta  Int?
   reason               String
   actorStaffId         String?
   // General-purpose idempotency guard for every entry type (defense in
@@ -3182,6 +3196,18 @@ model Promotion {
   usageLimitTotal       Int?
   usageCountTotal       Int                   @default(0)
   usageLimitPerCustomer Int?
+  // Independent-review certification-repair (Blocker 2, PROMO-002):
+  // cross-domain compatibility with loyalty redemption and store
+  // credit, per LOY-005's own "MAY combine... subject to configurable
+  // eligibility/stacking rules" requirement. Deliberately two plain
+  // booleans, not a general rules DSL - a promotion is either
+  // compatible with a given value system or it is not; there is no
+  // per-combination logic to express beyond that. Both default true
+  // (today's existing behavior - promotions, loyalty, and store credit
+  // already combine freely) so this is additive, never a silent
+  // behavior change for any promotion that doesn't opt out.
+  loyaltyCompatible     Boolean               @default(true)
+  storeCreditCompatible Boolean               @default(true)
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
 
@@ -3332,6 +3358,16 @@ model MarketingCampaign {
 }
 
 enum CampaignDeliveryStatus {
+  // M25 independent-review certification-repair (Blocker 4): the durable
+  // per-recipient claim taken BEFORE the external provider call - the
+  // @@unique([campaignId, customerId]) below is what makes this claim
+  // atomic. A concurrent worker's own create() attempt for the SAME
+  // recipient fails with a unique-constraint violation and safely skips
+  // rather than racing a second provider call for the same person. A row
+  // that stays PENDING past MARKETING_DELIVERY_STALE_SECONDS (the
+  // process that claimed it crashed sometime between the provider call
+  // and recording its outcome) is reclaimed as
+  // AMBIGUOUS_RECONCILIATION_REQUIRED below, never silently retried.
   PENDING
   SENT
   FAILED
@@ -3344,12 +3380,29 @@ enum CampaignDeliveryStatus {
   // the same kind M19 (photo upload) and M08 (S3 client) each recorded
   // rather than fabricating a fake destination).
   SKIPPED_NO_ADDRESS
+  // The external provider call's outcome is genuinely unknown - either
+  // the call itself threw/timed out (it may have been accepted by the
+  // provider before the error), or a stale PENDING claim was reclaimed
+  // (the process that made the call crashed before recording SENT/
+  // FAILED). Never auto-resolved by a later sweep into SENT or FAILED:
+  // this codebase's provider abstraction does not guarantee the
+  // idempotent-retry contract that would make a blind resend safe
+  // (MKT-001, no production provider selected yet), and blindly
+  // redispatching risks a genuine duplicate message. Reconciling this
+  // state (checking the provider's own delivery log/webhook, if one
+  // exists) is an operational, provider-specific follow-up this build
+  // does not invent.
+  AMBIGUOUS_RECONCILIATION_REQUIRED
 }
 
 // One row per (campaign, customer) - the @@unique below is what makes
 // re-triggering a send on an already-SENDING/SENT campaign a safe
 // no-op rather than a double-send, mirroring PromotionRedemption's own
-// per-checkout-session uniqueness idiom.
+// per-checkout-session uniqueness idiom. It is ALSO the durable claim
+// (Blocker 4): the row is created with status=PENDING before the
+// external provider call is ever made, so the unique constraint itself
+// is what makes claiming a recipient atomic under real concurrency -
+// see CampaignDeliveryStatus's own docblock above.
 model CampaignDelivery {
   id                String                 @id @default(uuid())
   campaignId        String
@@ -3359,6 +3412,10 @@ model CampaignDelivery {
   errorMessage      String?
   sentAt            DateTime?
   createdAt         DateTime               @default(now())
+  // Used to detect a stale PENDING claim (MARKETING_DELIVERY_STALE_SECONDS)
+  // whose owning process crashed between the provider call and recording
+  // its outcome - see CampaignDeliveryStatus.AMBIGUOUS_RECONCILIATION_REQUIRED.
+  updatedAt         DateTime               @default(now()) @updatedAt
 
   campaign MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   customer Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)

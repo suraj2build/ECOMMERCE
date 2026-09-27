@@ -210,11 +210,23 @@ export class LoyaltyService {
    * OrderLine contributed to its order's EARN batch. See the model-group
    * schema docblock for why earning-at-confirmation (not delivery) is
    * what makes this reachable at all without weakening M18's certified
-   * "cannot cancel a shipped/delivered line" boundary. A line's share is
-   * capped at whatever remains unconsumed in that specific EARN batch
-   * (points already redeemed/expired elsewhere cannot be clawed back) -
-   * this is not a bug, it is the correct behavior: you cannot reverse
-   * points that were already genuinely spent.
+   * "cannot cancel a shipped/delivered line" boundary.
+   *
+   * Independent-review certification-repair (LOY-001, Blocker 1): the
+   * BALANCE-AFFECTING portion of a reversal (`pointsDelta`) is still
+   * capped at whatever remains unconsumed in that specific EARN batch -
+   * this is a genuine, deliberate safety floor: applying more than that
+   * would make LoyaltyAccount.balance negative, and this build does not
+   * invent negative-balance/customer-debt semantics. But the FULL
+   * required reversal (the line's whole share, uncapped) is now ALWAYS
+   * recorded separately as `requiredPointsDelta` on the same REVERSE
+   * entry, so a shortfall (the customer having already spent/lost some
+   * of the points this line contributed) is fully visible and audited,
+   * never silently absorbed or hidden behind a capped number that reads
+   * as "fully reversed" when it was not. Whether/how to make the
+   * customer whole for that shortfall is an unresolved commercial policy
+   * question - see specs/22-loyalty.md's own `DECISION_REQUIRED —
+   * LOYALTY CLAWBACK AFTER POINTS ALREADY SPENT` block.
    *
    * Idempotent via `reversalOrderLineId`'s unique constraint - a retried
    * cancellation (M18's own idempotency key convention) never
@@ -266,6 +278,10 @@ export class LoyaltyService {
           accountId: account.id,
           type: 'REVERSE',
           pointsDelta: -actualReverse,
+          // Always recorded, even when it equals pointsDelta (no
+          // shortfall) - a fully-audited, never-hidden historical record
+          // of what this reversal was actually required to be.
+          requiredPointsDelta: -lineShare,
           reason,
           idempotencyKey,
           ...anchor,
@@ -286,12 +302,17 @@ export class LoyaltyService {
     });
     await this.recomputeTier(tx, account.id);
 
+    const shortfall = lineShare - actualReverse;
     await recordAudit(tx, {
       actorType: 'SYSTEM',
-      action: 'loyalty.reverse',
+      // A distinct action when a shortfall occurs, so this is never
+      // findable only by diffing two numbers in a JSON payload - a
+      // shortfall is a genuinely different, more significant event than
+      // a clean full reversal (LOY-001 repair, Blocker 1).
+      action: shortfall > 0 ? 'loyalty.reverse.shortfall' : 'loyalty.reverse',
       entityType: 'LoyaltyAccount',
       entityId: account.id,
-      newValue: { points: actualReverse },
+      newValue: shortfall > 0 ? { pointsApplied: actualReverse, pointsRequired: lineShare, shortfall } : { points: actualReverse },
       reference: order.id,
     });
   }

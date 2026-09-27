@@ -1,7 +1,10 @@
 # M23 — Loyalty Acceptance Criteria
 
 **Spec(s):** `specs/22-loyalty.md`
-**Status:** IMPLEMENTED (built 2026-09-27; not yet independently reviewed)
+**Status:** IMPLEMENTED (built 2026-09-27; independent-review
+certification-repair applied 2026-09-27 for Blocker 1 — see below;
+`LOY-006` `DECISION_REQUIRED` remains open, blocking full M23
+certification)
 
 ## Business acceptance
 
@@ -45,8 +48,9 @@
 
 ## Financial integrity
 
-- [x] Points earned on a cancelled/returned order are reversed via a
-      ledger entry, not a direct balance edit —
+- [~] Points earned on a cancelled/returned order are reversed via a
+      ledger entry, not a direct balance edit — **partially satisfied,
+      see `LOY-006` `DECISION_REQUIRED`.**
       `LoyaltyService.reverseForOrderLine`/`reverseForReturnLine` both
       create a `REVERSE` ledger entry + `LoyaltyPointAllocation` row
       before updating the account's `balance`/`lifetimeEarnedPoints`
@@ -55,6 +59,23 @@
       `refundEligible` (QC PASS only) — a FAILED-QC return neither
       refunds cash nor claws back points, the same DECISION_REQUIRED
       reasoning `RET-005` already established for the cash side.
+      **However**, when the customer has already redeemed/lost some of
+      the specific points a cancelled/returned order earned (on a
+      different, unrelated order) before the cancellation/return
+      occurs, the balance-affecting reversal (`pointsDelta`) is capped
+      at whatever remains unconsumed in that EARN batch — it is NOT the
+      full amount the order actually earned. The 2026-09-27
+      independent-review certification-repair (Blocker 1) closed the
+      *visibility* gap this created (every REVERSE entry now also
+      records the full, uncapped `requiredPointsDelta`, and a shortfall
+      posts a distinct, clearly-labelled `loyalty.reverse.shortfall`
+      audit event — proven in `test/integration/loyalty.test.ts` test
+      #22) but does **not** resolve what should happen to the shortfall
+      itself — see `specs/22-loyalty.md`'s own `DECISION_REQUIRED —
+      LOYALTY CLAWBACK AFTER POINTS ALREADY SPENT` block and `LOY-006`
+      in `blueprint/DECISION_REGISTER.md`. This criterion cannot be
+      checked off as fully satisfied until the Product Owner decides
+      that question.
 - [x] A duplicated earn-triggering event does not double-earn points
       (idempotent per order/triggering-event ID) —
       `LoyaltyLedgerEntry.qualifyingOrderId` is `@unique`; `earnForOrder`
@@ -136,7 +157,11 @@ applicable)
 ## Definition of Done
 
 All boxes above checked except FLOW 18 (explicitly out of this
-milestone's scope, belongs to M24), plus `acceptance/README.md`. This
-agent does not self-declare M23 certified — that determination belongs
-to the independent reviewer, per the discipline this project has
-followed since Phase 1.
+milestone's scope, belongs to M24) and the financial-integrity
+reversal-completeness box, which is marked `[~]` (partially satisfied)
+pending the Product Owner's decision on `LOY-006` in
+`blueprint/DECISION_REGISTER.md` — see `specs/22-loyalty.md`'s
+`DECISION_REQUIRED — LOYALTY CLAWBACK AFTER POINTS ALREADY SPENT`
+block. This agent does not self-declare M23 certified — that
+determination belongs to the independent reviewer, per the discipline
+this project has followed since Phase 1.
