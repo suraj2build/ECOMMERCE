@@ -261,6 +261,42 @@ stopped and is awaiting independent review of all three milestones.
 M26 and every later milestone remain unauthorized regardless of how
 cleanly this phase lands.
 
+**Post-phase CI correction (2026-09-27, commit `616e554`):** the final
+overnight validation pass — checking the actual GitHub Actions run
+results for this phase's own pushes, something this agent's prior
+per-milestone "full clean-state validation" claims had NOT actually
+done — found that the real CI run for BOTH the M23 push and the M24
+push had genuinely FAILED at the E2E step, undetected until now. Root
+cause: `test/e2e-storefront/loyalty.spec.ts` (introduced by M23) places
+a real ₹12,000 COD order specifically to earn more than the 100-point
+minimum redemption threshold at the default 1-point-per-₹100 earn
+rate — a price well above the ₹5,000 default `COD_MAX_ORDER_VALUE_INR`
+business threshold. Local development's gitignored `.env` already
+applies a documented test-environment-only relaxation of this
+threshold; the CI workflow's own environment was simply missing the
+equivalent override, so every COD order attempt in that test was
+rejected with "Cash on Delivery is not available for orders above
+₹5000" and the test never reached the confirmation page. This was
+**not** a product-code regression from M24 or M25 — it was a gap in
+the CI workflow's own configuration that had silently existed since
+M23 first introduced this test, and this agent's own prior claims of
+"full clean-state validation... zero regressions" for the M23 and M24
+milestones were therefore based on LOCAL runs only, never on an actual
+check of the real GitHub Actions result — a real process gap in this
+agent's own discipline, corrected here rather than left unstated.
+Fixed by adding `COD_MAX_ORDER_VALUE_INR: '50000'` to the CI
+workflow's E2E step (`.github/workflows/ci.yml`), matching local dev's
+own override exactly. Reproduced the exact failure locally (restarting
+the API without the override, confirming the identical rejection
+message) before applying the fix, then confirmed both previously-
+failing tests pass with it in place, and re-ran the complete local
+Playwright storefront E2E suite (30/30 passing) to confirm no other
+gaps exist. **M23 and M24's own engineering content are NOT affected or
+regressed by this finding** — both milestones' code, integration tests,
+and design records stand as documented; only the CI workflow's own
+environment configuration was incomplete, and only the record of
+"CI verified green" needed this correction.
+
 **On 2026-09-26 the independent reviewer recorded the repaired
 Post-Purchase Phase build — commit
 `13876a5f98cf3fb7a671ad2ca86d3e62edcd1a24` on
