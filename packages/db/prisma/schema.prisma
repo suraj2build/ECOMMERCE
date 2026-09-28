@@ -3502,17 +3502,62 @@ model CampaignDelivery {
 // be stored), that would be a premature model for a capability this
 // milestone does not build - a future concrete integration's own
 // authorization is the right time to add it.
+//
+// M26 INDEPENDENT-REVIEW CERTIFICATION REPAIR (2026-09-28): the original
+// build's `availability` field was fabricated ('in_stock' unconditionally)
+// and a thrown provider call was recorded as an ordinary definite FAILURE
+// - both fixed. See ChannelListingStatus.PROCESSING/
+// AMBIGUOUS_RECONCILIATION_REQUIRED below and
+// ChannelService.getAvailableToSellBySku-backed availability computation.
+// No new inventory table/ledger was added - availability is derived
+// live, on every publish, from the EXISTING InventoryBalance ledger via
+// InventoryService.getAvailableToSellBySku (also now used by PDP).
 // ---------------------------------------------------------------------------
 
 enum ChannelListingStatus {
   // Never attempted, or explicitly taken down - the SKU is not live on
   // this channel right now.
   NOT_PUBLISHED
+  // M26 independent-review certification repair (2026-09-28): the
+  // durable, DB-backed claim held for the duration of one publish/
+  // unpublish attempt, written BEFORE the external provider is ever
+  // called (ChannelService.claimProcessing, the same PENDING/FAILED ->
+  // PROCESSING compare-and-set idiom RefundService.claimProcessing
+  // already established). A row stuck here past
+  // CHANNEL_PUBLISH_STALE_SECONDS means the process that claimed it
+  // crashed somewhere between the provider call and recording an
+  // outcome - reclaimable (by a later claim attempt, or the explicit
+  // POST /channels/sweep/reclaim-stale sweep) into
+  // AMBIGUOUS_RECONCILIATION_REQUIRED below, never silently stuck
+  // forever and never guessed into PUBLISHED/FAILED.
+  PROCESSING
   PUBLISHED
-  // The most recent publish/resync attempt failed (see lastError) -
-  // distinct from NOT_PUBLISHED because it records a genuine failure to
-  // retry/reconcile, not an intentional non-published state.
+  // The most recent publish/resync attempt received a DEFINITE
+  // rejection from the provider (or failed local validation before any
+  // provider call was made) - distinct from NOT_PUBLISHED because it
+  // records a genuine failure to retry/reconcile, not an intentional
+  // non-published state. Distinct from AMBIGUOUS_RECONCILIATION_REQUIRED
+  // below: this status is only ever reached when the outcome is
+  // actually KNOWN to be a rejection, never merely assumed.
   FAILED
+  // M26 independent-review certification repair (2026-09-28): the most
+  // recent publish/unpublish attempt's outcome is genuinely unknown -
+  // the provider call itself threw/timed out after dispatch (it may
+  // have been accepted by the provider before the error reached us), or
+  // a stale PROCESSING claim was reclaimed (the process that made the
+  // call crashed before recording SUCCESS/FAILURE). Mirrors
+  // CampaignDeliveryStatus.AMBIGUOUS_RECONCILIATION_REQUIRED (M25) and
+  // NotificationDeliveryStatus's own identical value (M29) - the same
+  // honest terminal state, never auto-resolved into PUBLISHED or FAILED
+  // by a later sweep (this codebase's provider abstraction does not
+  // guarantee the idempotent-retry contract a blind resend would need),
+  // and never conflated with FAILED (a genuine, KNOWN rejection). The
+  // operator-safe reconcile path is simply re-issuing the SAME
+  // publish/unpublish call: `channelId:skuId` is a STABLE idempotency
+  // key across every attempt (see provider.ts), so a real provider
+  // implementing this interface is expected to de-duplicate on it
+  // rather than create a second external listing.
+  AMBIGUOUS_RECONCILIATION_REQUIRED
 }
 
 model Channel {
@@ -3566,7 +3611,16 @@ enum ChannelPublicationAction {
 
 enum ChannelPublicationAttemptStatus {
   SUCCESS
+  // A DEFINITE, known provider rejection (or a local validation failure
+  // before any provider call was made) - never used for a merely unknown
+  // outcome, per this repair's outcome model (see
+  // ChannelListingStatus.AMBIGUOUS_RECONCILIATION_REQUIRED's docblock).
   FAILURE
+  // M26 independent-review certification repair (2026-09-28): the
+  // provider call itself threw/timed out, or a stale in-flight claim was
+  // reclaimed - the outcome is genuinely unknown, never recorded as
+  // FAILURE (which would claim a certainty this attempt does not have).
+  AMBIGUOUS_RECONCILIATION_REQUIRED
 }
 
 // Full publish/unpublish attempt history - never overwritten, so a

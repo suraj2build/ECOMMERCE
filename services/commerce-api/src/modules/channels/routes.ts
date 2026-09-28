@@ -61,6 +61,19 @@ const channelRoutes: FastifyPluginAsync = async (fastify) => {
     const { listingId } = z.object({ listingId: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await channels.listAttempts(listingId));
   });
+
+  // M26 independent-review certification repair (2026-09-28): explicit,
+  // staff-gated, idempotent, callable reconciliation sweeps - the same
+  // shape as POST /loyalty/sweep/vest, POST /marketing/sweep/send-due.
+  // Never automatic/synchronous inside any other request - a future cron
+  // can call these same routes a staff operator can call manually today.
+  fastify.post('/channels/sweep/reclaim-stale', { preHandler: manageAuth }, async (request, reply) => {
+    reply.status(200).send(await channels.reclaimStaleProcessing(request.staffUser!.id));
+  });
+
+  fastify.post('/channels/sweep/resync-stale', { preHandler: manageAuth }, async (request, reply) => {
+    reply.status(200).send(await channels.resyncStaleListings(request.staffUser!.id));
+  });
 };
 
 export default channelRoutes;

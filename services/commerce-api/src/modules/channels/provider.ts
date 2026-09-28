@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { loadEnv } from '@fcp/config';
 
 /**
  * Channel adapter/publishing provider abstraction (M26,
@@ -118,10 +119,28 @@ const CHANNEL_PROVIDERS: Record<ChannelProviderName, ChannelProvider> = {
   MOCK_ALWAYS_FAILS: new AlwaysFailsChannelProvider(),
 };
 
+/**
+ * M26 independent-review certification repair (2026-09-28, section 13):
+ * every registered provider here is a test double - `providerName` is
+ * chosen per-Channel at creation time (no global CHANNEL_PROVIDER env var
+ * exists, unlike MARKETING_PROVIDER/SHIPPING_PROVIDER), so nothing
+ * previously stopped a production deployment from creating a Channel with
+ * providerName: 'MOCK' and having it silently behave as though it were a
+ * real marketplace integration. This guard is the smallest explicit check
+ * closing that gap: in NODE_ENV=production, no MOCK_* provider name may
+ * be resolved at all - a real provider must exist and be registered here
+ * (a future, separately-authorized milestone) before any production
+ * channel can use it.
+ */
 export function getChannelProvider(name: string): ChannelProvider {
   const provider = CHANNEL_PROVIDERS[name as ChannelProviderName];
   if (!provider) {
     throw new Error(`Unknown channel provider "${name}" - no such provider is registered`);
+  }
+  if (loadEnv().NODE_ENV === 'production' && name.startsWith('MOCK')) {
+    throw new Error(
+      `Channel provider "${name}" is a test double and may never be used in production - no real channel integration is authorized (CHAN-001)`,
+    );
   }
   return provider;
 }

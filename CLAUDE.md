@@ -6,8 +6,8 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-28: `M26-M29 DIGITAL GROWTH + OPERATIONS PHASE
-BUILD COMPLETE — AWAITING INDEPENDENT RE-REVIEW. M30+ NOT
+**Status as of 2026-09-28: `M26 INDEPENDENT-REVIEW REPAIR COMPLETE —
+M27–M29 PRESERVED — AWAITING INDEPENDENT RE-REVIEW. M30+ NOT
 AUTHORIZED.`** The human project owner gave explicit **"START BUILD —
 M26–M29 DIGITAL GROWTH + OPERATIONS PHASE"** authorization on
 2026-09-28, scoped to one continuous engineering phase covering M26
@@ -155,6 +155,121 @@ This agent has stopped and is awaiting independent review. **M30+
 (Gift Cards, Security Hardening, Performance/Scale, Final
 Certification) remains unauthorized** regardless of how cleanly this
 phase lands.
+
+**M26 INDEPENDENT-REVIEW CERTIFICATION REPAIR (2026-09-28):** an
+independent review of the M26-M29 phase build (review head
+`671b6a2e2902a20ae35779a6a11554231b9341fa`) returned two BLOCKERs,
+both scoped to M26 only — the reviewer's own authorization explicitly
+excluded redesigning M27/M28/M29 except for unavoidable regression
+compatibility, and no such compatibility work was needed; M27–M29 are
+untouched by this repair. **Blocker 1 (channel availability
+fabricated):** `ChannelService.buildFeedItem` returned
+`availability: 'in_stock'` unconditionally, regardless of real stock.
+Fixed by deriving availability from the canonical inventory ledger
+(M06) via a new `InventoryService.getAvailableToSellBySku` method —
+the exact same cross-location `sum(onHand) - sum(reserved)` formula
+the certified public PDP (M11) already used for its own
+`availableQuantity`/`inStock` fields, extracted out of PDP's own
+inline query into `InventoryService` (PDP's real domain owner) so both
+consumers share one implementation rather than the repair duplicating
+inventory business logic — PDP's own full test suite passes unchanged,
+confirming this refactor is output-preserving. No new inventory table,
+ledger, or channel-specific location-allocation policy was invented.
+Publishability (style PUBLISHED + active price + SKU active) and
+current stock level are kept deliberately separate, per the review's
+own explicit instruction: a catalog-publishable SKU with zero
+available-to-sell inventory still publishes successfully, correctly
+marked `out_of_stock` — no auto-unpublish-at-zero-stock policy exists
+or was invented. A new staff-gated, idempotent, callable sweep
+(`POST /channels/sweep/resync-stale`) detects a PUBLISHED listing whose
+live availability has drifted from what was last actually told to the
+channel (`ChannelListing.payloadSnapshot`, a pure read-time
+recomputation, no new persisted "stale" flag, no event bus, no
+background job) and corrects it by reusing `publishSku` itself, in
+both directions (in_stock→out_of_stock and back), proven with a real
+inventory-mutation-then-resweep integration test. **Blocker 2
+(ambiguous provider outcome conflated with definite failure):** a
+provider call that threw/timed out after dispatch (outcome genuinely
+unknown — the provider may have accepted the listing before the error
+reached this system) was recorded as an ordinary `FAILED`, the exact
+reliability regression M25's own Blocker 4 had already fixed for
+marketing delivery. Fixed with a three-outcome model —
+`SUCCESS`/`FAILED` (a DEFINITE, known rejection: local validation, a
+provider-resolution failure, or the provider's own explicit rejection)
+/`AMBIGUOUS_RECONCILIATION_REQUIRED` (the provider call threw, or a
+stale in-flight claim was reclaimed) — the exact same status name and
+reasoning `CampaignDeliveryStatus` (M25) and `NotificationDeliveryStatus`
+(M29) already established, applied here to BOTH publish and unpublish.
+A durable, DB-backed `PROCESSING` claim is taken on the `ChannelListing`
+row, committed to Postgres BEFORE any external provider call, closing
+the durable-intent gap the review's own section 8 raised; this
+repair's OWN adversarial testing caught a genuine second bug in the
+claim's first draft (an `updateMany`-only compare-and-set) — a window
+where `unpublishSku`'s narrower eligibility rule (only PUBLISHED/
+AMBIGUOUS/a reclaimed-stale PROCESSING may be unpublished) could
+observe a STALE pre-claim status and let two sequential-but-
+overlapping requests both dispatch — fixed by giving the claim an
+explicit `SELECT ... FOR UPDATE` row lock (the same idiom
+`InventoryService.lockBalance`/`lockReservation` already use) so the
+row's TRUE pre-claim status is captured atomically inside the same
+lock, never a stale read; proven under genuine concurrency (a real
+`Promise.all`/`Promise.allSettled` race for unpublish, and a
+deterministic manufactured in-flight-claim precondition for publish,
+since `MockChannelProvider`'s near-instant completion makes true
+`Promise.all` overlap non-deterministic through the full service call
+and a genuinely non-overlapping second call is a legitimate
+independent resync by design, not a bug). A staff-gated sweep
+(`POST /channels/sweep/reclaim-stale`) reclaims a claim whose owning
+process crashed mid-flight (`CHANNEL_PUBLISH_STALE_SECONDS`, the same
+idiom `REFUND_PROCESSING_STALE_SECONDS` established). The stable
+`channelId:skuId` idempotency key is unchanged — the operator-safe
+reconcile path for an ambiguous outcome is simply re-issuing the SAME
+publish/unpublish call, which a real provider is expected to
+de-duplicate on; never a blind automatic retry. A THIRD genuine bug
+this repair's own testing caught: `getChannelProvider` was called
+OUTSIDE the publish/unpublish try/catch blocks, so a provider-
+resolution failure (an unknown provider name, or this repair's own new
+production guard below) would leave a claimed listing stuck at
+`PROCESSING` forever with no outcome ever recorded — fixed by resolving
+the provider inside its own try/catch and recording a DEFINITE `FAILED`
+(never ambiguous, since no external call was ever attempted). New
+production safety guard: `getChannelProvider` refuses to resolve any
+`MOCK_*` provider when `NODE_ENV=production` — closing a real gap,
+since (unlike `MARKETING_PROVIDER`/`SHIPPING_PROVIDER`) a channel's
+provider name is chosen per-`Channel` at creation time with no global
+env var gate at all. 19 new adversarial tests
+(`test/integration/channels.test.ts`, now 33 total): inventory truth
+(no balance row / onHand=0 / fully-reserved / cross-location
+aggregation / zero-stock-still-publishes / no channel write ever
+touches `InventoryBalance`), stale-projection detection+resync (drift
+down, safe no-op re-sweep, drift back up), ambiguous-vs-definite
+provider outcomes for both publish and unpublish (including the
+operator-safe ambiguous-retry path and the never-published-so-nothing-
+to-unpublish boundary), durability (exactly-once `SUCCESS` recording,
+a manufactured stale-`PROCESSING` crash scenario reclaimed by the
+sweep, a provider-configuration failure recorded `FAILED` rather than
+left stuck), genuine concurrency for both publish and unpublish, and
+security (publish/reconcile RBAC, the production mock-provider guard).
+Two pre-existing test-hardening changes from the prior M26-M29 push
+(the `promotions.spec.ts` timeout widening and the
+`exchange-fulfilment-xor-race.test.ts` flaky-assertion removal) were
+reviewed and left intact — neither removed a correctness assertion,
+and the underlying safety invariants they guard remain independently
+proven. Full clean-state validation: migration-from-zero (37
+migrations, zero schema drift, confirmed via a direct
+`prisma migrate diff --exit-code` check against a freshly-created
+database), lint/typecheck/build clean, the complete pre-existing
+backend integration suite re-run with zero regressions, and the full
+Playwright suite green. See `specs/25-social-channel-publishing.md`'s
+own repair addendum and `CHAN-001` in `blueprint/DECISION_REGISTER.md`
+for the complete design record, and
+`acceptance/m26-social-channel-publishing.md` for the corrected
+Definition of Done. **This agent does not self-declare this repair
+certified** — the same discipline as every milestone since Phase 1.
+This agent has stopped and is awaiting independent re-review. M27–M29
+are preserved unchanged by this repair and remain awaiting the SAME
+independent review as before. M30+ remains unauthorized regardless of
+how this review resolves.
 
 An independent
 review of the M23+M24+M25 Overnight Commercial-Engagement Phase build
@@ -1366,7 +1481,13 @@ Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
   `m27-seo.md`, `m28-analytics-reporting.md`, `m29-admin-cms.md`) for
   each milestone's Definition of Done and `CHAN-001`/`SEO-001`/
   `ANL-001`/`ADM-001`–`003`/`NOTIF-001` in `blueprint/DECISION_REGISTER.md`
-  for the design records.
+  for the design records. An independent review of this phase returned
+  two certification-repair blockers, both scoped to M26 only (channel
+  availability truth, ambiguous-provider-outcome handling), fixed the
+  same day under a repair authorization that explicitly did NOT extend
+  to M30+ or to redesigning M27/M28/M29 — see §0's own M26 repair
+  narrative for the complete record. M27–M29 are unchanged by that
+  repair and remain awaiting the same independent review as M26.
 - **M23 (Loyalty), M24 (Promotions), and M25 (Marketing) were
   explicitly authorized on 2026-09-26** as a single bounded
   "Overnight Commercial-Engagement Phase" pass, scoped only to those

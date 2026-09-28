@@ -1753,6 +1753,65 @@ of what is still needed from anyone, and from whom.
   only path for channel requirements is `Channel.config`. Still **no
   concrete integration built** - `MOCK`/`MOCK_UNRELIABLE`/
   `MOCK_ALWAYS_FAILS` remain the only registered provider names.
+- **Independent-review certification repair (2026-09-28), two
+  blockers:** (1) `buildFeedItem`'s `availability` field was fabricated
+  ('in_stock' unconditionally) instead of derived from canonical
+  inventory - fixed with a new shared
+  `InventoryService.getAvailableToSellBySku(skuIds)` method (the SAME
+  cross-location `onHand - reserved` formula the certified public PDP
+  already used, extracted from PDP's own inline query so both
+  consumers share one implementation - PDP's own output is unchanged,
+  proven by its full pre-existing test suite passing byte-for-byte).
+  No new inventory table/ledger/channel-specific location-allocation
+  policy was invented. Publishability and stock level are kept
+  deliberately separate, per the review's own explicit instruction - a
+  catalog-publishable zero-stock SKU still publishes as
+  `out_of_stock`, no auto-unpublish-at-zero-stock policy exists. Stale-
+  projection detection is a pure read-time comparison against
+  `ChannelListing.payloadSnapshot` (no new persisted flag, no event
+  bus); correction is a new staff-callable sweep
+  (`POST /channels/sweep/resync-stale`) that reuses `publishSku` itself
+  rather than duplicating any claim/dispatch logic. (2) A thrown/
+  timed-out provider call was recorded as an ordinary definite
+  failure - fixed with a three-outcome model (`SUCCESS`/`FAILED`-
+  definite-known/`AMBIGUOUS_RECONCILIATION_REQUIRED`-genuinely-unknown),
+  the SAME status name and reasoning `CampaignDeliveryStatus` (M25) and
+  `NotificationDeliveryStatus` (M29) already established for an
+  identical reliability problem, applied to both publish and
+  unpublish. A durable, row-locked (`SELECT ... FOR UPDATE`) `PROCESSING`
+  claim on `ChannelListing`, committed BEFORE any provider call, is the
+  real serialization point for concurrent publish/unpublish requests -
+  the initial `updateMany`-only CAS design was found, during this
+  repair's OWN adversarial testing, to have a genuine window where
+  `unpublishSku`'s narrower eligibility check could observe a stale
+  pre-claim status; fixed by having the claim's own row lock capture
+  the row's true pre-claim status atomically. A staff-callable sweep
+  (`POST /channels/sweep/reclaim-stale`) reclaims a claim whose owning
+  process crashed mid-flight (`CHANNEL_PUBLISH_STALE_SECONDS`, the same
+  idiom `REFUND_PROCESSING_STALE_SECONDS` established). The stable
+  `channelId:skuId` idempotency key is unchanged - a real provider is
+  expected to de-duplicate on it, including for an operator-safe retry
+  of an ambiguous outcome (never a blind automatic retry). A second
+  genuine bug this repair's own testing caught: `getChannelProvider`
+  was called outside the publish/unpublish try/catch blocks, so a
+  provider-resolution failure (unknown name, or the repair's own new
+  production guard) would leave a claimed listing stuck at `PROCESSING`
+  forever with no outcome recorded at all - fixed by resolving the
+  provider inside its own try/catch, recording a DEFINITE `FAILED`
+  (never ambiguous, since no external call was ever attempted). New
+  production guard: `getChannelProvider` refuses to resolve any
+  `MOCK_*` provider when `NODE_ENV=production`. 19 new adversarial
+  tests (`test/integration/channels.test.ts`), 2 genuine concurrency
+  tests (one using a deterministic manufactured in-flight-claim
+  precondition for publish, since `MockChannelProvider`'s near-instant
+  completion makes true `Promise.all` overlap non-deterministic through
+  the full service call and a non-overlapping second call is a
+  legitimate independent resync by design; one genuine `Promise.all`/
+  `Promise.allSettled` race for unpublish, whose narrower eligibility
+  check makes every interleaving deterministically safe). See
+  `specs/25-social-channel-publishing.md`'s own repair addendum and
+  `acceptance/m26-social-channel-publishing.md` for the corrected
+  Definition of Done.
 
 ---
 

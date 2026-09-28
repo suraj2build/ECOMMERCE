@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient, Channel, ChannelListing } from '@fcp/db';
+import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 import { CatalogService } from '../catalog/service.js';
+import { InventoryService } from '../inventory/service.js';
 import { getChannelProvider, type ChannelFeedItem } from './provider.js';
 
 export interface CreateChannelInput {
@@ -46,9 +48,11 @@ function resolveTemplate(template: string, values: Record<string, string>): stri
  */
 export class ChannelService {
   private readonly catalog: CatalogService;
+  private readonly inventory: InventoryService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.catalog = new CatalogService(fastify);
+    this.inventory = new InventoryService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -124,13 +128,26 @@ export class ChannelService {
       );
     }
 
+    // M26 independent-review certification repair (2026-09-28): channel
+    // availability is derived from the SAME canonical cross-location
+    // sellable-inventory formula the certified public PDP (M11) uses -
+    // InventoryService.getAvailableToSellBySku, never a fabricated
+    // constant and never a second, independently-invented formula.
+    // Publishability (checked above) and current stock level are
+    // deliberately kept separate: a catalog-publishable SKU with zero
+    // available-to-sell inventory is still a valid feed item, correctly
+    // marked out_of_stock - this build does not invent an auto-unpublish-
+    // at-zero-stock policy, since no such requirement exists in the
+    // approved spec.
+    const availableQty = (await this.inventory.getAvailableToSellBySku([sku.id])).get(sku.id) ?? 0;
+
     return {
       externalId: sku.skuCode,
       title: resolveTemplate(config.titleTemplate ?? DEFAULT_TITLE_TEMPLATE, templateValues),
       description: resolveTemplate(config.descriptionTemplate ?? DEFAULT_DESCRIPTION_TEMPLATE, templateValues),
       price: Number(activePrice!.sellingPrice),
       currency: 'INR',
-      availability: 'in_stock',
+      availability: availableQty > 0 ? 'in_stock' : 'out_of_stock',
       imageUrl: image?.url ?? null,
     };
   }
@@ -145,26 +162,112 @@ export class ChannelService {
     return this.prisma.channelListing.findMany({ where: { channelId }, orderBy: { updatedAt: 'desc' } });
   }
 
+  /**
+   * M26 independent-review certification repair (2026-09-28, sections
+   * 8-9): the durable, DB-backed in-flight claim for one publish/
+   * unpublish attempt on a given listing - the same PENDING/FAILED ->
+   * PROCESSING compare-and-set idiom RefundService.claimProcessing
+   * already established (REFUND_PROCESSING_STALE_SECONDS's twin here is
+   * CHANNEL_PUBLISH_STALE_SECONDS), but implemented with an explicit
+   * `SELECT ... FOR UPDATE` row lock (the same idiom
+   * InventoryService.lockBalance/lockReservation already use) rather
+   * than a bare `updateMany` CAS: unlike Refund/Marketing (where every
+   * prior status is equally eligible to re-claim), `unpublishSku` has a
+   * NARROWER eligibility rule that depends on the status the row had at
+   * the EXACT moment of claim - a plain `updateMany` tells a caller
+   * *whether* it won the claim but not *what the row was* immediately
+   * before, leaving a real window for two sequential claims (one after
+   * the other has already finished and moved on) to each look like a
+   * fresh, valid attempt from a caller's stale pre-claim read. Locking
+   * the row first and reading its status inside that same lock closes
+   * that window: the returned `previousStatus` is the row's true state
+   * at the instant this claim was granted, never stale.
+   *
+   * Claimable from ANY current status (NOT_PUBLISHED, PUBLISHED - a
+   * legitimate resync, FAILED, AMBIGUOUS_RECONCILIATION_REQUIRED - an
+   * operator-safe retry) except a still-fresh PROCESSING claim held by
+   * another in-flight request. The UPDATE inside this transaction is
+   * committed to Postgres BEFORE any external provider call is ever
+   * made (the transaction itself commits before this method returns),
+   * so it IS the durable evidence that an attempt began - the same
+   * architectural role a `CampaignDelivery` row created PENDING before
+   * dispatch plays for marketing (M25), adapted to a long-lived,
+   * resyncable listing row rather than a create-once delivery row.
+   */
+  private async claimProcessing(
+    listingId: string,
+  ): Promise<{ claimed: boolean; listing: ChannelListing; previousStatus: ChannelListing['status'] }> {
+    const staleCutoff = new Date(Date.now() - loadEnv().CHANNEL_PUBLISH_STALE_SECONDS * 1000);
+    return this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ status: ChannelListing['status']; updatedAt: Date }[]>`
+        SELECT "status", "updatedAt" FROM "channel_listings" WHERE "id" = ${listingId} FOR UPDATE
+      `;
+      const row = rows[0];
+      if (!row) throw new NotFoundError('Channel listing not found');
+      const previousStatus = row.status;
+      const eligible = previousStatus !== 'PROCESSING' || row.updatedAt < staleCutoff;
+      if (!eligible) {
+        const listing = await tx.channelListing.findUniqueOrThrow({ where: { id: listingId } });
+        return { claimed: false, listing, previousStatus };
+      }
+      const listing = await tx.channelListing.update({ where: { id: listingId }, data: { status: 'PROCESSING' } });
+      return { claimed: true, listing, previousStatus };
+    });
+  }
+
+  /** Releases a held PROCESSING claim back to `status` without recording an attempt - used when a claimed request turns out to be ineligible (nothing changed, so nothing was attempted). */
+  private async releaseClaim(listingId: string, status: ChannelListing['status']): Promise<void> {
+    await this.prisma.channelListing.update({ where: { id: listingId }, data: { status } });
+  }
+
   async publishSku(channelId: string, skuId: string, actorStaffId: string): Promise<ChannelListing> {
     const channel = await this.getChannel(channelId);
-    const listing = await this.prisma.channelListing.upsert({
+    // Postgres's own ON CONFLICT (the upsert's implementation) makes
+    // first-ever-listing creation safe under real concurrency without
+    // needing claimProcessing's own CAS - two concurrent FIRST publish
+    // calls for the same (channelId, skuId) converge to the SAME row
+    // here; claimProcessing below is what then serializes the actual
+    // provider dispatch.
+    const existing = await this.prisma.channelListing.upsert({
       where: { channelId_skuId: { channelId, skuId } },
       update: {},
       create: { channelId, skuId, status: 'NOT_PUBLISHED' },
     });
+
+    const { claimed, listing } = await this.claimProcessing(existing.id);
+    if (!claimed) {
+      // Another request currently holds a live (non-stale) claim on this
+      // exact listing - converge to whatever it is doing rather than
+      // racing a second provider dispatch for the same SKU+channel
+      // (independent-review repair, concurrency requirement). No
+      // attempt is recorded here: nothing happened on this call.
+      return listing;
+    }
 
     let item: ChannelFeedItem;
     try {
       item = await this.buildFeedItem(skuId, (channel.config as ChannelFieldMapConfig) ?? {});
     } catch (err) {
       // A validation failure (not channel-publishable) never calls the
-      // external provider at all - it is recorded exactly like a
-      // provider-side failure, so the attempt history is complete either way.
+      // external provider at all - a DEFINITE, known failure, recorded
+      // exactly like one, so the attempt history is complete either way.
       const errorMessage = err instanceof Error ? err.message : 'Unknown validation error';
-      return this.recordFailedAttempt(listing, 'PUBLISH', errorMessage, actorStaffId);
+      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', errorMessage, actorStaffId);
     }
 
-    const provider = getChannelProvider(channel.providerName);
+    let provider: ReturnType<typeof getChannelProvider>;
+    try {
+      provider = getChannelProvider(channel.providerName);
+    } catch (err) {
+      // Resolving the provider itself failed (unknown provider name, or
+      // the production mock-provider guard) - no external call was ever
+      // attempted, so this is a DEFINITE, known failure, never ambiguous.
+      // Recorded the same way a validation failure is, and critically
+      // NEVER left the claimed listing stuck at PROCESSING with no
+      // outcome recorded at all.
+      const errorMessage = err instanceof Error ? err.message : 'Unknown provider configuration error';
+      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', errorMessage, actorStaffId, item);
+    }
     try {
       const result = await provider.publish({
         channelKey: channel.key,
@@ -200,33 +303,69 @@ export class ChannelService {
           action: 'channel.listing.publish',
           entityType: 'ChannelListing',
           entityId: listing.id,
-          newValue: { channelId, skuId, externalId: result.externalId },
+          newValue: { channelId, skuId, externalId: result.externalId, availability: item.availability },
         });
         return updated;
       }
-      return this.recordFailedAttempt(listing, 'PUBLISH', result.errorMessage ?? 'Provider rejected the listing', actorStaffId, item);
+      // A DEFINITE provider rejection - the provider returned, it did
+      // not throw, so the outcome is genuinely known.
+      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', result.errorMessage ?? 'Provider rejected the listing', actorStaffId, item, result as object);
     } catch (err) {
-      // The provider call itself threw (outage/timeout) - recorded
-      // honestly as a failure with a retry count, never silently swallowed.
+      // M26 independent-review certification repair (2026-09-28,
+      // finding #2): the provider call itself threw/timed out AFTER
+      // dispatch - the provider may have accepted the listing before
+      // the error reached us. This is NEVER recorded as a definite
+      // FAILED: that would claim a certainty this attempt does not
+      // have. See ChannelListingStatus.AMBIGUOUS_RECONCILIATION_REQUIRED.
       const errorMessage = err instanceof Error ? err.message : 'Unknown provider error';
-      return this.recordFailedAttempt(listing, 'PUBLISH', errorMessage, actorStaffId, item);
+      return this.recordOutcome(listing, 'PUBLISH', 'AMBIGUOUS', errorMessage, actorStaffId, item);
     }
   }
 
   async unpublishSku(channelId: string, skuId: string, actorStaffId: string): Promise<ChannelListing> {
     const channel = await this.getChannel(channelId);
-    const listing = await this.prisma.channelListing.findUnique({ where: { channelId_skuId: { channelId, skuId } } });
-    if (!listing) throw new NotFoundError('Channel listing not found');
-    if (listing.status !== 'PUBLISHED' || !listing.externalId) {
-      throw new ValidationError('Listing is not currently published on this channel');
+    const existing = await this.prisma.channelListing.findUnique({ where: { channelId_skuId: { channelId, skuId } } });
+    if (!existing) throw new NotFoundError('Channel listing not found');
+
+    const { claimed, listing, previousStatus } = await this.claimProcessing(existing.id);
+    if (!claimed) {
+      return listing; // converge to the in-flight claim, never a second dispatch
     }
 
-    const provider = getChannelProvider(channel.providerName);
+    // Eligibility is re-checked against `previousStatus` - the row's
+    // TRUE state at the exact instant this claim was granted (inside
+    // claimProcessing's own row lock), never a stale pre-claim read.
+    // Unpublish is attemptable from PUBLISHED (the normal case), a
+    // reclaimed stale PROCESSING (an earlier attempt crashed mid-flight
+    // - functionally identical to AMBIGUOUS), or
+    // AMBIGUOUS_RECONCILIATION_REQUIRED itself (M26 repair, section
+    // 12/11 - the operator-safe retry/reconcile path for a prior publish
+    // resync or unpublish that ended ambiguous), provided a real
+    // externalId exists to attempt against. NOT_PUBLISHED and FAILED
+    // have genuinely nothing live known to unpublish. A rejected
+    // request releases its claim immediately - nothing was attempted,
+    // so nothing is recorded as an attempt.
+    const eligiblePrevious = previousStatus === 'PUBLISHED' || previousStatus === 'AMBIGUOUS_RECONCILIATION_REQUIRED' || previousStatus === 'PROCESSING';
+    if (!eligiblePrevious || !listing.externalId) {
+      await this.releaseClaim(listing.id, previousStatus === 'PROCESSING' ? 'AMBIGUOUS_RECONCILIATION_REQUIRED' : previousStatus);
+      throw new ValidationError('Listing is not currently published (or ambiguously published) on this channel');
+    }
+
+    let provider: ReturnType<typeof getChannelProvider>;
+    try {
+      provider = getChannelProvider(channel.providerName);
+    } catch (err) {
+      // Same reasoning as publishSku's own identical guard: no external
+      // call was ever attempted, so this is a DEFINITE failure, never
+      // ambiguous, and never leaves the listing stuck at PROCESSING.
+      const errorMessage = err instanceof Error ? err.message : 'Unknown provider configuration error';
+      return this.recordOutcome(listing, 'UNPUBLISH', 'FAILED', errorMessage, actorStaffId);
+    }
     try {
       const result = await provider.unpublish({
         channelKey: channel.key,
         config: (channel.config as Record<string, unknown>) ?? {},
-        externalId: listing.externalId,
+        externalId: listing.externalId!,
         idempotencyKey: `${channelId}:${skuId}`,
       });
       if (result.status === 'SUCCESS') {
@@ -252,36 +391,50 @@ export class ChannelService {
         });
         return updated;
       }
-      return this.recordFailedAttempt(listing, 'UNPUBLISH', result.errorMessage ?? 'Provider rejected the unpublish', actorStaffId);
+      return this.recordOutcome(listing, 'UNPUBLISH', 'FAILED', result.errorMessage ?? 'Provider rejected the unpublish', actorStaffId);
     } catch (err) {
+      // Same reasoning as publish's own catch block: a thrown/timed-out
+      // unpublish may have genuinely removed the listing before the
+      // error reached us - never recorded as a definite FAILED.
       const errorMessage = err instanceof Error ? err.message : 'Unknown provider error';
-      return this.recordFailedAttempt(listing, 'UNPUBLISH', errorMessage, actorStaffId);
+      return this.recordOutcome(listing, 'UNPUBLISH', 'AMBIGUOUS', errorMessage, actorStaffId);
     }
   }
 
   /**
-   * A failed publish/unpublish attempt is always recorded honestly -
-   * both on the listing (FAILED status, lastError, incremented
-   * retryCount, for reconciliation) and as its own immutable
+   * Records a non-success publish/unpublish outcome honestly - both on
+   * the listing (FAILED or AMBIGUOUS_RECONCILIATION_REQUIRED, lastError,
+   * incremented retryCount) and as its own immutable
    * `ChannelPublicationAttempt` row (full history, never overwritten).
+   * `FAILED` is reserved for a DEFINITE, known rejection (local
+   * validation, or the provider explicitly returning failure);
+   * `AMBIGUOUS` is reserved for a genuinely unknown outcome (the
+   * provider call threw, or a stale claim was reclaimed) - the two are
+   * never conflated (M26 independent-review certification repair,
+   * finding #2).
    */
-  private async recordFailedAttempt(
+  private async recordOutcome(
     listing: ChannelListing,
     action: 'PUBLISH' | 'UNPUBLISH',
+    outcome: 'FAILED' | 'AMBIGUOUS',
     errorMessage: string,
     actorStaffId: string,
     requestPayload?: unknown,
+    responsePayload?: unknown,
   ): Promise<ChannelListing> {
+    const listingStatus = outcome === 'FAILED' ? 'FAILED' : 'AMBIGUOUS_RECONCILIATION_REQUIRED';
+    const attemptStatus = outcome === 'FAILED' ? 'FAILURE' : 'AMBIGUOUS_RECONCILIATION_REQUIRED';
     const updated = await this.prisma.channelListing.update({
       where: { id: listing.id },
-      data: { status: 'FAILED', lastError: errorMessage, retryCount: { increment: 1 } },
+      data: { status: listingStatus, lastError: errorMessage, retryCount: { increment: 1 } },
     });
     await this.prisma.channelPublicationAttempt.create({
       data: {
         channelListingId: listing.id,
         action,
-        status: 'FAILURE',
+        status: attemptStatus,
         requestPayload: requestPayload ? (requestPayload as object) : undefined,
+        responsePayload: responsePayload ? (responsePayload as object) : undefined,
         errorMessage,
         actorStaffId,
       },
@@ -289,12 +442,83 @@ export class ChannelService {
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId,
-      action: `channel.listing.${action.toLowerCase()}_failed`,
+      action: `channel.listing.${action.toLowerCase()}_${outcome.toLowerCase()}`,
       entityType: 'ChannelListing',
       entityId: listing.id,
-      newValue: { errorMessage },
+      newValue: { errorMessage, outcome },
     });
     return updated;
+  }
+
+  /**
+   * Staff-gated, idempotent, callable sweep (mirrors the existing
+   * `POST /loyalty/sweep/vest`, `POST /marketing/sweep/send-due` shape) -
+   * reclaims any ChannelListing whose PROCESSING claim has gone stale
+   * (the process that took it crashed somewhere between the provider
+   * call and recording an outcome) into
+   * AMBIGUOUS_RECONCILIATION_REQUIRED. Never guesses a definite
+   * SUCCESS/FAILED for a reclaimed row - the same honest-uncertainty
+   * discipline as every other AMBIGUOUS_RECONCILIATION_REQUIRED path in
+   * this build. A future cron can call this same route a staff operator
+   * can call manually today - no general scheduling platform was built.
+   */
+  async reclaimStaleProcessing(actorStaffId: string): Promise<{ reclaimed: number }> {
+    const staleCutoff = new Date(Date.now() - loadEnv().CHANNEL_PUBLISH_STALE_SECONDS * 1000);
+    const stale = await this.prisma.channelListing.findMany({
+      where: { status: 'PROCESSING', updatedAt: { lt: staleCutoff } },
+      select: { id: true },
+    });
+    let reclaimed = 0;
+    for (const { id } of stale) {
+      const result = await this.prisma.channelListing.updateMany({
+        where: { id, status: 'PROCESSING', updatedAt: { lt: staleCutoff } },
+        data: { status: 'AMBIGUOUS_RECONCILIATION_REQUIRED', lastError: 'Reclaimed stale PROCESSING claim - provider outcome unknown', retryCount: { increment: 1 } },
+      });
+      if (result.count > 0) {
+        reclaimed += 1;
+        await recordAudit(this.prisma, {
+          actorType: 'STAFF',
+          actorStaffId,
+          action: 'channel.listing.reclaimed_stale',
+          entityType: 'ChannelListing',
+          entityId: id,
+        });
+      }
+    }
+    return { reclaimed };
+  }
+
+  /**
+   * Staff-gated, idempotent, callable sweep for the other half of M26's
+   * repair (sections 4-5): a PUBLISHED listing's `payloadSnapshot`
+   * records the availability we last actually told the channel: if
+   * canonical inventory has since changed such that the LIVE
+   * availability no longer matches that snapshot, the channel's own
+   * copy is stale and needs resyncing. Detection is a pure read-time
+   * recomputation (no persisted "stale" flag, no new event bus, no
+   * background job required to merely detect it) - this sweep is the
+   * explicit, callable CORRECTION action, reusing `publishSku` itself
+   * (the exact same durable claim + provider call + idempotency key)
+   * rather than duplicating any of that machinery. Internal inventory
+   * transactions never call this or any channel code synchronously -
+   * this sweep is the only thing that couples the two, and only when
+   * explicitly invoked.
+   */
+  async resyncStaleListings(actorStaffId: string): Promise<{ resynced: number; listingIds: string[] }> {
+    const published = await this.prisma.channelListing.findMany({ where: { status: 'PUBLISHED' } });
+    const skuIds = published.map((l) => l.skuId);
+    const availabilityBySkuId = await this.inventory.getAvailableToSellBySku(skuIds);
+
+    const resyncedIds: string[] = [];
+    for (const listing of published) {
+      const snapshot = listing.payloadSnapshot as { availability?: string } | null;
+      const currentAvailability = (availabilityBySkuId.get(listing.skuId) ?? 0) > 0 ? 'in_stock' : 'out_of_stock';
+      if (snapshot?.availability !== currentAvailability) {
+        await this.publishSku(listing.channelId, listing.skuId, actorStaffId);
+        resyncedIds.push(listing.id);
+      }
+    }
+    return { resynced: resyncedIds.length, listingIds: resyncedIds };
   }
 
   async listAttempts(channelListingId: string) {

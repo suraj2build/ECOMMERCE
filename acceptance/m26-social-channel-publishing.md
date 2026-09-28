@@ -3,8 +3,12 @@
 **Spec(s):** `specs/25-social-channel-publishing.md`
 **Status:** BUILT (2026-09-28) — **adapter/contract architecture
 only,** as authorized. No concrete marketplace integration is in scope
-for this milestone. Not self-declared certified — awaiting independent
-review, per this repository's standing discipline.
+for this milestone. **Independent-review certification repair applied
+the same day** (channel-availability truth + ambiguous-provider-outcome
+model — see the spec's own repair addendum and `CHAN-001` in
+`blueprint/DECISION_REGISTER.md`). Not self-declared certified —
+awaiting independent re-review, per this repository's standing
+discipline.
 
 ## Business acceptance
 
@@ -30,8 +34,35 @@ review, per this repository's standing discipline.
 - [x] Publishing status per channel per SKU is tracked
       (`ChannelListing`, `@@unique([channelId, skuId])`) — even with
       zero real channels connected, the tracking structure exists and
-      is tested against the mock adapter (14 integration tests,
-      `test/integration/channels.test.ts`).
+      is tested against the mock adapter (14 original + 19 repair
+      integration tests, `test/integration/channels.test.ts`).
+- [x] **(Repair)** Feed `availability` is derived from the canonical
+      inventory ledger (`InventoryService.getAvailableToSellBySku`, the
+      same cross-location formula the certified PDP uses), never
+      fabricated — `in_stock` iff `sum(onHand) - sum(reserved) > 0`
+      across all locations.
+- [x] **(Repair)** Publishability and stock level are independent: a
+      catalog-publishable, zero-stock SKU still publishes, correctly
+      marked `out_of_stock` — no auto-unpublish-at-zero-stock policy
+      exists or was invented.
+- [x] **(Repair)** A staff-gated, idempotent, callable resync sweep
+      (`POST /channels/sweep/resync-stale`) detects and corrects a
+      PUBLISHED listing whose live availability has drifted from its
+      last-synced snapshot, in both directions (in_stock → out_of_stock
+      and back).
+- [x] **(Repair)** Provider outcomes distinguish `SUCCESS` / `FAILED`
+      (a DEFINITE, known rejection) / `AMBIGUOUS_RECONCILIATION_REQUIRED`
+      (the provider call threw/timed out, or a stale claim was
+      reclaimed) — never conflating the last two — for both publish and
+      unpublish.
+- [x] **(Repair)** A durable, row-locked `PROCESSING` claim is taken on
+      the `ChannelListing` row before any provider call, closing the
+      concurrency gap: two genuinely concurrent requests for the same
+      channel+SKU converge to at most one provider dispatch. A
+      staff-gated stale-claim sweep (`POST /channels/sweep/reclaim-stale`)
+      reclaims a claim whose owning process crashed mid-flight.
+- [x] **(Repair)** No `MOCK_*` provider can be resolved when
+      `NODE_ENV=production` (`getChannelProvider`'s own guard).
 
 ## Negative scenarios / edge cases
 
@@ -55,12 +86,26 @@ review, per this repository's standing discipline.
 - [x] Integration test: mock adapter registration → feed generation →
       correct field mapping, with no core schema dependency on the
       mock adapter's specifics (`test/integration/channels.test.ts`,
-      14 tests: field-mapping with a custom template and with the
-      default template, per-channel-per-SKU status tracking, honest
+      14 original tests: field-mapping with a custom template and with
+      the default template, per-channel-per-SKU status tracking, honest
       validation-failure/provider-failure/provider-exception recording
       with incrementing retry count, publish/unpublish + full attempt
       history, idempotent re-publish, unique channel key, and staff
       RBAC over HTTP including a 401/403 negative case).
+- [x] **(Repair)** 19 additional adversarial tests: inventory truth
+      (no balance row / onHand=0 / fully-reserved / cross-location
+      aggregation / zero-stock-still-publishes / no channel write ever
+      touches InventoryBalance), stale-projection detection+resync
+      (drift down, no-op re-sweep, drift back up), ambiguous vs.
+      definite provider outcomes for both publish and unpublish
+      (including the operator-safe ambiguous-retry path and the
+      never-published-so-nothing-to-unpublish boundary), durability
+      (exactly-once SUCCESS recording, a manufactured stale-PROCESSING
+      crash scenario reclaimed by the sweep, a provider-configuration
+      failure recorded as a definite FAILED rather than left stuck),
+      genuine `Promise.all`/row-lock concurrency for both publish and
+      unpublish, and security (publish/reconcile RBAC, the production
+      mock-provider guard).
 
 ## Definition of Done
 

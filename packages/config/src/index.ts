@@ -213,6 +213,20 @@ const envSchema = z.object({
   // shorter window than MARKETING_SENDING_STALE_SECONDS since a single
   // provider call should complete far faster than an entire campaign send.
   MARKETING_DELIVERY_STALE_SECONDS: z.coerce.number().int().positive().default(120),
+
+  // --- Channel Publishing (M26, specs/25-social-channel-publishing.md,
+  // CHAN-001) independent-review certification repair (2026-09-28) ---
+  // A ChannelListing stuck in PROCESSING (the durable in-flight claim
+  // taken before any external provider call - see ChannelListingStatus's
+  // own schema comment) for longer than this is safe to reclaim into
+  // AMBIGUOUS_RECONCILIATION_REQUIRED - the process that claimed it
+  // crashed somewhere between the provider call and recording an
+  // outcome. Mirrors REFUND_PROCESSING_STALE_SECONDS's exact idiom; a
+  // single publish/unpublish provider call is expected to complete on a
+  // similar timescale to a single refund settlement, not an entire
+  // campaign send, hence the same 5-minute default rather than
+  // MARKETING_SENDING_STALE_SECONDS's longer window.
+  CHANNEL_PUBLISH_STALE_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@fcp/db';
 import { NotFoundError } from '@fcp/shared';
 import { CatalogService } from '../catalog/service.js';
+import { InventoryService } from '../inventory/service.js';
 import { ReviewService } from './review-service.js';
 import { CrossSellService } from './cross-sell-service.js';
 
@@ -20,11 +21,13 @@ import { CrossSellService } from './cross-sell-service.js';
  */
 export class PdpService {
   private readonly catalog: CatalogService;
+  private readonly inventory: InventoryService;
   private readonly reviews: ReviewService;
   private readonly crossSell: CrossSellService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.catalog = new CatalogService(fastify);
+    this.inventory = new InventoryService(fastify);
     this.reviews = new ReviewService(fastify);
     this.crossSell = new CrossSellService(fastify);
   }
@@ -55,16 +58,12 @@ export class PdpService {
     const badges = await this.catalog.listBadges(styleId);
 
     const skuIds = style.skus.map((s) => s.id);
-    const balances = skuIds.length
-      ? await this.prisma.inventoryBalance.groupBy({
-          by: ['skuId'],
-          where: { skuId: { in: skuIds } },
-          _sum: { onHand: true, reserved: true },
-        })
-      : [];
-    const availabilityBySkuId = new Map(
-      balances.map((b) => [b.skuId, Math.max(0, (b._sum.onHand ?? 0) - (b._sum.reserved ?? 0))]),
-    );
+    // M26 independent-review certification repair (2026-09-28): this
+    // cross-location sellable-quantity computation now lives in
+    // InventoryService.getAvailableToSellBySku - the single canonical
+    // implementation both PDP and Channel Publishing share. Output is
+    // byte-for-byte identical to the formula this method inlined before.
+    const availabilityBySkuId = await this.inventory.getAvailableToSellBySku(skuIds);
 
     const variants = style.skus.map((sku) => {
       const availableQuantity = availabilityBySkuId.get(sku.id) ?? 0;

@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
+import { __resetEnvCacheForTests } from '@fcp/config';
 import { ChannelService } from '../../src/modules/channels/service.js';
 
 /**
@@ -37,7 +38,7 @@ describe('Channel Publishing (M26)', () => {
   });
 
   async function fixtureSku(overrides: { lifecycleState?: string; price?: number; active?: boolean } = {}) {
-    const { brand, category, size } = await seedBrandAndLocation();
+    const { brand, category, size, location } = await seedBrandAndLocation();
     const style = await testPrisma.style.create({
       data: {
         styleCode: `CHAN-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -65,7 +66,19 @@ describe('Channel Publishing (M26)', () => {
         data: { styleId: style.id, colourId: colour.id, mrp: 1999, sellingPrice: overrides.price ?? 999 },
       });
     }
-    return { style, colour, size, sku };
+    return { style, colour, size, sku, location };
+  }
+
+  /**
+   * Seeds a real InventoryBalance row for a SKU - the SAME ledger table
+   * (M06) both the certified public PDP and, as of this repair, Channel
+   * Publishing read to compute sellable availability. No channel test
+   * anywhere in this file fabricates availability directly; every
+   * in_stock/out_of_stock assertion traces back to a real onHand/reserved
+   * row here.
+   */
+  async function seedInventory(skuId: string, locationId: string, onHand: number, reserved = 0) {
+    await testPrisma.inventoryBalance.create({ data: { skuId, locationId, onHand, reserved } });
   }
 
   async function manageStaff() {
@@ -79,7 +92,8 @@ describe('Channel Publishing (M26)', () => {
   }
 
   it('registers a mock channel and generates a correctly field-mapped feed item from core catalog data', async () => {
-    const { sku } = await fixtureSku({ price: 1499 });
+    const { sku, location } = await fixtureSku({ price: 1499 });
+    await seedInventory(sku.id, location.id, 10);
     const service = new ChannelService(app);
     const channel = await service.createChannel(
       { key: 'test-mock', name: 'Test Mock Channel', providerName: 'MOCK', config: { titleTemplate: '{style.name} ({colour.name}/{size.label})' } },
@@ -159,13 +173,19 @@ describe('Channel Publishing (M26)', () => {
     expect(attempts).toHaveLength(2);
   });
 
-  it('records a genuine provider-call exception (outage) as a FAILURE, never an unhandled crash', async () => {
-    const { sku } = await fixtureSku();
+  it('records a genuine provider-call exception (outage) as AMBIGUOUS_RECONCILIATION_REQUIRED, never a definite FAILED (independent-review repair, finding #2)', async () => {
+    const { sku, location } = await fixtureSku();
+    await seedInventory(sku.id, location.id, 5);
     const service = new ChannelService(app);
     const channel = await service.createChannel({ key: 'unreliable', name: 'Unreliable', providerName: 'MOCK_UNRELIABLE' }, staffId);
     const listing = await service.publishSku(channel.id, sku.id, staffId);
-    expect(listing.status).toBe('FAILED');
+    expect(listing.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
     expect(listing.lastError).toMatch(/outage/);
+    expect(listing.retryCount).toBe(1);
+
+    const attempts = await service.listAttempts(listing.id);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]!.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
   });
 
   it('unpublishes a published listing back to NOT_PUBLISHED and records the attempt', async () => {
@@ -250,6 +270,349 @@ describe('Channel Publishing (M26)', () => {
     it('rejects an unauthenticated request', async () => {
       const res = await app.inject({ method: 'GET', url: '/api/v1/channels' });
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  /**
+   * M26 INDEPENDENT-REVIEW CERTIFICATION REPAIR (2026-09-28). Two
+   * blockers: (1) `availability` was fabricated ('in_stock'
+   * unconditionally) instead of derived from canonical inventory; (2) a
+   * thrown/timed-out provider call was recorded as an ordinary definite
+   * FAILURE instead of an honest AMBIGUOUS_RECONCILIATION_REQUIRED. This
+   * section proves both repairs plus the durable-claim/concurrency/
+   * idempotency/reconciliation/security work the repair required.
+   */
+  describe('independent-review certification repair (2026-09-28)', () => {
+    describe('inventory truth', () => {
+      it('a SKU with no InventoryBalance row at all is out_of_stock, never fabricated in_stock', async () => {
+        const { sku } = await fixtureSku();
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'zero-inv', name: 'Zero Inv', providerName: 'MOCK' }, staffId);
+        const item = await service.previewFeedItem(channel.id, sku.id);
+        expect(item.availability).toBe('out_of_stock');
+      });
+
+      it('a SKU with onHand=0 explicitly is out_of_stock', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 0);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'zero-onhand', name: 'Zero OnHand', providerName: 'MOCK' }, staffId);
+        const item = await service.previewFeedItem(channel.id, sku.id);
+        expect(item.availability).toBe('out_of_stock');
+      });
+
+      it('a SKU with onHand > 0 but fully reserved is out_of_stock - never claims in_stock when nothing is actually sellable', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 10, 10);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'fully-reserved', name: 'Fully Reserved', providerName: 'MOCK' }, staffId);
+        const item = await service.previewFeedItem(channel.id, sku.id);
+        expect(item.availability).toBe('out_of_stock');
+      });
+
+      it('cross-location sellable inventory is aggregated correctly - a fully-reserved location and a sellable location combine into one true figure', async () => {
+        const { sku, location } = await fixtureSku();
+        const location2 = await testPrisma.location.create({ data: { code: 'TEST-WH-02', name: 'Second Warehouse', type: 'WAREHOUSE' } });
+        await seedInventory(sku.id, location.id, 5, 5); // fully reserved here
+        await seedInventory(sku.id, location2.id, 3, 0); // 3 genuinely sellable here
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'cross-loc', name: 'Cross Location', providerName: 'MOCK' }, staffId);
+        const item = await service.previewFeedItem(channel.id, sku.id);
+        expect(item.availability).toBe('in_stock');
+      });
+
+      it('a catalog-publishable SKU with zero stock still publishes successfully as out_of_stock - publishability and stock level are kept separate, no auto-unpublish-at-zero-stock policy is invented', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 0);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'zero-stock-publish', name: 'Zero Stock Publish', providerName: 'MOCK' }, staffId);
+        const listing = await service.publishSku(channel.id, sku.id, staffId);
+        expect(listing.status).toBe('PUBLISHED');
+        expect((listing.payloadSnapshot as { availability: string }).availability).toBe('out_of_stock');
+      });
+
+      it('no channel operation writes canonical inventory - InventoryBalance is byte-for-byte unchanged after publish, unpublish, and a resync sweep', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 7, 2);
+        const before = await testPrisma.inventoryBalance.findUniqueOrThrow({
+          where: { skuId_locationId: { skuId: sku.id, locationId: location.id } },
+        });
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'no-write', name: 'No Write', providerName: 'MOCK' }, staffId);
+        await service.publishSku(channel.id, sku.id, staffId);
+        await service.unpublishSku(channel.id, sku.id, staffId);
+        await service.resyncStaleListings(staffId);
+        const after = await testPrisma.inventoryBalance.findUniqueOrThrow({
+          where: { skuId_locationId: { skuId: sku.id, locationId: location.id } },
+        });
+        expect(after.onHand).toBe(before.onHand);
+        expect(after.reserved).toBe(before.reserved);
+      });
+    });
+
+    describe('stale channel projection detection and resync', () => {
+      it('detects and corrects a PUBLISHED listing whose availability drifted after inventory changed, and recovers when stock returns', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 5);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'drift', name: 'Drift', providerName: 'MOCK' }, staffId);
+        const published = await service.publishSku(channel.id, sku.id, staffId);
+        expect((published.payloadSnapshot as { availability: string }).availability).toBe('in_stock');
+
+        // A real sale/adjustment changes canonical inventory - never a
+        // channel write, and never synchronous with this update.
+        await testPrisma.inventoryBalance.update({
+          where: { skuId_locationId: { skuId: sku.id, locationId: location.id } },
+          data: { onHand: 0 },
+        });
+
+        const firstSweep = await service.resyncStaleListings(staffId);
+        expect(firstSweep.resynced).toBe(1);
+        expect(firstSweep.listingIds).toContain(published.id);
+        const afterFirst = await testPrisma.channelListing.findUniqueOrThrow({ where: { id: published.id } });
+        expect((afterFirst.payloadSnapshot as { availability: string }).availability).toBe('out_of_stock');
+
+        // A second sweep with no further inventory change is a safe no-op.
+        const secondSweep = await service.resyncStaleListings(staffId);
+        expect(secondSweep.resynced).toBe(0);
+
+        // Stock returns - the sweep detects and corrects the drift back.
+        await testPrisma.inventoryBalance.update({
+          where: { skuId_locationId: { skuId: sku.id, locationId: location.id } },
+          data: { onHand: 5 },
+        });
+        const thirdSweep = await service.resyncStaleListings(staffId);
+        expect(thirdSweep.resynced).toBe(1);
+        const afterThird = await testPrisma.channelListing.findUniqueOrThrow({ where: { id: published.id } });
+        expect((afterThird.payloadSnapshot as { availability: string }).availability).toBe('in_stock');
+      });
+    });
+
+    describe('provider outcomes: ambiguous vs definite', () => {
+      it('a genuine provider-call exception on UNPUBLISH is recorded as AMBIGUOUS_RECONCILIATION_REQUIRED, never a definite FAILED', async () => {
+        const { sku } = await fixtureSku();
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'unreliable-unpub', name: 'Unreliable Unpub', providerName: 'MOCK_UNRELIABLE' }, staffId);
+        // Manufactured directly: MOCK_UNRELIABLE always throws on publish
+        // too, so the real publish path can never itself reach PUBLISHED
+        // for this provider. This simulates "was published earlier while
+        // the provider was reachable; the provider is down now."
+        const listing = await testPrisma.channelListing.create({
+          data: { channelId: channel.id, skuId: sku.id, status: 'PUBLISHED', externalId: 'ext-123', lastSyncedAt: new Date() },
+        });
+
+        const result = await service.unpublishSku(channel.id, sku.id, staffId);
+        expect(result.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+        expect(result.lastError).toMatch(/outage/);
+
+        const attempts = await service.listAttempts(listing.id);
+        expect(attempts).toHaveLength(1);
+        expect(attempts[0]!.action).toBe('UNPUBLISH');
+        expect(attempts[0]!.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+      });
+
+      it('an operator-safe retry of unpublish after an ambiguous outcome is allowed, never permanently blocked', async () => {
+        const { sku } = await fixtureSku();
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'unreliable-retry', name: 'Unreliable Retry', providerName: 'MOCK_UNRELIABLE' }, staffId);
+        await testPrisma.channelListing.create({
+          data: { channelId: channel.id, skuId: sku.id, status: 'PUBLISHED', externalId: 'ext-456', lastSyncedAt: new Date() },
+        });
+        const first = await service.unpublishSku(channel.id, sku.id, staffId);
+        expect(first.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+
+        // Retry - same stable idempotencyKey (channelId:skuId) is reused;
+        // still ambiguous since the same unreliable provider answers
+        // again, but crucially the retry path itself is proven open, not
+        // permanently rejected as "not published."
+        const second = await service.unpublishSku(channel.id, sku.id, staffId);
+        expect(second.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+        expect(second.retryCount).toBe(2);
+      });
+
+      it('a listing whose very first publish attempt ended ambiguous (no externalId ever obtained) cannot be unpublished - genuinely nothing known to remove', async () => {
+        const { sku } = await fixtureSku();
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'never-published', name: 'Never Published', providerName: 'MOCK_UNRELIABLE' }, staffId);
+        const listing = await service.publishSku(channel.id, sku.id, staffId);
+        expect(listing.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+        expect(listing.externalId).toBeNull();
+
+        await expect(service.unpublishSku(channel.id, sku.id, staffId)).rejects.toThrow();
+      });
+    });
+
+    describe('durability', () => {
+      it('a provider success is recorded exactly once - exactly one SUCCESS attempt row per publish call', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 5);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'exactly-once', name: 'Exactly Once', providerName: 'MOCK' }, staffId);
+        const listing = await service.publishSku(channel.id, sku.id, staffId);
+        const attempts = await service.listAttempts(listing.id);
+        expect(attempts.filter((a) => a.status === 'SUCCESS')).toHaveLength(1);
+      });
+
+      it('a claim exists durably before any provider call - a stale PROCESSING claim (simulating a crash between dispatch and recording an outcome) is reclaimed as AMBIGUOUS_RECONCILIATION_REQUIRED by the sweep, never left stuck forever', async () => {
+        const { sku } = await fixtureSku();
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'stale-claim', name: 'Stale Claim', providerName: 'MOCK' }, staffId);
+        // Manufacture the crash scenario directly: a listing claimed
+        // PROCESSING whose updatedAt is already older than the stale
+        // cutoff - the same idiom this codebase's other stale-claim
+        // tests (Refund/Marketing) already use, since a real process
+        // crash cannot be simulated in-process.
+        const stale = await testPrisma.channelListing.create({
+          data: { channelId: channel.id, skuId: sku.id, status: 'PROCESSING' },
+        });
+        await testPrisma.$executeRaw`UPDATE "channel_listings" SET "updatedAt" = NOW() - INTERVAL '1 hour' WHERE "id" = ${stale.id}`;
+
+        const sweep = await service.reclaimStaleProcessing(staffId);
+        expect(sweep.reclaimed).toBe(1);
+
+        const reclaimed = await testPrisma.channelListing.findUniqueOrThrow({ where: { id: stale.id } });
+        expect(reclaimed.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+        expect(reclaimed.retryCount).toBe(1);
+
+        // A second sweep run is a safe no-op - nothing left to reclaim.
+        const secondSweep = await service.reclaimStaleProcessing(staffId);
+        expect(secondSweep.reclaimed).toBe(0);
+      });
+
+      it('a claim resolving to a provider configuration failure (unknown/guarded provider) is recorded as a DEFINITE FAILED, never left stuck at PROCESSING', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 5);
+        const service = new ChannelService(app);
+        const channel = await testPrisma.channel.create({
+          data: { key: 'unknown-provider', name: 'Unknown Provider', providerName: 'DOES_NOT_EXIST' },
+        });
+        const listing = await service.publishSku(channel.id, sku.id, staffId);
+        expect(listing.status).toBe('FAILED');
+        expect(listing.lastError).toMatch(/no such provider is registered/);
+      });
+    });
+
+    describe('concurrency (real PostgreSQL)', () => {
+      it('two genuinely concurrent publish requests for the same channel+SKU converge to at most one provider dispatch', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 5);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'concurrent-pub', name: 'Concurrent Pub', providerName: 'MOCK' }, staffId);
+
+        // MockChannelProvider completes essentially instantly (no real
+        // network latency), so two Promise.all-fired publishSku() calls
+        // are NOT guaranteed to genuinely overlap at the claim step -
+        // Node may fully sequence the first call's short-lived
+        // PROCESSING claim + provider call + release before the second
+        // even reaches claimProcessing, and a SECOND, later, non-
+        // overlapping call is a legitimate independent resync (allowed
+        // by design - `resyncStaleListings` and an operator's manual
+        // re-publish both depend on exactly this). To test the real
+        // invariant deterministically - a request that arrives WHILE
+        // another is genuinely in-flight converges without a second
+        // dispatch - this manufactures that precondition directly
+        // (the same technique the durability describe block above uses
+        // for the stale-claim scenario, since a real process-level race
+        // window cannot be forced through an in-process mock provider).
+        const inFlight = await testPrisma.channelListing.create({
+          data: { channelId: channel.id, skuId: sku.id, status: 'PROCESSING' },
+        });
+
+        const result = await service.publishSku(channel.id, sku.id, staffId);
+        // Converges to the in-flight claim - no provider call, no
+        // attempt recorded, status left exactly as the "other worker"
+        // holding the claim left it.
+        expect(result.id).toBe(inFlight.id);
+        expect(result.status).toBe('PROCESSING');
+        const attempts = await service.listAttempts(inFlight.id);
+        expect(attempts).toHaveLength(0);
+      });
+
+      it('two genuinely concurrent unpublish requests converge to at most one provider dispatch', async () => {
+        const { sku, location } = await fixtureSku();
+        await seedInventory(sku.id, location.id, 5);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'concurrent-unpub', name: 'Concurrent Unpub', providerName: 'MOCK' }, staffId);
+        const published = await service.publishSku(channel.id, sku.id, staffId);
+        expect(published.status).toBe('PUBLISHED');
+
+        const results = await Promise.allSettled([
+          service.unpublishSku(channel.id, sku.id, staffId),
+          service.unpublishSku(channel.id, sku.id, staffId),
+        ]);
+        // Either both settle without throwing (one did the real work,
+        // the other converged to the in-flight or already-completed
+        // state), or the loser rejects with a ValidationError because by
+        // the time it won its OWN claim the winner had already finished
+        // - both are correct outcomes. The invariant under test is "at
+        // most one provider dispatch," not "both calls always resolve."
+        for (const r of results) {
+          if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(Error);
+        }
+
+        const listings = await service.listListings(channel.id);
+        expect(listings[0]!.status).toBe('NOT_PUBLISHED');
+
+        const attempts = await service.listAttempts(published.id);
+        const unpublishAttempts = attempts.filter((a) => a.action === 'UNPUBLISH');
+        expect(unpublishAttempts).toHaveLength(1);
+        expect(unpublishAttempts[0]!.status).toBe('SUCCESS');
+      });
+    });
+
+    describe('security', () => {
+      it('rejects a publish attempt from staff without channel:manage', async () => {
+        const { sku } = await fixtureSku();
+        const { token } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+        await grantPermissions('CUSTOMER_SERVICE', ['channel:read']);
+        const service = new ChannelService(app);
+        const channel = await service.createChannel({ key: 'rbac-publish', name: 'RBAC Publish', providerName: 'MOCK' }, staffId);
+        const res = await app.inject({
+          method: 'POST',
+          url: `/api/v1/channels/${channel.id}/skus/${sku.id}/publish`,
+          headers: auth(token),
+        });
+        expect(res.statusCode).toBe(403);
+      });
+
+      it('rejects reconciliation sweep calls from staff without channel:manage', async () => {
+        const { token } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+        await grantPermissions('CUSTOMER_SERVICE', ['channel:read']);
+        const reclaimRes = await app.inject({ method: 'POST', url: '/api/v1/channels/sweep/reclaim-stale', headers: auth(token) });
+        expect(reclaimRes.statusCode).toBe(403);
+        const resyncRes = await app.inject({ method: 'POST', url: '/api/v1/channels/sweep/resync-stale', headers: auth(token) });
+        expect(resyncRes.statusCode).toBe(403);
+      });
+
+      it('a staff user WITH channel:manage can call both reconciliation sweeps successfully', async () => {
+        const { token } = await manageStaff();
+        const reclaimRes = await app.inject({ method: 'POST', url: '/api/v1/channels/sweep/reclaim-stale', headers: auth(token) });
+        expect(reclaimRes.statusCode).toBe(200);
+        expect(reclaimRes.json()).toEqual({ reclaimed: 0 });
+        const resyncRes = await app.inject({ method: 'POST', url: '/api/v1/channels/sweep/resync-stale', headers: auth(token) });
+        expect(resyncRes.statusCode).toBe(200);
+        expect(resyncRes.json()).toEqual({ resynced: 0, listingIds: [] });
+      });
+
+      it('never resolves a MOCK_* provider in production - the smallest explicit guard against a mock silently acting as a real channel integration', async () => {
+        process.env.NODE_ENV = 'production';
+        __resetEnvCacheForTests();
+        try {
+          const { sku, location } = await fixtureSku();
+          await seedInventory(sku.id, location.id, 5);
+          const service = new ChannelService(app);
+          const channel = await service.createChannel({ key: 'prod-guard', name: 'Prod Guard', providerName: 'MOCK' }, staffId);
+          const listing = await service.publishSku(channel.id, sku.id, staffId);
+          // Resolving the provider itself fails (never reaches an
+          // external call) - a DEFINITE, known failure, never a crash
+          // and never a silent MOCK success in production.
+          expect(listing.status).toBe('FAILED');
+          expect(listing.lastError).toMatch(/test double.*may never be used in production/);
+        } finally {
+          process.env.NODE_ENV = 'test';
+          __resetEnvCacheForTests();
+        }
+      });
     });
   });
 });

@@ -131,6 +131,33 @@ export class InventoryService {
     return { ...balance, available: balance.onHand - balance.reserved };
   }
 
+  /**
+   * Cross-location sellable/available-to-sell quantity for a set of SKUs
+   * - onHand minus reserved, summed across every stocking location
+   * (damaged/returnPending/inTransit stock is never sellable, per this
+   * file's own INV rules). This is the SAME canonical formula the public
+   * PDP (M11) has used since certification for its `availableQuantity`/
+   * `inStock` fields; extracted here (M26 independent-review
+   * certification repair, 2026-09-28) so every consumer that needs a
+   * cross-location sellable quantity - PDP and, as of this repair,
+   * Channel Publishing's feed-availability field - shares ONE
+   * implementation rather than each recomputing it independently. A
+   * skuId absent from the ledger entirely (never received) is correctly
+   * absent from the returned map; callers treat a missing key as zero,
+   * the same floor this method itself applies via Math.max(0, ...) to
+   * guard against a (should-be-impossible, but never trusted blindly)
+   * negative sum.
+   */
+  async getAvailableToSellBySku(skuIds: string[]): Promise<Map<string, number>> {
+    if (skuIds.length === 0) return new Map();
+    const balances = await this.prisma.inventoryBalance.groupBy({
+      by: ['skuId'],
+      where: { skuId: { in: skuIds } },
+      _sum: { onHand: true, reserved: true },
+    });
+    return new Map(balances.map((b) => [b.skuId, Math.max(0, (b._sum.onHand ?? 0) - (b._sum.reserved ?? 0))]));
+  }
+
   private async writeLedgerRow(
     tx: Prisma.TransactionClient,
     params: {
