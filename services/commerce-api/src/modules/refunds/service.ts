@@ -6,6 +6,7 @@ import { recordAudit } from '../audit/service.js';
 import { InvoiceService } from '../tax/invoice-service.js';
 import { resolvePaymentProvider } from '../checkout/payment-provider.js';
 import { StoreCreditService } from './store-credit-service.js';
+import { NotificationService } from '../notifications/service.js';
 
 /**
  * Refunds (M20, specs/19-refunds.md, REF-001-004). Settles the durable
@@ -40,10 +41,12 @@ import { StoreCreditService } from './store-credit-service.js';
 export class RefundService {
   private readonly invoice: InvoiceService;
   private readonly storeCredit: StoreCreditService;
+  private readonly notifications: NotificationService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.invoice = new InvoiceService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
+    this.notifications = new NotificationService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -240,7 +243,24 @@ export class RefundService {
         storeCreditEntryId: extra.storeCreditEntryId,
       },
     });
-    return this.prisma.refund.findUniqueOrThrow({ where: { id: refundId } });
+    const refund = await this.prisma.refund.findUniqueOrThrow({ where: { id: refundId } });
+    if (status === 'COMPLETED') {
+      // M29 (specs/29-notifications.md): fired after commit only. A
+      // concurrent loser of the claim race (its own updateMany affects
+      // zero rows) still reaches here and calls notify() too - safe,
+      // since NotificationDelivery's own (event, referenceId, channel)
+      // uniqueness (referenceId = refundId) dedupes it to exactly one send.
+      const order = await this.prisma.order.findUnique({ where: { id: refund.orderId }, select: { customerId: true, orderNumber: true } });
+      if (order?.customerId) {
+        await this.notifications.notify(
+          'REFUND_COMPLETED',
+          order.customerId,
+          refundId,
+          `A refund of ₹${Number(refund.amount).toFixed(2)} for order ${order.orderNumber} has been processed.`,
+        );
+      }
+    }
+    return refund;
   }
 
   /**

@@ -59,8 +59,10 @@ const envSchema = z.object({
   // --- CORS (M11 - the storefront's client-side PIN-check/review/OTP
   // calls are the first browser-originated requests this API serves;
   // everything before M11 was server-side-only fetching, which isn't
-  // subject to CORS). Comma-separated allowed origins.
-  CORS_ORIGINS: z.string().default('http://localhost:3000'),
+  // subject to CORS). Comma-separated allowed origins. localhost:3001
+  // added at M29 for apps/admin's own client-side fetches (login,
+  // CMS/inventory-adjustment/support/channel/analytics calls).
+  CORS_ORIGINS: z.string().default('http://localhost:3000,http://localhost:3001'),
 
   // --- Wishlist / Cart (M12, CART-001/002) ---
   CART_GUEST_TTL_DAYS: z.coerce.number().int().positive().default(30),

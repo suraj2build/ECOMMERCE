@@ -1,6 +1,7 @@
 # 27. Analytics / Reporting
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `ANL-001`)
+**Status:** IMPLEMENTED (2026-09-28 — see `blueprint/DECISION_REGISTER.md`
+`ANL-001`). Not yet independently reviewed/certified.
 
 ## Purpose
 

@@ -1,6 +1,7 @@
 # 28. Administration
 
-**Status:** APPROVED (decided 2026-09-22 — see `blueprint/DECISION_REGISTER.md` `ADM-001`–`003`)
+**Status:** IMPLEMENTED (2026-09-28 — see `blueprint/DECISION_REGISTER.md`
+`ADM-001`–`003`). Not yet independently reviewed/certified.
 
 ## Purpose
 

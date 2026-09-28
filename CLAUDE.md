@@ -6,8 +6,157 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-27: `M23 LOYALTY VESTING REPAIR COMPLETE —
-AWAITING INDEPENDENT RE-REVIEW. M26+ NOT AUTHORIZED.`** An independent
+**Status as of 2026-09-28: `M26-M29 DIGITAL GROWTH + OPERATIONS PHASE
+BUILD COMPLETE — AWAITING INDEPENDENT RE-REVIEW. M30+ NOT
+AUTHORIZED.`** The human project owner gave explicit **"START BUILD —
+M26–M29 DIGITAL GROWTH + OPERATIONS PHASE"** authorization on
+2026-09-28, scoped to one continuous engineering phase covering M26
+(Social/Channel Publishing, adapter architecture only — no live
+marketplace integration), M27 (SEO), M28 (Analytics/Reporting), and M29
+(Admin+CMS), built sequentially on the `5bf2fb8` (M23 vesting repair)
+baseline, without stopping between milestones. All four milestones are
+now **IMPLEMENTED**.
+
+**M26 (Social/Channel Publishing)** built a `Channel`/`ChannelListing`/
+`ChannelPublicationAttempt` schema — all channel-specific field mapping
+lives in `Channel.config` JSON, so the core Product Master
+(`Style`/`Sku`/`Price`) gained zero marketplace-specific columns — a
+`ChannelProvider` interface plus `MockChannelProvider`/
+`UnreliableChannelProvider`/`AlwaysFailsChannelProvider` mirroring the
+existing `MarketingProvider` pattern exactly, and full honest
+publish/unpublish attempt-history recording (a validation failure, a
+provider rejection, and a genuine provider exception are all recorded
+distinctly, never silently collapsed into one outcome). 14 new
+adversarial integration tests. New `channel:manage`/`channel:read`
+permissions.
+
+**M27 (SEO)** added canonical URL tags, `BreadcrumbList` JSON-LD plus a
+visual breadcrumb trail matching the existing taxonomy, a publish-gated
+`sitemap.xml`, and a `robots.txt` disallowing authenticated-only pages.
+The 301-redirect half of `SEO-001`'s decision was investigated and
+found to conflict with M11's own already-decided "never let a draft
+product's existence be distinguished from a genuinely unknown one"
+invariant — rather than silently reversing that invariant, this build
+took the acceptance criteria's own explicit alternative branch (a
+genuine 404, proven identical to an unknown ID's 404) and documented
+the investigation in `SEO-001`'s implementation note
+(`blueprint/DECISION_REGISTER.md`) instead of guessing. **A genuine
+freshness bug was found and fixed during M29's own final-validation
+pass** (not at M27's original build time): the `sitemap.xml` route's
+own Next.js ISR meant it could silently serve a stale, build-time
+snapshot — omitting a just-published product — for up to its
+revalidate window, contradicting "kept current with publish state."
+Reproduced against a real production build/start (not `next dev`,
+which never exhibits this) before concluding it was real, then fixed
+with `export const revalidate = 0` plus a dedicated uncached fetch,
+independent of the shared page-cache other storefront pages correctly
+keep for performance.
+
+**M28 (Analytics/Reporting)** built `AnalyticsService`, computing every
+required Commerce/Fashion-specific/Procurement KPI directly from the
+EXISTING ledger models (`Order`/`OrderLine`, `Refund`, `Return`/
+`ReturnLine`, `PurchaseOrder(Line)`, `GoodsReceipt(Line)`,
+`InventoryBalance`/`InventoryTransaction`) — zero new tables, zero
+shadow balance tracking. Net sales correctly reconciles completed
+refunds against gross sales and excludes cancelled orders entirely;
+margin reconciles real PO unit cost against real `OrderLine`
+taxable-value snapshots, never a fabricated or estimated cost. Three
+staff-gated read routes reusing the EXISTING `analytics:read`
+permission. 9 adversarial integration tests, one per required category
+plus the required net-sales-reconciliation negative scenario.
+
+**M29 (Admin+CMS)**, the final milestone of this phase, re-audited the
+full existing RBAC permission matrix against every gated route — no
+gaps found, already complete since M01 — but FLOW 19's own testing
+surfaced a genuine, previously-undiscovered gap: a denied authorization
+attempt was never logged. Fixed by having `requirePermission`
+(`services/commerce-api/src/plugins/auth.ts`) record an `authz.denied`
+audit row (actor, missing permission, attempted URL) on every 403
+across the ENTIRE application, not just the three FLOW 19 cases — a
+very high-blast-radius change, validated with a full pre-existing
+integration-suite re-run before being trusted. New `CmsService`/`cms`
+routes cover four FIXED content types (banners, content blocks,
+campaign landing pages, navigation menus — deliberately never a
+generic page builder), gated by new `cms:manage`/`cms:read`
+permissions, with unauthenticated publish-gated storefront reads so
+content changes need no code deployment. New `SupportService` (`GET
+/support/customers/:id/360`) is a read projection over the EXISTING
+Order/LoyaltyAccount/StoreCreditAccount/Return/Exchange data —
+deliberately narrower than the customer's own self-service profile (no
+address book, recently-viewed, or saved sizes), gated by the
+pre-existing `customer_service:manage` permission. New
+`NotificationService` REUSES the existing `MarketingProvider` interface
+verbatim (M25) and the existing `CommunicationPreference` opt-in matrix
+(M22) — never a second provider abstraction or consent model;
+duplicate-send prevention via `NotificationDelivery`'s own
+`@@unique([event, referenceId, channel])` constraint, the same
+durable-claim-before-provider-call idiom M25's Blocker 4 repair
+established, proven under genuine `Promise.all` concurrency. Wired from
+six real, already-committed state-change call sites (order
+confirmation — both COD and prepaid/webhook paths — shipment dispatch,
+exchange completion, return receipt, refund completion, and loyalty
+vesting); `ORDER_DELIVERED`/`ORDER_CANCELLED` are defined in the
+vocabulary but not yet wired to a call site — an honest, documented
+scope boundary, not a silently-left gap.
+
+A genuinely new `apps/admin` Next.js application was built (separate
+from `apps/storefront`, its own port 3001, mirroring the storefront's
+own conventions) with client-side role-gated navigation (filtered by
+the staff session's own permission list) and screens for CMS,
+inventory adjustment, internal Customer 360 lookup, channel-publishing
+management, and analytics. Navigation hiding is UX only — every route's
+real authorization boundary is server-side, proven directly: FLOW 19's
+own browser test submits the inventory-adjustment form through the
+real rendered UI as an unauthorized role and asserts the real 403,
+never merely checking the link is hidden. The admin app is deliberately
+minimal — it does not have a dedicated screen for every staff-only
+action in the system (e.g. PO approval, refund issuance remain
+API-only, unchanged from before this milestone); FLOW 19's two
+non-UI-having combinations are proven via a genuine authenticated
+session obtained through the real browser login instead, an honest
+scope boundary rather than over-building screens nothing asked for.
+FLOW 19 and FLOW 20 (`acceptance/e2e-commerce-flows.md`) are both
+automated as integration tests AND as a new browser E2E project
+(`test/e2e-admin/flow19-20.spec.ts`, `playwright.config.ts`'s new
+`admin` project) — 9 new integration tests plus 5 new E2E tests. A
+genuine CORS gap was found and fixed during E2E verification:
+`CORS_ORIGINS`'s default only allowed the storefront's own origin
+(3000), not the new admin app's (3001) — fixed in `packages/config`.
+
+**Full clean-state validation for the entire phase**, run repeatedly
+until every result was explained rather than assumed: migration-from-
+zero (38 migrations, zero schema drift via a direct `prisma migrate
+diff --exit-code` check against a freshly-created database), lint/
+typecheck/build clean across all six workspaces including the new
+`apps/admin`, the complete pre-existing backend integration suite
+re-run with zero regressions (609/622 passing, the same 13
+pre-existing Meilisearch-unavailable-in-sandbox failures — `test/
+integration/search-discovery.test.ts`), and the full Playwright suite
+(storefront + the new `admin` project + api-smoke) green at 42/42
+across two independent clean-database runs in a row. Getting to that
+clean result required real debugging, not just re-running until
+green: a stale `commerce-api` dev process from an earlier verification
+step was silently serving requests with the wrong `COD_MAX_ORDER_VALUE_INR`
+override, and a stale `next-server` process was silently bound to a
+port a fresh server start believed it owned — both the same "killed
+the wrapper, not the child" pitfall this file's own M27 history already
+documented, re-diagnosed here via exact PID/environment inspection
+rather than guessed at; and one promotions.spec.ts failure during
+investigation was confirmed a resource-contention timing flake (passed
+reliably when re-run in isolation) rather than accepted as a regression
+without checking. See `acceptance/m26-social-channel-publishing.md`,
+`m27-seo.md`, `m28-analytics-reporting.md`, `m29-admin-cms.md` for each
+milestone's complete Definition of Done, and `CHAN-001`/`SEO-001`/
+`ANL-001`/`ADM-001`–`003`/`NOTIF-001` in `blueprint/DECISION_REGISTER.md`
+for the complete design records including this pass's own repair notes.
+**This agent does not self-declare any of these four milestones
+certified** — the same discipline as every milestone since Phase 1.
+This agent has stopped and is awaiting independent review. **M30+
+(Gift Cards, Security Hardening, Performance/Scale, Final
+Certification) remains unauthorized** regardless of how cleanly this
+phase lands.
+
+An independent
 review of the M23+M24+M25 Overnight Commercial-Engagement Phase build
 (reviewed head `77bd1946703704d36b505214eb2c66223c4bef0f`) returned
 four certification-repair blockers, fixed the same day — see the
@@ -1187,24 +1336,37 @@ reconciliation, order-invoice recovery). Every Phase 1 and Phase 2
 test remains mandatory and must stay green — M16's own build kept all
 of them green throughout.
 
-**This authorization does NOT extend beyond M25.**
+**This authorization does NOT extend beyond M29.**
 Decision/spec/milestone readiness (`blueprint/READINESS.md` Layers
 1–3) remains a separate thing from implementation authorization
 (Layer 4):
 
-- **M26 and every later milestone remain unauthorized.** No
-  application code for M26+ (Channel Publishing, SEO, Analytics,
-  Admin/CMS, Gift Cards, Notifications, Security Hardening,
-  Performance, Final Certification) should be added until the human
-  project owner gives a new, separate, explicit **START BUILD**
-  authorization for that phase — neither the Phase 2 authorization,
-  nor the M16/M17/M18 authorizations, nor the Post-Purchase Phase
-  (M19–M21) authorization, nor the M22 authorization, nor the M23/M24/
-  M25 Overnight Commercial-Engagement Phase authorization carries
-  forward automatically, regardless of how cleanly M08–M25 land.
-- Do **not** interpret "M25 shipped cleanly" as authorization for the
+- **M30 and every later milestone remain unauthorized.** No
+  application code for M30+ (Gift Cards, Security Hardening,
+  Performance/Scale, Final Production Certification) should be added
+  until the human project owner gives a new, separate, explicit
+  **START BUILD** authorization for that phase — neither the Phase 2
+  authorization, nor the M16/M17/M18 authorizations, nor the
+  Post-Purchase Phase (M19–M21) authorization, nor the M22
+  authorization, nor the M23/M24/M25 Overnight Commercial-Engagement
+  Phase authorization, nor the M26–M29 Digital Growth + Operations
+  Phase authorization carries forward automatically, regardless of how
+  cleanly M08–M29 land.
+- Do **not** interpret "M29 shipped cleanly" as authorization for the
   next milestone. Authorization must be explicit and human-given for
   each milestone/phase.
+- **M26 (Social/Channel Publishing), M27 (SEO), M28 (Analytics/
+  Reporting), and M29 (Admin+CMS) were explicitly authorized on
+  2026-09-28** as a single bounded "Digital Growth + Operations Phase"
+  pass, scoped only to those four milestones, worked sequentially
+  (M26 → M27 → M28 → M29) building on the `5bf2fb8` (M23 vesting
+  repair) baseline, without stopping between milestones. **M30 and
+  everything after M29 remains unauthorized.** See §0 above and the
+  per-milestone acceptance docs (`acceptance/m26-social-channel-publishing.md`,
+  `m27-seo.md`, `m28-analytics-reporting.md`, `m29-admin-cms.md`) for
+  each milestone's Definition of Done and `CHAN-001`/`SEO-001`/
+  `ANL-001`/`ADM-001`–`003`/`NOTIF-001` in `blueprint/DECISION_REGISTER.md`
+  for the design records.
 - **M23 (Loyalty), M24 (Promotions), and M25 (Marketing) were
   explicitly authorized on 2026-09-26** as a single bounded
   "Overnight Commercial-Engagement Phase" pass, scoped only to those

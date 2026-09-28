@@ -20,7 +20,14 @@ independent review.
       SAME publish-gated `/storefront/styles` read every other public
       page uses (`getAllPublicStylesForSitemap`), so a draft/unpublished
       style can never appear in it structurally, not just by
-      convention.
+      convention. **Fixed during M29's final-validation pass
+      (2026-09-28):** the route's own Next.js ISR (an implicit
+      build-time static snapshot) could silently serve a stale,
+      pre-publish sitemap for up to its revalidate window - genuinely
+      reproduced against a real production build/start, not assumed.
+      Fixed with `revalidate = 0` plus an uncached fetch, so the route
+      is always current; see `SEO-001`'s implementation note in
+      `blueprint/DECISION_REGISTER.md`.
 
 ## Functional acceptance
 

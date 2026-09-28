@@ -7,6 +7,7 @@ import { WarehouseService } from '../warehouse/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
 import { PromotionService } from '../promotions/service.js';
 import { StoreCreditService } from '../refunds/store-credit-service.js';
+import { NotificationService } from '../notifications/service.js';
 import { recordAudit } from '../audit/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
@@ -31,6 +32,7 @@ export class OrderService {
   private readonly loyalty: LoyaltyService;
   private readonly promotions: PromotionService;
   private readonly storeCredit: StoreCreditService;
+  private readonly notifications: NotificationService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
@@ -39,6 +41,7 @@ export class OrderService {
     this.loyalty = new LoyaltyService(fastify);
     this.promotions = new PromotionService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
+    this.notifications = new NotificationService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -223,8 +226,33 @@ export class OrderService {
     // caller that needs the error (the manual retry route,
     // reconcilePendingInvoices) calls retryOrderInvoice() directly.
     await this.retryOrderInvoice(order.id).catch(() => undefined);
+    await this.notifyOrderConfirmed(order.id);
 
     return this.prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+  }
+
+  /**
+   * M29 (specs/29-notifications.md, cross-cutting, NOTIF-001). Fires
+   * AFTER the order's own transaction has committed (an authoritative
+   * state change, never a speculative one) - guest orders have no
+   * customerId to notify and are a safe no-op, mirrored by
+   * `NotificationService.notify` itself. Called from both the direct
+   * (COD) confirmation path above and from `PaymentService`'s webhook
+   * handler for the `externalTx` (captured-payment) path, the same
+   * "decoupled from the order-creation transaction" pattern this
+   * codebase already established for invoice issuance
+   * (`retryOrderInvoice`) - a transient notification failure must never
+   * resurface as a webhook failure.
+   */
+  async notifyOrderConfirmed(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true, orderNumber: true } });
+    if (!order?.customerId) return;
+    await this.notifications.notify(
+      'ORDER_CONFIRMED',
+      order.customerId,
+      orderId,
+      `Your order ${order.orderNumber} is confirmed. Thank you for shopping with us!`,
+    );
   }
 
   /**
@@ -839,7 +867,22 @@ export class OrderService {
       return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
     };
 
-    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+    const result = await (externalTx ? run(externalTx) : this.prisma.$transaction(run));
+    // M29 (specs/29-notifications.md): fired after commit, never inside
+    // the transaction itself - same "authoritative state change already
+    // committed" discipline as notifyOrderConfirmed.
+    if (!result.exchangeId) {
+      const order = await this.prisma.order.findUnique({ where: { id: result.orderId }, select: { customerId: true, orderNumber: true } });
+      if (order?.customerId) {
+        await this.notifications.notify(
+          'ORDER_SHIPPED',
+          order.customerId,
+          result.id,
+          `Your order ${order.orderNumber} has shipped${opts?.trackingRef ? ` (tracking: ${opts.trackingRef})` : ''}.`,
+        );
+      }
+    }
+    return result;
   }
 
   /**
@@ -897,10 +940,23 @@ export class OrderService {
       }
 
       await this.recomputeOrderStatus(tx, fulfilment.orderId);
-      return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
+      return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { exchange: true } });
     };
 
-    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+    const result = await (externalTx ? run(externalTx) : this.prisma.$transaction(run));
+    // M29 (specs/29-notifications.md): fired after commit only.
+    if (result.exchange?.status === 'COMPLETED') {
+      const order = await this.prisma.order.findUnique({ where: { id: result.orderId }, select: { customerId: true, orderNumber: true } });
+      if (order?.customerId) {
+        await this.notifications.notify(
+          'EXCHANGE_COMPLETED',
+          order.customerId,
+          result.exchange.id,
+          `Your exchange for order ${order.orderNumber} is complete - the replacement has been delivered.`,
+        );
+      }
+    }
+    return result;
   }
 
   /**

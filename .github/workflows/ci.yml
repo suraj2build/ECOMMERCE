@@ -126,6 +126,11 @@ jobs:
             curl -sf http://localhost:3000/ && break
             sleep 1
           done
+          PORT=3001 npm run start --workspace=apps/admin &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3001/login && break
+            sleep 1
+          done
           npm run test:e2e
         env:
           NEXT_PUBLIC_API_URL: 'http://localhost:4000'

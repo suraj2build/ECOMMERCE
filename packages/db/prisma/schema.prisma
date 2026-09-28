@@ -119,6 +119,9 @@ model Customer {
   // M25 Marketing (specs/24-marketing.md)
   campaignDeliveries CampaignDelivery[]
 
+  // M29 Notifications (specs/29-notifications.md)
+  notificationDeliveries NotificationDelivery[]
+
   @@map("customers")
 }
 
@@ -188,6 +191,10 @@ model StaffUser {
   replacementFulfilledExchanges Exchange[]              @relation("ExchangeReplacementFulfilledBy")
   loyaltyLedgerAdjustments      LoyaltyLedgerEntry[]
   channelPublicationAttempts    ChannelPublicationAttempt[]
+  createdCmsBanners             CmsBanner[]
+  createdCmsContentBlocks       CmsContentBlock[]
+  createdCmsLandingPages        CmsLandingPage[]
+  updatedCmsNavigationMenus     CmsNavigationMenu[]
 
   @@map("staff_users")
 }
@@ -3581,4 +3588,161 @@ model ChannelPublicationAttempt {
 
   @@index([channelListingId])
   @@map("channel_publication_attempts")
+}
+
+// ---------------------------------------------------------------------------
+// M29: Content Management (specs/28-admin.md ADM-002). Four FIXED content
+// types only (never a generic page builder, per this phase's own explicit
+// boundary) - homepage banners, campaign landing pages, navigation/menus,
+// and reusable content blocks. "Collections" (the fifth CMS content type
+// specs/28-admin.md names) is NOT duplicated here - it reuses the EXISTING
+// Collection/CollectionStyle model (M07) verbatim, since that model group
+// already IS a mutable-without-deployment merchandising content type.
+// ---------------------------------------------------------------------------
+
+model CmsBanner {
+  id            String    @id @default(uuid())
+  title         String
+  imageUrl      String
+  linkUrl       String?
+  // Where this banner may render - a plain string, not an enum, so a new
+  // placement never needs a schema migration (a genuine CMS requirement:
+  // "without a code deployment").
+  placement     String
+  sortOrder     Int       @default(0)
+  isActive      Boolean   @default(true)
+  publishedAt   DateTime?
+  createdByStaffId String
+  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([placement])
+  @@map("cms_banners")
+}
+
+model CmsContentBlock {
+  id          String   @id @default(uuid())
+  // A stable, merchandiser-chosen handle a landing page/nav can reference
+  // (e.g. "homepage-promo-strip") - never a raw database id exposed as
+  // the addressable key.
+  key         String   @unique
+  title       String
+  // Free-form HTML/rich-text content. This is a fixed content TYPE
+  // (a content block), not a generic component/layout system - the
+  // "no page builder" boundary this phase's own instruction sets.
+  content     String
+  isActive    Boolean  @default(true)
+  createdByStaffId String
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("cms_content_blocks")
+}
+
+model CmsLandingPage {
+  id              String    @id @default(uuid())
+  slug            String    @unique
+  title           String
+  metaDescription String?
+  heroImageUrl    String?
+  // An ordered list of `CmsContentBlock.key` references - the page is
+  // composed from already-published content blocks, never inline HTML
+  // duplicated per page.
+  blockKeys       Json      @default("[]")
+  isPublished     Boolean   @default(false)
+  publishedAt     DateTime?
+  createdByStaffId String
+  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("cms_landing_pages")
+}
+
+model CmsNavigationMenu {
+  id        String   @id @default(uuid())
+  // e.g. "main-nav", "footer-nav" - a fixed, small set of named menu
+  // slots, not an arbitrary menu-creation system.
+  key       String   @unique
+  // Array of {label, url, sortOrder, children?} - a fixed shape the
+  // storefront nav component renders directly, never a generic tree
+  // editor/page-builder.
+  items     Json
+  updatedByStaffId String
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  updatedByStaff StaffUser @relation(fields: [updatedByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("cms_navigation_menus")
+}
+
+// ---------------------------------------------------------------------------
+// M29: Notifications (specs/29-notifications.md, cross-cutting, NOTIF-001).
+// Reuses the EXISTING CommunicationChannel/CommunicationMessageType enums
+// and CommunicationPreference opt-in matrix verbatim (M22, CUST-002) - a
+// customer opted out of ORDER_UPDATES on a channel is never notified on
+// it, transactional or not, the same rule M22's own Finding 3 repair
+// established. No second consent model, no second provider abstraction -
+// dispatch reuses the EXISTING MarketingProvider interface (provider.ts
+// in the marketing module), since the send contract is identical.
+// ---------------------------------------------------------------------------
+
+enum NotificationEvent {
+  ORDER_CONFIRMED
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+  RETURN_RECEIVED
+  REFUND_COMPLETED
+  EXCHANGE_COMPLETED
+  LOYALTY_POINTS_VESTED
+}
+
+enum NotificationDeliveryStatus {
+  // The durable claim, written BEFORE the provider call - see
+  // NotificationDelivery's own docblock. A row that never leaves this
+  // state (the process crashed between claiming and recording an
+  // outcome) is the same "stale PENDING" case CampaignDelivery already
+  // established; a real background reconciliation sweep is future work,
+  // not invented here.
+  PENDING
+  SENT
+  FAILED
+  SKIPPED_OPTOUT
+  SKIPPED_NO_ADDRESS
+  // Mirrors CampaignDeliveryStatus.AMBIGUOUS_RECONCILIATION_REQUIRED
+  // exactly (M25 Blocker 4) - a provider call that itself throws/times
+  // out is genuinely unknown, never assumed FAILED, never auto-retried.
+  AMBIGUOUS_RECONCILIATION_REQUIRED
+}
+
+// The @@unique below is the durable idempotency claim (NOTIF-001:
+// "a retried trigger must not send the same notification twice") -
+// exactly the same (event, reference, channel) uniqueness idiom
+// CampaignDelivery's own (campaignId, customerId) constraint already
+// established for M25.
+model NotificationDelivery {
+  id                String                     @id @default(uuid())
+  event             NotificationEvent
+  channel           CommunicationChannel
+  customerId        String
+  referenceId       String
+  status            NotificationDeliveryStatus
+  providerMessageId String?
+  errorMessage      String?
+  sentAt            DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([event, referenceId, channel])
+  @@index([customerId])
+  @@map("notification_deliveries")
 }

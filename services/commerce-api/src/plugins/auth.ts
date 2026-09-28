@@ -5,6 +5,7 @@ import { loadEnv } from '@fcp/config';
 import { UnauthorizedError, ForbiddenError, type PermissionKey, type RoleKey } from '@fcp/shared';
 import { StaffSessionStore } from '../modules/auth/staff-session.js';
 import { resolveStaffPermissions } from '../modules/auth/rbac.js';
+import { recordAudit } from '../modules/audit/service.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -67,6 +68,19 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
     return async (request: FastifyRequest) => {
       if (!request.staffUser) throw new UnauthorizedError();
       if (!request.staffUser.permissions.has(permission)) {
+        // FLOW 19 (acceptance/e2e-commerce-flows.md, ADM-001): every
+        // denied authorization attempt is logged - who, what permission
+        // was missing, and which route they attempted - never just a
+        // 403 with no trace. Never let an audit-write failure mask the
+        // real 403 the caller must see.
+        await recordAudit(fastify.prisma, {
+          actorType: 'STAFF',
+          actorStaffId: request.staffUser.id,
+          action: 'authz.denied',
+          entityType: 'Permission',
+          entityId: permission,
+          reference: request.url,
+        }).catch(() => undefined);
         throw new ForbiddenError(`Missing required permission: ${permission}`);
       }
     };

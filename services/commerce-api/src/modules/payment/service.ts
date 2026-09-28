@@ -160,6 +160,10 @@ export class PaymentService {
         // successfully - invoice recovery has its own separate durable
         // mechanism, retryOrderInvoice/reconcilePendingInvoices).
         await this.order.retryOrderInvoice(outcome.orderId).catch(() => undefined);
+        // M29 (specs/29-notifications.md): the same "decoupled from the
+        // order-creation transaction, never resurface as a webhook
+        // failure" pattern as invoice issuance above.
+        await this.order.notifyOrderConfirmed(outcome.orderId).catch(() => undefined);
       }
 
       await this.markEventProcessed(eventRecord.id);

@@ -13,9 +13,10 @@
   ],
   "scripts": {
     "postinstall": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run db:generate --workspace=packages/db && npm run build --workspace=packages/db",
-    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run build --workspace=packages/db && npm run build --workspace=services/commerce-api && npm run build --workspace=apps/storefront",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/config && npm run build --workspace=packages/db && npm run build --workspace=services/commerce-api && npm run build --workspace=apps/storefront && npm run build --workspace=apps/admin",
     "dev:api": "npm run dev --workspace=services/commerce-api",
     "dev:storefront": "npm run dev --workspace=apps/storefront",
+    "dev:admin": "npm run dev --workspace=apps/admin",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

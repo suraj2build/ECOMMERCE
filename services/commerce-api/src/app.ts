@@ -37,6 +37,9 @@ import loyaltyRoutes from './modules/loyalty/routes.js';
 import promotionsRoutes from './modules/promotions/routes.js';
 import marketingRoutes from './modules/marketing/routes.js';
 import channelRoutes from './modules/channels/routes.js';
+import analyticsRoutes from './modules/analytics/routes.js';
+import cmsRoutes from './modules/cms/routes.js';
+import supportRoutes from './modules/support/routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = loadEnv();
@@ -151,6 +154,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(promotionsRoutes, { prefix: '/api/v1' });
   await app.register(marketingRoutes, { prefix: '/api/v1' });
   await app.register(channelRoutes, { prefix: '/api/v1' });
+  await app.register(analyticsRoutes, { prefix: '/api/v1' });
+  await app.register(cmsRoutes, { prefix: '/api/v1' });
+  await app.register(supportRoutes, { prefix: '/api/v1' });
 
   return app;
 }

@@ -39,5 +39,19 @@ export default defineConfig({
           : {},
       },
     },
+    {
+      // `admin`: real Chromium browser checks against apps/admin (M29,
+      // specs/28-admin.md) - a genuinely separate application from
+      // apps/storefront, run on its own port (3001).
+      name: 'admin',
+      testDir: './test/e2e-admin',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.ADMIN_BASE_URL ?? 'http://localhost:3001',
+        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+          ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+          : {},
+      },
+    },
   ],
 });

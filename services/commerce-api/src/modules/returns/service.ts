@@ -6,6 +6,7 @@ import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
 import { InventoryService } from '../inventory/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
+import { NotificationService } from '../notifications/service.js';
 import { resolveShippingProvider, type ShippingProvider } from '../shipping/provider.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 import { resolveReturnPolicy, isWithinWindow } from './policy.js';
@@ -39,6 +40,7 @@ export class ReturnService {
   private readonly loyalty: LoyaltyService;
   private readonly provider: ShippingProvider;
   private readonly evidenceStorage: EvidenceStorageProvider;
+  private readonly notifications: NotificationService;
 
   constructor(
     private readonly fastify: FastifyInstance,
@@ -50,6 +52,7 @@ export class ReturnService {
     this.loyalty = new LoyaltyService(fastify);
     this.provider = provider ?? resolveShippingProvider(loadEnv().SHIPPING_PROVIDER);
     this.evidenceStorage = evidenceStorage ?? resolveEvidenceStorageProvider();
+    this.notifications = new NotificationService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -431,7 +434,7 @@ export class ReturnService {
    * belt-and-braces integrity checks).
    */
   async markReceived(returnId: string, staffId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const locked = await this.lockReturn(tx, returnId);
       if (!locked) throw new NotFoundError('Return', returnId);
       if (locked.status === 'RECEIVED' || locked.status === 'DISPOSITIONED') {
@@ -473,6 +476,18 @@ export class ReturnService {
 
       return tx.return.findUniqueOrThrow({ where: { id: returnId }, include: { lines: true } });
     });
+
+    // M29 (specs/29-notifications.md): fired after commit only.
+    const order = await this.prisma.order.findUnique({ where: { id: result.orderId }, select: { customerId: true, orderNumber: true } });
+    if (order?.customerId) {
+      await this.notifications.notify(
+        'RETURN_RECEIVED',
+        order.customerId,
+        returnId,
+        `We've received your return for order ${order.orderNumber} and will process it shortly.`,
+      );
+    }
+    return result;
   }
 
   // --- QC + disposition ---

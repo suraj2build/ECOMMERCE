@@ -23,9 +23,10 @@ module.exports = {
   },
   overrides: [
     {
-      // apps/storefront: a browser/JSX (React) environment, not Node -
-      // separate from the rest of this repo's server-side TypeScript.
-      files: ['apps/storefront/**/*.ts', 'apps/storefront/**/*.tsx'],
+      // apps/storefront and apps/admin: a browser/JSX (React) environment,
+      // not Node - separate from the rest of this repo's server-side
+      // TypeScript.
+      files: ['apps/storefront/**/*.ts', 'apps/storefront/**/*.tsx', 'apps/admin/**/*.ts', 'apps/admin/**/*.tsx'],
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },

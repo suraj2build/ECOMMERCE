@@ -4,6 +4,7 @@ import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { resolveReturnPolicy, isWithinWindow } from '../returns/policy.js';
+import { NotificationService } from '../notifications/service.js';
 
 /**
  * Loyalty (M23, specs/22-loyalty.md, LOY-001-006). Structurally SEPARATE
@@ -30,7 +31,11 @@ import { resolveReturnPolicy, isWithinWindow } from '../returns/policy.js';
  * Owner-approved commercial policy.
  */
 export class LoyaltyService {
-  constructor(private readonly fastify: FastifyInstance) {}
+  private readonly notifications: NotificationService;
+
+  constructor(private readonly fastify: FastifyInstance) {
+    this.notifications = new NotificationService(fastify);
+  }
 
   private get prisma(): PrismaClient {
     return this.fastify.prisma;
@@ -323,7 +328,19 @@ export class LoyaltyService {
       if (!eligible) continue;
 
       const didVest = await this.prisma.$transaction((tx) => this.vestOne(tx, entry.id));
-      if (didVest) vestedCount += 1;
+      if (didVest) {
+        vestedCount += 1;
+        // M29 (specs/29-notifications.md): fired after commit only.
+        const account = await this.prisma.loyaltyAccount.findUnique({ where: { id: entry.accountId }, select: { customerId: true } });
+        if (account) {
+          await this.notifications.notify(
+            'LOYALTY_POINTS_VESTED',
+            account.customerId,
+            entry.id,
+            `${entry.pointsDelta} loyalty points from your recent purchase are now available to redeem.`,
+          );
+        }
+      }
     }
     return vestedCount;
   }

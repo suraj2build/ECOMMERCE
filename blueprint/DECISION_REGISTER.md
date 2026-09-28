@@ -1784,6 +1784,22 @@ of what is still needed from anyone, and from whom.
   real category page and any relaxation of the no-existence-leak
   invariant remain open items for a future, separately-authorized pass
   - not decided or guessed here.
+- **M29 final-validation fix (2026-09-28):** the full-suite E2E
+  validation run for the M26-M29 phase (not the original M27 build)
+  caught a genuine freshness bug in `apps/storefront/src/app/
+  sitemap.ts`: Next.js's own route-level ISR (the metadata route was
+  statically generated at build time with an implicit revalidate
+  window) meant `sitemap.xml` could silently serve its BUILD-TIME
+  snapshot - omitting any product published after that build - for up
+  to the whole window, directly contradicting "kept current with
+  publish state." Fixed with `export const revalidate = 0` on the
+  route plus a dedicated `cache: 'no-store'` fetch in
+  `getAllPublicStylesForSitemap` (`apps/storefront/src/lib/api.ts`),
+  independent of the shared `apiGet` cache other pages correctly keep
+  for performance. Reproduced against a real production build/start
+  before the fix (empty product list until the ISR window elapsed) and
+  confirmed fixed after it (always current), across five full E2E
+  suite runs.
 
 ---
 
@@ -1795,6 +1811,24 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** Required analytics are now explicit and extensive (§27): sales, orders, returns, refunds, inventory, customer metrics, margin, profitability; fashion-specific (style/colour/size performance, stock ageing, sell-through, availability, return reasons, size-related returns); procurement (supplier fill rate, short/excess/damaged receipts, lead time, purchase vs. sales, supplier performance). Build-vs-integrate: build native event/data foundations first (so these are producible reliably), evaluate a BI/dashboard layer for presentation later — an engineering default, not blocking.
 - **Affected specs:** `specs/27-analytics-reporting.md`
+- **M28 implementation note (2026-09-28):** built the native event/data
+  foundation half of this decision only, as scoped -
+  `AnalyticsService` (`services/commerce-api/src/modules/analytics/`)
+  exposes three staff-gated read routes
+  (`GET /analytics/{commerce,fashion,procurement}`) computing every
+  required KPI directly from the EXISTING ledger models - zero new
+  tables, zero shadow balance tracking. Margin/profitability reconciles
+  real `PurchaseOrderLine.unitCost` against real
+  `OrderLine.taxableValueSnapshot`; net sales correctly subtracts
+  completed refunds from gross sales and excludes cancelled orders
+  entirely, so nothing is double-counted. Return reasons are grouped by
+  the real free-text `ReturnLine.reason` (no structured reason-category
+  field exists in this codebase); "size-related" is a documented
+  keyword heuristic over that same text, not a fabricated taxonomy. A
+  BI/dashboard presentation layer remains the explicitly deferred,
+  separate evaluation this decision always described - not built here.
+  9 adversarial integration tests, one per required category plus the
+  negative net-sales-reconciliation scenario and staff RBAC.
 
 ---
 
@@ -1806,6 +1840,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (engineering-authored per explicit Product Owner delegation) · **Decision date:** 2026-09-22
 - **Final decision:** The Product Owner explicitly delegated this ("Finalize a sensible RBAC model based on these operating responsibilities," §25). Adopted role set: **Super Admin, Business Admin, Buying, Merchandising, Catalog, Warehouse Manager, Warehouse Operator, Customer Service, Marketing, Finance, Analytics** — see `blueprint/OPERATING_ROLES.md` and `specs/28-admin.md` for the full permission matrix and sensitive-action approval gates (large/exceptional discounts, manual inventory adjustments, exceptional refunds, high-risk financial actions, role/permission changes all require elevated authorization, per §25/§26).
 - **Affected specs:** `specs/01-auth-rbac.md`, `specs/28-admin.md`
+- **M29 implementation note (2026-09-28):** re-audited the full role/permission matrix against every existing permission-gated route (`packages/db/prisma/seed.ts`) — no gaps found; the matrix was already complete and correct from M01 onward. FLOW 19 (`acceptance/e2e-commerce-flows.md`) proves three specific role/action rejections server-side and, as this milestone's own genuine finding, closed a real gap: denied attempts were not being logged. `requirePermission` (`services/commerce-api/src/plugins/auth.ts`) now records an `authz.denied` audit row on every 403 across the entire application, not just the three FLOW 19 cases.
 
 #### ADM-002 — Separate admin app vs. shared app with role-gated routes · **P1**
 - **Question:** Separate app or shared codebase?
@@ -1813,6 +1848,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** One admin application (separate from the customer storefront app) with role-gated routes internally — not a fully separate deployment/tech stack per role.
 - **Affected specs:** `specs/28-admin.md`
+- **M29 implementation note (2026-09-28):** built `apps/admin` (Next.js, mirroring `apps/storefront`'s own conventions), a genuinely separate application from the customer storefront, on its own port (3001). Role-gating is client-side navigation filtering by the staff session's own permission list (`GET /auth/staff/me`) for UX only — the actual authorization boundary is server-side on every route, exactly as FLOW 19 requires; the admin app's own screens never assume a hidden nav item is a security control. Covers CMS (all four content types), manual inventory adjustment, internal Customer 360 lookup, channel-publishing management, and analytics — deliberately minimal, not a full screen for every staff-only action in the system (PO approval and refund issuance remain API-only, an honest scope boundary — see `acceptance/m29-admin-cms.md`).
 
 #### ADM-003 — Manual inventory adjustment authorization workflow · **P1**
 - **Question:** Who can adjust stock, and what's required?
@@ -1820,6 +1856,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **Manual inventory adjustments require appropriate authorization** (explicit, §26/§36) — restricted to Warehouse Manager and above (Finance co-approval for high-value adjustments), mandatory justification field, fully audited (who/what/when/old-value/new-value/reference).
 - **Affected specs:** `specs/28-admin.md`, `specs/06-inventory.md`
+- **M29 implementation note (2026-09-28):** this workflow was already fully built (pre-M29, ADM-003). This milestone re-verified it end to end with a dedicated FLOW 20 test matrix (`test/integration/flow20-inventory-adjustment-audited.test.ts`, `test/e2e-admin/flow19-20.spec.ts`) rather than assuming prior coverage was sufficient — below-threshold completion, above-threshold rejection-then-completion with a valid co-approver, missing-justification rejection, an invalid co-approver, and self-co-approval rejection, all proven both at the API layer and through the real `apps/admin` inventory-adjustment screen.
 
 ---
 
@@ -1831,6 +1868,7 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **Architecture MUST support SMS, WhatsApp, Email, and Push** via provider abstraction — order logic must not couple directly to one messaging provider (explicit, §15). Actual providers/configuration are selected later, deferred to operational decision.
 - **Affected specs:** `specs/29-notifications.md`
+- **M29 implementation note (2026-09-28):** `NotificationService` (`services/commerce-api/src/modules/notifications`) REUSES the existing `MarketingProvider` interface verbatim (M25) rather than inventing a second provider abstraction — the send contract is identical, and this milestone's own scope is SMS only (the platform's baseline channel, every customer has a mandatory verified mobile number); WhatsApp/Email/Push activation for notifications remains deferred, same as M25's own honest scope boundary. Reuses the existing `CommunicationPreference` opt-in matrix (M22, CUST-002) rather than a second consent model. Duplicate-send prevention follows the exact durable-claim-before-provider-call idiom M25's Blocker 4 repair established: `NotificationDelivery`'s own `@@unique([event, referenceId, channel])` constraint, proven under genuine `Promise.all` concurrency. Wired from six real, already-committed state-change call sites (order confirmation — both COD and prepaid/webhook paths, shipment dispatch, exchange completion, return receipt, refund completion, loyalty vesting); `ORDER_DELIVERED`/`ORDER_CANCELLED` are defined in the vocabulary but not yet wired to a call site — documented as an open scope boundary in `acceptance/m29-admin-cms.md`, not silently left unstated.
 
 ---
 

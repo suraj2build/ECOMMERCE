@@ -1,0 +1,26 @@
+{
+  "name": "@fcp/admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Internal staff admin application (M29, specs/28-admin.md) - role-gated CMS, inventory adjustment, internal Customer 360, channel publishing, and analytics screens. Genuinely separate from apps/storefront, which is customer-facing only.",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "15.5.26",
+    "react": "19.1.9",
+    "react-dom": "19.1.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint-config-next": "15.5.26",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "typescript": "^5.6.2"
+  }
+}

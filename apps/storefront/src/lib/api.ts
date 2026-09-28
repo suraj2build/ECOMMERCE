@@ -206,11 +206,23 @@ export async function getPublicCollections(): Promise<PublicCollectionSummary[]>
 const SITEMAP_PAGE_SIZE = 60;
 const SITEMAP_MAX_STYLES = 3000;
 
+// Deliberately bypasses the shared `apiGet` cache (used by
+// `getPublicStyles` for ordinary page rendering, where a short cache is
+// the right tradeoff): a sitemap that silently omits a just-published
+// product for up to a whole cache window is a real correctness gap
+// against "kept current with publish state," not an acceptable
+// performance/freshness tradeoff.
+async function fetchStylesPageUncached(take: number, skip: number): Promise<PublicStyleSummary[]> {
+  const res = await fetch(`${API_URL}/api/v1/storefront/styles?take=${take}&skip=${skip}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`commerce-api request failed: GET /api/v1/storefront/styles -> ${res.status}`);
+  return res.json() as Promise<PublicStyleSummary[]>;
+}
+
 export async function getAllPublicStylesForSitemap(): Promise<PublicStyleSummary[]> {
   const all: PublicStyleSummary[] = [];
   let skip = 0;
   while (all.length < SITEMAP_MAX_STYLES) {
-    const page = await getPublicStyles(SITEMAP_PAGE_SIZE, skip);
+    const page = await fetchStylesPageUncached(SITEMAP_PAGE_SIZE, skip);
     if (page.length === 0) break;
     all.push(...page);
     if (page.length < SITEMAP_PAGE_SIZE) break;
