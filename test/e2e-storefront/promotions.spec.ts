@@ -260,8 +260,22 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await expectOk(await api.post(`/api/v1/orders/fulfilments/${seedFulfilmentId}/ship`, { headers: loyaltyStaffHeaders, data: {} }), 'Ship loyalty-seed fulfilment');
     await expectOk(await api.post(`/api/v1/orders/fulfilments/${seedFulfilmentId}/deliver`, { headers: loyaltyStaffHeaders }), 'Deliver loyalty-seed fulfilment');
     await prisma.orderFulfilment.update({ where: { id: seedFulfilmentId }, data: { deliveredAt: new Date(Date.now() - 10 * 86_400_000) } });
-    const vestRes = await expectOk(await api.post('/api/v1/loyalty/sweep/vest', { headers: loyaltyStaffHeaders }), 'Vest loyalty-seed points');
-    expect((vestRes as { vested: number }).vested).toBeGreaterThanOrEqual(1);
+    // The vesting sweep is a GLOBAL, non-customer-scoped, idempotent
+    // operation by design (LOY-006 / LoyaltyService.vestEligiblePoints:
+    // "whichever transaction acquires the account lock first vests it;
+    // the other... safely no-ops"). FLOW 17 (loyalty.spec.ts) calls this
+    // SAME shared route and, under Playwright's default cross-file
+    // worker parallelism, can legitimately vest THIS test's own entry a
+    // moment before this call reaches it - this call then correctly
+    // returns `vested: 0` for an entry that is nonetheless now genuinely
+    // VESTED. Asserting on the call's own return count therefore asserts
+    // an implementation/timing detail (which invocation performed the
+    // transition), not the real business invariant - assert directly on
+    // the entry's persisted state instead, which is correct regardless
+    // of which concurrent sweep call performed the transition.
+    await expectOk(await api.post('/api/v1/loyalty/sweep/vest', { headers: loyaltyStaffHeaders }), 'Vest loyalty-seed points');
+    const loyaltySeedEarnEntry = await prisma.loyaltyLedgerEntry.findUniqueOrThrow({ where: { qualifyingOrderLineId: loyaltySeedLine.id } });
+    expect(loyaltySeedEarnEntry.vestingStatus).toBe('VESTED');
 
     const loyaltyAccount = await prisma.loyaltyAccount.findUniqueOrThrow({ where: { customerId: customer.id } });
     expect(loyaltyAccount.balance).toBeGreaterThanOrEqual(100);
