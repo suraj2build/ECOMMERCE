@@ -1729,6 +1729,30 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **None launch now.** Build the **adapter/contract publishing architecture** (core catalog must not embed marketplace-specific fields; use channel-specific mappings) so future integrations to Meta, Instagram, Facebook, Google Merchant, Amazon, Flipkart, Myntra, and Ajio are possible without redesign (explicit, §3, §24). **Actual marketplace integrations are explicitly deferred — not built without separate milestone authorization** (explicit, §3: "DO NOT build these marketplace integrations now unless their milestone is explicitly authorized").
 - **Affected specs:** `specs/25-social-channel-publishing.md`
+- **M26 implementation note (2026-09-28):** built exactly the adapter/
+  contract architecture this decision authorizes, nothing more. A
+  `Channel` model (`key`, `providerName`, `isActive`, `config` JSON)
+  holds ALL channel-specific field mapping as configuration - the core
+  Product Master (`Style`/`Sku`/`Price`) gained zero marketplace-
+  specific columns, verified by schema review. `ChannelListing`
+  (`@@unique([channelId, skuId])`) tracks publishing status per channel
+  per SKU with zero real channels connected, proven against
+  `MockChannelProvider` alone (`services/commerce-api/src/modules/
+  channels/provider.ts`, the same interface+mock+factory shape
+  `MarketingProvider`/`ShippingProvider` already established) plus
+  `UnreliableChannelProvider`/`AlwaysFailsChannelProvider` test doubles
+  for the outage/definite-rejection distinction. Every publish/unpublish
+  attempt - success or failure, validation-rejected or provider-
+  rejected - is recorded in an immutable `ChannelPublicationAttempt`
+  history row, never silently skipped; a failed listing carries
+  `lastError` and an incrementing `retryCount` for reconciliation. New
+  `channel:manage`/`channel:read` permissions (deliberately not reused
+  from any existing key, the same audit-by-permission precedent M25's
+  `campaign:manage` established). No marketplace-specific field was
+  ever available to add to core schema in the implemented design - the
+  only path for channel requirements is `Channel.config`. Still **no
+  concrete integration built** - `MOCK`/`MOCK_UNRELIABLE`/
+  `MOCK_ALWAYS_FAILS` remain the only registered provider names.
 
 ---
 
@@ -1740,6 +1764,26 @@ of what is still needed from anyone, and from whom.
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** Standard SEO-friendly structure (`/category/product-slug`), canonical URLs, 301 redirects for discontinued/unpublished products. Finalized as an engineering convention at M27 implementation time.
 - **Affected specs:** `specs/26-seo.md`
+- **M27 implementation note (2026-09-28):** canonical URLs are
+  implemented (`alternates.canonical` on the PDP, one per style ID -
+  this codebase has no query-param PDP variants, so no further
+  de-duplication logic was needed). The 301-redirect half of this
+  decision was investigated and found to conflict with an already-
+  decided M11 invariant: `PdpService.getProductDetail`'s own docblock
+  states the public read path "must never let a draft product's
+  existence be distinguished from a genuinely unknown one." A 301 to a
+  category page requires exactly that distinguishing existence check
+  (is this ID a real-but-unpublished style, vs a genuinely unknown
+  one?) - building it would silently reverse that already-decided
+  invariant, which this milestone has no authorization to do, and this
+  codebase also has no category browsing page to redirect to yet. Per
+  `acceptance/m27-seo.md`'s own explicit "either 301s... or returns a
+  proper 404" wording, the second branch was implemented: an
+  unpublished/discontinued PDP returns a genuine 404, proven identical
+  to a truly-unknown ID's 404 (`test/e2e-storefront/seo.spec.ts`). A
+  real category page and any relaxation of the no-existence-leak
+  invariant remain open items for a future, separately-authorized pass
+  - not decided or guessed here.
 
 ---
 

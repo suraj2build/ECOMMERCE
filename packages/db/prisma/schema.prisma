@@ -187,6 +187,7 @@ model StaffUser {
   qcExchanges                   Exchange[]              @relation("ExchangeQcBy")
   replacementFulfilledExchanges Exchange[]              @relation("ExchangeReplacementFulfilledBy")
   loyaltyLedgerAdjustments      LoyaltyLedgerEntry[]
+  channelPublicationAttempts    ChannelPublicationAttempt[]
 
   @@map("staff_users")
 }
@@ -470,6 +471,7 @@ model Sku {
   returnLines            ReturnLine[]
   exchangesAsOriginal    Exchange[]             @relation("ExchangeOriginalSku")
   exchangesAsReplacement Exchange[]             @relation("ExchangeReplacementSku")
+  channelListings        ChannelListing[]
 
   @@unique([styleId, colourId, sizeId])
   @@index([styleId])
@@ -3479,4 +3481,104 @@ model CampaignDelivery {
   @@unique([campaignId, customerId])
   @@index([customerId])
   @@map("campaign_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// M26: Social / Channel Publishing (specs/25-social-channel-publishing.md,
+// CHAN-001 - adapter/contract architecture only, no live marketplace
+// integration). `Channel.config` is where ALL channel-specific field
+// mapping lives (a JSON configuration blob) - deliberately the only place
+// a channel's own quirks may be expressed, so the core Product Master
+// schema (Style/Sku/Price) never gains a marketplace-specific column.
+// There is no separate ChannelAccount/live-credentials model: since no
+// concrete integration exists yet (no provider needs real credentials to
+// be stored), that would be a premature model for a capability this
+// milestone does not build - a future concrete integration's own
+// authorization is the right time to add it.
+// ---------------------------------------------------------------------------
+
+enum ChannelListingStatus {
+  // Never attempted, or explicitly taken down - the SKU is not live on
+  // this channel right now.
+  NOT_PUBLISHED
+  PUBLISHED
+  // The most recent publish/resync attempt failed (see lastError) -
+  // distinct from NOT_PUBLISHED because it records a genuine failure to
+  // retry/reconcile, not an intentional non-published state.
+  FAILED
+}
+
+model Channel {
+  id           String   @id @default(uuid())
+  key          String   @unique
+  name         String
+  providerName String
+  isActive     Boolean  @default(true)
+  // Channel-specific field-mapping/config (e.g. which Style attribute
+  // maps to which feed field, category-mapping overrides) - configuration,
+  // never a core schema change (the CHAN-001 requirement this model
+  // exists to satisfy).
+  config       Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  listings ChannelListing[]
+
+  @@map("channels")
+}
+
+// One row per (channel, SKU) - publishing status is tracked per channel
+// per SKU even with zero real channels connected (acceptance criterion),
+// proven end-to-end against the mock adapter alone.
+model ChannelListing {
+  id            String               @id @default(uuid())
+  channelId     String
+  skuId         String
+  status        ChannelListingStatus @default(NOT_PUBLISHED)
+  externalId    String?
+  lastSyncedAt  DateTime?
+  lastError     String?
+  retryCount    Int                  @default(0)
+  payloadSnapshot Json?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  channel  Channel                     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sku      Sku                         @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  attempts ChannelPublicationAttempt[]
+
+  @@unique([channelId, skuId])
+  @@index([skuId])
+  @@map("channel_listings")
+}
+
+enum ChannelPublicationAction {
+  PUBLISH
+  UNPUBLISH
+}
+
+enum ChannelPublicationAttemptStatus {
+  SUCCESS
+  FAILURE
+}
+
+// Full publish/unpublish attempt history - never overwritten, so a
+// reconciliation/retry investigation can see every prior attempt, not
+// just the listing's current state.
+model ChannelPublicationAttempt {
+  id               String                           @id @default(uuid())
+  channelListingId String
+  action           ChannelPublicationAction
+  status           ChannelPublicationAttemptStatus
+  requestPayload   Json?
+  responsePayload  Json?
+  errorMessage     String?
+  actorStaffId     String
+  attemptedAt      DateTime                         @default(now())
+
+  channelListing ChannelListing @relation(fields: [channelListingId], references: [id], onDelete: Cascade)
+  actorStaff     StaffUser      @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
+
+  @@index([channelListingId])
+  @@map("channel_publication_attempts")
 }

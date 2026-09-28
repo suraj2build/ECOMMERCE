@@ -45,6 +45,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'invoice:read',
     'content:read',
     'order:read',
+    // M26/M29: Business Admin can see (not manage) channel-publishing
+    // status and CMS content, same read-only oversight posture as its
+    // other read-only rows above.
+    'channel:read',
+    'cms:read',
   ],
   BUYING: ['supplier:read', 'supplier:write', 'po:create', 'po:submit', 'po:read', 'product:read'],
   MERCHANDISING: [
@@ -61,6 +66,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // M24: promotion/coupon catalog management is a merchandising action.
     'promotion:manage',
     'promotion:read',
+    // M26: merchandising owns which SKUs get published to which channel
+    // (the same team that owns catalog:publish for the primary website).
+    'channel:manage',
+    'channel:read',
   ],
   CATALOG: ['product:read', 'product:write', 'product:taxonomy:manage', 'inventory:read'],
   WAREHOUSE_MANAGER: [
@@ -152,6 +161,14 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // M25: campaign create/schedule/cancel is Marketing-only.
     'campaign:manage',
     'campaign:read',
+    // M26: Marketing also publishes to social/channel destinations
+    // (read-level oversight; MERCHANDISING owns the actual publish action).
+    'channel:read',
+    // M29: CMS content (banners, campaign landing pages, nav/menus) is a
+    // Marketing-owned publishing surface, distinct from content:manage
+    // (M09 Watch & Shop moderation, also owned by this role above).
+    'cms:manage',
+    'cms:read',
   ],
   FINANCE: [
     'po:approve',

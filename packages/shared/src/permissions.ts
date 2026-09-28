@@ -137,6 +137,24 @@ export const PERMISSION_KEYS = [
   // from "customer messaging campaigns" by permission alone.
   'campaign:manage',
   'campaign:read',
+  // M26 (specs/25-social-channel-publishing.md, CHAN-001): publishing
+  // catalog data to an external channel adapter is a distinct staff
+  // action from both product:publish (a Style's own lifecycle gate,
+  // PROD-003) and catalog:publish (making a Collection live on the
+  // primary website) - deliberately new keys, not reused, following the
+  // same "future audit can distinguish by permission alone" precedent
+  // M25 established for campaign:manage vs marketing:manage.
+  'channel:manage',
+  'channel:read',
+  // M29 (specs/28-admin.md, ADM-002): CMS content (banners, campaign
+  // landing pages, nav/menus, content blocks) is a distinct staff
+  // capability from the pre-existing content:manage/content:moderate/
+  // content:read keys, which belong to the unrelated M09 Watch & Shop
+  // shoppable-media feature - deliberately new keys, not reused, so an
+  // audit can tell "shoppable video moderation" apart from "site content
+  // publishing" by permission alone.
+  'cms:manage',
+  'cms:read',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

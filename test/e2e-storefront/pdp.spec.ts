@@ -182,11 +182,28 @@ test.describe('Product Detail Page', () => {
 
   test('includes valid Product structured data', async ({ page }) => {
     await page.goto(`/product/${styleId}`);
-    const jsonLd = await page.locator('script[type="application/ld+json"]').textContent();
+    const jsonLd = await page.locator('script[type="application/ld+json"]').first().textContent();
     const data = JSON.parse(jsonLd ?? '{}');
     expect(data['@type']).toBe('Product');
     expect(data.offers.price).toBe(1999);
     expect(data.offers.availability).toBe('https://schema.org/InStock');
+  });
+
+  // M27 (specs/26-seo.md): BreadcrumbList structured data + a canonical
+  // URL tag, both required acceptance criteria.
+  test('includes valid BreadcrumbList structured data, a visible breadcrumb trail, and a canonical URL', async ({ page }) => {
+    await page.goto(`/product/${styleId}`);
+
+    const breadcrumbJsonLd = await page.locator('script[type="application/ld+json"]').nth(1).textContent();
+    const breadcrumbData = JSON.parse(breadcrumbJsonLd ?? '{}');
+    expect(breadcrumbData['@type']).toBe('BreadcrumbList');
+    expect(breadcrumbData.itemListElement.length).toBeGreaterThanOrEqual(2);
+    expect(breadcrumbData.itemListElement.at(-1).name).toBe('E2E Test Jacket');
+
+    await expect(page.locator('nav[aria-label="Breadcrumb"]')).toContainText('E2E Test Jacket');
+
+    const canonicalHref = await page.locator('link[rel="canonical"]').getAttribute('href');
+    expect(canonicalHref).toBe(`${STOREFRONT_URL}/product/${styleId}`);
   });
 
   test('has no critical or serious automated accessibility violations', async ({ page }) => {

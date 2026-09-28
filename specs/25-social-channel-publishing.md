@@ -1,8 +1,9 @@
 # 25. Social / Channel Publishing
 
-**Status:** APPROVED (adapter architecture only — decided 2026-09-22;
-concrete marketplace integrations explicitly deferred — see
-`blueprint/DECISION_REGISTER.md` `CHAN-001`)
+**Status:** IMPLEMENTED (2026-09-28, adapter architecture only — decided
+2026-09-22; concrete marketplace integrations explicitly deferred — see
+`blueprint/DECISION_REGISTER.md` `CHAN-001`). Not yet independently
+reviewed/certified.
 
 ## Purpose
 

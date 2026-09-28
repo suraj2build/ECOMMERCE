@@ -10,6 +10,11 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
+// M27 (specs/26-seo.md): the absolute origin used for canonical URLs,
+// sitemap.xml entries, and robots.txt's sitemap reference - a real
+// deployment sets this to its real public domain.
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+
 export interface PublicStyleSummary {
   id: string;
   styleCode: string;
@@ -184,12 +189,34 @@ export async function submitReview(
   return res.json() as Promise<ProductReview>;
 }
 
-export async function getPublicStyles(take = 12): Promise<PublicStyleSummary[]> {
-  return apiGet<PublicStyleSummary[]>(`/api/v1/storefront/styles?take=${take}`, 60);
+export async function getPublicStyles(take = 12, skip = 0): Promise<PublicStyleSummary[]> {
+  return apiGet<PublicStyleSummary[]>(`/api/v1/storefront/styles?take=${take}&skip=${skip}`, 60);
 }
 
 export async function getPublicCollections(): Promise<PublicCollectionSummary[]> {
   return apiGet<PublicCollectionSummary[]>('/api/v1/storefront/collections', 60);
+}
+
+// M27 (specs/26-seo.md): sitemap.xml must stay current as products
+// publish/unpublish, so it pages through the SAME public/publish-gated
+// `getPublicStyles` read every other public page uses (never a second,
+// divergent "all styles" query) rather than duplicating catalog logic.
+// SITEMAP_MAX_STYLES bounds worst-case generation cost - an engineering
+// default (50 pages x 60 = 3000 published SKUs), not a business limit.
+const SITEMAP_PAGE_SIZE = 60;
+const SITEMAP_MAX_STYLES = 3000;
+
+export async function getAllPublicStylesForSitemap(): Promise<PublicStyleSummary[]> {
+  const all: PublicStyleSummary[] = [];
+  let skip = 0;
+  while (all.length < SITEMAP_MAX_STYLES) {
+    const page = await getPublicStyles(SITEMAP_PAGE_SIZE, skip);
+    if (page.length === 0) break;
+    all.push(...page);
+    if (page.length < SITEMAP_PAGE_SIZE) break;
+    skip += SITEMAP_PAGE_SIZE;
+  }
+  return all;
 }
 
 export async function getWatchAndShopFeed(): Promise<ShoppableMediaSummary[]> {

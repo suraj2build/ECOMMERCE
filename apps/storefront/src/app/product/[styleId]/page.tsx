@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getProductDetail } from '@/lib/api';
+import { getProductDetail, SITE_URL } from '@/lib/api';
 import { Container } from '@/components/ui/Container';
 import { ProductDetailInteractive } from '@/components/pdp/ProductDetailInteractive';
 import { PincodeChecker } from '@/components/pdp/PincodeChecker';
 import { ReviewsSection } from '@/components/pdp/ReviewsSection';
 import { CrossSellStrip } from '@/components/pdp/CrossSellStrip';
+import { Breadcrumbs } from '@/components/pdp/Breadcrumbs';
 
 // Server-rendered/indexable per specs/26-seo.md's architectural requirement -
 // no client-side data fetching for the initial render.
@@ -21,6 +22,10 @@ export async function generateMetadata({
     title: product.name,
     description: `${product.name} by ${product.brandName}. ${product.fabric ?? ''}`.trim(),
     openGraph: { title: product.name, images: product.media[0] ? [product.media[0].url] : [] },
+    // M27 (specs/26-seo.md): a single canonical URL per style ID - this
+    // codebase has no query-param faceted/filtered PDP variants, so no
+    // duplicate-content ambiguity exists to resolve beyond this.
+    alternates: { canonical: `${SITE_URL}/product/${styleId}` },
   };
 }
 
@@ -56,11 +61,33 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
     },
   };
 
+  const breadcrumbItems = [
+    { name: 'Home', href: '/' },
+    { name: product.categoryName, href: '/' },
+    { name: product.name, href: `/product/${product.id}` },
+  ];
+
+  const breadcrumbStructuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: breadcrumbItems.map((item, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: item.name,
+      item: `${SITE_URL}${item.href}`,
+    })),
+  };
+
   return (
     <>
       {/* schema.org JSON-LD, server-generated from our own data only - not user input. */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbStructuredData) }}
+      />
       <Container className="py-8">
+        <Breadcrumbs items={breadcrumbItems} />
         <ProductDetailInteractive product={product} />
         <PincodeChecker />
         <ReviewsSection
