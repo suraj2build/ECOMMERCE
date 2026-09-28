@@ -296,10 +296,16 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await expect(discountLine).toContainText('Automatic 10% off', { timeout: 10_000 });
 
     // Attempting the INCOMPATIBLE coupon is rejected with a clear reason;
-    // the automatic promotion's own discount line remains visible.
+    // the automatic promotion's own discount line remains visible. This
+    // rejection depends on the same debounced, server-revalidated
+    // preview fetch as the compatible-coupon case below (see the comment
+    // there) - under CI's own resource contention (M29 added a third
+    // concurrent Node server, apps/admin, to the same E2E step) this can
+    // genuinely take longer than 10s without indicating any product
+    // defect, so this assertion uses the same widened timeout.
     await page.getByLabel('Coupon code').fill('E2EINCOMPAT');
     await page.getByRole('button', { name: 'Apply' }).click();
-    await expect(page.getByText(/cannot be combined/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/cannot be combined/i)).toBeVisible({ timeout: 20_000 });
     await expect(discountLine).toContainText('Automatic 10% off');
 
     // The COMPATIBLE coupon applies successfully alongside it. The
@@ -315,8 +321,8 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await page.getByRole('button', { name: 'Apply' }).click();
     await expect(page.getByText(/E2ECOMPAT applied/)).toBeVisible({ timeout: 10_000 });
     await expect(discountLine).toContainText('Automatic 10% off');
-    await expect(discountLine).toContainText('Compatible coupon', { timeout: 10_000 });
-    await expect(discountLine.locator('xpath=following-sibling::span')).toHaveText('-₹400', { timeout: 10_000 });
+    await expect(discountLine).toContainText('Compatible coupon', { timeout: 20_000 });
+    await expect(discountLine.locator('xpath=following-sibling::span')).toHaveText('-₹400', { timeout: 20_000 });
 
     // Real loyalty points redeemed on top - both value systems are
     // compatible with both promotions in this scenario (Blocker 2).
