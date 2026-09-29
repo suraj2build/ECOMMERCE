@@ -2,9 +2,31 @@
 
 **Status:** IMPLEMENTED (2026-09-28, adapter architecture only — decided
 2026-09-22; concrete marketplace integrations explicitly deferred — see
-`blueprint/DECISION_REGISTER.md` `CHAN-001`). Repaired the same day
-under a focused independent-review certification repair (below). Not
-yet independently re-reviewed/certified.
+`blueprint/DECISION_REGISTER.md` `CHAN-001`). Repaired 2026-09-28 and
+again 2026-09-29 under two focused independent-review certification
+repairs (below). Not yet independently re-reviewed/certified.
+
+## Independent-review certification repair (2026-09-29) — Blocker 1: provider idempotency operation identity
+
+The 2026-09-28 repair's provider-facing `idempotencyKey` was
+`${channelId}:${skuId}` for BOTH publish and unpublish, reused verbatim
+across every publish/resync/unpublish call — a real provider could
+conflate an initial publish, a later resync, and an unpublish as the
+same already-processed operation. Fixed with a durable, pre-dispatch
+operation identity (`ChannelListing.currentOperationId`, resolved
+inside `ChannelService.claimProcessing`'s own transaction, before any
+provider call): a fresh id is minted when claiming from a SETTLED
+status (`NOT_PUBLISHED`/`PUBLISHED`/`FAILED` — each a genuinely new
+logical operation), and the existing id is REUSED when reconciling a
+still-open one (`AMBIGUOUS_RECONCILIATION_REQUIRED`, or a reclaimed
+stale `PROCESSING`). The provider-facing key is now
+`${channelId}:${skuId}:${action}:${currentOperationId}` — `action`
+keeps publish/unpublish identity spaces separate even in the one
+legitimate case where the same operationId is reused across both. See
+`CHAN-001`'s own repair addendum in `blueprint/DECISION_REGISTER.md`
+for the complete design record and
+`acceptance/m26-social-channel-publishing.md` for the corrected
+Definition of Done.
 
 ## Independent-review certification repair (2026-09-28)
 

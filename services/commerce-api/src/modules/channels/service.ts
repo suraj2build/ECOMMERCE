@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient, Channel, ChannelListing } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
@@ -193,25 +194,46 @@ export class ChannelService {
    * architectural role a `CampaignDelivery` row created PENDING before
    * dispatch plays for marketing (M25), adapted to a long-lived,
    * resyncable listing row rather than a create-once delivery row.
+   *
+   * M26 independent-review certification repair (2026-09-29, Blocker 1 -
+   * provider idempotency identity): this same claim transaction also
+   * resolves the durable operation identity (`currentOperationId`) the
+   * caller will build the provider-facing idempotency key from.
+   * Reclaiming a still-genuinely-open operation (AMBIGUOUS_
+   * RECONCILIATION_REQUIRED, or a stale PROCESSING claim - both mean
+   * "the previous attempt's outcome is unknown, this IS that same
+   * attempt being retried/reconciled") REUSES the row's existing
+   * `currentOperationId`, so a real provider sees the identical key and
+   * can safely de-duplicate. Claiming from any SETTLED status
+   * (NOT_PUBLISHED, PUBLISHED, FAILED) mints a BRAND NEW id, since that
+   * is by definition a genuinely new logical operation (a first
+   * publish, a resync with presumably different content, or a retry
+   * after a DEFINITE - not ambiguous - rejection).
    */
   private async claimProcessing(
     listingId: string,
-  ): Promise<{ claimed: boolean; listing: ChannelListing; previousStatus: ChannelListing['status'] }> {
+  ): Promise<{ claimed: boolean; listing: ChannelListing; previousStatus: ChannelListing['status']; operationId: string | null }> {
     const staleCutoff = new Date(Date.now() - loadEnv().CHANNEL_PUBLISH_STALE_SECONDS * 1000);
     return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ status: ChannelListing['status']; updatedAt: Date }[]>`
-        SELECT "status", "updatedAt" FROM "channel_listings" WHERE "id" = ${listingId} FOR UPDATE
+      const rows = await tx.$queryRaw<{ status: ChannelListing['status']; updatedAt: Date; currentOperationId: string | null }[]>`
+        SELECT "status", "updatedAt", "currentOperationId" FROM "channel_listings" WHERE "id" = ${listingId} FOR UPDATE
       `;
       const row = rows[0];
       if (!row) throw new NotFoundError('Channel listing not found');
       const previousStatus = row.status;
-      const eligible = previousStatus !== 'PROCESSING' || row.updatedAt < staleCutoff;
+      const isStaleProcessingReclaim = previousStatus === 'PROCESSING' && row.updatedAt < staleCutoff;
+      const eligible = previousStatus !== 'PROCESSING' || isStaleProcessingReclaim;
       if (!eligible) {
         const listing = await tx.channelListing.findUniqueOrThrow({ where: { id: listingId } });
-        return { claimed: false, listing, previousStatus };
+        return { claimed: false, listing, previousStatus, operationId: null };
       }
-      const listing = await tx.channelListing.update({ where: { id: listingId }, data: { status: 'PROCESSING' } });
-      return { claimed: true, listing, previousStatus };
+      const reconcilingOpenOperation = previousStatus === 'AMBIGUOUS_RECONCILIATION_REQUIRED' || isStaleProcessingReclaim;
+      const operationId = reconcilingOpenOperation && row.currentOperationId ? row.currentOperationId : randomUUID();
+      const listing = await tx.channelListing.update({
+        where: { id: listingId },
+        data: { status: 'PROCESSING', currentOperationId: operationId },
+      });
+      return { claimed: true, listing, previousStatus, operationId };
     });
   }
 
@@ -234,7 +256,7 @@ export class ChannelService {
       create: { channelId, skuId, status: 'NOT_PUBLISHED' },
     });
 
-    const { claimed, listing } = await this.claimProcessing(existing.id);
+    const { claimed, listing, operationId } = await this.claimProcessing(existing.id);
     if (!claimed) {
       // Another request currently holds a live (non-stale) claim on this
       // exact listing - converge to whatever it is doing rather than
@@ -243,6 +265,10 @@ export class ChannelService {
       // attempt is recorded here: nothing happened on this call.
       return listing;
     }
+    // Blocker 1 (2026-09-29): the provider-facing idempotency key.
+    // `operationId` is never null here - claimProcessing always resolves
+    // one (reused or freshly minted) whenever `claimed` is true.
+    const idempotencyKey = `${channelId}:${skuId}:PUBLISH:${operationId}`;
 
     let item: ChannelFeedItem;
     try {
@@ -252,7 +278,7 @@ export class ChannelService {
       // external provider at all - a DEFINITE, known failure, recorded
       // exactly like one, so the attempt history is complete either way.
       const errorMessage = err instanceof Error ? err.message : 'Unknown validation error';
-      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', errorMessage, actorStaffId);
+      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', errorMessage, actorStaffId, operationId);
     }
 
     let provider: ReturnType<typeof getChannelProvider>;
@@ -266,14 +292,14 @@ export class ChannelService {
       // NEVER left the claimed listing stuck at PROCESSING with no
       // outcome recorded at all.
       const errorMessage = err instanceof Error ? err.message : 'Unknown provider configuration error';
-      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', errorMessage, actorStaffId, item);
+      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', errorMessage, actorStaffId, operationId, item);
     }
     try {
       const result = await provider.publish({
         channelKey: channel.key,
         config: (channel.config as Record<string, unknown>) ?? {},
         item,
-        idempotencyKey: `${channelId}:${skuId}`,
+        idempotencyKey,
       });
 
       if (result.status === 'SUCCESS') {
@@ -295,6 +321,7 @@ export class ChannelService {
             requestPayload: item as object,
             responsePayload: result as object,
             actorStaffId,
+            operationId,
           },
         });
         await recordAudit(this.prisma, {
@@ -309,7 +336,7 @@ export class ChannelService {
       }
       // A DEFINITE provider rejection - the provider returned, it did
       // not throw, so the outcome is genuinely known.
-      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', result.errorMessage ?? 'Provider rejected the listing', actorStaffId, item, result as object);
+      return this.recordOutcome(listing, 'PUBLISH', 'FAILED', result.errorMessage ?? 'Provider rejected the listing', actorStaffId, operationId, item, result as object);
     } catch (err) {
       // M26 independent-review certification repair (2026-09-28,
       // finding #2): the provider call itself threw/timed out AFTER
@@ -318,7 +345,7 @@ export class ChannelService {
       // FAILED: that would claim a certainty this attempt does not
       // have. See ChannelListingStatus.AMBIGUOUS_RECONCILIATION_REQUIRED.
       const errorMessage = err instanceof Error ? err.message : 'Unknown provider error';
-      return this.recordOutcome(listing, 'PUBLISH', 'AMBIGUOUS', errorMessage, actorStaffId, item);
+      return this.recordOutcome(listing, 'PUBLISH', 'AMBIGUOUS', errorMessage, actorStaffId, operationId, item);
     }
   }
 
@@ -327,7 +354,7 @@ export class ChannelService {
     const existing = await this.prisma.channelListing.findUnique({ where: { channelId_skuId: { channelId, skuId } } });
     if (!existing) throw new NotFoundError('Channel listing not found');
 
-    const { claimed, listing, previousStatus } = await this.claimProcessing(existing.id);
+    const { claimed, listing, previousStatus, operationId } = await this.claimProcessing(existing.id);
     if (!claimed) {
       return listing; // converge to the in-flight claim, never a second dispatch
     }
@@ -350,6 +377,12 @@ export class ChannelService {
       await this.releaseClaim(listing.id, previousStatus === 'PROCESSING' ? 'AMBIGUOUS_RECONCILIATION_REQUIRED' : previousStatus);
       throw new ValidationError('Listing is not currently published (or ambiguously published) on this channel');
     }
+    // Blocker 1 (2026-09-29): `UNPUBLISH` in the key means a genuine
+    // provider outage that leaves ONE listing's PUBLISH ambiguous and a
+    // separate UNPUBLISH ambiguous (or vice versa) can never be
+    // conflated as "the same already-processed operation" by a real
+    // provider, even though both target the same channel+SKU.
+    const idempotencyKey = `${channelId}:${skuId}:UNPUBLISH:${operationId}`;
 
     let provider: ReturnType<typeof getChannelProvider>;
     try {
@@ -359,14 +392,14 @@ export class ChannelService {
       // call was ever attempted, so this is a DEFINITE failure, never
       // ambiguous, and never leaves the listing stuck at PROCESSING.
       const errorMessage = err instanceof Error ? err.message : 'Unknown provider configuration error';
-      return this.recordOutcome(listing, 'UNPUBLISH', 'FAILED', errorMessage, actorStaffId);
+      return this.recordOutcome(listing, 'UNPUBLISH', 'FAILED', errorMessage, actorStaffId, operationId);
     }
     try {
       const result = await provider.unpublish({
         channelKey: channel.key,
         config: (channel.config as Record<string, unknown>) ?? {},
         externalId: listing.externalId!,
-        idempotencyKey: `${channelId}:${skuId}`,
+        idempotencyKey,
       });
       if (result.status === 'SUCCESS') {
         const updated = await this.prisma.channelListing.update({
@@ -380,6 +413,7 @@ export class ChannelService {
             status: 'SUCCESS',
             responsePayload: result as object,
             actorStaffId,
+            operationId,
           },
         });
         await recordAudit(this.prisma, {
@@ -391,13 +425,13 @@ export class ChannelService {
         });
         return updated;
       }
-      return this.recordOutcome(listing, 'UNPUBLISH', 'FAILED', result.errorMessage ?? 'Provider rejected the unpublish', actorStaffId);
+      return this.recordOutcome(listing, 'UNPUBLISH', 'FAILED', result.errorMessage ?? 'Provider rejected the unpublish', actorStaffId, operationId);
     } catch (err) {
       // Same reasoning as publish's own catch block: a thrown/timed-out
       // unpublish may have genuinely removed the listing before the
       // error reached us - never recorded as a definite FAILED.
       const errorMessage = err instanceof Error ? err.message : 'Unknown provider error';
-      return this.recordOutcome(listing, 'UNPUBLISH', 'AMBIGUOUS', errorMessage, actorStaffId);
+      return this.recordOutcome(listing, 'UNPUBLISH', 'AMBIGUOUS', errorMessage, actorStaffId, operationId);
     }
   }
 
@@ -419,6 +453,7 @@ export class ChannelService {
     outcome: 'FAILED' | 'AMBIGUOUS',
     errorMessage: string,
     actorStaffId: string,
+    operationId: string | null,
     requestPayload?: unknown,
     responsePayload?: unknown,
   ): Promise<ChannelListing> {
@@ -437,6 +472,7 @@ export class ChannelService {
         responsePayload: responsePayload ? (responsePayload as object) : undefined,
         errorMessage,
         actorStaffId,
+        operationId,
       },
     });
     await recordAudit(this.prisma, {

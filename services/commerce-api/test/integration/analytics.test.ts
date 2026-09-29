@@ -251,6 +251,91 @@ describe('Analytics / Reporting (M28)', () => {
       expect(report.availability.inStockSkus).toBeGreaterThanOrEqual(1);
     });
 
+    /**
+     * M28 independent-review certification repair (2026-09-29), Blocker
+     * 2: the original build resolved SKU dimensional metadata (used to
+     * attribute a SKU's figures to its style) from ONLY the sold-SKU
+     * set. A SKU with real on-hand stock that has never sold had no
+     * styleId to attribute to, so its onHand was silently dropped from
+     * the style-level sell-through denominator - the exact regression
+     * scenario the review specified: Style A, SKU 1 (sold=3, onHand=0)
+     * and SKU 2 (sold=0, onHand=7) must report 3/10=0.30, never 1.00.
+     */
+    it('an inventory-only SKU that has never sold still contributes its onHand stock to style-level sell-through, never silently dropped', async () => {
+      const { sku: sku1, style, colour, location } = await fixtureSku();
+      await createOrder({ sku: sku1, locationId: location.id, quantity: 3, unitPriceInclusive: 500, taxableValueSnapshot: 1500 });
+      // SKU 1: sold=3, onHand=0 (fully sold out).
+
+      // SKU 2: same style/colour, a different size, NEVER sold - only
+      // ever appears via its InventoryBalance row, never in soldLines.
+      const size2 = await testPrisma.size.create({ data: { label: `ANL-L-${Date.now()}`, sortOrder: 1 } });
+      const sku2 = await testPrisma.sku.create({
+        data: { skuCode: `${style.styleCode}-BLK-L`, styleId: style.id, colourId: colour.id, sizeId: size2.id },
+      });
+      await testPrisma.inventoryBalance.create({ data: { skuId: sku2.id, locationId: location.id, onHand: 7 } });
+
+      const service = new AnalyticsService(app);
+      const report = await service.getFashionReport();
+
+      const sellThroughEntry = report.sellThrough.find((s) => s.styleId === style.id);
+      // sold=3 (SKU1 only), onHand=0+7=7 (both SKUs) -> 3/10 = 0.30.
+      // The pre-repair bug silently dropped SKU2's onHand, producing
+      // 3/(3+0)=1.00 instead.
+      expect(sellThroughEntry?.sellThroughRate).toBeCloseTo(0.3);
+    });
+
+    /**
+     * M28 independent-review certification repair (2026-09-29), Blocker
+     * 2B: "availability" is a sellable/customer-facing metric and must
+     * use the SAME canonical `onHand - reserved` formula customer-facing
+     * availability uses elsewhere (InventoryService.
+     * getAvailableToSellBySku), never raw `onHand > 0` - a SKU with real
+     * onHand but fully reserved has ZERO units a customer could actually
+     * buy right now.
+     */
+    it('a SKU with onHand fully consumed by reservations is NOT counted as available, even though onHand itself is positive', async () => {
+      const { sku, location } = await fixtureSku();
+      await testPrisma.inventoryBalance.create({ data: { skuId: sku.id, locationId: location.id, onHand: 10, reserved: 10 } });
+
+      const service = new AnalyticsService(app);
+      const report = await service.getFashionReport();
+
+      expect(report.availability.totalSkus).toBe(1);
+      expect(report.availability.inStockSkus).toBe(0);
+      expect(report.availability.availabilityRate).toBe(0);
+    });
+
+    it('sellable availability aggregates correctly across locations - a fully-reserved location and a genuinely sellable location combine into one true available SKU', async () => {
+      const { sku, location } = await fixtureSku();
+      const location2 = await testPrisma.location.create({ data: { code: `ANL-WH-2-${Date.now()}`, name: 'Second Warehouse', type: 'WAREHOUSE' } });
+      await testPrisma.inventoryBalance.create({ data: { skuId: sku.id, locationId: location.id, onHand: 5, reserved: 5 } }); // fully reserved here
+      await testPrisma.inventoryBalance.create({ data: { skuId: sku.id, locationId: location2.id, onHand: 3, reserved: 0 } }); // genuinely sellable here
+
+      const service = new AnalyticsService(app);
+      const report = await service.getFashionReport();
+
+      expect(report.availability.totalSkus).toBe(1);
+      expect(report.availability.inStockSkus).toBe(1);
+      expect(report.availability.availabilityRate).toBe(1);
+    });
+
+    it('accounting sell-through onHand is unaffected by the availability fix - sellThrough still reflects raw onHand, not onHand-minus-reserved', async () => {
+      const { sku, style, location } = await fixtureSku();
+      await createOrder({ sku, locationId: location.id, quantity: 2, unitPriceInclusive: 500, taxableValueSnapshot: 1000 });
+      // onHand=8 but fully reserved (0 sellable) - sellThrough must still
+      // use the raw accounting onHand=8, never the sellable figure (0).
+      await testPrisma.inventoryBalance.create({ data: { skuId: sku.id, locationId: location.id, onHand: 8, reserved: 8 } });
+
+      const service = new AnalyticsService(app);
+      const report = await service.getFashionReport();
+
+      const sellThroughEntry = report.sellThrough.find((s) => s.styleId === style.id);
+      // sold=2, onHand=8 (raw accounting figure) -> 2/10 = 0.20.
+      expect(sellThroughEntry?.sellThroughRate).toBeCloseTo(0.2);
+      // But availability correctly reports zero sellable stock for this SKU.
+      expect(report.availability.inStockSkus).toBe(0);
+    });
+
     it('groups return reasons by the real free-text ReturnLine.reason and correctly identifies size-related returns by keyword', async () => {
       const { sku, location } = await fixtureSku();
       const { order, line } = await createOrder({ sku, locationId: location.id, quantity: 1, unitPriceInclusive: 800, taxableValueSnapshot: 800 });

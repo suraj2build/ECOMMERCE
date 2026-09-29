@@ -3512,6 +3512,27 @@ model CampaignDelivery {
 // No new inventory table/ledger was added - availability is derived
 // live, on every publish, from the EXISTING InventoryBalance ledger via
 // InventoryService.getAvailableToSellBySku (also now used by PDP).
+//
+// M26 INDEPENDENT-REVIEW CERTIFICATION REPAIR (2026-09-29, Blocker 1 -
+// provider idempotency identity): the original repair's provider-facing
+// idempotencyKey (`${channelId}:${skuId}`) was reused verbatim across
+// EVERY publish/unpublish/resync call for a listing - a real provider
+// implementing idempotency could conflate an initial publish, a later
+// resync after a price/availability change, and an unpublish as the
+// same already-processed operation. Fixed by minting a durable, pre-
+// dispatch operation identity (`ChannelListing.currentOperationId`,
+// established inside ChannelService.claimProcessing's own transaction,
+// before any provider call) that is REUSED only when reconciling/
+// retrying the SAME still-open logical operation
+// (AMBIGUOUS_RECONCILIATION_REQUIRED, or a reclaimed stale PROCESSING)
+// and MINTED FRESH for every genuinely new operation (a first publish,
+// a resync of an already-PUBLISHED listing, or a retry after a
+// DEFINITE FAILED). The provider-facing key is now
+// `${channelId}:${skuId}:${action}:${currentOperationId}` - `action`
+// separates publish from unpublish identity spaces; the operation id
+// separates distinct logical operations while staying stable for
+// retry of one. No new inventory/catalog table - this is purely a
+// Channel-domain identity concern.
 // ---------------------------------------------------------------------------
 
 enum ChannelListingStatus {
@@ -3553,10 +3574,14 @@ enum ChannelListingStatus {
   // guarantee the idempotent-retry contract a blind resend would need),
   // and never conflated with FAILED (a genuine, KNOWN rejection). The
   // operator-safe reconcile path is simply re-issuing the SAME
-  // publish/unpublish call: `channelId:skuId` is a STABLE idempotency
-  // key across every attempt (see provider.ts), so a real provider
-  // implementing this interface is expected to de-duplicate on it
-  // rather than create a second external listing.
+  // publish/unpublish call: `ChannelListing.currentOperationId` is
+  // preserved (never re-minted) across a reconcile of THIS status, so
+  // the provider-facing idempotency key
+  // (`${channelId}:${skuId}:${action}:${currentOperationId}`, M26
+  // independent-review certification repair 2026-09-29, Blocker 1) stays
+  // STABLE for the retry - a real provider implementing this interface
+  // is expected to de-duplicate on it rather than create a second
+  // external listing.
   AMBIGUOUS_RECONCILIATION_REQUIRED
 }
 
@@ -3592,6 +3617,25 @@ model ChannelListing {
   lastError     String?
   retryCount    Int                  @default(0)
   payloadSnapshot Json?
+  // M26 independent-review certification repair (2026-09-29, Blocker 1 -
+  // provider idempotency identity): the durable identity of the CURRENT
+  // (or most recently attempted) logical publish/unpublish operation on
+  // this listing, minted BEFORE provider dispatch inside
+  // ChannelService.claimProcessing's own transaction - the same
+  // durable-intent-before-external-call point the PROCESSING claim
+  // itself already is. A fresh operation (claiming from NOT_PUBLISHED,
+  // PUBLISHED - a resync/update, or FAILED - retrying with presumably
+  // different content) mints a NEW id; reclaiming an operation whose
+  // outcome is still genuinely open (from AMBIGUOUS_RECONCILIATION_REQUIRED,
+  // or a stale PROCESSING claim) REUSES the existing id, since it is the
+  // SAME logical external operation being reconciled/retried, not a new
+  // one. Combined with `action` (PUBLISH/UNPUBLISH), this is what makes
+  // the provider-facing idempotency key
+  // (`${channelId}:${skuId}:${action}:${currentOperationId}`) correctly
+  // distinguish publish from unpublish, a genuinely new operation from
+  // an earlier one, while staying stable for retry/reconciliation of the
+  // SAME operation - see ChannelService.claimProcessing's own docblock.
+  currentOperationId String?
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
 
@@ -3636,6 +3680,17 @@ model ChannelPublicationAttempt {
   errorMessage     String?
   actorStaffId     String
   attemptedAt      DateTime                         @default(now())
+  // M26 independent-review certification repair (2026-09-29, Blocker 1):
+  // the ChannelListing.currentOperationId this specific attempt was made
+  // under, frozen at the moment of this attempt - lets a reconciliation
+  // investigation see directly which historical attempts belonged to the
+  // SAME logical operation (e.g. two AMBIGUOUS_RECONCILIATION_REQUIRED
+  // rows sharing one operationId are the same retried operation, never
+  // two independent ones) versus which attempt started a genuinely new
+  // one. Nullable only because it cannot be backfilled for attempts
+  // recorded before this column existed - never null for any attempt
+  // recorded going forward.
+  operationId      String?
 
   channelListing ChannelListing @relation(fields: [channelListingId], references: [id], onDelete: Cascade)
   actorStaff     StaffUser      @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)

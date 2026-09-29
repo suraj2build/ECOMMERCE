@@ -4,9 +4,11 @@
 **Status:** BUILT (2026-09-28) — **adapter/contract architecture
 only,** as authorized. No concrete marketplace integration is in scope
 for this milestone. **Independent-review certification repair applied
-the same day** (channel-availability truth + ambiguous-provider-outcome
-model — see the spec's own repair addendum and `CHAN-001` in
-`blueprint/DECISION_REGISTER.md`). Not self-declared certified —
+2026-09-28** (channel-availability truth + ambiguous-provider-outcome
+model) **and a second, focused independent-review certification repair
+applied 2026-09-29** (provider idempotency operation identity) — see
+the spec's own repair addenda and `CHAN-001` in
+`blueprint/DECISION_REGISTER.md`. Not self-declared certified —
 awaiting independent re-review, per this repository's standing
 discipline.
 
@@ -63,6 +65,16 @@ discipline.
       reclaims a claim whose owning process crashed mid-flight.
 - [x] **(Repair)** No `MOCK_*` provider can be resolved when
       `NODE_ENV=production` (`getChannelProvider`'s own guard).
+- [x] **(2026-09-29 repair)** The provider-facing idempotency identity
+      distinguishes PUBLISH from UNPUBLISH, and distinguishes a
+      genuinely new logical publish/resync operation from an earlier
+      completed one, while remaining STABLE across retries/reconciliation
+      of the SAME open (ambiguous or reclaimed-stale) operation — a
+      durable `ChannelListing.currentOperationId`, minted or reused
+      inside `claimProcessing`'s own row-locked transaction BEFORE any
+      provider dispatch, composed into
+      `${channelId}:${skuId}:${action}:${operationId}`. No random
+      per-call value is used, preserving retry safety.
 
 ## Negative scenarios / edge cases
 
@@ -106,6 +118,18 @@ discipline.
       genuine `Promise.all`/row-lock concurrency for both publish and
       unpublish, and security (publish/reconcile RBAC, the production
       mock-provider guard).
+- [x] **(2026-09-29 repair)** 9 additional adversarial tests
+      (`test/integration/channels.test.ts`, now 42 total): publish vs.
+      unpublish use distinct operation identities even when one
+      reconciles the other's still-open ambiguous state; a retry of the
+      same ambiguous publish, and separately the same ambiguous
+      unpublish, preserve the same operationId across repeated attempts;
+      a resync of an already-PUBLISHED listing and a retry after a
+      DEFINITE `FAILED` both mint a NEW operationId; a reclaimed stale
+      `PROCESSING` claim preserves the crashed attempt's original
+      operationId; two genuinely concurrent publish requests converge to
+      at most one provider dispatch; and operation-identity resolution
+      never reads or writes `InventoryBalance`.
 
 ## Definition of Done
 

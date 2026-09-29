@@ -1811,6 +1811,52 @@ of what is still needed from anyone, and from whom.
   check makes every interleaving deterministically safe). See
   `specs/25-social-channel-publishing.md`'s own repair addendum and
   `acceptance/m26-social-channel-publishing.md` for the corrected
+  Definition of Done. **Note (2026-09-29): the "`channelId:skuId`
+  idempotency key is unchanged" claim in this entry was itself found
+  unsafe by the next repair below - see that entry for the correction.**
+- **Independent-review certification repair (2026-09-29), Blocker 1 -
+  provider idempotency operation identity:** the `2026-09-28` repair
+  above left the provider-facing `idempotencyKey` as `${channelId}:${skuId}`
+  for BOTH publish and unpublish, reused verbatim across every
+  publish/resync/unpublish call for a listing. A real provider
+  implementing idempotency could conflate an initial publish, a later
+  resync after a price/availability change, and an unpublish as the
+  same already-processed external operation - genuinely unsafe, and the
+  mock provider's own lack of idempotency enforcement meant no existing
+  test could have caught it. Fixed with a durable, pre-dispatch
+  operation identity: `ChannelListing.currentOperationId` (new column,
+  migration `20260929084236_m26_channel_operation_idempotency`),
+  resolved inside `ChannelService.claimProcessing`'s own transaction -
+  the same point the `PROCESSING` claim itself is committed, BEFORE any
+  provider call. Claiming from a SETTLED status (`NOT_PUBLISHED`,
+  `PUBLISHED` - a resync, `FAILED` - a retry after a definite,
+  presumably-now-different rejection) MINTS a brand new id, since each
+  is genuinely a new logical operation; claiming to reconcile a still-
+  genuinely-open operation (`AMBIGUOUS_RECONCILIATION_REQUIRED`, or a
+  reclaimed stale `PROCESSING`) REUSES the existing id, since it is the
+  SAME operation being retried. The provider-facing key is now
+  `${channelId}:${skuId}:${action}:${currentOperationId}` - `action`
+  (`PUBLISH`/`UNPUBLISH`) keeps the two identity spaces separate even in
+  the one legitimate scenario where the SAME operationId is reused
+  across both (an ambiguous UNPUBLISH reconciled via a subsequent
+  PUBLISH call), proven directly by a dedicated adversarial test. A new
+  `ChannelPublicationAttempt.operationId` column (same migration)
+  freezes which operation each historical attempt belonged to, for
+  reconciliation/audit and so tests can observe the key's components
+  directly without a spy provider. No new inventory/catalog table or
+  read/write path - purely a Channel-domain identity concern, proven by
+  a dedicated test that InventoryBalance is unchanged across a full
+  retry/resync sequence. 9 new adversarial tests
+  (`test/integration/channels.test.ts`, now 42 total) covering:
+  publish/unpublish identity separation (including the operationId-
+  reuse-across-actions edge case), retry-preserves-identity for both
+  publish and unpublish, resync-and-retry-after-FAILED both mint a new
+  identity, a stale `PROCESSING` claim reclaimed inline preserves the
+  crashed attempt's own identity, concurrent publish requests still
+  converge to exactly one dispatch under the new identity scheme, and
+  the read-only-inventory guarantee. See
+  `specs/25-social-channel-publishing.md`'s own repair addendum and
+  `acceptance/m26-social-channel-publishing.md` for the corrected
   Definition of Done.
 
 ---
@@ -1888,6 +1934,40 @@ of what is still needed from anyone, and from whom.
   separate evaluation this decision always described - not built here.
   9 adversarial integration tests, one per required category plus the
   negative net-sales-reconciliation scenario and staff RBAC.
+- **Independent-review certification repair (2026-09-29), Blockers 2 and
+  2B - fashion sell-through/availability correctness:** **Blocker 2:**
+  `getFashionReport`'s dimensional-metadata lookup (`skuById`) was
+  resolved from ONLY the SKUs appearing in `soldLines`, then reused
+  against the FULL SKU universe (sold SKUs union inventory-balance
+  SKUs) when attributing sell-through to a style. A SKU carrying real
+  on-hand stock that had never sold had no entry in `skuById` and was
+  silently `continue`d past, dropping its on-hand contribution from the
+  style-level sell-through denominator entirely (e.g. a style with one
+  sold-out SKU and one never-sold, fully-stocked SKU reported 100%
+  sell-through instead of the true blended rate). Fixed by resolving
+  `balances` (the inventory half of the SKU universe) FIRST, computing
+  the complete `allSkuIds` union, then loading dimensional metadata for
+  THAT set - still the exact same single `InventoryBalance.groupBy`
+  query this method always used, no shadow analytics inventory model.
+  **Blocker 2B:** `availability.inStockSkus` counted raw `onHand > 0`,
+  while customer-facing/channel availability everywhere else in this
+  codebase (PDP, M26 Channel Publishing) uses the canonical sellable
+  formula `onHand - reserved` via `InventoryService.
+  getAvailableToSellBySku`. A SKU with real onHand but fully consumed
+  by reservations was wrongly counted as "available" even though zero
+  units are actually purchasable right now. Fixed by switching ONLY the
+  `availability` metric to the canonical sellable formula (now
+  `AnalyticsService` also depends on `InventoryService`, the same
+  dependency M26's own repair already established); `sellThrough`
+  deliberately keeps using raw accounting `onHand` unchanged, since it
+  is a stock-turnover metric, not a "can a customer buy this" metric -
+  proven by a dedicated regression test asserting both figures
+  simultaneously on the same fully-reserved SKU. 4 new adversarial
+  tests (`test/integration/analytics.test.ts`, now 13 total): the
+  exact inventory-only-SKU sell-through regression scenario from the
+  review, a fully-reserved SKU excluded from availability, cross-
+  location sellable aggregation, and the sellThrough-vs-availability
+  independence proof. No accounting/onHand figures were altered.
 
 ---
 

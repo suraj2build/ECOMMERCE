@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@fcp/db';
+import { InventoryService } from '../inventory/service.js';
 
 export interface DateRange {
   from?: Date;
@@ -19,7 +20,11 @@ const SIZE_RELATED_KEYWORDS = ['size', 'fit', 'fits', 'small', 'large', 'tight',
  * separate evaluation, not built here.
  */
 export class AnalyticsService {
-  constructor(private readonly fastify: FastifyInstance) {}
+  private readonly inventory: InventoryService;
+
+  constructor(private readonly fastify: FastifyInstance) {
+    this.inventory = new InventoryService(fastify);
+  }
 
   private get prisma(): PrismaClient {
     return this.fastify.prisma;
@@ -161,10 +166,35 @@ export class AnalyticsService {
       where: { status: { not: 'CANCELLED' } },
       select: { skuId: true, quantity: true, taxableValueSnapshot: true },
     });
-    const skuIds = [...new Set(soldLines.map((l) => l.skuId))];
-    const skus = skuIds.length
+
+    // M28 independent-review certification repair (2026-09-29, Blocker
+    // 2): sell-through and availability need the FULL SKU universe this
+    // metric is computed over - every SKU with either a sale or an
+    // inventory balance - not only SKUs that have ever sold. The
+    // original build resolved dimensional metadata (skuById, used to
+    // attribute a SKU's figures to its style) from ONLY the sold-SKU
+    // set, so a SKU that carries real on-hand stock but has never sold
+    // had no styleId to attribute to and was silently dropped from
+    // style-level sell-through - understating the denominator and
+    // overstating the rate (e.g. a style with one sold-out SKU and one
+    // never-sold, fully-stocked SKU reported 100% sell-through instead
+    // of the true blended rate). Fixed by resolving `balances` (this
+    // SKU universe's other half) FIRST, computing `allSkuIds` as their
+    // union, then loading dimensional metadata for that COMPLETE set -
+    // no shadow analytics inventory model, still the same single
+    // InventoryBalance groupBy this method always used.
+    const balances = await this.prisma.inventoryBalance.groupBy({
+      by: ['skuId'],
+      _sum: { onHand: true },
+    });
+    const onHandBySku = new Map(balances.map((b) => [b.skuId, b._sum.onHand ?? 0]));
+    const unitsSoldBySku = new Map<string, number>();
+    for (const line of soldLines) unitsSoldBySku.set(line.skuId, (unitsSoldBySku.get(line.skuId) ?? 0) + line.quantity);
+    const allSkuIds = new Set([...onHandBySku.keys(), ...unitsSoldBySku.keys()]);
+
+    const skus = allSkuIds.size
       ? await this.prisma.sku.findMany({
-          where: { id: { in: skuIds } },
+          where: { id: { in: [...allSkuIds] } },
           select: { id: true, styleId: true, colourId: true, sizeId: true, style: { select: { name: true } } },
         })
       : [];
@@ -187,33 +217,40 @@ export class AnalyticsService {
     const colours = performanceBy((skuId) => skuById.get(skuId)?.colourId);
     const sizes = performanceBy((skuId) => skuById.get(skuId)?.sizeId);
 
-    // Sell-through and availability need the FULL active SKU universe,
-    // not only SKUs that have ever sold.
-    const balances = await this.prisma.inventoryBalance.groupBy({
-      by: ['skuId'],
-      _sum: { onHand: true },
-    });
-    const onHandBySku = new Map(balances.map((b) => [b.skuId, b._sum.onHand ?? 0]));
-    const unitsSoldBySku = new Map<string, number>();
-    for (const line of soldLines) unitsSoldBySku.set(line.skuId, (unitsSoldBySku.get(line.skuId) ?? 0) + line.quantity);
-
-    const allSkuIds = new Set([...onHandBySku.keys(), ...unitsSoldBySku.keys()]);
-    let inStockCount = 0;
+    // M28 independent-review certification repair (2026-09-29, Blocker
+    // 2B): sell-through remains an ACCOUNTING/turnover metric - it
+    // intentionally keeps using raw `onHand` (never altered by this
+    // repair). `availability` below is a DIFFERENT metric ("can a
+    // customer buy this right now") and is fixed separately.
     const sellThroughByStyle = new Map<string, { sold: number; onHand: number }>();
     for (const skuId of allSkuIds) {
-      const onHand = onHandBySku.get(skuId) ?? 0;
-      if (onHand > 0) inStockCount += 1;
       const styleId = skuById.get(skuId)?.styleId;
       if (!styleId) continue;
       const entry = sellThroughByStyle.get(styleId) ?? { sold: 0, onHand: 0 };
       entry.sold += unitsSoldBySku.get(skuId) ?? 0;
-      entry.onHand += onHand;
+      entry.onHand += onHandBySku.get(skuId) ?? 0;
       sellThroughByStyle.set(styleId, entry);
     }
     const sellThrough = [...sellThroughByStyle.entries()].map(([styleId, v]) => ({
       styleId,
       sellThroughRate: v.sold + v.onHand > 0 ? v.sold / (v.sold + v.onHand) : 0,
     }));
+
+    // M28 independent-review certification repair (2026-09-29, Blocker
+    // 2B): "available" here means sellable/customer-facing availability
+    // - the SAME canonical cross-location `onHand - reserved` formula
+    // customer-facing/channel availability uses elsewhere
+    // (InventoryService.getAvailableToSellBySku, also used by PDP and
+    // Channel Publishing), never a second, independently-invented
+    // formula and never the raw accounting `onHand > 0` the original
+    // build used (which wrongly counted a fully-reserved SKU - onHand
+    // positive but zero actually sellable - as "available"). This does
+    // NOT touch the accounting onHand/sellThrough figures above.
+    const availableToSellBySku = await this.inventory.getAvailableToSellBySku([...allSkuIds]);
+    let inStockCount = 0;
+    for (const skuId of allSkuIds) {
+      if ((availableToSellBySku.get(skuId) ?? 0) > 0) inStockCount += 1;
+    }
 
     // Stock ageing: days since the most recent RECEIPT transaction for each SKU.
     const receipts = await this.prisma.inventoryTransaction.groupBy({

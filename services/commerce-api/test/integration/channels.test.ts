@@ -421,10 +421,14 @@ describe('Channel Publishing (M26)', () => {
         const first = await service.unpublishSku(channel.id, sku.id, staffId);
         expect(first.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
 
-        // Retry - same stable idempotencyKey (channelId:skuId) is reused;
-        // still ambiguous since the same unreliable provider answers
-        // again, but crucially the retry path itself is proven open, not
-        // permanently rejected as "not published."
+        // Retry - the row's currentOperationId (and so the provider-facing
+        // idempotency key derived from it) is REUSED, not re-minted, since
+        // this is reconciling the SAME still-open ambiguous operation
+        // (Blocker 1 repair, 2026-09-29 - see the dedicated "provider
+        // idempotency operation identity" describe block below for the
+        // direct proof). Still ambiguous since the same unreliable
+        // provider answers again, but crucially the retry path itself is
+        // proven open, not permanently rejected as "not published."
         const second = await service.unpublishSku(channel.id, sku.id, staffId);
         expect(second.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
         expect(second.retryCount).toBe(2);
@@ -613,6 +617,259 @@ describe('Channel Publishing (M26)', () => {
           __resetEnvCacheForTests();
         }
       });
+    });
+  });
+
+  /**
+   * M26 INDEPENDENT-REVIEW CERTIFICATION REPAIR (2026-09-29), Blocker 1:
+   * the provider-facing idempotencyKey was `${channelId}:${skuId}` for
+   * BOTH publish and unpublish, reused verbatim across every publish/
+   * resync/unpublish call for a listing - a real provider implementing
+   * idempotency could conflate an initial publish, a later resync after
+   * a price/availability change, and an unpublish as the same already-
+   * processed operation. Fixed with a durable, pre-dispatch operation
+   * identity (`ChannelListing.currentOperationId`, minted inside
+   * claimProcessing's own transaction) that is REUSED only when
+   * reconciling/retrying the SAME still-open operation and MINTED FRESH
+   * for every genuinely new one; the key is now
+   * `${channelId}:${skuId}:${action}:${currentOperationId}`.
+   */
+  describe('independent-review certification repair (2026-09-29) - Blocker 1: provider idempotency operation identity', () => {
+    async function lastAttempt(channelListingId: string, action: 'PUBLISH' | 'UNPUBLISH') {
+      const attempts = await testPrisma.channelPublicationAttempt.findMany({
+        where: { channelListingId, action },
+        orderBy: { attemptedAt: 'desc' },
+      });
+      return attempts[0]!;
+    }
+
+    it('A. a normal publish-then-unpublish sequence records the two attempts under different operationIds', async () => {
+      const { sku, location } = await fixtureSku();
+      await seedInventory(sku.id, location.id, 5);
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-a', name: 'Op Id A', providerName: 'MOCK' }, staffId);
+
+      const published = await service.publishSku(channel.id, sku.id, staffId);
+      expect(published.currentOperationId).toBeTruthy();
+      const publishAttempt = await lastAttempt(published.id, 'PUBLISH');
+      expect(publishAttempt.operationId).toBe(published.currentOperationId);
+
+      const unpublished = await service.unpublishSku(channel.id, sku.id, staffId);
+      const unpublishAttempt = await lastAttempt(unpublished.id, 'UNPUBLISH');
+      expect(unpublishAttempt.operationId).toBeTruthy();
+      // A fresh, unrelated operation - unpublish claimed from the
+      // SETTLED PUBLISHED state, never a reconciliation of the publish.
+      expect(unpublishAttempt.operationId).not.toBe(publishAttempt.operationId);
+    });
+
+    it('A. even when an operationId is legitimately REUSED across a reconciliation, the action component keeps publish and unpublish identities distinct - proving the composite key can never collide', async () => {
+      // A publish succeeds, then a LATER unpublish attempt goes ambiguous
+      // (provider outage) - the listing's currentOperationId is now the
+      // UNPUBLISH attempt's own id, with externalId still set (an
+      // ambiguous outcome never clears it - the provider may not have
+      // actually removed the listing). Reconciling FROM
+      // AMBIGUOUS_RECONCILIATION_REQUIRED via a PUBLISH call (a real,
+      // code-permitted path - claimProcessing does not restrict which
+      // action may reconcile an ambiguous state) REUSES that SAME
+      // operationId. This is the one scenario where the SAME numeric
+      // operationId is used for both a PUBLISH and an UNPUBLISH attempt -
+      // exactly the case the `action` component of the key exists to
+      // guard against.
+      const { sku, location } = await fixtureSku();
+      await seedInventory(sku.id, location.id, 5);
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-a2', name: 'Op Id A2', providerName: 'MOCK' }, staffId);
+      const published = await service.publishSku(channel.id, sku.id, staffId);
+      expect(published.status).toBe('PUBLISHED');
+
+      // Manufacture the "unpublish went ambiguous" state directly - the
+      // real MOCK provider never throws, so this simulates what
+      // MOCK_UNRELIABLE would have left behind after a real unpublish
+      // attempt on this exact listing (same technique the 2026-09-28
+      // repair's own ambiguous-outcome tests already use).
+      const ambiguousOpId = 'manufactured-unpublish-op-id';
+      await testPrisma.channelListing.update({
+        where: { id: published.id },
+        data: { status: 'AMBIGUOUS_RECONCILIATION_REQUIRED', currentOperationId: ambiguousOpId, retryCount: { increment: 1 } },
+      });
+      await testPrisma.channelPublicationAttempt.create({
+        data: {
+          channelListingId: published.id,
+          action: 'UNPUBLISH',
+          status: 'AMBIGUOUS_RECONCILIATION_REQUIRED',
+          errorMessage: 'Simulated channel provider outage - outcome unknown',
+          actorStaffId: staffId,
+          operationId: ambiguousOpId,
+        },
+      });
+
+      // Reconcile via publishSku - claimProcessing sees previousStatus
+      // AMBIGUOUS_RECONCILIATION_REQUIRED and REUSES ambiguousOpId.
+      const reconciled = await service.publishSku(channel.id, sku.id, staffId);
+      expect(reconciled.currentOperationId).toBe(ambiguousOpId);
+      const publishAttempt = await lastAttempt(reconciled.id, 'PUBLISH');
+      expect(publishAttempt.operationId).toBe(ambiguousOpId);
+
+      // The SAME operationId now backs both an UNPUBLISH attempt and a
+      // PUBLISH attempt for this listing - only the `action` component
+      // of the composite key keeps their external identities separate.
+      const unpublishAttempt = await lastAttempt(reconciled.id, 'UNPUBLISH');
+      expect(unpublishAttempt.operationId).toBe(ambiguousOpId);
+      expect(unpublishAttempt.action).not.toBe(publishAttempt.action);
+    });
+
+    it('B. retrying the SAME ambiguous logical publish operation preserves its operationId across every retry', async () => {
+      const { sku } = await fixtureSku();
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-b', name: 'Op Id B', providerName: 'MOCK_UNRELIABLE' }, staffId);
+
+      const first = await service.publishSku(channel.id, sku.id, staffId);
+      expect(first.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+      const firstOpId = first.currentOperationId;
+      expect(firstOpId).toBeTruthy();
+
+      const second = await service.publishSku(channel.id, sku.id, staffId);
+      expect(second.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+      expect(second.currentOperationId).toBe(firstOpId);
+
+      const third = await service.publishSku(channel.id, sku.id, staffId);
+      expect(third.currentOperationId).toBe(firstOpId);
+
+      // Every recorded attempt for this listing shares the one operationId.
+      const attempts = await testPrisma.channelPublicationAttempt.findMany({ where: { channelListingId: first.id } });
+      expect(attempts).toHaveLength(3);
+      expect(attempts.every((a) => a.operationId === firstOpId)).toBe(true);
+    });
+
+    it('B. retrying the SAME ambiguous logical unpublish operation preserves its operationId', async () => {
+      const { sku } = await fixtureSku();
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-b-unpub', name: 'Op Id B Unpub', providerName: 'MOCK_UNRELIABLE' }, staffId);
+      await testPrisma.channelListing.create({
+        data: { channelId: channel.id, skuId: sku.id, status: 'PUBLISHED', externalId: 'ext-b-unpub', lastSyncedAt: new Date() },
+      });
+
+      const first = await service.unpublishSku(channel.id, sku.id, staffId);
+      expect(first.status).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+      const firstOpId = first.currentOperationId;
+
+      const second = await service.unpublishSku(channel.id, sku.id, staffId);
+      expect(second.currentOperationId).toBe(firstOpId);
+
+      const attempts = await testPrisma.channelPublicationAttempt.findMany({ where: { channelListingId: first.id, action: 'UNPUBLISH' } });
+      expect(attempts.every((a) => a.operationId === firstOpId)).toBe(true);
+    });
+
+    it('C. a later legitimate resync of an already-PUBLISHED listing mints a NEW operation id, never reusing the original publish\'s', async () => {
+      const { sku, location } = await fixtureSku();
+      await seedInventory(sku.id, location.id, 5);
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-c', name: 'Op Id C', providerName: 'MOCK' }, staffId);
+
+      const firstPublish = await service.publishSku(channel.id, sku.id, staffId);
+      expect(firstPublish.status).toBe('PUBLISHED');
+      const firstOpId = firstPublish.currentOperationId;
+
+      // A real resync scenario: stock changes, resyncStaleListings calls
+      // publishSku again for the SAME channel+SKU.
+      await testPrisma.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: sku.id, locationId: location.id } },
+        data: { onHand: 0 },
+      });
+      const resync = await service.resyncStaleListings(staffId);
+      expect(resync.resynced).toBe(1);
+
+      const afterResync = await testPrisma.channelListing.findUniqueOrThrow({ where: { id: firstPublish.id } });
+      expect(afterResync.currentOperationId).not.toBe(firstOpId);
+
+      const attempts = await testPrisma.channelPublicationAttempt.findMany({
+        where: { channelListingId: firstPublish.id, action: 'PUBLISH' },
+        orderBy: { attemptedAt: 'asc' },
+      });
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]!.operationId).toBe(firstOpId);
+      expect(attempts[1]!.operationId).toBe(afterResync.currentOperationId);
+      expect(attempts[0]!.operationId).not.toBe(attempts[1]!.operationId);
+    });
+
+    it('C. a retry after a DEFINITE FAILED (not ambiguous) also mints a new operation id, since the definite rejection genuinely closed the prior operation', async () => {
+      const { sku } = await fixtureSku({ price: 0 }); // no price -> MockChannelProvider definitely rejects
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-c-failed', name: 'Op Id C Failed', providerName: 'MOCK' }, staffId);
+
+      const first = await service.publishSku(channel.id, sku.id, staffId);
+      expect(first.status).toBe('FAILED');
+      const firstOpId = first.currentOperationId;
+      expect(firstOpId).toBeTruthy();
+
+      const second = await service.publishSku(channel.id, sku.id, staffId);
+      expect(second.status).toBe('FAILED');
+      expect(second.currentOperationId).not.toBe(firstOpId);
+    });
+
+    it('E. a stale PROCESSING claim reclaimed inline by a new request preserves the crashed attempt\'s own operationId, never mints a fresh one', async () => {
+      const { sku, location } = await fixtureSku();
+      await seedInventory(sku.id, location.id, 5);
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-e', name: 'Op Id E', providerName: 'MOCK' }, staffId);
+
+      // Manufacture a crash scenario: a listing claimed PROCESSING under
+      // a known operationId, stuck (the process that made the provider
+      // call died before recording any outcome), with updatedAt already
+      // older than the stale cutoff.
+      const crashedOpId = 'manufactured-crashed-op-id';
+      const stale = await testPrisma.channelListing.create({
+        data: { channelId: channel.id, skuId: sku.id, status: 'PROCESSING', currentOperationId: crashedOpId },
+      });
+      await testPrisma.$executeRaw`UPDATE "channel_listings" SET "updatedAt" = NOW() - INTERVAL '1 hour' WHERE "id" = ${stale.id}`;
+
+      // A new publish request reclaims it INLINE (via claimProcessing
+      // itself, not the separate sweep route) - this is the SAME crashed
+      // operation being continued, so its operationId must be preserved.
+      const result = await service.publishSku(channel.id, sku.id, staffId);
+      expect(result.currentOperationId).toBe(crashedOpId);
+      const attempt = await lastAttempt(result.id, 'PUBLISH');
+      expect(attempt.operationId).toBe(crashedOpId);
+    });
+
+    it('D. two genuinely concurrent publish requests still converge to at most one dispatch, and the surviving claim carries exactly one operationId', async () => {
+      const { sku, location } = await fixtureSku();
+      await seedInventory(sku.id, location.id, 5);
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-d', name: 'Op Id D', providerName: 'MOCK' }, staffId);
+
+      // Same deterministic-precondition technique the 2026-09-28 repair's
+      // own concurrency test uses (MockChannelProvider completes too
+      // fast for a genuine Promise.all race to reliably overlap).
+      const inFlightOpId = 'manufactured-in-flight-op-id';
+      const inFlight = await testPrisma.channelListing.create({
+        data: { channelId: channel.id, skuId: sku.id, status: 'PROCESSING', currentOperationId: inFlightOpId },
+      });
+
+      const result = await service.publishSku(channel.id, sku.id, staffId);
+      // Converges to the in-flight claim - no second claim, no new
+      // operationId minted, no attempt recorded by this losing call.
+      expect(result.id).toBe(inFlight.id);
+      expect(result.currentOperationId).toBe(inFlightOpId);
+      const attempts = await service.listAttempts(inFlight.id);
+      expect(attempts).toHaveLength(0);
+    });
+
+    it('F. resolving the operation identity never reads or writes canonical inventory/price/catalog - InventoryBalance is unchanged after a full retry/resync sequence', async () => {
+      const { sku, location } = await fixtureSku();
+      await seedInventory(sku.id, location.id, 5, 1);
+      const before = await testPrisma.inventoryBalance.findUniqueOrThrow({
+        where: { skuId_locationId: { skuId: sku.id, locationId: location.id } },
+      });
+      const service = new ChannelService(app);
+      const channel = await service.createChannel({ key: 'op-id-f', name: 'Op Id F', providerName: 'MOCK_UNRELIABLE' }, staffId);
+      await service.publishSku(channel.id, sku.id, staffId); // ambiguous, mints an operationId
+      await service.publishSku(channel.id, sku.id, staffId); // retries, reuses it
+      const after = await testPrisma.inventoryBalance.findUniqueOrThrow({
+        where: { skuId_locationId: { skuId: sku.id, locationId: location.id } },
+      });
+      expect(after.onHand).toBe(before.onHand);
+      expect(after.reserved).toBe(before.reserved);
     });
   });
 });
