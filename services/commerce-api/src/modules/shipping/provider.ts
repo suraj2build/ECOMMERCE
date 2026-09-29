@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { loadEnv } from '@fcp/config';
 
 /**
  * Carrier provider abstraction (ADR-0020, specs/16-shipping-tracking.md
@@ -227,7 +228,24 @@ const providerRegistry: Record<CarrierName, () => ShippingProvider> = {
   MOCK_SECONDARY: () => new MockCarrierProvider('mock-secondary-carrier-webhook-secret-test-only', 'MOCK_SECONDARY'),
 };
 
+/**
+ * M31 Security Hardening (5I) - the same production guard
+ * `getChannelProvider` (modules/channels/provider.ts) already
+ * established: `SHIPPING_PROVIDER` defaults to `'MOCK'`
+ * (packages/config) and, until a real carrier is selected (SHIP-001,
+ * still an open decision), this registry has literally no non-mock
+ * entry - nothing previously stopped a production deployment from
+ * silently shipping every order against a fake carrier (a fabricated
+ * `MOCK-SHP-*` reference, no real pickup ever dispatched) if
+ * `SHIPPING_PROVIDER` were left at its default or misconfigured. Fails
+ * loudly instead, in production only - dev/test/CI are unaffected.
+ */
 export function resolveShippingProvider(name: string): ShippingProvider {
+  if (loadEnv().NODE_ENV === 'production' && name.startsWith('MOCK')) {
+    throw new Error(
+      `Shipping provider "${name}" is a test double and may never be used in production - no real carrier integration is selected yet (SHIP-001, blueprint/DECISION_REGISTER.md)`,
+    );
+  }
   const factory = providerRegistry[name as CarrierName];
   if (!factory) {
     throw new Error(

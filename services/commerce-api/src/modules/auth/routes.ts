@@ -1,9 +1,63 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AuthService } from './service.js';
 import { generateMfaSecret, buildMfaOtpAuthUrl } from './mfa.js';
 import { verifyMfaToken } from './mfa.js';
+import { encryptMfaSecret, decryptMfaSecret } from './mfa-secret-crypto.js';
 import { UnauthorizedError, ValidationError } from '@fcp/shared';
+import { loadEnv } from '@fcp/config';
+
+/**
+ * M31 Security Hardening (5B/5E) - per-identity + per-IP rate limits for
+ * the two endpoints an attacker can brute-force: OTP verification (the
+ * per-code `maxAttempts` cap in AuthService.verifyCustomerOtp only
+ * bounds ONE OTP code - without this, a fresh OTP request resets that
+ * counter, so the actual brute-force surface is otherwise unlimited) and
+ * OTP request (resend abuse / SMS-cost exhaustion). Keyed by the
+ * identifier in the request body (mobile/email), not just request.ip -
+ * an attacker distributing attempts across many source IPs would
+ * otherwise defeat a purely IP-keyed limit, and an office/mobile-carrier
+ * NAT sharing one IP across many genuine users would otherwise be
+ * unfairly throttled as one.
+ */
+function mobileKey(request: FastifyRequest): string {
+  const body = request.body as { mobile?: unknown } | undefined;
+  const mobile = typeof body?.mobile === 'string' ? body.mobile : 'unknown';
+  return `${request.ip}:${mobile}`;
+}
+
+function emailKey(request: FastifyRequest): string {
+  const body = request.body as { email?: unknown } | undefined;
+  const email = typeof body?.email === 'string' ? body.email.toLowerCase() : 'unknown';
+  return `${request.ip}:${email}`;
+}
+
+// M33 fix (2026-09-29): these limits are keyed by IP+identifier, so every
+// E2E spec run from the SAME host (this sandbox, and identically a single
+// GitHub Actions runner) against the SAME shared seeded identity (one
+// super-admin email reused across ~10 independent storefront E2E specs;
+// see `SEED_SUPER_ADMIN_EMAIL`) collapses into ONE bucket - a legitimate
+// automated-test workload, not an attacker. Discovered when this pass's
+// own full Playwright run genuinely 429'd 5 previously-green specs after
+// M31 added these limits, undetected until an actual multi-spec E2E run
+// exercised them together (no prior pass had run the full suite against a
+// live rate limiter). NOT fixed via a NODE_ENV=test check - CI's own
+// `rate-limiting.test.ts` (which deliberately proves these exact limits
+// ARE enforced) and the E2E step both run under NODE_ENV=test, so that
+// dimension can't distinguish "the adversarial test that wants the real
+// limit" from "an E2E run that needs headroom." Fixed instead with an
+// explicit opt-in override (`AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX`, unset by
+// default everywhere, including production and rate-limiting.test.ts's
+// own run) set ONLY by the E2E step itself - see packages/config's own
+// comment for the full rationale.
+const authRateLimitMax = (() => {
+  const override = loadEnv().AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX;
+  return {
+    otpRequest: override ?? 5,
+    otpVerify: override ?? 10,
+    staffLogin: override ?? 10,
+  };
+})();
 
 const otpRequestSchema = z.object({ mobile: z.string().min(10).max(15) });
 const otpVerifySchema = z.object({ mobile: z.string().min(10).max(15), code: z.string().length(6) });
@@ -30,17 +84,33 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   const authService = new AuthService(fastify);
 
   // --- Customer: mobile OTP ---
-  fastify.post('/auth/customer/otp/request', async (request, reply) => {
-    const { mobile } = otpRequestSchema.parse(request.body);
-    await authService.requestCustomerOtp(mobile);
-    reply.status(202).send({ message: 'OTP sent' });
-  });
+  fastify.post(
+    '/auth/customer/otp/request',
+    {
+      config: {
+        rateLimit: { max: authRateLimitMax.otpRequest, timeWindow: '15 minutes', hook: 'preValidation', keyGenerator: mobileKey },
+      },
+    },
+    async (request, reply) => {
+      const { mobile } = otpRequestSchema.parse(request.body);
+      await authService.requestCustomerOtp(mobile);
+      reply.status(202).send({ message: 'OTP sent' });
+    },
+  );
 
-  fastify.post('/auth/customer/otp/verify', async (request, reply) => {
-    const { mobile, code } = otpVerifySchema.parse(request.body);
-    const result = await authService.verifyCustomerOtp(mobile, code);
-    reply.status(200).send(result);
-  });
+  fastify.post(
+    '/auth/customer/otp/verify',
+    {
+      config: {
+        rateLimit: { max: authRateLimitMax.otpVerify, timeWindow: '15 minutes', hook: 'preValidation', keyGenerator: mobileKey },
+      },
+    },
+    async (request, reply) => {
+      const { mobile, code } = otpVerifySchema.parse(request.body);
+      const result = await authService.verifyCustomerOtp(mobile, code);
+      reply.status(200).send(result);
+    },
+  );
 
   fastify.post('/auth/customer/refresh', async (request, reply) => {
     const { refreshToken } = refreshSchema.parse(request.body);
@@ -55,18 +125,26 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // --- Staff: password + conditional MFA ---
-  fastify.post('/auth/staff/login', async (request, reply) => {
-    const { email, password, mfaCode } = staffLoginSchema.parse(request.body);
-    const result = await authService.staffLogin(email, password, mfaCode, {
-      ipAddress: request.ip,
-      userAgent: request.headers['user-agent'],
-    });
-    if ('mfaRequired' in result) {
-      reply.status(401).send({ error: { code: 'MFA_REQUIRED', message: 'MFA code required' } });
-      return;
-    }
-    reply.status(200).send(result);
-  });
+  fastify.post(
+    '/auth/staff/login',
+    {
+      config: {
+        rateLimit: { max: authRateLimitMax.staffLogin, timeWindow: '15 minutes', hook: 'preValidation', keyGenerator: emailKey },
+      },
+    },
+    async (request, reply) => {
+      const { email, password, mfaCode } = staffLoginSchema.parse(request.body);
+      const result = await authService.staffLogin(email, password, mfaCode, {
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+      });
+      if ('mfaRequired' in result) {
+        reply.status(401).send({ error: { code: 'MFA_REQUIRED', message: 'MFA code required' } });
+        return;
+      }
+      reply.status(200).send(result);
+    },
+  );
 
   fastify.post(
     '/auth/staff/logout',
@@ -105,8 +183,11 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       const secret = generateMfaSecret();
       await fastify.prisma.staffUser.update({
         where: { id: staffUserId },
-        data: { mfaSecret: secret, mfaEnabled: false },
+        data: { mfaSecret: encryptMfaSecret(secret), mfaEnabled: false },
       });
+      // The plaintext secret is only ever held in memory here, for the
+      // one response that shows the enrollment QR code - never re-read
+      // back out of the database in plaintext again after this.
       reply.status(200).send({ otpAuthUrl: buildMfaOtpAuthUrl(staffUser.email, secret) });
     },
   );
@@ -123,7 +204,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       if (!staffUser.mfaSecret) {
         throw new ValidationError('No MFA enrollment in progress - call /mfa/enroll first');
       }
-      if (!verifyMfaToken(code, staffUser.mfaSecret)) {
+      if (!verifyMfaToken(code, decryptMfaSecret(staffUser.mfaSecret))) {
         throw new UnauthorizedError('Invalid MFA code');
       }
       await fastify.prisma.staffUser.update({

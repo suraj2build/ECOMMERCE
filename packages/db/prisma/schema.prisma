@@ -165,7 +165,12 @@ model StaffUser {
   fullName     String
   isActive     Boolean  @default(true)
   mfaEnabled   Boolean  @default(false)
-  mfaSecret    String? // TOTP secret, encrypted at rest by application layer
+  // TOTP secret, AES-256-GCM encrypted at rest by the application layer
+  // (M31 Security Hardening - modules/auth/mfa-secret-crypto.ts) - this
+  // comment previously claimed encryption that was never actually
+  // implemented; a genuine gap this pass found and fixed, not a
+  // pre-existing accurate claim.
+  mfaSecret    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

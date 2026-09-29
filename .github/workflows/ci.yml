@@ -12,6 +12,7 @@ env:
   REDIS_URL: redis://localhost:6379
   MEILISEARCH_HOST: http://localhost:7700
   JWT_ACCESS_SECRET: ci-only-secret-ci-only-secret-not-for-prod
+  MFA_SECRET_ENCRYPTION_KEY: c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1
   NODE_ENV: test
   LOG_LEVEL: fatal
 
@@ -57,6 +58,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history (not the default shallow depth-1 clone) - the
+          # gitleaks secret scan below walks commit history, not just the
+          # working tree, so a secret committed and later removed in a
+          # follow-up commit within this same push/PR is still caught.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -72,6 +79,37 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # M31 Security Hardening (5J - dependency/supply-chain). `npm ci`
+      # above already enforces lockfile integrity (it fails outright on
+      # any package.json/package-lock.json mismatch, never silently
+      # resolves a different tree). This step is the vulnerability-audit
+      # half: gates on CRITICAL findings in PRODUCTION dependencies only
+      # (--omit=dev, --audit-level=critical) - moderate/high findings
+      # still print to the job log for visibility but do not fail the
+      # build. Two things this pass found and deliberately did NOT
+      # force-fix here, both documented in SECURITY.md's dependency-audit
+      # section: a HIGH postcss advisory reachable only via Next.js's own
+      # bundled build-time CSS tooling (this app never processes
+      # attacker-controlled CSS/source-maps, and no non-major-version fix
+      # exists yet), and a set of CRITICAL/HIGH advisories confined
+      # entirely to vitest's own dev-only dependency chain (vite/esbuild),
+      # never reachable in a running deployment. A genuine CRITICAL/HIGH
+      # finding in a PRODUCTION dependency is the one thing this step is
+      # tuned to actually stop the build for.
+      - name: Dependency vulnerability audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Dependency vulnerability audit (full tree, report only)
+        run: npm audit --audit-level=moderate || true
+
+      # M31 Security Hardening (5J) - secret scanning across the full
+      # git history of this push/PR, not just the working tree, so a
+      # secret committed and later removed is still caught.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
       - name: Lint
         run: npm run lint
@@ -150,3 +188,13 @@ jobs:
           # introduced this test, undetected because this workflow's own
           # run result was never actually checked until this fix.
           COD_MAX_ORDER_VALUE_INR: '50000'
+          # M33: this E2E step runs ~10 independent storefront specs that
+          # each independently log in as the SAME shared seeded super
+          # admin (ci-admin@example.com above) from this ONE runner - the
+          # staff-login/OTP rate limits (auth/routes.ts, keyed by
+          # IP+identity) would otherwise collapse every spec's login into
+          # one bucket and 429 real, legitimate E2E traffic. Never set
+          # outside this one E2E-only step; unset (the default) in the
+          # lint-typecheck-build-test job above, so rate-limiting.test.ts
+          # still proves the real, tighter limits.
+          AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: '1000'

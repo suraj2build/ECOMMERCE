@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CommunicationChannel } from '@fcp/db';
+import { loadEnv } from '@fcp/config';
 
 /**
  * Marketing message provider abstraction (M25, specs/24-marketing.md
@@ -88,7 +89,24 @@ const MARKETING_PROVIDERS: Record<MarketingProviderName, MarketingProvider> = {
   MOCK_ALWAYS_FAILS: new AlwaysFailsMarketingProvider(),
 };
 
+/**
+ * M31 Security Hardening (5I) - the same production guard
+ * `getChannelProvider`/`resolveShippingProvider` already establish:
+ * `MARKETING_PROVIDER` defaults to `'MOCK'` (packages/config) and, until
+ * a real vendor is selected (MKT-001, still an open decision), this
+ * registry has literally no non-mock entry - nothing previously stopped
+ * a production deployment from silently "sending" every campaign
+ * against a fake provider (a fabricated delivery id, no real SMS/
+ * WhatsApp/Email/Push ever dispatched) if `MARKETING_PROVIDER` were
+ * left at its default or misconfigured. Fails loudly instead, in
+ * production only - dev/test/CI are unaffected.
+ */
 export function getMarketingProvider(name: string): MarketingProvider {
+  if (loadEnv().NODE_ENV === 'production' && name.startsWith('MOCK')) {
+    throw new Error(
+      `Marketing provider "${name}" is a test double and may never be used in production - no real messaging-vendor integration is selected yet (MKT-001, blueprint/DECISION_REGISTER.md)`,
+    );
+  }
   const provider = MARKETING_PROVIDERS[name as MarketingProviderName];
   if (!provider) {
     throw new Error(`Unknown marketing provider "${name}" - no such provider is registered`);

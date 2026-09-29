@@ -8,7 +8,9 @@ and its associated environments without asking first, and what always
 requires explicit human approval. This is a safety document, not a
 business security-features spec (RBAC business rules live in
 `specs/01-auth-rbac.md`; the general security-hardening milestone is
-M29 in `BUILD_PLAN.md`).
+**M31** in `BUILD_PLAN.md` — see the `security/` directory for M31's
+own detailed findings: `PII_DATA_INVENTORY.md`, `DPDP_READINESS.md`,
+`PAYMENT_SECURITY_REVIEW.md`, `SECRETS_CONFIG_AUDIT.md`, `RUNBOOKS.md`).
 
 ## 1. Actions an authorized engineering agent may take autonomously
 
@@ -68,11 +70,15 @@ and `30-audit-compliance.md`):
   avoid handling raw card data directly where a provider-hosted flow
   is available.
 
-## 5. Dependency and supply-chain hygiene (forward-looking)
+## 5. Dependency and supply-chain hygiene
 
-Once dependencies are introduced (M00+), they should be tracked and
-kept patchable; GitHub Actions-based dependency and vulnerability
-scanning should be part of M29 (Security Hardening).
+GitHub Actions-based dependency vulnerability scanning
+(`npm audit --omit=dev --audit-level=critical`, gating; a full-tree
+report-only pass at `--audit-level=moderate`) and secret scanning
+(`gitleaks`) were added in M31 (`.github/workflows/ci.yml`). See
+`security/SECRETS_CONFIG_AUDIT.md` for the current findings and what
+remains an accepted, documented risk (a dev-only vitest/vite/esbuild
+chain, and one build-time-only `postcss` advisory via Next.js).
 
 ## 6. Reporting
 

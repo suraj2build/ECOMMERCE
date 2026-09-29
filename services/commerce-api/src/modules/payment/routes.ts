@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { CheckoutService } from '../checkout/service.js';
-import { resolveCartIdentity } from '../cart/identity.js';
+import { resolveCartIdentity, checkoutRateLimitKey } from '../cart/identity.js';
 import { PaymentService } from './service.js';
 
 declare module 'fastify' {
@@ -38,7 +38,10 @@ const paymentRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post(
     '/storefront/checkout/:id/retry-payment',
-    { preHandler: fastify.tryCustomerAuth },
+    {
+      preHandler: fastify.tryCustomerAuth,
+      config: { rateLimit: { max: 20, timeWindow: '5 minutes', keyGenerator: checkoutRateLimitKey } },
+    },
     async (request, reply) => {
       const identity = resolveCartIdentity(request);
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);

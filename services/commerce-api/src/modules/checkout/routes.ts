@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { CheckoutService } from './service.js';
 import { ShippingService } from './shipping-service.js';
-import { resolveCartIdentity } from '../cart/identity.js';
+import { resolveCartIdentity, checkoutRateLimitKey } from '../cart/identity.js';
 
 const addressSchema = z.object({
   line1: z.string().min(1),
@@ -52,17 +52,31 @@ const checkoutRoutes: FastifyPluginAsync = async (fastify) => {
   const identityAuth = { preHandler: fastify.tryCustomerAuth };
   const shippingAuth = [fastify.requireStaffAuth, fastify.requirePermission('shipping:manage')];
 
-  fastify.post('/storefront/checkout/preview', identityAuth, async (request, reply) => {
-    const identity = resolveCartIdentity(request);
-    const body = previewSchema.parse(request.body);
-    reply.status(200).send(await checkoutService.previewCheckout(identity, body.shippingAddress, body.couponCode));
-  });
+  // M31 Security Hardening (5E): the preview endpoint is the main
+  // coupon/gift-card-code probing surface (each call reveals whether a
+  // code was accepted, and its discount amount, even though the error
+  // itself is generic - see GiftCardService.GENERIC_REDEMPTION_ERROR and
+  // the analogous coupon-rejection path). Rate limiting slows volume-
+  // based probing even though a single rejection leaks no signal.
+  fastify.post(
+    '/storefront/checkout/preview',
+    { ...identityAuth, config: { rateLimit: { max: 30, timeWindow: '1 minute', keyGenerator: checkoutRateLimitKey } } },
+    async (request, reply) => {
+      const identity = resolveCartIdentity(request);
+      const body = previewSchema.parse(request.body);
+      reply.status(200).send(await checkoutService.previewCheckout(identity, body.shippingAddress, body.couponCode));
+    },
+  );
 
-  fastify.post('/storefront/checkout', identityAuth, async (request, reply) => {
-    const identity = resolveCartIdentity(request);
-    const body = startCheckoutSchema.parse(request.body);
-    reply.status(201).send(await checkoutService.startCheckout(identity, body));
-  });
+  fastify.post(
+    '/storefront/checkout',
+    { ...identityAuth, config: { rateLimit: { max: 20, timeWindow: '5 minutes', keyGenerator: checkoutRateLimitKey } } },
+    async (request, reply) => {
+      const identity = resolveCartIdentity(request);
+      const body = startCheckoutSchema.parse(request.body);
+      reply.status(201).send(await checkoutService.startCheckout(identity, body));
+    },
+  );
 
   fastify.get('/storefront/checkout/:id', identityAuth, async (request, reply) => {
     const identity = resolveCartIdentity(request);

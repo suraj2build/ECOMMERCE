@@ -32,6 +32,18 @@ const envSchema = z.object({
 
   // --- Auth (AUTH-001/002/003) ---
   JWT_ACCESS_SECRET: z.string().min(16, 'JWT_ACCESS_SECRET must be at least 16 characters'),
+  // M31 Security Hardening (5F/5I) - encrypts StaffUser.mfaSecret (a TOTP
+  // seed - a real credential, not merely a reference id) at rest. The
+  // schema's own long-standing column comment claimed this was already
+  // "encrypted at rest by application layer" - a genuine finding this
+  // pass caught: no such encryption was ever actually implemented, the
+  // secret was written to the database as plain text. Required, no
+  // default (the same "no defaults for real secrets" discipline as
+  // JWT_ACCESS_SECRET) - exactly 32 bytes once hex-decoded, the key size
+  // AES-256-GCM requires (see modules/auth/mfa-secret-crypto.ts).
+  MFA_SECRET_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'MFA_SECRET_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)'),
   JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900), // 15 min
   JWT_REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000), // 30 days
   STAFF_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(28_800), // 8 hours
@@ -72,6 +84,22 @@ const envSchema = z.object({
   SHIPPING_DEFAULT_FLAT_AMOUNT: z.coerce.number().nonnegative().default(99),
   SHIPPING_DEFAULT_FREE_ABOVE_THRESHOLD: z.coerce.number().nonnegative().default(1999),
   COD_MAX_ORDER_VALUE_INR: z.coerce.number().positive().default(5000),
+
+  // --- Auth rate limiting (M31 5B/5E) test/E2E override ---
+  // The OTP-request/verify and staff-login rate limits (auth/routes.ts)
+  // are keyed by IP+identifier, so a real multi-spec Playwright E2E run
+  // from ONE host reusing ONE shared seeded identity (the same super
+  // admin, across ~10 independent storefront specs) legitimately
+  // collapses into one bucket and trips the limit - a real M33 finding
+  // (see auth/routes.ts's own comment). Unset (the default, every
+  // environment including production and the adversarial
+  // rate-limiting.test.ts suite) leaves each route's real security
+  // limit untouched; set ONLY by the E2E CI/local step (never globally,
+  // never in production) to a generous ceiling for that one run's own
+  // legitimate reuse pattern - the exact same "explicit, narrow,
+  // test-environment-only override" idiom COD_MAX_ORDER_VALUE_INR above
+  // already established.
+  AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: z.coerce.number().int().positive().optional(),
 
   // --- Razorpay (M14, ADR-0011, PAY-001/002/003/005) ---
   // Deliberately optional with an empty-string default, never required:

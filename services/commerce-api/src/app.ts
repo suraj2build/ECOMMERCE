@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyError } from 'fastify';
 import multipart from '@fastify/multipart';
 import { loadEnv } from '@fcp/config';
@@ -9,6 +10,8 @@ import meilisearchPlugin from './plugins/meilisearch.js';
 import corsPlugin from './plugins/cors.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import authPlugin from './plugins/auth.js';
+import rateLimitPlugin from './plugins/rate-limit.js';
+import securityHeadersPlugin from './plugins/security-headers.js';
 
 import authRoutes from './modules/auth/routes.js';
 import organizationRoutes from './modules/organization/routes.js';
@@ -53,6 +56,21 @@ export async function buildApp(): Promise<FastifyInstance> {
     loggerInstance: logger,
     disableRequestLogging: env.NODE_ENV === 'test',
     trustProxy: true,
+    // M33 observability review (2026-09-29): Fastify's own default
+    // reqId is a per-process incrementing counter - fine for a single
+    // instance, but not a real correlation ID across multiple replicas
+    // or across an upstream proxy/CDN and this service's own logs. Reuse
+    // an inbound x-request-id (a CDN/WAF/API-gateway-assigned ID, if
+    // one is already present) so this service's logs correlate with the
+    // edge layer's own; otherwise mint a real UUID. Every request-scoped
+    // log line already includes this as `reqId` (Fastify's own default
+    // logging behavior); onSend below also echoes it back as a response
+    // header so a client/caller can report a specific request precisely.
+    genReqId: (request) => (request.headers['x-request-id'] as string | undefined)?.slice(0, 128) || randomUUID(),
+  });
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header('x-request-id', request.id);
+    return payload;
   });
 
   // Single global `application/json` parser (Fastify does not allow a
@@ -100,7 +118,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(meilisearchPlugin);
   await app.register(corsPlugin);
   await app.register(errorHandlerPlugin);
+  await app.register(securityHeadersPlugin);
   await app.register(authPlugin);
+  // Depends on redisPlugin (registered above) for its shared,
+  // multi-process-safe counter store - see plugins/rate-limit.ts.
+  await app.register(rateLimitPlugin);
   // Return-evidence upload only (M19 independent-review repair, finding
   // 2) - a hard byte-ceiling backstop at the transport layer, defence
   // in depth alongside ReturnService.uploadEvidence's own config-driven
@@ -115,9 +137,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Meilisearch isn't up yet at boot (see SearchIndexService.configureIndex).
   void app.searchIndex.configureIndex();
 
-  // Health & readiness (M00 requirement)
-  app.get('/health', async () => ({ status: 'ok' }));
-  app.get('/ready', async (_request, reply) => {
+  // Health & readiness (M00 requirement). Excluded from the M31 global
+  // rate limiter (plugins/rate-limit.ts) - these are unauthenticated
+  // orchestration liveness/readiness probes, not the attacker-facing
+  // surface that control exists for.
+  app.get('/health', { config: { rateLimit: false } }, async () => ({ status: 'ok' }));
+  app.get('/ready', { config: { rateLimit: false } }, async (_request, reply) => {
     try {
       await app.prisma.$queryRaw`SELECT 1`;
       await app.redis.ping();

@@ -8,6 +8,7 @@ process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL ??= 'postgresql://fcp_app:fcp_dev_password@localhost:5432/fcp_test';
 process.env.REDIS_URL ??= 'redis://localhost:6379/1';
 process.env.JWT_ACCESS_SECRET ??= 'test-only-secret-test-only-secret';
+process.env.MFA_SECRET_ENCRYPTION_KEY ??= 'a'.repeat(64);
 process.env.LOG_LEVEL ??= 'fatal';
 process.env.PO_APPROVAL_THRESHOLD_INR ??= '50000';
 process.env.INVENTORY_ADJUSTMENT_COAPPROVAL_THRESHOLD_UNITS ??= '50';

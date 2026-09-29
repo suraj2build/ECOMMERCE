@@ -6,6 +6,7 @@ import { UnauthorizedError, ConflictError, ValidationError } from '@fcp/shared';
 import { loadEnv } from '@fcp/config';
 import { generateOtpCode, ConsoleOtpProvider, type OtpProvider } from './otp-provider.js';
 import { verifyMfaToken } from './mfa.js';
+import { decryptMfaSecret } from './mfa-secret-crypto.js';
 import { StaffSessionStore } from './staff-session.js';
 import { recordAudit } from '../audit/service.js';
 
@@ -157,7 +158,7 @@ export class AuthService {
       if (!mfaCode) {
         return { mfaRequired: true };
       }
-      if (!verifyMfaToken(mfaCode, staffUser.mfaSecret)) {
+      if (!verifyMfaToken(mfaCode, decryptMfaSecret(staffUser.mfaSecret))) {
         throw new UnauthorizedError('Invalid MFA code');
       }
     }

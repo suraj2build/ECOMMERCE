@@ -13,6 +13,7 @@ export function createLogger(serviceName: string, level = process.env.LOG_LEVEL 
     redact: {
       paths: [
         'req.headers.authorization',
+        'req.headers.cookie',
         '*.password',
         '*.passwordHash',
         '*.otp',
@@ -20,6 +21,14 @@ export function createLogger(serviceName: string, level = process.env.LOG_LEVEL 
         '*.token',
         '*.tokenHash',
         '*.mfaSecret',
+        // M31 Security Hardening (5F) - gift-card redemption secrets
+        // (M30) are the same class of "spendable-on-possession" value as
+        // an OTP/password; nothing in this codebase logs a request body
+        // today (verified by this pass's own grep sweep - see
+        // security/PII_DATA_INVENTORY.md), but this list is defence in
+        // depth for the day something does.
+        '*.giftCardCode',
+        '*.codeHash',
       ],
       censor: '[REDACTED]',
     },

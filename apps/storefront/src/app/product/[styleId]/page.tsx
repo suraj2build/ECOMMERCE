@@ -7,6 +7,7 @@ import { PincodeChecker } from '@/components/pdp/PincodeChecker';
 import { ReviewsSection } from '@/components/pdp/ReviewsSection';
 import { CrossSellStrip } from '@/components/pdp/CrossSellStrip';
 import { Breadcrumbs } from '@/components/pdp/Breadcrumbs';
+import { safeJsonLd } from '@/lib/json-ld';
 
 // Server-rendered/indexable per specs/26-seo.md's architectural requirement -
 // no client-side data fetching for the initial render.
@@ -80,12 +81,11 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      {/* schema.org JSON-LD, server-generated from our own data only - not user input. */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbStructuredData) }}
-      />
+      {/* schema.org JSON-LD - staff-curated data (product name/brand/category
+          are free text), so this is escaped via safeJsonLd (M31, 5D) rather
+          than trusted as though it were a hard-coded constant. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(structuredData) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbStructuredData) }} />
       <Container className="py-8">
         <Breadcrumbs items={breadcrumbItems} />
         <ProductDetailInteractive product={product} />
