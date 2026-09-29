@@ -16,6 +16,7 @@ import { OrderService } from '../order/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
 import { PromotionService } from '../promotions/service.js';
 import { StoreCreditService } from '../refunds/store-credit-service.js';
+import { GiftCardService } from '../gift-cards/service.js';
 
 export interface AddressInput {
   line1: string;
@@ -50,6 +51,13 @@ export interface StartCheckoutInput {
   // Store credit applied at checkout (M24 - store credit previously
   // only existed as a refund/exchange settlement destination, M20).
   storeCreditToApply?: number;
+  // M30 (specs/33-store-credit-gift-cards.md): the plaintext gift-card
+  // code and the amount to apply from it - the FOURTH and final
+  // reduction, applied after promotion/loyalty/store credit. At most
+  // one gift card per checkout (M30 explicitly does not invent
+  // multi-gift-card stacking).
+  giftCardCode?: string;
+  giftCardAmountToApply?: number;
 }
 
 interface PricedLine {
@@ -87,6 +95,7 @@ export class CheckoutService {
   private readonly loyalty: LoyaltyService;
   private readonly promotions: PromotionService;
   private readonly storeCredit: StoreCreditService;
+  private readonly giftCard: GiftCardService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.cart = new CartService(fastify);
@@ -98,6 +107,7 @@ export class CheckoutService {
     this.loyalty = new LoyaltyService(fastify);
     this.promotions = new PromotionService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
+    this.giftCard = new GiftCardService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -332,6 +342,12 @@ export class CheckoutService {
         throw new ValidationError(`The promotion "${incompatible.name}" cannot be combined with store credit`);
       }
     }
+    if (input.giftCardAmountToApply && input.giftCardAmountToApply > 0) {
+      const incompatible = appliedPromotions.find((p) => !p.giftCardCompatible);
+      if (incompatible) {
+        throw new ValidationError(`The promotion "${incompatible.name}" cannot be combined with a gift card`);
+      }
+    }
 
     const shippingCost = await this.shipping.calculateShippingCost(subtotal);
     const grandTotal = Math.round((subtotal + shippingCost) * 100) / 100;
@@ -402,7 +418,27 @@ export class CheckoutService {
         throw err;
       }
     }
-    const amountPayable = Math.round((grandTotal - loyaltyRedemptionValue - storeCreditApplied) * 100) / 100;
+
+    // M30 (specs/33-store-credit-gift-cards.md): the FOURTH and final
+    // reduction, same non-authoritative-preview-then-authoritative-
+    // reserve split, checked against whatever remains after loyalty AND
+    // store credit.
+    let giftCardApplied = 0;
+    if (input.giftCardCode && input.giftCardAmountToApply && input.giftCardAmountToApply > 0) {
+      try {
+        giftCardApplied = await this.giftCard.previewRedemptionValue(
+          input.giftCardCode,
+          input.giftCardAmountToApply,
+          grandTotal - loyaltyRedemptionValue - storeCreditApplied,
+        );
+      } catch (err) {
+        for (const reserved of reservedLineData) {
+          await this.inventory.releaseReservation(reserved.reservationId, 'checkout attempt failed');
+        }
+        throw err;
+      }
+    }
+    const amountPayable = Math.round((grandTotal - loyaltyRedemptionValue - storeCreditApplied - giftCardApplied) * 100) / 100;
 
     // Generated up front (rather than left to Prisma's own default) so
     // it can be handed to the payment provider as the order `receipt`
@@ -410,12 +446,27 @@ export class CheckoutService {
     // necessarily happens before the row it will be linked to.
     const sessionIdCandidate = randomUUID();
 
+    // M30's own explicit requirement that a gift card may cover the
+    // FULL payable amount: a genuine gap this requirement exposed in
+    // the pre-existing reduction chain (loyalty/store credit already
+    // could in principle reduce amountPayable to zero, but nothing
+    // handled that case - see CLAUDE.md's own "document the dependency,
+    // make the smallest safe repair" instruction for touching certified
+    // code). Zero (or negative, defensively) payable means nothing is
+    // owed to any payment provider - treated exactly like COD's own
+    // `{status: 'CONFIRMED'}` shape, regardless of which paymentMethod
+    // was chosen, so order confirmation proceeds in this same request
+    // without ever calling out to Razorpay for a ₹0 order (which
+    // Razorpay itself would reject).
     const paymentProvider = resolvePaymentProvider(input.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY');
-    const paymentResult = await paymentProvider.initiate({
-      checkoutSessionId: sessionIdCandidate,
-      amount: amountPayable,
-      idempotencyKey: `${input.idempotencyKey}:payment`,
-    });
+    const paymentResult =
+      amountPayable <= 0
+        ? ({ status: 'CONFIRMED' as const })
+        : await paymentProvider.initiate({
+            checkoutSessionId: sessionIdCandidate,
+            amount: amountPayable,
+            idempotencyKey: `${input.idempotencyKey}:payment`,
+          });
 
     // A concurrent double-submission with the same idempotencyKey can
     // pass the existence check above on both requests before either has
@@ -448,6 +499,7 @@ export class CheckoutService {
             loyaltyRedemptionValue,
             storeCreditApplied,
             promotionDiscountTotal,
+            giftCardApplied,
             paymentMethod: input.paymentMethod,
             status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'RESERVED',
             idempotencyKey: input.idempotencyKey,
@@ -504,6 +556,19 @@ export class CheckoutService {
 
         if (storeCreditApplied > 0) {
           await this.storeCredit.reserveRedemptionForCheckout(tx, identity, session.id, input.storeCreditToApply!, grandTotal - loyaltyRedemptionValue);
+        }
+
+        // M30: same authoritative, row-locked re-validation pattern -
+        // applied LAST, against whatever remains after loyalty AND
+        // store credit.
+        if (giftCardApplied > 0) {
+          await this.giftCard.reserveRedemptionForCheckout(
+            tx,
+            input.giftCardCode!,
+            session.id,
+            input.giftCardAmountToApply!,
+            grandTotal - loyaltyRedemptionValue - storeCreditApplied,
+          );
         }
 
         await recordAudit(tx, {
@@ -585,18 +650,22 @@ export class CheckoutService {
       }
     }
 
-    // M23: reuse the SAME redemption/credit already committed on this
-    // session at startCheckout (never re-validated or re-applied here -
-    // the hold from the original attempt is still ACTIVE and unaffected
-    // by a payment-only retry).
-    const amountPayable = Number(session.grandTotal) - Number(session.loyaltyRedemptionValue) - Number(session.storeCreditApplied);
+    // M23/M30: reuse the SAME redemption/credit already committed on
+    // this session at startCheckout (never re-validated or re-applied
+    // here - the hold from the original attempt is still ACTIVE and
+    // unaffected by a payment-only retry).
+    const amountPayable =
+      Number(session.grandTotal) - Number(session.loyaltyRedemptionValue) - Number(session.storeCreditApplied) - Number(session.giftCardApplied);
 
     const paymentProvider = resolvePaymentProvider(session.paymentMethod === 'COD' ? 'COD' : 'RAZORPAY');
-    const paymentResult = await paymentProvider.initiate({
-      checkoutSessionId: session.id,
-      amount: amountPayable,
-      idempotencyKey: paymentIdempotencyKey,
-    });
+    const paymentResult =
+      amountPayable <= 0
+        ? ({ status: 'CONFIRMED' as const })
+        : await paymentProvider.initiate({
+            checkoutSessionId: session.id,
+            amount: amountPayable,
+            idempotencyKey: paymentIdempotencyKey,
+          });
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -698,7 +767,12 @@ export class CheckoutService {
       loyaltyRedemptionValue: Number(session.loyaltyRedemptionValue),
       storeCreditApplied: Number(session.storeCreditApplied),
       promotionDiscountTotal: Number(session.promotionDiscountTotal),
-      amountPayable: Math.round((Number(session.grandTotal) - Number(session.loyaltyRedemptionValue) - Number(session.storeCreditApplied)) * 100) / 100,
+      giftCardApplied: Number(session.giftCardApplied),
+      amountPayable:
+        Math.round(
+          (Number(session.grandTotal) - Number(session.loyaltyRedemptionValue) - Number(session.storeCreditApplied) - Number(session.giftCardApplied)) *
+            100,
+        ) / 100,
       currency: session.currency,
       lines: session.lines.map((l) => ({
         skuId: l.skuId,

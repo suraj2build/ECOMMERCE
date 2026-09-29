@@ -30,6 +30,8 @@ const startCheckoutSchema = z.object({
   loyaltyPointsToRedeem: z.number().int().positive().optional(),
   couponCode: z.string().min(1).max(50).optional(),
   storeCreditToApply: z.number().positive().optional(),
+  giftCardCode: z.string().min(1).max(64).optional(),
+  giftCardAmountToApply: z.number().positive().optional(),
 });
 
 const shippingRuleSchema = z.object({

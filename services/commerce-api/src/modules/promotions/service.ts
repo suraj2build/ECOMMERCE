@@ -24,6 +24,8 @@ export interface CreatePromotionInput {
   // set false to mark a promotion incompatible with that value system.
   loyaltyCompatible?: boolean;
   storeCreditCompatible?: boolean;
+  // M30: same default-true, opt-out-only shape as the two above.
+  giftCardCompatible?: boolean;
 }
 
 export interface AppliedPromotion {
@@ -33,6 +35,7 @@ export interface AppliedPromotion {
   discountAmount: number;
   loyaltyCompatible: boolean;
   storeCreditCompatible: boolean;
+  giftCardCompatible: boolean;
 }
 
 export interface EvaluationResult {
@@ -118,6 +121,7 @@ export class PromotionService {
         usageLimitPerCustomer: input.usageLimitPerCustomer,
         loyaltyCompatible: input.loyaltyCompatible ?? true,
         storeCreditCompatible: input.storeCreditCompatible ?? true,
+        giftCardCompatible: input.giftCardCompatible ?? true,
       },
     });
 
@@ -254,6 +258,7 @@ export class PromotionService {
         discountAmount: a.amount,
         loyaltyCompatible: a.promotion.loyaltyCompatible,
         storeCreditCompatible: a.promotion.storeCreditCompatible,
+        giftCardCompatible: a.promotion.giftCardCompatible,
       })),
       totalDiscount: total,
       couponRejectedReason,

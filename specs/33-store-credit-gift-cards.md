@@ -1,11 +1,12 @@
 # 33. Store Credit & Gift Cards
 
-**Status:** PARTIALLY IMPLEMENTED — the store-credit ledger foundation
-section is IMPLEMENTED (M20 build complete 2026-09-25, engineering
-scope — see `blueprint/DECISION_REGISTER.md` `REF-002`, `REF-005`;
-`VERIFIED` pending independent review, not self-declared). The gift
-cards section remains DRAFT, scoped but scheduled later — see milestone
-ownership below; M30 remains unauthorized and unbuilt.
+**Status:** IMPLEMENTED — the store-credit ledger foundation section
+was IMPLEMENTED at M20 (build complete 2026-09-25, engineering scope —
+see `blueprint/DECISION_REGISTER.md` `REF-002`, `REF-005`). The gift
+cards section is now also IMPLEMENTED (M30, 2026-09-29 — see `GC-001`
+in `blueprint/DECISION_REGISTER.md` and `acceptance/m30-gift-cards.md`
+for the complete design record and Definition of Done). Both remain
+`VERIFIED` pending independent review — not self-declared.
 
 ## Purpose
 
@@ -77,11 +78,60 @@ block early commerce milestones" (§21):
   requirement and `EXC-002`'s exchange settlement requirement) — see
   `BUILD_PLAN.md`.
 - **Gift cards** (purchasable stored-value instruments, redemption at
-  checkout as a distinct payment method) are scoped to a later,
+  checkout as a distinct payment method) were scoped to a later,
   dedicated **M30 Gift Cards** milestone, reusing the ledger mechanics
-  established at M20 but adding purchase/issuance flows. This avoids
-  blocking M20 on gift-card-specific design work that isn't needed
-  yet.
+  established at M20 but adding purchase/issuance flows — now built,
+  see the implementation note below.
+
+## M30 implementation note (2026-09-29)
+
+Built as `GiftCard`/`GiftCardLedgerEntry`/`GiftCardRedemptionHold`/
+`GiftCardPurchase` — the exact `StoreCreditAccount`/`StoreCreditEntry`/
+`StoreCreditRedemptionHold` ledger idiom (row-lock-before-mutate,
+preview outside a transaction + authoritative reserve inside one,
+ACTIVE/CONVERTED/RELEASED holds, a stale-hold sweep) copied for a
+structurally SEPARATE table group, so origin/type stays unambiguous by
+construction. A gift card's own row IS its account (no separate
+account table), addressed by possession of a high-entropy code (~80
+bits of entropy, `GC-XXXX-XXXX-XXXX-XXXX` format) whose plaintext is
+NEVER persisted — only its SHA-256 hash (the same unsalted-hash
+convention this codebase already uses for OTP codes and refresh/
+session tokens), returned to the caller exactly once at issuance.
+Redemption slots in as the FOURTH and final reduction in
+`CheckoutService.startCheckout`'s existing chain (promotion → loyalty
+→ store credit → gift card), gated by a new
+`Promotion.giftCardCompatible` flag mirroring `loyaltyCompatible`/
+`storeCreditCompatible` exactly. At most one gift card per checkout
+(`GiftCardRedemptionHold.checkoutSessionId` is `@unique`) — no
+multi-gift-card stacking was invented. Purchase is prepaid-only (never
+COD — nothing to physically deliver) and reuses the certified
+`RazorpayPaymentProvider` directly through the SAME additive-
+correlation pattern M21 established for Exchange price-difference
+payments (`PaymentEvent.exchangeId`): a new nullable
+`PaymentEvent.giftCardPurchaseId` lets `PaymentService.
+handleRazorpayWebhook` dispatch a captured/failed outcome to
+`GiftCardService.applyPurchaseCaptureOutcome` without touching the
+M14-certified `applyOutcome`/`applyCaptureOutcome` logic at all.
+Building the purchase flow's "gift card covering the full payable
+amount" requirement exposed a genuine pre-existing gap: nothing in
+`startCheckout`/`retryPayment` handled `amountPayable <= 0` — fixed by
+treating it exactly like COD's own `{status: 'CONFIRMED'}` shape
+(order confirms immediately, no provider call, matching the
+pre-existing `payments_amount_nonnegative_check` DB constraint that
+already permitted a zero-amount `Payment` row). 20 adversarial
+integration tests (`test/integration/gift-cards.test.ts`): issuance +
+idempotency, signed manual adjustment (mirroring
+`LoyaltyLedgerEntry.pointsDelta`'s own signed-delta precedent, the one
+ledger entry type that isn't a positive magnitude), refund-to-gift-card
+(staff-initiated only — no automatic refund-tender-allocation policy
+was invented), disable, checkout-time partial/full redemption, a
+generic non-enumerating rejection message (disabled/unknown/
+insufficient-balance codes are indistinguishable), genuine `Promise.all`
+concurrency proving no overspend, the promotion-compatibility gate,
+replay/double-conversion safety, the stale-hold sweep, staff RBAC, an
+audit-payload secret-leak check, and the full purchase→webhook→issuance
+flow (captured, failed, and a duplicate-webhook-redelivery no-op) with
+Razorpay mocked at the fetch boundary.
 
 ## Blueprint references
 

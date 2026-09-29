@@ -1227,6 +1227,122 @@ of what is still needed from anyone, and from whom.
     `services/commerce-api/test/integration/refunds.test.ts`.
 - **Affected specs:** `specs/19-refunds.md`, `specs/33-store-credit-gift-cards.md`
 
+#### GC-001 — M30 Gift Cards data model, code security, and purchase-flow architecture · **P1**
+- **Question:** How does a new `GiftCardService` model a genuinely
+  DISTINCT stored-value instrument (customer-purchasable, per specs/33)
+  while reusing the store-credit/loyalty ledger MECHANICS rather than
+  duplicating them; how is the redeemable code kept safe against
+  guessing/enumeration/leakage; and how does gift-card purchase get a
+  real payment/order semantic without either creating a second
+  CheckoutSession/Order machinery or touching the M14-certified
+  Payment/PaymentEvent capture logic?
+- **Dependencies:** REF-002, REF-005, PAY-001 (M14), EXC-004 (the
+  PaymentEvent additive-correlation precedent), LOY-001 (the signed-
+  delta ADJUSTMENT precedent)
+- **Status:** DECIDED (engineering default) · **Decision date:**
+  2026-09-29 (M30 build)
+- **Final decision:**
+  - **Ledger shape:** `GiftCard`/`GiftCardLedgerEntry`/
+    `GiftCardRedemptionHold` copy `StoreCreditAccount`/`StoreCreditEntry`/
+    `StoreCreditRedemptionHold`'s exact idiom (row-lock-before-mutate,
+    non-authoritative preview outside a transaction + authoritative
+    reserve inside one right after the CheckoutSession row exists,
+    ACTIVE/CONVERTED/RELEASED holds, a stale-hold sweep) as a
+    structurally SEPARATE table group — never a shared model, so
+    origin/type stays unambiguous by construction rather than by a
+    discriminator column someone could forget to check. A gift card's
+    own row IS its "account" (no separate account table) — addressed by
+    possession of the code, not by `customerId`/`guestSessionId` the
+    way store credit/loyalty are.
+  - **Code security:** a ~80-bit-entropy, display-formatted code
+    (`GC-XXXX-XXXX-XXXX-XXXX`, a 33-character alphabet excluding
+    0/1/O/I). The plaintext is NEVER persisted — only its unsalted
+    SHA-256 hash, the SAME convention this codebase already uses for
+    OTP codes and refresh/session tokens (reserved for high-entropy,
+    randomly generated, non-guessable secrets — bcrypt stays reserved
+    for low-entropy user-chosen credentials like staff passwords, per
+    that convention's own established reasoning). The plaintext is
+    returned to the caller exactly once, at issuance, never re-
+    derivable from any other route, and audit payloads for every
+    gift-card event are proven (adversarially tested) to never contain
+    it or its hash. Every redemption-path rejection (unknown code,
+    disabled, insufficient balance, expired) returns the IDENTICAL
+    generic message — closing the differentiated-error enumeration
+    vector this milestone's own security requirements called out.
+  - **Checkout integration:** the FOURTH and final reduction in
+    `CheckoutService.startCheckout`'s existing promotion → loyalty →
+    store credit chain, gated by a new `Promotion.giftCardCompatible`
+    flag mirroring `loyaltyCompatible`/`storeCreditCompatible` exactly
+    (default `true`, additive, never a behavior change for an existing
+    promotion). At most ONE gift card per checkout
+    (`GiftCardRedemptionHold.checkoutSessionId` is `@unique`) — M30's
+    own explicit instruction not to invent multi-gift-card stacking.
+  - **Manual adjustment is the one SIGNED-delta ledger entry**
+    (`GiftCardLedgerEntryType.ADJUSTMENT`, positive credits/negative
+    debits) rather than two separate always-positive types — the same
+    shape `LoyaltyLedgerEntry.pointsDelta` already established for
+    manual corrections in this codebase, applied here for the
+    identical reason (a manual correction is inherently bidirectional).
+    Every OTHER entry type (`ISSUE`/`REDEEM`/`REFUND_TO_GIFT_CARD`)
+    stays a positive magnitude with direction implied by `type`,
+    exactly like store credit — both halves enforced by DB CHECK
+    constraints, not just application code.
+  - **Refund-to-gift-card is staff-initiated only, never automatic** —
+    deciding how a refund should allocate across multiple tender types
+    on one order (gift card vs. original payment method vs. store
+    credit) is a business policy this milestone does NOT invent, per
+    specs/33's own "Refund interaction" section. A staff member with
+    `giftcard:manage` who has already decided a specific refund should
+    land on a specific card calls `refundToGiftCard` directly; no
+    engineering-invented automatic-allocation rule exists.
+  - **Purchase flow architecture:** deliberately NOT a second
+    CheckoutSession/Order (a gift card has no physical SKU, no
+    shipping, no inventory reservation) and deliberately NOT a change
+    to the certified `Payment` model (`checkoutSessionId` stays
+    required, unmodified). Instead, `GiftCardPurchase` is its own
+    top-level row, reusing `RazorpayPaymentProvider` directly (COD is
+    never accepted — nothing to physically deliver, a product-shape
+    boundary, not an invented business rule) and correlating to its own
+    webhook capture via the EXACT additive-correlation pattern `EXC-004`
+    already established for Exchange price-difference payments
+    (`PaymentEvent.exchangeId`): a new nullable
+    `PaymentEvent.giftCardPurchaseId`, checked only after both `payment`
+    and `exchangeMatch` have already failed to resolve, dispatching to
+    `GiftCardService.applyPurchaseCaptureOutcome` — the M14-certified
+    `applyOutcome`/`applyCaptureOutcome` logic is completely untouched.
+  - **Genuine pre-existing gap this build's own work exposed and
+    fixed:** M30's own explicit "gift card covering the full payable
+    amount" requirement surfaced that NOTHING in
+    `CheckoutService.startCheckout`/`retryPayment` ever handled
+    `amountPayable <= 0` — a case loyalty+store-credit could already in
+    principle produce today, just never actually reached by any
+    existing test. Fixed with the smallest safe repair: when the full
+    reduction chain (now including gift card) brings `amountPayable` to
+    zero or below, the payment result is treated exactly like COD's own
+    `{status: 'CONFIRMED'}` shape regardless of which `paymentMethod`
+    was chosen — the order confirms in the same request with no
+    provider call (Razorpay itself would reject a ₹0 order), matching
+    the pre-existing `payments_amount_nonnegative_check` DB constraint
+    that already permitted a zero-amount `Payment` row (a strong signal
+    this exact case was anticipated at the schema level but never wired
+    up in the service). Regression-tested directly
+    (`test/integration/gift-cards.test.ts`, test 10).
+  - **20 adversarial integration tests**
+    (`test/integration/gift-cards.test.ts`): issuance + idempotency,
+    signed manual adjustment (credit/debit/cannot-go-negative),
+    refund-to-gift-card, disable, checkout-time partial/full
+    redemption, over-request rejection, disabled/unknown-code generic-
+    error parity, genuine `Promise.all` concurrency (no overspend,
+    exactly one winner, real Postgres row locks), the
+    `amountPayable<=0` full-coverage repair, combining with COD, the
+    `giftCardCompatible` promotion gate, replay/double-conversion
+    safety, the stale-hold sweep, staff RBAC (both missing-permission
+    and unauthenticated negative cases), an audit secret-leak check,
+    and the full purchase→webhook→issuance flow (captured, failed, and
+    a duplicate-redelivery safe no-op) with Razorpay mocked at the
+    fetch boundary (ADR-0011's own established testing approach).
+- **Affected specs:** `specs/33-store-credit-gift-cards.md`
+
 ---
 
 ## EXC — Exchanges

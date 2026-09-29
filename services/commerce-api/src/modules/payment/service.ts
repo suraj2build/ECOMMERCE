@@ -10,6 +10,7 @@ import { ExchangeService } from '../exchanges/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
 import { PromotionService } from '../promotions/service.js';
 import { StoreCreditService } from '../refunds/store-credit-service.js';
+import { GiftCardService } from '../gift-cards/service.js';
 
 export interface WebhookResult {
   ok: boolean;
@@ -34,6 +35,7 @@ export class PaymentService {
   private readonly loyalty: LoyaltyService;
   private readonly promotions: PromotionService;
   private readonly storeCredit: StoreCreditService;
+  private readonly giftCard: GiftCardService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
@@ -42,6 +44,7 @@ export class PaymentService {
     this.loyalty = new LoyaltyService(fastify);
     this.promotions = new PromotionService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
+    this.giftCard = new GiftCardService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -108,7 +111,21 @@ export class PaymentService {
           : null
       : null;
 
-    const eventRecord = await this.recordOrResumeEvent(event, payment?.id, exchangeMatch?.id, payload);
+    // M30 (specs/33-store-credit-gift-cards.md): a gift-card purchase's
+    // own prepaid capture is never a checkout-session Payment row and
+    // never an Exchange - the same additive-correlation dispatch as
+    // exchangeMatch above, only reached once BOTH prior matches have
+    // failed.
+    const giftCardPurchaseMatch =
+      !payment && !exchangeMatch
+        ? event.orderId
+          ? await this.prisma.giftCardPurchase.findFirst({ where: { provider: 'RAZORPAY', providerReferenceId: event.orderId } })
+          : event.paymentEntityId
+            ? await this.prisma.giftCardPurchase.findFirst({ where: { provider: 'RAZORPAY', providerReferenceId: event.paymentEntityId } })
+            : null
+        : null;
+
+    const eventRecord = await this.recordOrResumeEvent(event, payment?.id, exchangeMatch?.id, giftCardPurchaseMatch?.id, payload);
     if (eventRecord.status === 'PROCESSED') {
       return { ok: true, duplicate: true };
     }
@@ -121,6 +138,28 @@ export class PaymentService {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.fastify.log.error({ err, providerEventId: event.providerEventId, exchangeId: exchangeMatch.id }, 'Exchange payment event processing failed - will resume on redelivery');
+        await this.prisma.paymentEvent
+          .update({ where: { id: eventRecord.id }, data: { status: 'FAILED', processingError: message } })
+          .catch(() => undefined);
+        return { ok: false, reason: 'processing_failed' };
+      }
+    }
+
+    if (giftCardPurchaseMatch) {
+      try {
+        if (event.outcome === 'CAPTURED') {
+          await this.giftCard.applyPurchaseCaptureOutcome(giftCardPurchaseMatch.id, 'CAPTURED', event.paymentEntityId);
+        } else if (event.outcome === 'FAILED') {
+          await this.giftCard.applyPurchaseCaptureOutcome(giftCardPurchaseMatch.id, 'FAILED', event.paymentEntityId);
+        }
+        await this.markEventProcessed(eventRecord.id);
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.fastify.log.error(
+          { err, providerEventId: event.providerEventId, giftCardPurchaseId: giftCardPurchaseMatch.id },
+          'Gift card purchase payment event processing failed - will resume on redelivery',
+        );
         await this.prisma.paymentEvent
           .update({ where: { id: eventRecord.id }, data: { status: 'FAILED', processingError: message } })
           .catch(() => undefined);
@@ -217,6 +256,7 @@ export class PaymentService {
     event: WebhookEvent,
     paymentId: string | undefined,
     exchangeId: string | undefined,
+    giftCardPurchaseId: string | undefined,
     payload: unknown,
   ): Promise<{ id: string; status: 'RECEIVED' | 'PROCESSED' | 'FAILED' }> {
     try {
@@ -227,6 +267,7 @@ export class PaymentService {
           eventType: event.eventType,
           paymentId,
           exchangeId,
+          giftCardPurchaseId,
           payload: payload as Prisma.InputJsonValue,
           status: 'RECEIVED',
         },
@@ -544,6 +585,8 @@ export class PaymentService {
         // not just the loyalty one.
         await this.promotions.releaseHoldsForCheckoutSession(tx, fresh.checkoutSessionId);
         await this.storeCredit.releaseHoldForCheckoutSession(tx, fresh.checkoutSessionId);
+        // M30: same release for a gift-card redemption HOLD.
+        await this.giftCard.releaseHoldForCheckoutSession(tx, fresh.checkoutSessionId);
 
         return true;
       });

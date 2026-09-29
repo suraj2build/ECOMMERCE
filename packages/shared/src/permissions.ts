@@ -155,6 +155,14 @@ export const PERMISSION_KEYS = [
   // publishing" by permission alone.
   'cms:manage',
   'cms:read',
+  // M30 (specs/33-store-credit-gift-cards.md): gift-card issuance,
+  // disable, and full-ledger inspection are staff-privileged actions
+  // distinct from ordinary order/refund handling - deliberately new
+  // keys, not folded into an existing permission, so a future audit can
+  // tell "who could mint/disable stored monetary value" apart from
+  // every other capability by permission alone.
+  'giftcard:manage',
+  'giftcard:read',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];

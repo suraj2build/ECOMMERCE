@@ -122,6 +122,10 @@ model Customer {
   // M29 Notifications (specs/29-notifications.md)
   notificationDeliveries NotificationDelivery[]
 
+  // M30 Gift Cards (specs/33-store-credit-gift-cards.md)
+  purchasedGiftCards GiftCard[]
+  giftCardPurchases  GiftCardPurchase[]
+
   @@map("customers")
 }
 
@@ -167,34 +171,36 @@ model StaffUser {
 
   roles                         StaffUserRole[]
   sessions                      StaffSession[]
-  submittedPOs                  PurchaseOrder[]         @relation("POSubmittedBy")
-  approvedPOs                   PurchaseOrder[]         @relation("POApprovedBy")
+  submittedPOs                  PurchaseOrder[]             @relation("POSubmittedBy")
+  approvedPOs                   PurchaseOrder[]             @relation("POApprovedBy")
   poApprovalEvents              PurchaseOrderApproval[]
-  receivedGRNs                  GoodsReceipt[]          @relation("GRNReceivedBy")
-  inventoryAdjustments          InventoryTransaction[]  @relation("InventoryAdjustmentActor")
-  coApprovedAdjustments         InventoryTransaction[]  @relation("InventoryAdjustmentCoApprover")
-  publishedStyles               Style[]                 @relation("StylePublishedBy")
+  receivedGRNs                  GoodsReceipt[]              @relation("GRNReceivedBy")
+  inventoryAdjustments          InventoryTransaction[]      @relation("InventoryAdjustmentActor")
+  coApprovedAdjustments         InventoryTransaction[]      @relation("InventoryAdjustmentCoApprover")
+  publishedStyles               Style[]                     @relation("StylePublishedBy")
   auditLogEntries               AuditLog[]
-  moderatedShoppableMedia       ShoppableMedia[]        @relation("ShoppableMediaModeratedBy")
-  moderatedReviews              Review[]                @relation("ReviewModeratedBy")
+  moderatedShoppableMedia       ShoppableMedia[]            @relation("ShoppableMediaModeratedBy")
+  moderatedReviews              Review[]                    @relation("ReviewModeratedBy")
   crossSellOverrides            CrossSellOverride[]
-  pickedPickTasks               PickTask[]              @relation("PickTaskPickedBy")
-  createdShipments              Shipment[]              @relation("ShipmentCreatedBy")
-  initiatedReturns              Return[]                @relation("ReturnInitiatedBy")
-  qcReturnLines                 ReturnLine[]            @relation("ReturnLineQcBy")
-  uploadedReturnEvidence        ReturnEvidence[]        @relation("ReturnEvidenceUploadedBy")
-  createdReturnPickups          ReturnPickup[]          @relation("ReturnPickupCreatedBy")
-  initiatedRefunds              Refund[]                @relation("RefundInitiatedBy")
-  storeCreditEntriesActed       StoreCreditEntry[]      @relation("StoreCreditEntryActor")
-  initiatedExchanges            Exchange[]              @relation("ExchangeInitiatedBy")
-  qcExchanges                   Exchange[]              @relation("ExchangeQcBy")
-  replacementFulfilledExchanges Exchange[]              @relation("ExchangeReplacementFulfilledBy")
+  pickedPickTasks               PickTask[]                  @relation("PickTaskPickedBy")
+  createdShipments              Shipment[]                  @relation("ShipmentCreatedBy")
+  initiatedReturns              Return[]                    @relation("ReturnInitiatedBy")
+  qcReturnLines                 ReturnLine[]                @relation("ReturnLineQcBy")
+  uploadedReturnEvidence        ReturnEvidence[]            @relation("ReturnEvidenceUploadedBy")
+  createdReturnPickups          ReturnPickup[]              @relation("ReturnPickupCreatedBy")
+  initiatedRefunds              Refund[]                    @relation("RefundInitiatedBy")
+  storeCreditEntriesActed       StoreCreditEntry[]          @relation("StoreCreditEntryActor")
+  initiatedExchanges            Exchange[]                  @relation("ExchangeInitiatedBy")
+  qcExchanges                   Exchange[]                  @relation("ExchangeQcBy")
+  replacementFulfilledExchanges Exchange[]                  @relation("ExchangeReplacementFulfilledBy")
   loyaltyLedgerAdjustments      LoyaltyLedgerEntry[]
   channelPublicationAttempts    ChannelPublicationAttempt[]
   createdCmsBanners             CmsBanner[]
   createdCmsContentBlocks       CmsContentBlock[]
   createdCmsLandingPages        CmsLandingPage[]
   updatedCmsNavigationMenus     CmsNavigationMenu[]
+  disabledGiftCards             GiftCard[]                  @relation("GiftCardDisabledBy")
+  giftCardLedgerEntriesActed    GiftCardLedgerEntry[]       @relation("GiftCardLedgerEntryActor")
 
   @@map("staff_users")
 }
@@ -1556,8 +1562,9 @@ model CheckoutSession {
   // not a new gift-card milestone) is likewise the amount actually
   // reserved from the customer's existing balance at application time.
   // The amount actually charged to the payment method is always
-  // grandTotal - loyaltyRedemptionValue - storeCreditApplied, computed
-  // on demand, never stored as a separate column.
+  // grandTotal - loyaltyRedemptionValue - storeCreditApplied -
+  // giftCardApplied, computed on demand, never stored as a separate
+  // column.
   loyaltyPointsRedeemed  Int                   @default(0)
   loyaltyRedemptionValue Decimal               @default(0) @db.Decimal(10, 2)
   storeCreditApplied     Decimal               @default(0) @db.Decimal(10, 2)
@@ -1566,6 +1573,11 @@ model CheckoutSession {
   // the per-line discountAmountSnapshot values are the source of truth
   // for invoice presentation (TAX-006).
   promotionDiscountTotal Decimal               @default(0) @db.Decimal(10, 2)
+  // M30 Gift Cards (specs/33-store-credit-gift-cards.md): the FOURTH and
+  // final reduction in the chain (promotion -> loyalty -> store credit
+  // -> gift card), applied last, same amount-actually-reserved-at-
+  // application-time discipline as storeCreditApplied above.
+  giftCardApplied        Decimal               @default(0) @db.Decimal(10, 2)
 
   customer                  Customer?                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines                     CheckoutSessionLine[]
@@ -1574,6 +1586,7 @@ model CheckoutSession {
   loyaltyRedemptionHold     LoyaltyRedemptionHold?
   promotionRedemptions      PromotionRedemption[]
   storeCreditRedemptionHold StoreCreditRedemptionHold?
+  giftCardRedemptionHold    GiftCardRedemptionHold?
 
   @@index([status])
   @@map("checkout_sessions")
@@ -1680,11 +1693,11 @@ enum PaymentEventStatus {
 }
 
 model PaymentEvent {
-  id              String              @id @default(uuid())
-  provider        PaymentProviderType
-  providerEventId String
-  eventType       String
-  paymentId       String?
+  id                 String              @id @default(uuid())
+  provider           PaymentProviderType
+  providerEventId    String
+  eventType          String
+  paymentId          String?
   // M21: set instead of paymentId when this event correlates to an
   // Exchange's own price-difference payment (a captured payment that was
   // never a checkout-session Payment row) - ExchangeService owns its own
@@ -1693,15 +1706,22 @@ model PaymentEvent {
   // (M14-certified code, deliberately left untouched by M21 - see
   // PaymentService.handleRazorpayWebhook's own docblock for why this
   // dispatch is additive, not a modification to that logic).
-  exchangeId      String?
-  payload         Json
-  receivedAt      DateTime            @default(now())
-  status          PaymentEventStatus  @default(RECEIVED)
-  processedAt     DateTime?
-  processingError String?
+  exchangeId         String?
+  // M30: set instead of paymentId/exchangeId when this event correlates
+  // to a GiftCardPurchase's own prepaid capture - the exact same
+  // additive-correlation pattern as exchangeId above, dispatched from
+  // PaymentService.handleRazorpayWebhook to GiftCardService's own
+  // transaction, never touching applyOutcome/applyCaptureOutcome.
+  giftCardPurchaseId String?
+  payload            Json
+  receivedAt         DateTime            @default(now())
+  status             PaymentEventStatus  @default(RECEIVED)
+  processedAt        DateTime?
+  processingError    String?
 
-  payment  Payment?  @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  exchange Exchange? @relation(fields: [exchangeId], references: [id], onDelete: SetNull)
+  payment          Payment?          @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  exchange         Exchange?         @relation(fields: [exchangeId], references: [id], onDelete: SetNull)
+  giftCardPurchase GiftCardPurchase? @relation(fields: [giftCardPurchaseId], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerEventId])
   @@index([status])
@@ -1930,6 +1950,8 @@ model Order {
   // M24 (specs/23-promotions.md): frozen copy of the CheckoutSession's
   // own total at order-creation time - never re-derived.
   promotionDiscountTotal Decimal               @default(0) @db.Decimal(10, 2)
+  // M30 Gift Cards: frozen copy of CheckoutSession.giftCardApplied.
+  giftCardApplied        Decimal               @default(0) @db.Decimal(10, 2)
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
@@ -2574,6 +2596,204 @@ model StoreCreditEntry {
 
   @@index([accountId])
   @@map("store_credit_entries")
+}
+
+// --- M30 Gift Cards (specs/33-store-credit-gift-cards.md) ---
+//
+// A gift card is a DISTINCT instrument from store credit (specs/33):
+// purchasable by a customer (a new value-creation event with its own
+// payment semantics, GiftCardPurchase below), whereas store credit is
+// only ever platform-issued as a refund/exchange consequence. Both
+// reuse the SAME auditable-ledger MECHANICS (account/entry/hold, the
+// exact StoreCreditAccount/StoreCreditEntry/StoreCreditRedemptionHold
+// idiom copied verbatim) but remain structurally separate tables, never
+// a shared model, so origin/type stays unambiguous by construction, not
+// by a discriminator column that could be forgotten.
+enum GiftCardStatus {
+  ACTIVE
+  DISABLED
+  // Set once balance reaches exactly zero via REDEEM - purely
+  // informational (a zero-balance ACTIVE card behaves identically at
+  // redemption time; this status exists only so staff support tooling
+  // can distinguish "spent out" from "never used" without computing
+  // it from the ledger on every list view).
+  DEPLETED
+}
+
+enum GiftCardLedgerEntryType {
+  ISSUE
+  REDEEM
+  // A refund settled back onto the SAME gift card it was originally
+  // redeemed from (staff-initiated only - never automatic, since
+  // deciding refund allocation across multiple tender types is a
+  // business policy this milestone does not invent - see
+  // GiftCardService.refundToGiftCard's own docblock).
+  REFUND_TO_GIFT_CARD
+  ADJUSTMENT
+}
+
+// The plaintext code is NEVER persisted - only its SHA-256 hash
+// (createHash('sha256'), the same unsalted-hash convention this
+// codebase already uses for OTP codes and refresh/session tokens,
+// services/commerce-api/src/modules/auth/service.ts - reserved for
+// high-entropy, randomly generated, non-guessable secrets, as opposed
+// to bcrypt which is reserved for low-entropy user-chosen credentials
+// like staff passwords). `codeLast4` is the plaintext code's own last 4
+// characters, safe to display in staff tooling for support lookup
+// without ever reconstructing the full secret. `balance` is a
+// denormalized cache of SUM(entries), maintained transactionally under
+// a row lock exactly like StoreCreditAccount.balance - the ledger is
+// the source of truth, this column is a read optimization kept in
+// lockstep with it, never mutated independently.
+model GiftCard {
+  id                        String         @id @default(uuid())
+  codeHash                  String         @unique
+  codeLast4                 String
+  status                    GiftCardStatus @default(ACTIVE)
+  initialValue              Decimal        @db.Decimal(10, 2)
+  balance                   Decimal        @default(0) @db.Decimal(10, 2)
+  currency                  String         @default("INR")
+  purchasedByCustomerId     String?
+  purchasedByGuestSessionId String?
+  recipientEmail            String?
+  // Null until the value-creation event actually settles (purchase
+  // capture, or immediate for a staff-issued card) - never set at row
+  // creation for a purchase still awaiting payment.
+  issuedAt                  DateTime?
+  // Nullable, no expiry POLICY invented here (per M30's explicit
+  // instruction) - a value is only ever set if/when a future,
+  // separately-authorized business decision requires one; the
+  // redemption path below already treats a past expiresAt as
+  // ineligible, so the capability exists without any default duration.
+  expiresAt                 DateTime?
+  disabledAt                DateTime?
+  disabledReason            String?
+  disabledByStaffId         String?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  purchasedByCustomer Customer?                @relation(fields: [purchasedByCustomerId], references: [id], onDelete: SetNull)
+  disabledByStaff     StaffUser?               @relation("GiftCardDisabledBy", fields: [disabledByStaffId], references: [id], onDelete: SetNull)
+  entries             GiftCardLedgerEntry[]
+  redemptionHolds     GiftCardRedemptionHold[]
+  purchase            GiftCardPurchase?
+
+  @@index([status])
+  @@index([purchasedByCustomerId])
+  @@map("gift_cards")
+}
+
+model GiftCardLedgerEntry {
+  id             String                  @id @default(uuid())
+  giftCardId     String
+  type           GiftCardLedgerEntryType
+  // A positive MAGNITUDE for every type except ADJUSTMENT (DB CHECK
+  // constraints enforce both halves of this) - ISSUE/REDEEM/
+  // REFUND_TO_GIFT_CARD's own `type` determines balance direction,
+  // never the sign of `amount`. ADJUSTMENT is the one SIGNED delta
+  // (positive credits, negative debits), mirroring
+  // LoyaltyLedgerEntry.pointsDelta's own signed-Int precedent for
+  // manual staff corrections - never zero (also DB-enforced).
+  amount         Decimal                 @db.Decimal(10, 2)
+  balanceAfter   Decimal                 @db.Decimal(10, 2)
+  referenceType  String? // e.g. "ORDER", "GIFT_CARD_PURCHASE", "REFUND", "STAFF_ADJUSTMENT"
+  referenceId    String?
+  reason         String?
+  actorStaffId   String?
+  idempotencyKey String                  @unique
+  createdAt      DateTime                @default(now())
+
+  giftCard   GiftCard   @relation(fields: [giftCardId], references: [id], onDelete: Restrict)
+  actorStaff StaffUser? @relation("GiftCardLedgerEntryActor", fields: [actorStaffId], references: [id], onDelete: Restrict)
+
+  @@index([giftCardId])
+  @@index([giftCardId, type])
+  @@map("gift_card_ledger_entries")
+}
+
+enum GiftCardHoldStatus {
+  ACTIVE
+  CONVERTED
+  RELEASED
+}
+
+// Checkout-time redemption, the exact ACTIVE/CONVERTED/RELEASED
+// lifecycle as StoreCreditRedemptionHold/LoyaltyRedemptionHold - see
+// those models' own docblocks for the full "why a hold, not a direct
+// balance edit" reasoning (a checkout is not yet a firm commitment
+// until the order actually confirms). `checkoutSessionId @unique`
+// deliberately limits a single checkout to AT MOST one gift card - M30
+// explicitly does not invent multi-gift-card stacking.
+model GiftCardRedemptionHold {
+  id                String             @id @default(uuid())
+  giftCardId        String
+  checkoutSessionId String             @unique
+  amount            Decimal            @db.Decimal(10, 2)
+  status            GiftCardHoldStatus @default(ACTIVE)
+  expiresAt         DateTime
+  createdAt         DateTime           @default(now())
+
+  giftCard        GiftCard        @relation(fields: [giftCardId], references: [id], onDelete: Restrict)
+  checkoutSession CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
+
+  @@index([giftCardId, status])
+  @@index([status, expiresAt])
+  @@map("gift_card_redemption_holds")
+}
+
+enum GiftCardPurchaseStatus {
+  INITIATED
+  CAPTURED
+  FAILED
+  EXPIRED
+}
+
+// A gift-card purchase is a genuinely new payment/order-adjacent event
+// (specs/33: "a new value-creation event with its own payment/order
+// semantics") - deliberately NOT modeled as a CheckoutSession/Order
+// (there is no physical SKU, no shipping, no inventory reservation),
+// and deliberately NOT a change to the certified Payment model (whose
+// `checkoutSessionId` stays required, unmodified). Instead this mirrors
+// the exact additive-correlation pattern M21 already established for
+// Exchange price-difference payments (PaymentEvent.exchangeId) - see
+// PaymentEvent.giftCardPurchaseId below and
+// PaymentService.handleRazorpayWebhook's own dispatch, which this
+// milestone extends the SAME way M21's own webhook dispatch was
+// extended: additive, never a modification to the M14-certified
+// checkout-payment logic. COD is never accepted for a gift-card
+// purchase (`provider` is always RAZORPAY) - there is nothing to
+// physically deliver, so a cash-on-delivery workflow has no meaning
+// here; this is a product-shape boundary, not an invented business
+// policy.
+model GiftCardPurchase {
+  id                  String                 @id @default(uuid())
+  customerId          String?
+  guestSessionId      String?
+  amount              Decimal                @db.Decimal(10, 2)
+  currency            String                 @default("INR")
+  recipientEmail      String?
+  status              GiftCardPurchaseStatus @default(INITIATED)
+  // Always RAZORPAY (COD is never accepted for a gift-card purchase -
+  // see this model's own docblock). Kept as an explicit column, not a
+  // hardcoded literal, so PaymentEvent correlation lookups can filter
+  // by (provider, providerReferenceId) the exact same shape Payment
+  // itself uses.
+  provider            PaymentProviderType    @default(RAZORPAY)
+  // Holds the Razorpay ORDER id while INITIATED, then gets swapped to
+  // the PAYMENT id on capture - identical convention to
+  // Payment.providerReferenceId (see that column's own comment).
+  providerReferenceId String?
+  idempotencyKey      String                 @unique
+  giftCardId          String?                @unique
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  customer      Customer?      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  giftCard      GiftCard?      @relation(fields: [giftCardId], references: [id], onDelete: SetNull)
+  paymentEvents PaymentEvent[]
+
+  @@index([status])
+  @@map("gift_card_purchases")
 }
 
 // --- M21 Exchanges (specs/20-exchanges.md, EXC-001-003) ---
@@ -3273,6 +3493,9 @@ model Promotion {
   // behavior change for any promotion that doesn't opt out.
   loyaltyCompatible     Boolean               @default(true)
   storeCreditCompatible Boolean               @default(true)
+  // M30 Gift Cards: same rule-driven, default-true eligibility flag as
+  // the two above, kept structurally identical for consistency.
+  giftCardCompatible    Boolean               @default(true)
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
 
@@ -3608,15 +3831,15 @@ model Channel {
 // per SKU even with zero real channels connected (acceptance criterion),
 // proven end-to-end against the mock adapter alone.
 model ChannelListing {
-  id            String               @id @default(uuid())
-  channelId     String
-  skuId         String
-  status        ChannelListingStatus @default(NOT_PUBLISHED)
-  externalId    String?
-  lastSyncedAt  DateTime?
-  lastError     String?
-  retryCount    Int                  @default(0)
-  payloadSnapshot Json?
+  id                 String               @id @default(uuid())
+  channelId          String
+  skuId              String
+  status             ChannelListingStatus @default(NOT_PUBLISHED)
+  externalId         String?
+  lastSyncedAt       DateTime?
+  lastError          String?
+  retryCount         Int                  @default(0)
+  payloadSnapshot    Json?
   // M26 independent-review certification repair (2026-09-29, Blocker 1 -
   // provider idempotency identity): the durable identity of the CURRENT
   // (or most recently attempted) logical publish/unpublish operation on
@@ -3636,8 +3859,8 @@ model ChannelListing {
   // an earlier one, while staying stable for retry/reconciliation of the
   // SAME operation - see ChannelService.claimProcessing's own docblock.
   currentOperationId String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   channel  Channel                     @relation(fields: [channelId], references: [id], onDelete: Cascade)
   sku      Sku                         @relation(fields: [skuId], references: [id], onDelete: Cascade)
@@ -3671,7 +3894,7 @@ enum ChannelPublicationAttemptStatus {
 // reconciliation/retry investigation can see every prior attempt, not
 // just the listing's current state.
 model ChannelPublicationAttempt {
-  id               String                           @id @default(uuid())
+  id               String                          @id @default(uuid())
   channelListingId String
   action           ChannelPublicationAction
   status           ChannelPublicationAttemptStatus
@@ -3679,7 +3902,7 @@ model ChannelPublicationAttempt {
   responsePayload  Json?
   errorMessage     String?
   actorStaffId     String
-  attemptedAt      DateTime                         @default(now())
+  attemptedAt      DateTime                        @default(now())
   // M26 independent-review certification repair (2026-09-29, Blocker 1):
   // the ChannelListing.currentOperationId this specific attempt was made
   // under, frozen at the moment of this attempt - lets a reconciliation
@@ -3710,20 +3933,20 @@ model ChannelPublicationAttempt {
 // ---------------------------------------------------------------------------
 
 model CmsBanner {
-  id            String    @id @default(uuid())
-  title         String
-  imageUrl      String
-  linkUrl       String?
+  id               String    @id @default(uuid())
+  title            String
+  imageUrl         String
+  linkUrl          String?
   // Where this banner may render - a plain string, not an enum, so a new
   // placement never needs a schema migration (a genuine CMS requirement:
   // "without a code deployment").
-  placement     String
-  sortOrder     Int       @default(0)
-  isActive      Boolean   @default(true)
-  publishedAt   DateTime?
+  placement        String
+  sortOrder        Int       @default(0)
+  isActive         Boolean   @default(true)
+  publishedAt      DateTime?
   createdByStaffId String
-  updatedAt     DateTime  @updatedAt
-  createdAt     DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
 
   createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
 
@@ -3732,20 +3955,20 @@ model CmsBanner {
 }
 
 model CmsContentBlock {
-  id          String   @id @default(uuid())
+  id               String   @id @default(uuid())
   // A stable, merchandiser-chosen handle a landing page/nav can reference
   // (e.g. "homepage-promo-strip") - never a raw database id exposed as
   // the addressable key.
-  key         String   @unique
-  title       String
+  key              String   @unique
+  title            String
   // Free-form HTML/rich-text content. This is a fixed content TYPE
   // (a content block), not a generic component/layout system - the
   // "no page builder" boundary this phase's own instruction sets.
-  content     String
-  isActive    Boolean  @default(true)
+  content          String
+  isActive         Boolean  @default(true)
   createdByStaffId String
-  updatedAt   DateTime @updatedAt
-  createdAt   DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
 
   createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
 
@@ -3753,20 +3976,20 @@ model CmsContentBlock {
 }
 
 model CmsLandingPage {
-  id              String    @id @default(uuid())
-  slug            String    @unique
-  title           String
-  metaDescription String?
-  heroImageUrl    String?
+  id               String    @id @default(uuid())
+  slug             String    @unique
+  title            String
+  metaDescription  String?
+  heroImageUrl     String?
   // An ordered list of `CmsContentBlock.key` references - the page is
   // composed from already-published content blocks, never inline HTML
   // duplicated per page.
-  blockKeys       Json      @default("[]")
-  isPublished     Boolean   @default(false)
-  publishedAt     DateTime?
+  blockKeys        Json      @default("[]")
+  isPublished      Boolean   @default(false)
+  publishedAt      DateTime?
   createdByStaffId String
-  updatedAt       DateTime  @updatedAt
-  createdAt       DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
 
   createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
 
@@ -3774,17 +3997,17 @@ model CmsLandingPage {
 }
 
 model CmsNavigationMenu {
-  id        String   @id @default(uuid())
+  id               String   @id @default(uuid())
   // e.g. "main-nav", "footer-nav" - a fixed, small set of named menu
   // slots, not an arbitrary menu-creation system.
-  key       String   @unique
+  key              String   @unique
   // Array of {label, url, sortOrder, children?} - a fixed shape the
   // storefront nav component renders directly, never a generic tree
   // editor/page-builder.
-  items     Json
+  items            Json
   updatedByStaffId String
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
 
   updatedByStaff StaffUser @relation(fields: [updatedByStaffId], references: [id], onDelete: Restrict)
 

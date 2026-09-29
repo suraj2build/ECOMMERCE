@@ -50,6 +50,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // other read-only rows above.
     'channel:read',
     'cms:read',
+    // M30: same read-only oversight posture, not mint/disable power.
+    'giftcard:read',
   ],
   BUYING: ['supplier:read', 'supplier:write', 'po:create', 'po:submit', 'po:read', 'product:read'],
   MERCHANDISING: [
@@ -146,6 +148,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // correction) - the customer's own earn/redeem/reverse/expire
     // activity needs no staff permission at all (self-service).
     'loyalty:adjust',
+    // M30: read-only gift-card lookup for support (balance/history) -
+    // minting/disabling stays Finance-only (giftcard:manage).
+    'giftcard:read',
   ],
   MARKETING: [
     'marketing:manage',
@@ -185,6 +190,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     // M23: Finance may also action a manual loyalty adjustment
     // (mirrors payment:refund's own Finance ownership of value corrections).
     'loyalty:adjust',
+    // M30: gift cards are a stored monetary instrument - Finance owns
+    // issuance/disable/adjustment, the same ownership pattern as its
+    // payment:refund/loyalty:adjust rows above.
+    'giftcard:manage',
+    'giftcard:read',
   ],
   ANALYTICS: ['analytics:read', 'product:read', 'inventory:read', 'order:read'],
 };

@@ -34,6 +34,7 @@ import refundRoutes from './modules/refunds/routes.js';
 import exchangeRoutes from './modules/exchanges/routes.js';
 import customerProfileRoutes from './modules/customer-profile/routes.js';
 import loyaltyRoutes from './modules/loyalty/routes.js';
+import giftCardRoutes from './modules/gift-cards/routes.js';
 import promotionsRoutes from './modules/promotions/routes.js';
 import marketingRoutes from './modules/marketing/routes.js';
 import channelRoutes from './modules/channels/routes.js';
@@ -151,6 +152,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(exchangeRoutes, { prefix: '/api/v1' });
   await app.register(customerProfileRoutes, { prefix: '/api/v1' });
   await app.register(loyaltyRoutes, { prefix: '/api/v1' });
+  await app.register(giftCardRoutes, { prefix: '/api/v1' });
   await app.register(promotionsRoutes, { prefix: '/api/v1' });
   await app.register(marketingRoutes, { prefix: '/api/v1' });
   await app.register(channelRoutes, { prefix: '/api/v1' });

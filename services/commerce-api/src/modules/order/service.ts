@@ -7,6 +7,7 @@ import { WarehouseService } from '../warehouse/service.js';
 import { LoyaltyService } from '../loyalty/service.js';
 import { PromotionService } from '../promotions/service.js';
 import { StoreCreditService } from '../refunds/store-credit-service.js';
+import { GiftCardService } from '../gift-cards/service.js';
 import { NotificationService } from '../notifications/service.js';
 import { recordAudit } from '../audit/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
@@ -32,6 +33,7 @@ export class OrderService {
   private readonly loyalty: LoyaltyService;
   private readonly promotions: PromotionService;
   private readonly storeCredit: StoreCreditService;
+  private readonly giftCard: GiftCardService;
   private readonly notifications: NotificationService;
 
   constructor(private readonly fastify: FastifyInstance) {
@@ -41,6 +43,7 @@ export class OrderService {
     this.loyalty = new LoyaltyService(fastify);
     this.promotions = new PromotionService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
+    this.giftCard = new GiftCardService(fastify);
     this.notifications = new NotificationService(fastify);
   }
 
@@ -164,6 +167,8 @@ export class OrderService {
       // all roll back together.
       await this.promotions.convertHolds(tx, created);
       await this.storeCredit.convertRedemptionHold(tx, created);
+      // M30: same conversion for a gift-card redemption HOLD.
+      await this.giftCard.convertRedemptionHold(tx, created);
 
       await recordAudit(tx, {
         actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',
