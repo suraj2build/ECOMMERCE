@@ -1,18 +1,19 @@
 'use client';
 
+import { getOrCreateGuestSessionToken } from './guest-session';
+
 /**
  * Cart / Wishlist client (M12, specs/11-wishlist-cart.md, CART-001).
  * Every call here is browser-originated (unlike the server-side reads in
  * lib/api.ts) since cart/wishlist state is per-visitor, never something
  * Next.js should cache or render server-side. A guest is identified by a
- * client-generated session id persisted in localStorage (the device/
- * session identifier CART-001 calls for); a logged-in customer's bearer
- * token, when present, always takes priority - see identity.ts on the
- * API side for the matching server-side resolution.
+ * SERVER-ISSUED session token (M31, CART-004 - see guest-session.ts's
+ * own docblock), persisted in localStorage; a logged-in customer's
+ * bearer token, when present, always takes priority - see identity.ts
+ * on the API side for the matching server-side resolution.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-const GUEST_SESSION_KEY = 'fcp_guest_session_id';
 const GUEST_HEADER = 'x-guest-session-id';
 // Duplicated from customer-auth.ts's STORAGE_KEY rather than imported, to
 // keep this module import-free of customer-auth.ts (customer-auth.ts
@@ -20,19 +21,7 @@ const GUEST_HEADER = 'x-guest-session-id';
 // merge - importing back the other way would create a cycle).
 const CUSTOMER_SESSION_KEY = 'fcp_customer_session';
 
-export function getGuestSessionId(): string {
-  try {
-    const existing = localStorage.getItem(GUEST_SESSION_KEY);
-    if (existing) return existing;
-    const id = crypto.randomUUID();
-    localStorage.setItem(GUEST_SESSION_KEY, id);
-    return id;
-  } catch {
-    // Private browsing / blocked storage: a fresh id every call means no
-    // persistence, but the app still functions for the current page view.
-    return crypto.randomUUID();
-  }
-}
+export const getGuestSessionId = getOrCreateGuestSessionToken;
 
 function getStoredCustomerToken(): string | null {
   try {
@@ -44,16 +33,16 @@ function getStoredCustomerToken(): string | null {
   }
 }
 
-function identityHeaders(): Record<string, string> {
+async function identityHeaders(): Promise<Record<string, string>> {
   const token = getStoredCustomerToken();
   if (token) return { authorization: `Bearer ${token}` };
-  return { [GUEST_HEADER]: getGuestSessionId() };
+  return { [GUEST_HEADER]: await getOrCreateGuestSessionToken() };
 }
 
 async function cartFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...identityHeaders(), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...(await identityHeaders()), ...init?.headers },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -136,7 +125,7 @@ export const moveWishlistItemToCart = (skuId: string, quantity = 1) =>
  * Best-effort: a merge failure shouldn't block the login itself.
  */
 export async function mergeGuestCartAndWishlist(accessToken: string): Promise<void> {
-  const guestSessionId = getGuestSessionId();
+  const guestSessionId = await getGuestSessionId();
   const headers = { 'Content-Type': 'application/json', authorization: `Bearer ${accessToken}`, [GUEST_HEADER]: guestSessionId };
   try {
     await fetch(`${API_URL}/api/v1/storefront/cart/merge`, { method: 'POST', headers });

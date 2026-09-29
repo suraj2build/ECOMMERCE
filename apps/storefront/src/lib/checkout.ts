@@ -1,27 +1,18 @@
 'use client';
 
+import { getOrCreateGuestSessionToken } from './guest-session';
+
 /**
  * Checkout client (M13, specs/12-checkout.md). Browser-originated, same
  * guest-or-customer identity pattern as lib/cart.ts (CART-001/CHK-001) -
- * checkout is reachable without ever creating an account.
+ * checkout is reachable without ever creating an account. The guest
+ * identity is SERVER-ISSUED (M31, CART-004 - see guest-session.ts's own
+ * docblock), never generated locally here.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const GUEST_HEADER = 'x-guest-session-id';
-const GUEST_SESSION_KEY = 'fcp_guest_session_id';
 const CUSTOMER_SESSION_KEY = 'fcp_customer_session';
-
-function getGuestSessionId(): string {
-  try {
-    const existing = localStorage.getItem(GUEST_SESSION_KEY);
-    if (existing) return existing;
-    const id = crypto.randomUUID();
-    localStorage.setItem(GUEST_SESSION_KEY, id);
-    return id;
-  } catch {
-    return crypto.randomUUID();
-  }
-}
 
 function getStoredCustomerToken(): string | null {
   try {
@@ -33,16 +24,16 @@ function getStoredCustomerToken(): string | null {
   }
 }
 
-function identityHeaders(): Record<string, string> {
+async function identityHeaders(): Promise<Record<string, string>> {
   const token = getStoredCustomerToken();
   if (token) return { authorization: `Bearer ${token}` };
-  return { [GUEST_HEADER]: getGuestSessionId() };
+  return { [GUEST_HEADER]: await getOrCreateGuestSessionToken() };
 }
 
 async function checkoutFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...identityHeaders(), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...(await identityHeaders()), ...init?.headers },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;

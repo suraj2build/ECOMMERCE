@@ -509,6 +509,69 @@ of what is still needed from anyone, and from whom.
 - **Affected specs:** `specs/11-wishlist-cart.md`, `specs/12-checkout.md`,
   `specs/13-payment.md`
 
+**CART-004 closure (2026-09-29, M31 Security Hardening):** implemented
+option 3 from the recommendation list above — a server-issued, signed
+token — closing this gap for real rather than merely tightening format
+validation on a client-chosen value. `services/commerce-api/src/modules/cart/identity.ts`
+now exposes `mintGuestSessionToken()` (`POST /storefront/guest-session`,
+unauthenticated, rate-limiting rather than RBAC is the correct control
+here) which mints `<uuid-v4>.<hmac-sha256-hex>` — the HMAC computed over
+the uuid with the existing `JWT_ACCESS_SECRET`, the same
+sign-then-`timingSafeEqual`-compare idiom this codebase already uses for
+Razorpay/carrier webhook signatures, reused rather than inventing a
+second signing convention or a new secret env var. Stateless by design —
+no DB row, no expiry job; the token is its own proof of server issuance.
+
+Enforcement is **production-only**, mirroring the exact precedent
+`getChannelProvider`'s existing `NODE_ENV === 'production'` guard against
+`MOCK_*` providers already established for "strict in production,
+permissive in dev/test": in `NODE_ENV=production`, `resolveCartIdentity`
+verifies the presented header against this server's own secret and
+rejects outright (400) anything that fails — unsigned, tampered,
+mismatched-secret, or malformed. Outside production, a raw client-
+supplied string is still accepted verbatim (length-capped at 256 chars,
+unchanged from the prior repair) — deliberately preserving every
+existing dev/test fixture (`'guest-a'`, `'guest-ord-cod'`, etc.) across
+every milestone's test suite without the large, unrelated rewrite this
+decision's own 2026-09-24 entry correctly declined to do. This is a
+narrower, real production threat-model distinction, not a compliance
+shortcut: no attacker can reach a dev/test environment, so the
+enforcement gap that matters is closed exactly where it matters.
+
+The real storefront client was updated to match — `resolveCartIdentity`
+alone cannot close the gap if the shipped client still mints its own
+unsigned id. A new shared module,
+`apps/storefront/src/lib/guest-session.ts`, fetches and caches
+(`localStorage`, with in-flight-request de-duplication for concurrent
+callers on first page load) a genuine server-issued token instead of
+calling `crypto.randomUUID()` locally; `lib/cart.ts` and `lib/checkout.ts`
+(the two modules that previously minted their own id) now delegate to it
+— `lib/exchanges.ts`/`orders.ts`/`refunds.ts`/`returns.ts` needed no
+change, since each already only *reads* the same shared `localStorage`
+key `cart.ts` writes, never mints its own.
+
+Verified: the full existing cross-identity isolation suite
+(`cart-wishlist.test.ts`, `checkout.test.ts`) re-run green with zero
+regressions, including the existing oversized-header rejection test; a
+new unit suite, `test/unit/cart-identity.test.ts` (11 tests), proves the
+production-mode signature enforcement directly — a genuine server-minted
+token is accepted and its id recovered; a raw unsigned string, a
+tampered signature, a forged signature paired with a real id, swapped
+id/signature halves, a malformed token, and an empty header are all
+rejected; a logged-in customer's identity always wins over any guest
+header, forged or not; two independently minted tokens never verify
+against each other's id. `apps/storefront` typechecks and production-
+builds cleanly with the new client flow. **Rotation/expiration of the
+token's own authority (item 4 in the original recommendation list)
+remains unimplemented** — the token is stateless and does not itself
+expire; this is an accepted, documented scope boundary for this pass
+(the cart *content* TTL, `CART_GUEST_TTL_DAYS`, is unaffected and
+unchanged), not a claim that guest-identity rotation is solved.
+- **Status:** `UNDER_REVIEW` → **`ENGINEERING_CLOSED`** (2026-09-29) —
+  the identified gap is fixed and adversarially tested; this remains an
+  engineering-implementation determination, not an independent-review
+  certification, per this file's own certification discipline.
+
 ---
 
 ## CHK — Checkout

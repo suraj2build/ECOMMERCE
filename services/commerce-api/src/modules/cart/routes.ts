@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { CartService } from './service.js';
 import { WishlistService } from './wishlist-service.js';
-import { resolveCartIdentity, GUEST_SESSION_HEADER } from './identity.js';
+import { resolveCartIdentity, mintGuestSessionToken, GUEST_SESSION_HEADER } from './identity.js';
 
 const addItemSchema = z.object({ skuId: z.string().uuid(), quantity: z.number().int().positive().default(1) });
 const updateQuantitySchema = z.object({ quantity: z.number().int().positive() });
@@ -22,6 +22,19 @@ const cartRoutes: FastifyPluginAsync = async (fastify) => {
   const wishlistService = new WishlistService(fastify);
 
   const identityAuth = { preHandler: fastify.tryCustomerAuth };
+
+  // --- Guest session issuance (M31, CART-004) ---
+  //
+  // No auth/identity requirement at all - this IS how an identity gets
+  // established for a brand-new guest. Unauthenticated, unlimited by
+  // permission (rate limiting, not RBAC, is the right control here -
+  // see M31's own rate-limiting plugin). The real storefront client
+  // calls this once, lazily, on its first cart/wishlist interaction,
+  // and caches the result - see identity.ts's own docblock for the full
+  // CART-004 design record.
+  fastify.post('/storefront/guest-session', async (_request, reply) => {
+    reply.status(201).send({ guestSessionId: mintGuestSessionToken() });
+  });
 
   // --- Cart ---
 
