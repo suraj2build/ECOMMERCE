@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Container } from '@/components/ui/Container';
 import { buttonClassName } from '@/components/ui/Button';
@@ -56,6 +56,19 @@ export default function CheckoutPage() {
   const [storeCreditBalance, setStoreCreditBalance] = useState<StoreCreditBalance | null>(null);
   const [storeCreditInput, setStoreCreditInput] = useState('');
 
+  // M24 certification repair (FLOW 18 determinism): a rejected coupon
+  // clears `appliedCouponCode`, which re-runs the effect below and
+  // fires its OWN coupon-free preview as an automatic, immediate
+  // consequence of the SAME rejection - not a new user action. That
+  // follow-up preview's success handler must not wipe out the
+  // rejection message it was itself caused by (a race between "show
+  // the error" and "the self-triggered recovery preview clears it" -
+  // both same-origin, no new user input in between). A ref (not
+  // state) survives the effect re-run without itself retriggering a
+  // render, and is consumed exactly once by the very next successful
+  // preview.
+  const suppressNextCouponErrorClearRef = useRef(false);
+
   useEffect(() => {
     void getCart().then(setCart);
     if (getStoredSession()) {
@@ -74,15 +87,33 @@ export default function CheckoutPage() {
       return;
     }
     let cancelled = false;
+    // Captured and consumed synchronously, right here at the top of
+    // THIS effect invocation - not lazily inside the async callback
+    // below - so the suppression applies only to the one effect run
+    // that is the direct, immediate consequence of the previous run's
+    // coupon rejection. If this run itself gets cancelled (the user
+    // edits the address or applies a different coupon before the
+    // debounce fires), the flag is already consumed and cannot leak
+    // into whatever effect run comes after it.
+    const suppressThisRunsCouponErrorClear = suppressNextCouponErrorClearRef.current;
+    suppressNextCouponErrorClearRef.current = false;
     const timer = setTimeout(() => {
       void previewCheckout(shippingAddress, appliedCouponCode)
         .then((p) => {
           if (!cancelled) {
             setPreview(p);
             setPreviewError(null);
-            // A successful preview (with or without a coupon) always
-            // supersedes any earlier coupon-specific error.
-            setCouponError(null);
+            // A successful preview (with or without a coupon) normally
+            // supersedes any earlier coupon-specific error - EXCEPT
+            // when this run is the automatic coupon-free re-preview
+            // fired as a direct consequence of the coupon rejection
+            // below (no new user action occurred in between): clearing
+            // it here would make the rejection message disappear
+            // before anyone could read it. A genuinely later success
+            // (a new coupon attempt, an address edit) still clears it.
+            if (!suppressThisRunsCouponErrorClear) {
+              setCouponError(null);
+            }
           }
         })
         .catch((err) => {
@@ -97,7 +128,10 @@ export default function CheckoutPage() {
               // that's still valid on its own), never blanked out just
               // because the coupon attempt failed. Removing it re-runs
               // this same effect (appliedCouponCode is a dependency),
-              // which re-fetches a coupon-free preview immediately.
+              // which re-fetches a coupon-free preview immediately -
+              // suppress THAT next run's own success handler from
+              // clearing the message set on the very next line.
+              suppressNextCouponErrorClearRef.current = true;
               setCouponError(message);
               setAppliedCouponCode(undefined);
             } else {
