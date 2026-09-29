@@ -26,6 +26,110 @@ import type { CartOwnerIdentity } from '../cart/identity.js';
  * correct state transition and business-rule branching via an explicit
  * staff-triggered action instead of a simulated external event.
  */
+
+/**
+ * Shared between the single-order path (`toView`) and the batched
+ * customer-order-history path (`listOrdersForCustomer`) - see the M32
+ * Performance/Scale finding on `listOrdersForCustomer` for why this was
+ * extracted (closes a genuine N+1: N separate `findUniqueOrThrow` calls
+ * became one `findMany` using this exact same include).
+ */
+const ORDER_VIEW_INCLUDE = {
+  lines: { include: { sku: { include: { style: true, colour: true, size: true } }, pickTask: true } },
+  // M17: shipment tracking, joined for storefront/staff visibility
+  // (specs/16-shipping-tracking.md: "customer shipment tracking
+  // required, degrading gracefully to last-known platform status").
+  fulfilments: { include: { shipment: true } },
+} satisfies Prisma.OrderInclude;
+
+type OrderWithViewIncludes = Prisma.OrderGetPayload<{ include: typeof ORDER_VIEW_INCLUDE }>;
+
+function buildOrderView(order: OrderWithViewIncludes) {
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    paymentMethod: order.paymentMethod,
+    refundRequired: order.refundRequired,
+    contactName: order.contactName,
+    contactMobile: order.contactMobile,
+    shippingAddress: order.shippingAddress,
+    billingAddress: order.billingAddress,
+    shippingCost: Number(order.shippingCost),
+    subtotal: Number(order.subtotal),
+    taxAmount: Number(order.taxAmount),
+    grandTotal: Number(order.grandTotal),
+    currency: order.currency,
+    invoiceId: order.invoiceId,
+    // Durable invoice-recovery state (independent-review finding #2) -
+    // "operators can identify invoice-generation failures" without
+    // reading server logs.
+    invoiceStatus: order.invoiceStatus,
+    invoiceFailureReason: order.invoiceFailureReason,
+    invoiceAttempts: order.invoiceAttempts,
+    lines: order.lines.map((l) => ({
+      id: l.id,
+      skuId: l.skuId,
+      // M21: lets the storefront look up sibling SKUs (other sizes/
+      // colours of the same style) for an exchange, without a second
+      // order-detail round-trip.
+      styleId: l.sku.styleId,
+      styleName: l.sku.style.name,
+      colourName: l.sku.colour.name,
+      sizeLabel: l.sku.size.label,
+      quantity: l.quantity,
+      unitPriceInclusive: Number(l.unitPriceInclusive),
+      lineTotalInclusive: Number(l.lineTotalInclusive),
+      status: l.status,
+      fulfilmentId: l.fulfilmentId,
+      cancelledAt: l.cancelledAt,
+      cancelledReason: l.cancelledReason,
+      exceptionReason: l.exceptionReason,
+      // M16 visibility: lets a warehouse dashboard/CS agent see pick
+      // progress without a second round-trip to /warehouse/pick-tasks.
+      pickTask: l.pickTask
+        ? {
+            id: l.pickTask.id,
+            status: l.pickTask.status,
+            pickedQuantity: l.pickTask.pickedQuantity,
+            exceptionType: l.pickTask.exceptionType,
+          }
+        : null,
+    })),
+    fulfilments: order.fulfilments.map((f) => ({
+      id: f.id,
+      status: f.status,
+      carrierName: f.carrierName,
+      trackingRef: f.trackingRef,
+      packedAt: f.packedAt,
+      shippedAt: f.shippedAt,
+      deliveredAt: f.deliveredAt,
+      // M17: last-known platform tracking status - never the carrier's
+      // raw vocabulary (see ShippingProvider's adapter-boundary
+      // normalization). null (no Shipment yet) is a legitimate,
+      // expected state, not an error - the storefront shows it as
+      // "not yet shipped", never a broken/error tile.
+      shipment: f.shipment
+        ? {
+            id: f.shipment.id,
+            provider: f.shipment.provider,
+            trackingRef: f.shipment.trackingRef,
+            status: f.shipment.status,
+            deliveryAttempts: f.shipment.deliveryAttempts,
+            maxDeliveryAttempts: f.shipment.maxDeliveryAttempts,
+            bookedAt: f.shipment.bookedAt,
+            deliveredAt: f.shipment.deliveredAt,
+            rtoInitiatedAt: f.shipment.rtoInitiatedAt,
+            rtoDeliveredAt: f.shipment.rtoDeliveredAt,
+            updatedAt: f.shipment.updatedAt,
+          }
+        : null,
+    })),
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+  };
+}
+
 export class OrderService {
   private readonly inventory: InventoryService;
   private readonly invoice: InvoiceService;
@@ -418,10 +522,25 @@ export class OrderService {
     return this.toView(id);
   }
 
+  /**
+   * M32 Performance/Scale finding: the original implementation called
+   * `toView(o.id)` once PER order - a genuine N+1 (N separate
+   * multi-join DB round-trips for a customer's own order-history page,
+   * even though `Promise.all` runs them concurrently rather than
+   * serially). Fixed here with a single batched query using the SAME
+   * include shape `toView` uses, reusing `buildOrderView` (extracted
+   * below, `toView` itself unchanged in behavior) to map each row -
+   * exactly one query instead of N, regardless of how many orders a
+   * customer has.
+   */
   async listOrdersForCustomer(identity: CartOwnerIdentity) {
     const where = identity.customerId ? { customerId: identity.customerId } : { guestSessionId: identity.guestSessionId };
-    const orders = await this.prisma.order.findMany({ where, orderBy: { createdAt: 'desc' } });
-    return Promise.all(orders.map((o) => this.toView(o.id)));
+    const orders = await this.prisma.order.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: ORDER_VIEW_INCLUDE,
+    });
+    return orders.map((o) => buildOrderView(o));
   }
 
   async getOrder(id: string) {
@@ -448,97 +567,9 @@ export class OrderService {
   private async toView(id: string) {
     const order = await this.prisma.order.findUniqueOrThrow({
       where: { id },
-      include: {
-        lines: { include: { sku: { include: { style: true, colour: true, size: true } }, pickTask: true } },
-        // M17: shipment tracking, joined for storefront/staff visibility
-        // (specs/16-shipping-tracking.md: "customer shipment tracking
-        // required, degrading gracefully to last-known platform status").
-        fulfilments: { include: { shipment: true } },
-      },
+      include: ORDER_VIEW_INCLUDE,
     });
-    return {
-      id: order.id,
-      orderNumber: order.orderNumber,
-      status: order.status,
-      paymentMethod: order.paymentMethod,
-      refundRequired: order.refundRequired,
-      contactName: order.contactName,
-      contactMobile: order.contactMobile,
-      shippingAddress: order.shippingAddress,
-      billingAddress: order.billingAddress,
-      shippingCost: Number(order.shippingCost),
-      subtotal: Number(order.subtotal),
-      taxAmount: Number(order.taxAmount),
-      grandTotal: Number(order.grandTotal),
-      currency: order.currency,
-      invoiceId: order.invoiceId,
-      // Durable invoice-recovery state (independent-review finding #2) -
-      // "operators can identify invoice-generation failures" without
-      // reading server logs.
-      invoiceStatus: order.invoiceStatus,
-      invoiceFailureReason: order.invoiceFailureReason,
-      invoiceAttempts: order.invoiceAttempts,
-      lines: order.lines.map((l) => ({
-        id: l.id,
-        skuId: l.skuId,
-        // M21: lets the storefront look up sibling SKUs (other sizes/
-        // colours of the same style) for an exchange, without a second
-        // order-detail round-trip.
-        styleId: l.sku.styleId,
-        styleName: l.sku.style.name,
-        colourName: l.sku.colour.name,
-        sizeLabel: l.sku.size.label,
-        quantity: l.quantity,
-        unitPriceInclusive: Number(l.unitPriceInclusive),
-        lineTotalInclusive: Number(l.lineTotalInclusive),
-        status: l.status,
-        fulfilmentId: l.fulfilmentId,
-        cancelledAt: l.cancelledAt,
-        cancelledReason: l.cancelledReason,
-        exceptionReason: l.exceptionReason,
-        // M16 visibility: lets a warehouse dashboard/CS agent see pick
-        // progress without a second round-trip to /warehouse/pick-tasks.
-        pickTask: l.pickTask
-          ? {
-              id: l.pickTask.id,
-              status: l.pickTask.status,
-              pickedQuantity: l.pickTask.pickedQuantity,
-              exceptionType: l.pickTask.exceptionType,
-            }
-          : null,
-      })),
-      fulfilments: order.fulfilments.map((f) => ({
-        id: f.id,
-        status: f.status,
-        carrierName: f.carrierName,
-        trackingRef: f.trackingRef,
-        packedAt: f.packedAt,
-        shippedAt: f.shippedAt,
-        deliveredAt: f.deliveredAt,
-        // M17: last-known platform tracking status - never the carrier's
-        // raw vocabulary (see ShippingProvider's adapter-boundary
-        // normalization). null (no Shipment yet) is a legitimate,
-        // expected state, not an error - the storefront shows it as
-        // "not yet shipped", never a broken/error tile.
-        shipment: f.shipment
-          ? {
-              id: f.shipment.id,
-              provider: f.shipment.provider,
-              trackingRef: f.shipment.trackingRef,
-              status: f.shipment.status,
-              deliveryAttempts: f.shipment.deliveryAttempts,
-              maxDeliveryAttempts: f.shipment.maxDeliveryAttempts,
-              bookedAt: f.shipment.bookedAt,
-              deliveredAt: f.shipment.deliveredAt,
-              rtoInitiatedAt: f.shipment.rtoInitiatedAt,
-              rtoDeliveredAt: f.shipment.rtoDeliveredAt,
-              updatedAt: f.shipment.updatedAt,
-            }
-          : null,
-      })),
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-    };
+    return buildOrderView(order);
   }
 
   /** Derives the coarse order-level status from its lines. RTO is never derived - see markRTO. */

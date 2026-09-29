@@ -2308,6 +2308,14 @@ after real load testing at M32 — none block M00/M01.
 #### NFR-001 — Performance targets · **P1**
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** Initial targets: PDP LCP < 2.5s on a representative 4G mobile profile; checkout/payment API p95 < 500ms; search response < 300ms. Revised after M32 load testing.
+- **M32 implementation note (2026-09-29):** all three targets measured
+  for the first time against a real 16,000-SKU perf-seeded catalog and
+  a real Meilisearch instance — every target CONFIRMED (PDP/Home LCP
+  2.1s/2.2s; checkout preview p95 38ms; search p97.5 64ms), none
+  revised. See `performance/HOT_PATH_BENCHMARKS.md` for full method and
+  the honest single-container-sandbox scope caveat;
+  `PRODUCTION_VERIFICATION_REQUIRED` remains correct for a genuine
+  production-topology measurement.
 - **Affected specs:** `TESTING.md`, `specs/08-storefront.md`
 
 #### NFR-002 — Availability/uptime target · **P1**

@@ -1,30 +1,34 @@
 # Deployment
 
-**Status:** DRAFT (local development model is APPROVED baseline;
-production deployment topology is not yet specified)
+**Status (updated 2026-09-29, M33):** local development and CI are
+**IMPLEMENTED** and have been since Phase 1; production deployment
+topology remains **NOT YET SPECIFIED / DECISION_REQUIRED** — this
+document was last accurate at the pre-M00 planning stage and is
+corrected here as part of M33's deployment-readiness review, per this
+project's own documentation-honesty discipline (`CLAUDE.md` §8). No
+actual production deployment is performed or authorized by this
+correction — see §4.
 
-## 1. Local development (approved baseline, not yet implemented)
+## 1. Local development (IMPLEMENTED)
 
-The project must run locally through a **reproducible containerized
-development environment**, so that:
-
-- A fresh clone plus documented commands is enough to get a working
-  local stack — no undocumented machine-specific setup.
-- The same environment definition works whether developed remotely
-  (Claude Code Web) or later cloned to a desktop machine.
-
-Approved components of the local stack (see `ARCHITECTURE.md` and the
-corresponding ADRs):
-
-- **Docker Compose** orchestrating: PostgreSQL, Redis, Meilisearch,
-  MinIO (S3-compatible storage), the Medusa v2 commerce kernel, the
-  Next.js storefront, and any custom Node.js/TypeScript services.
-- **nginx/reverse proxy** in front of the stack where appropriate.
-- Environment configuration via a documented `.env.example` template
-  (no real secrets committed — see `SECURITY.md`).
-
-None of the above is implemented yet — this section describes the
-target, to be built starting at M00 once `BUILD_PLAN.md` is unblocked.
+Actual local topology, in place since Phase 1 and unchanged in shape
+through M30-M33: **Docker Compose** (`docker-compose.yml`) orchestrates
+PostgreSQL, Redis, and Meilisearch; the `services/commerce-api` Fastify
+service and `apps/storefront`/`apps/admin` Next.js apps run as native
+Node processes against that compose stack (`npm run dev` per
+workspace), not themselves containerized in local dev. MinIO/S3-
+compatible object storage is used for the M19 return-evidence-photo
+upload provider abstraction (`security/PII_DATA_INVENTORY.md`
+documents what it stores). No Medusa kernel exists in this codebase —
+`docs/decisions/0019-custom-platform-sole-commerce-system-of-record.md`
+is the live ownership decision, superseding the earlier Medusa-split
+ADRs this section originally described. A fresh clone plus
+`.env.example` plus the documented `npm install`/`docker compose up`/
+`npm run db:migrate`/`npm run db:seed` sequence (`README.md`) is
+sufficient to get a working local stack — proven repeatedly across this
+project's history by this pass's own and prior passes' migration-from-
+zero validations (see `performance/` and each milestone's acceptance
+doc).
 
 ## 2. Remote-first development requirement
 
@@ -45,37 +49,92 @@ initially. Consequences:
 5. Local startup must eventually be reproducible through documented
    commands/container configuration, not tribal knowledge.
 
-## 3. CI/CD (target, not yet implemented)
+## 3. CI/CD (CI IMPLEMENTED; CD not yet implemented)
 
-- **GitHub Actions** for CI/CD.
-- CI must run lint, type-checking, and the test suite (see
-  `TESTING.md`) on every pull request once the pipeline exists.
-- CD (actual deployment automation) is out of scope until a production
-  environment is defined and approved — see §4.
+**CI is real and has run on every push to this branch since Phase 1**
+(`.github/workflows/ci.yml`): installs dependencies, runs a dependency
+vulnerability audit and a `gitleaks` secret scan (both added M31), runs
+lint/typecheck/build across every workspace, runs the full unit +
+integration suite against real Postgres/Redis in the runner, runs the
+full Playwright E2E suite (storefront + `admin` + api-smoke projects),
+and runs a migration-from-zero + `prisma migrate diff --exit-code`
+schema-drift check. This document previously, incorrectly, described
+CI as "target, not yet implemented" — corrected here.
 
-## 4. Production deployment (NOT YET SPECIFIED)
+**CD (automated deployment) remains genuinely not implemented** — no
+workflow deploys anywhere; this is correct and deliberate, since no
+production target exists to deploy to (see §4).
 
-**DECISION_REQUIRED:** Production hosting target (cloud provider,
-managed services vs. self-hosted containers, region, scaling model)
-has not been decided. This section will be completed once the human
-project owner and ChatGPT (Product Owner) define production
-requirements as part of a future blueprint.
+## 4. Production deployment topology (NOT YET SPECIFIED —
+## `DECISION_REQUIRED`)
+
+**Still genuinely undecided, unchanged by M30-M33**: production hosting
+target (cloud provider, managed services vs. self-hosted containers,
+region, scaling model, CDN/WAF vendor). This is correctly left open
+rather than guessed — `CLAUDE.md` explicitly prohibits inventing
+production infrastructure decisions. What M33 DOES establish, without
+deciding the above, is the shape any target topology must satisfy,
+directly derived from what this codebase actually requires today
+(traced in `blueprint/TRACEABILITY_MATRIX.md`):
+
+- **Compute**: one Node.js process for `services/commerce-api`
+  (stateless — session state lives in Redis, not process memory) and
+  one each for `apps/storefront`/`apps/admin` (Next.js, supports either
+  a Node server or a platform-managed Next.js runtime).
+- **Data tier**: PostgreSQL (primary system of record — every
+  financial/inventory ledger table), Redis (staff sessions,
+  M31 rate-limit counters — see `performance/CACHE_REDIS_REVIEW.md`
+  for why nothing else is cached there), Meilisearch (search
+  projection only, never a source of truth — safe to lose and
+  rebuild via `POST /search/reindex`).
+- **Object storage**: an S3-compatible bucket for return-evidence
+  photos (currently local-disk in dev/CI, behind an interface a real
+  S3 provider can implement unchanged per M19's evidence-upload repair
+  note).
+- **External providers**: all behind this codebase's own abstraction
+  interfaces (`PaymentProvider`, `ShippingProvider`, `MarketingProvider`,
+  `ChannelProvider`) — no vendor is hard-selected in code; each is
+  chosen per-environment via config, with the M31 production guard
+  refusing any `MOCK_*` provider when `NODE_ENV=production`
+  (`security/SECRETS_CONFIG_AUDIT.md`).
+- **Ingress**: a WAF/CDN layer in front of the storefront/admin apps is
+  assumed but not built or selected — `security/AUTHORIZATION_SWEEP.md`
+  and `security/INPUT_WEB_SECURITY.md` both document that this
+  application's own security controls (rate limiting, security headers,
+  auth) do not depend on any specific CDN/WAF vendor being present, so
+  choosing one later does not require an application-code change.
 
 Whatever the eventual target, the following are fixed constraints
-(see `SECURITY.md`):
+(see `SECURITY.md`), unchanged since this document's original draft:
 
 - Production deployment always requires explicit human approval per
   deployment — it is never autonomous.
 - Destructive production operations (migrations, data deletion,
   credential changes) always require explicit human approval.
-- The same containerized application must be deployable without a
-  rewrite — i.e., production infrastructure choices should not force
-  divergence between the local Docker Compose topology and how
-  services are actually composed in production.
+- The same application must be deployable without a rewrite — i.e.,
+  production infrastructure choices should not force divergence
+  between the local Docker Compose data-tier topology and how services
+  are actually composed in production.
 
-## 5. Environment variables
+**This document does not authorize, perform, or simulate any actual
+production deployment** — per M33's own explicit scope boundary, it
+records readiness/topology requirements only.
 
-Once services exist, this repository will include a `.env.example` (or
-per-service equivalents) documenting every required environment
-variable with placeholder values, kept in sync with actual usage.
-No real credentials are ever committed (see `SECURITY.md`).
+## 5. Environment variables (IMPLEMENTED)
+
+`.env.example` exists at the repo root and documents every required
+environment variable with placeholder values (`packages/config/src/index.ts`
+is the single source of truth the schema is validated against —
+`loadEnv()` fails startup safely, per `security/SECRETS_CONFIG_AUDIT.md`,
+if a required variable is missing rather than silently defaulting a
+production-unsafe value). No real credentials are committed — verified
+by this pass's own `gitleaks` CI step (§3) and, historically, by every
+milestone's own dependency/secret hygiene review.
+
+## 6. Backup / restore / observability
+
+See `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`'s `NFR-003` section for
+the backup/restore policy status and `performance/BACKUP_RESTORE_REVIEW.md`
+(M33) for this pass's own local exercise of a real backup/restore cycle
+against this project's actual schema. See `performance/OBSERVABILITY_REVIEW.md`
+(M33) for the structured-logging/correlation-ID review.

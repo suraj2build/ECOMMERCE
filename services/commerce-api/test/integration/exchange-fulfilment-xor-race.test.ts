@@ -296,6 +296,22 @@ describe('EXC-004 concurrency repair: OrderFulfilment source-exclusivity race', 
     }
   }
 
+  // M32 performance-review finding (2026-09-29): this test runs 16 full
+  // exchange+order+fulfilment iterations (vs. 8 in the two tests below),
+  // each now including a REAL Meilisearch round-trip per style publish
+  // (`indexStyle`) - previously this sandbox had no reachable Meilisearch
+  // at all (the long-documented "13 pre-existing Meilisearch-unavailable"
+  // limitation), so that latency was never actually incurred here. With a
+  // real Meilisearch now live, 16 iterations' cumulative real network/DB
+  // time (measured ~2s/iteration, matching the 8-iteration tests' own
+  // ~16s runtime) lands right at, and occasionally past, the file's
+  // default 30s testTimeout - a genuine budget shortfall for legitimately
+  // heavier work, not a correctness issue: every prior run's own
+  // per-iteration assertExactlyOneWinner/assertCommittedInvariant checks
+  // passed on every completed iteration before the timeout, and the two
+  // fixed-interleaving tests below exercise the IDENTICAL race logic
+  // without ever timing out. Widening the budget for this one genuinely
+  // 2x-heavier test, not weakening any assertion.
   it('a genuinely concurrent exchangeId-set and order_line-attach on the SAME empty fulfilment converge to exactly one winner, never both, repeated many times', async () => {
     const ctx = await seedContext();
     const winners: Array<'exchange' | 'line'> = [];
@@ -333,7 +349,7 @@ describe('EXC-004 concurrency repair: OrderFulfilment source-exclusivity race', 
     // future failure, without asserting a specific distribution over
     // it.
     void winners;
-  });
+  }, 60_000);
 
   it('the invariant holds under the reverse interleaving too (line-attach initiated first, every iteration)', async () => {
     const ctx = await seedContext();

@@ -6,8 +6,92 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-09-28: `M26 INDEPENDENT-REVIEW REPAIR COMPLETE —
-M27–M29 PRESERVED — AWAITING INDEPENDENT RE-REVIEW. M30+ NOT
+**Status as of 2026-09-29: `M30–M33 FINAL ENGINEERING PHASE IMPLEMENTED
+— AWAITING INDEPENDENT REVIEW. NO FURTHER MILESTONES REMAIN.`** The
+human project owner gave explicit **"FINAL ENGINEERING PHASE — M30 →
+M33"** authorization on 2026-09-29, a single continuous phase covering
+M30 (Gift Cards), M31 (Security Hardening), M32 (Performance/Scale),
+and M33 (Full System E2E + Production-Readiness), built on the
+`7f59f6a` (M26+M28 independent-review certification repair) baseline.
+All four milestones are now **IMPLEMENTED**. See `BUILD_PLAN.md`'s M30–
+M33 rows, `blueprint/TRACEABILITY_MATRIX.md`, and
+`blueprint/GOLDEN_FAILURE_JOURNEYS.md` for the complete cross-milestone
+record; `performance/*.md` and `security/*.md` hold each review's own
+detailed findings. Headline points, in brief:
+
+- **M30 (Gift Cards)**: a ledger-backed instrument (`GiftCard`/
+  `GiftCardLedgerEntry`, ISSUE/REDEEM/REFUND_TO_GIFT_CARD/ADJUSTMENT),
+  structurally separate from loyalty/store-credit/promotions, secure
+  high-entropy codes never exposed as predictable IDs or logged,
+  concurrency-safe checkout redemption alongside other payment methods.
+  See `GC-001` in `blueprint/DECISION_REGISTER.md`.
+- **M31 (Security Hardening)** closed the long-standing `CART-004` gap
+  (guest cart identity is now a server-issued, HMAC-signed token,
+  production-strict/dev-permissive - mirroring the existing `MOCK_*`
+  provider-guard precedent), added identity-aware rate limiting and
+  security headers, and found and fixed three genuine pre-existing
+  gaps during its own adversarial review: `StaffUser.mfaSecret` was
+  stored in plaintext despite a schema comment claiming encryption (now
+  real AES-256-GCM); `resolveShippingProvider`/`getMarketingProvider`
+  had no production mock-provider guard (channels already did; now all
+  three match); and a stored-XSS vector via unescaped `<` in the PDP's
+  JSON-LD `dangerouslySetInnerHTML` payload. Full PII inventory, DPDP
+  engineering-readiness hooks (never claiming `DPDP_COMPLIANT`),
+  payment-security re-audit, and secrets/dependency/supply-chain checks
+  round out the pass - see `security/*.md`.
+- **M32 (Performance/Scale)** ran real `EXPLAIN ANALYZE`-based query
+  review (two genuine N+1s fixed - the public PLP listing and customer
+  order history; one seq-scan explicitly confirmed CORRECT, not fixed,
+  per the "no speculative indexes" instruction), then benchmarked every
+  named hot path against a 16,000-SKU perf-seeded catalog with a real,
+  live Meilisearch instance (started for the first time in this
+  sandbox's history) - every NFR-001 target CONFIRMED at measured scale
+  (PDP/Home LCP 2.1s/2.2s, checkout p95 38ms, search p97.5 64ms; see
+  `performance/HOT_PATH_BENCHMARKS.md`). Finally exercising a live
+  Meilisearch surfaced the long-documented "13 pre-existing
+  Meilisearch-unavailable-in-sandbox" tests for the first time ever:
+  11 passed outright; 2 initially failed under full-suite contention
+  from this pass's own concurrent reindex work, then were proven
+  correct (13/13) by an isolated re-run - a genuine "own-activity
+  contamination, not a product bug" finding, investigated and proven
+  rather than assumed (`performance/SEARCH_REVIEW.md`). A separate,
+  genuinely reproducible test-timeout-budget bug was found and fixed in
+  `exchange-fulfilment-xor-race.test.ts` (a 16-iteration concurrency
+  test whose now-real Meilisearch calls pushed its total runtime just
+  past the 30s default timeout - widened to 60s with the reasoning
+  recorded inline; the underlying database-level concurrency invariant
+  was re-proven correct throughout, never in question) - see
+  `performance/CONCURRENCY_REVIEW.md`.
+- **M33 (Full System E2E + Production-Readiness)** produced
+  `blueprint/TRACEABILITY_MATRIX.md` and
+  `blueprint/GOLDEN_FAILURE_JOURNEYS.md` (auditing, not duplicating,
+  this project's already-extensive 13-Playwright-spec and 900+-
+  integration-test coverage against every required golden/failure
+  journey), re-proved migration-from-zero with zero schema drift, found
+  and fixed a genuine observability gap (Fastify's default `reqId` was
+  a per-process counter, not a real cross-replica correlation ID - now
+  a real UUID or an honored inbound `x-request-id`, echoed back as a
+  response header), genuinely exercised a full local `pg_dump`/
+  `pg_restore` cycle (byte-for-byte row-count match), and corrected
+  `DEPLOYMENT.md`, which had stated CI was "not yet implemented" since
+  before Phase 1 despite CI having run on every push since - concluded
+  at `ENGINEERING_READY_FOR_PRODUCTION_GATES`, never
+  `PRODUCTION_APPROVED`/`DPDP_COMPLIANT`/`GST_COMPLIANT`.
+
+**This agent does not self-declare any of these four milestones
+certified** — the same discipline as every milestone since Phase 1.
+This agent has stopped and is awaiting independent review. **No M34+
+exists** - this concludes the authorized milestone sequence in full,
+and no further engineering phase should be self-authorized regardless
+of how cleanly this one lands.
+
+---
+
+The narrative below (2026-09-28 and earlier) is preserved unchanged as
+this project's historical record.
+
+**Status as of 2026-09-28 (historical): `M26 INDEPENDENT-REVIEW REPAIR
+COMPLETE — M27–M29 PRESERVED — AWAITING INDEPENDENT RE-REVIEW. M30+ NOT
 AUTHORIZED.`** The human project owner gave explicit **"START BUILD —
 M26–M29 DIGITAL GROWTH + OPERATIONS PHASE"** authorization on
 2026-09-28, scoped to one continuous engineering phase covering M26

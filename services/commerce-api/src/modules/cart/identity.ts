@@ -10,6 +10,34 @@ export interface CartOwnerIdentity {
   guestSessionId?: string;
 }
 
+/**
+ * M31 Security Hardening (5E) - a rate-limit key for checkout/payment
+ * routes based on the CALLER'S OWN claimed identity (the raw
+ * Authorization header or guest-session header), not IP alone. Reads the
+ * headers directly rather than calling resolveCartIdentity/requiring a
+ * verified customer, since a rate-limit key only needs to be a stable,
+ * hard-to-spoof-for-free bucket - it doesn't need the identity to be
+ * authoritative the way an actual authorization decision does, and this
+ * must be usable in an `onRequest`-stage keyGenerator (before
+ * preHandler/preValidation), which the default IP-only key already runs
+ * at. Falls back to `request.ip` when neither header is present, which
+ * @fastify/rate-limit's own default key would do anyway.
+ *
+ * Keying by identity instead of IP matters here in both directions: a
+ * genuine attacker probing checkout repeatedly from one guest identity
+ * is throttled regardless of how many source IPs they rotate through,
+ * and many DISTINCT genuine guests/customers sharing one IP (a mobile
+ * carrier NAT, an office network) are never unfairly bucketed together.
+ */
+export function checkoutRateLimitKey(request: FastifyRequest): string {
+  const auth = request.headers.authorization;
+  if (typeof auth === 'string' && auth) return auth;
+  const header = request.headers[GUEST_SESSION_HEADER];
+  const guestSessionId = Array.isArray(header) ? header[0] : header;
+  if (guestSessionId) return guestSessionId;
+  return request.ip;
+}
+
 const MAX_GUEST_SESSION_ID_LENGTH = 256;
 
 /**

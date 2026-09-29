@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:perf-seed": "tsx prisma/perf-seed.ts",
     "db:reset": "prisma migrate reset --force",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.seed.json"
   },

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@fcp/db';
+import type { PrismaClient, Price } from '@fcp/db';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
@@ -150,6 +150,50 @@ export class CatalogService {
     });
 
     return candidates[0]!;
+  }
+
+  /**
+   * M32 Performance/Scale finding: `listPublicStyles` (the public home/
+   * PLP catalog listing - the single highest-traffic route in this
+   * application) called `getActivePrice(style.id)` once PER style in
+   * the page via `Promise.all` - a genuine N+1 that fires 2x the page
+   * size (over-fetch factor) worth of separate price queries on every
+   * single home/PLP request. Fixed by batching: ONE query for every
+   * style on the page, grouped and sorted in JS using the exact same
+   * specificity/markdown/recency tie-break `getActivePrice` already
+   * uses. Style-wide prices only (`colourId: null`) - matches
+   * `listPublicStyles`'s own call site, which never passes a colourId.
+   */
+  async getActivePricesByStyleIds(styleIds: string[], atDate: Date = new Date()): Promise<Map<string, Price>> {
+    if (styleIds.length === 0) return new Map();
+    const candidates = await this.prisma.price.findMany({
+      where: {
+        styleId: { in: styleIds },
+        colourId: null,
+        effectiveFrom: { lte: atDate },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: atDate } }],
+      },
+    });
+
+    const byStyle = new Map<string, Price[]>();
+    for (const price of candidates) {
+      const list = byStyle.get(price.styleId) ?? [];
+      list.push(price);
+      byStyle.set(price.styleId, list);
+    }
+
+    const result = new Map<string, Price>();
+    for (const [styleId, list] of byStyle) {
+      list.sort((a, b) => {
+        const specificityDelta = (b.colourId ? 1 : 0) - (a.colourId ? 1 : 0);
+        if (specificityDelta !== 0) return specificityDelta;
+        const markdownDelta = (b.isMarkdown ? 1 : 0) - (a.isMarkdown ? 1 : 0);
+        if (markdownDelta !== 0) return markdownDelta;
+        return b.effectiveFrom.getTime() - a.effectiveFrom.getTime();
+      });
+      result.set(styleId, list[0]!);
+    }
+    return result;
   }
 
   async createCollection(input: { name: string; slug: string; description?: string }, actorStaffId: string) {
@@ -312,11 +356,13 @@ export class CatalogService {
       },
     });
 
-    const withPrice = await Promise.all(
-      candidates.map(async (style) => ({ style, activePrice: await this.getActivePrice(style.id) })),
-    );
+    // M32 Performance/Scale finding: previously one getActivePrice() call
+    // PER style via Promise.all - a genuine N+1 on this route's own hot
+    // path (every home/PLP page load). One batched query instead.
+    const priceByStyleId = await this.getActivePricesByStyleIds(candidates.map((s) => s.id));
 
-    return withPrice
+    return candidates
+      .map((style) => ({ style, activePrice: priceByStyleId.get(style.id) ?? null }))
       .filter((entry) => entry.activePrice !== null)
       .slice(0, take)
       .map(({ style, activePrice }) => ({

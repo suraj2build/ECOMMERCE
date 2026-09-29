@@ -17,21 +17,38 @@ into the full structured checklist referenced by `TESTING.md` and
 
 ## Performance — `NFR-001` DECIDED (initial targets, revisable at M32)
 
+**M32 update (2026-09-29):** all three targets below now have a real,
+reproducible measurement for the first time - see
+`performance/HOT_PATH_BENCHMARKS.md` for the complete method, dataset
+(16,000-SKU perf-seeded catalog, 2,014-style live Meilisearch index),
+and honest scope caveat (single-container sandbox, not a production-
+topology staging environment). Every target is **CONFIRMED at measured
+scale**; none is revised. `PRODUCTION_VERIFICATION_REQUIRED` correctly
+remains the status for a genuine production/staging-topology
+measurement (real network, real CDN, real device, real concurrent
+production traffic) - this M32 pass provides real evidence at
+representative catalog scale, not a substitute for that later
+verification.
+
 - Storefront page-load: PDP LCP < 2.5s on a representative 4G mobile
-  profile. **DECIDED (target), PRODUCTION_VERIFICATION_REQUIRED
-  (measurement).** See the honesty-correction note below - this has
-  never actually been measured, despite M09/M10/M11's acceptance docs
-  each deferring it to "the Phase 2 end-to-end certification round,"
-  which then did not measure it either.
-- Checkout/payment API p95 latency: < 500ms. **DECIDED (target),
-  PRODUCTION_VERIFICATION_REQUIRED (measurement).** No load-testing
-  tool has been run against this codebase at any point; the
-  integration-test suite proves correctness under a handful of
-  genuinely concurrent requests (M06/M13/M14/M15's own concurrency
-  tests), which is a correctness guarantee, not a latency/throughput
-  measurement.
-- Search query response time: < 300ms. **DECIDED (target),
-  PRODUCTION_VERIFICATION_REQUIRED (measurement).** Same gap as above.
+  profile. **DECIDED (target). MEASURED (2026-09-29, M32): Home LCP
+  2.2s, PDP LCP 2.1s** (Lighthouse, mobile simulated throttling, real
+  `next build && next start`) - **PASS**, both under target.
+  `PRODUCTION_VERIFICATION_REQUIRED` remains the correct status for a
+  real field/CDN measurement; this is the first genuine LCP number this
+  codebase has ever produced, superseding the bundle-size-only proxy
+  recorded below.
+- Checkout/payment API p95 latency: < 500ms. **DECIDED (target).
+  MEASURED (2026-09-29, M32): `POST /storefront/checkout/preview`
+  p50 28ms, p95 38ms** (real cart + real tax/promotion computation, 25
+  requests across distinct guest identities, rate-limit-respecting
+  methodology - see `performance/HOT_PATH_BENCHMARKS.md` for why a raw
+  autocannon flood is not valid against this deliberately rate-limited
+  route) - **PASS**, well under target.
+- Search query response time: < 300ms. **DECIDED (target). MEASURED
+  (2026-09-29, M32): `GET /storefront/search` p50 51ms, p97.5 64ms**
+  (autocannon, 20 connections/10s, real 2,014-style Meilisearch index)
+  - **PASS**, well under target.
 - Admin screen load time: `TARGET_REQUIRED` (not covered by the initial
   decision; not launch-blocking).
 - INP/CLS Core Web Vitals thresholds beyond LCP: `TARGET_REQUIRED`.
