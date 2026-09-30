@@ -65,10 +65,12 @@ export class WishlistService {
     if (!sku || !sku.isActive) throw new NotFoundError('Sku', skuId);
 
     const wishlist = await this.getOrCreateWishlistRow(identity);
-    await this.prisma.wishlistItem.upsert({
-      where: { wishlistId_skuId: { wishlistId: wishlist.id, skuId } },
-      update: {},
-      create: { wishlistId: wishlist.id, skuId },
+    // INSERT ... ON CONFLICT DO NOTHING: adding an already-saved SKU is a
+    // no-op, and concurrent adds of the same SKU cannot race into a unique
+    // violation (an upsert with an empty update is a read-then-insert).
+    await this.prisma.wishlistItem.createMany({
+      data: [{ wishlistId: wishlist.id, skuId }],
+      skipDuplicates: true,
     });
 
     return this.listItems(identity);

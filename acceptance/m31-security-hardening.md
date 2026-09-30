@@ -89,3 +89,18 @@ fixed without weakening any assertion:
   and posted a second, separately built one; a millisecond tick between
   the two made the signature invalid and the event was dropped. Each
   body is now built once, and webhook acceptance is asserted.
+
+Found by the first CI run of this repair (`bdefec9`) and by re-running
+locally with CI's exact secrets:
+
+- `mfa-secret-crypto.test.ts` built its "unversioned pre-repair"
+  fixture with a hard-coded key that only matched the local test
+  default; it now uses the configured key, as the pre-repair code did.
+- Wishlist add-item (pre-existing M12 code) used an upsert with an empty
+  update, which Prisma runs as read-then-insert: concurrent adds of the
+  same SKU raced into a unique violation and a 500 (lifecycle test M, 4
+  of 8 runs). It is now `INSERT ... ON CONFLICT DO NOTHING`
+  (`createMany({ skipDuplicates: true })`), 10 of 10 runs green.
+  Observed, not changed (outside this repair): cart add-item computes
+  the new quantity from a read before its upsert, so concurrent adds of
+  the same SKU can under-count quantity (no error, no duplicate row).

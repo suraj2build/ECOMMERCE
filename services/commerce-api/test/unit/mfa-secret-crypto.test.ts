@@ -1,5 +1,6 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
+import { loadEnv } from '@fcp/config';
 import {
   encryptMfaSecret,
   decryptMfaSecret,
@@ -96,7 +97,8 @@ describe('MFA secret encryption at rest (M31 + certification repair)', () => {
   });
 
   it('the unversioned pre-repair format is readable only by the backfill helper', () => {
-    const key = Buffer.from('a'.repeat(64), 'hex');
+    // The pre-repair code encrypted under the configured key, whatever it is.
+    const key = Buffer.from(loadEnv().MFA_SECRET_ENCRYPTION_KEY, 'hex');
     const unversioned = unversionedCiphertext(SEED, key);
     expectUnreadable(() => decryptMfaSecret(unversioned), 'unrecognized_format');
     expect(decryptUnversionedMfaCiphertext(unversioned)).toBe(SEED);
