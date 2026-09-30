@@ -6,8 +6,12 @@ import pino from 'pino';
  * attributable, and never logs secrets (OTPs, passwords, tokens) - see
  * SECURITY.md §3 and specs/01-auth-rbac.md.
  */
-export function createLogger(serviceName: string, level = process.env.LOG_LEVEL ?? 'info') {
-  return pino({
+export function createLogger(
+  serviceName: string,
+  level = process.env.LOG_LEVEL ?? 'info',
+  destination?: pino.DestinationStream,
+) {
+  const options: pino.LoggerOptions = {
     name: serviceName,
     level,
     redact: {
@@ -38,7 +42,8 @@ export function createLogger(serviceName: string, level = process.env.LOG_LEVEL 
       },
     },
     timestamp: pino.stdTimeFunctions.isoTime,
-  });
+  };
+  return destination ? pino(options, destination) : pino(options);
 }
 
 export type Logger = ReturnType<typeof createLogger>;

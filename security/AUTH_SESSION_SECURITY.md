@@ -120,3 +120,43 @@ No SMS/real MFA-provider implementation was invented — TOTP (app-based,
 no external provider dependency) remains the only mechanism, consistent
 with this pass's own explicit instruction not to build an SMS provider
 integration solely for this milestone.
+
+### MFA upgrade path (M31 certification repair)
+
+Stored seeds are versioned (`v1:<iv>:<tag>:<ct>`). The login and
+confirm paths read only v1 and fail closed - generic 401 plus a
+`staff.mfa.secret_unreadable` audit row whose `reference` is the reason
+(`legacy_plaintext_requires_backfill`, `decrypt_failed`,
+`unrecognized_format`), never any part of the stored value. Pre-M31
+plaintext seeds are upgraded by the explicit, idempotent backfill
+(`npm run mfa:backfill`; ordering in DEPLOYMENT.md), which uses
+compare-and-swap writes so it cannot overwrite a concurrent
+re-enrollment. Proven by `test/integration/mfa-upgrade.test.ts` and by
+an end-to-end run of the real pre-M31 code enrolling MFA, followed by
+migration, backfill, and a successful MFA login on the repaired code.
+
+## Guest-session credential lifecycle (CART-004, M31 certification repair)
+
+`gs1.<ownerId>.<issuedAt>.<expiresAt>.<mac>`, HMAC-SHA256 with the
+dedicated `GUEST_SESSION_SIGNING_SECRET` over version, owner and both
+timestamps. Expiry (`GUEST_SESSION_TTL_SECONDS`, default 30 days) is
+enforced server-side on every request; renewal
+(`POST /storefront/guest-session/renew`) re-signs only the owner of a
+currently valid token, so the owner and its cart/wishlist/orders are
+stable; issuance never takes an owner from the caller. Invalid or
+expired credentials are 401, including on the login-merge routes.
+Details: `blueprint/DECISION_REGISTER.md` CART-004; proofs in
+`test/integration/guest-session-lifecycle.test.ts` and
+`test/unit/cart-identity.test.ts`.
+
+## Rate-limit keys (M31 certification repair)
+
+Checkout/payment limits key only on a verified identity (customer JWT
+subject, verified guest owner); anything unverifiable - forged, expired,
+or garbage bearer/guest values - shares the caller's IP bucket, so
+rotating fake credentials cannot mint new buckets. The IP is resolved
+through exactly `TRUST_PROXY_HOPS` trusted proxies, so a client-supplied
+`X-Forwarded-For` prefix cannot choose its bucket. Guest-session issuance
+is limited per IP; renewal per verified owner. Proven in
+`test/integration/rate-limit-identity.test.ts` (which fails against the
+pre-repair key generator).

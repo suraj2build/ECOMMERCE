@@ -1,5 +1,7 @@
 'use client';
 
+import { getExistingGuestSessionToken } from './guest-session';
+
 /**
  * Exchanges client (M21, specs/20-exchanges.md). Same guest-or-customer
  * identity pattern as lib/orders.ts/lib/returns.ts. Replacement options
@@ -11,16 +13,8 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const GUEST_HEADER = 'x-guest-session-id';
-const GUEST_SESSION_KEY = 'fcp_guest_session_id';
 const CUSTOMER_SESSION_KEY = 'fcp_customer_session';
 
-function getGuestSessionId(): string | null {
-  try {
-    return localStorage.getItem(GUEST_SESSION_KEY);
-  } catch {
-    return null;
-  }
-}
 function getStoredCustomerToken(): string | null {
   try {
     const raw = localStorage.getItem(CUSTOMER_SESSION_KEY);
@@ -30,17 +24,17 @@ function getStoredCustomerToken(): string | null {
     return null;
   }
 }
-function identityHeaders(): Record<string, string> {
+async function identityHeaders(): Promise<Record<string, string>> {
   const token = getStoredCustomerToken();
   if (token) return { authorization: `Bearer ${token}` };
-  const guestSessionId = getGuestSessionId();
+  const guestSessionId = await getExistingGuestSessionToken();
   return guestSessionId ? { [GUEST_HEADER]: guestSessionId } : {};
 }
 
 async function exchangesFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...identityHeaders(), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...(await identityHeaders()), ...init?.headers },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;

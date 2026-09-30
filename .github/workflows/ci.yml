@@ -13,6 +13,7 @@ env:
   MEILISEARCH_HOST: http://localhost:7700
   JWT_ACCESS_SECRET: ci-only-secret-ci-only-secret-not-for-prod
   MFA_SECRET_ENCRYPTION_KEY: c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1
+  GUEST_SESSION_SIGNING_SECRET: ci-only-guest-session-secret-not-for-prod
   NODE_ENV: test
   LOG_LEVEL: fatal
 

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
-import { __resetEnvCacheForTests } from '@fcp/config';
+import { enterProductionEnv } from '../helpers/production-env.js';
 import { ChannelService } from '../../src/modules/channels/service.js';
 
 /**
@@ -599,8 +599,7 @@ describe('Channel Publishing (M26)', () => {
       });
 
       it('never resolves a MOCK_* provider in production - the smallest explicit guard against a mock silently acting as a real channel integration', async () => {
-        process.env.NODE_ENV = 'production';
-        __resetEnvCacheForTests();
+        const restoreEnv = enterProductionEnv();
         try {
           const { sku, location } = await fixtureSku();
           await seedInventory(sku.id, location.id, 5);
@@ -613,8 +612,7 @@ describe('Channel Publishing (M26)', () => {
           expect(listing.status).toBe('FAILED');
           expect(listing.lastError).toMatch(/test double.*may never be used in production/);
         } finally {
-          process.env.NODE_ENV = 'test';
-          __resetEnvCacheForTests();
+          restoreEnv();
         }
       });
     });

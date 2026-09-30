@@ -572,6 +572,71 @@ unchanged), not a claim that guest-identity rotation is solved.
   engineering-implementation determination, not an independent-review
   certification, per this file's own certification discipline.
 
+**M31 independent-review certification repair (2026-09-30, review head
+`7f769ef`).** Three findings, each reproduced from source before any
+change:
+
+1. *Guest credential had no lifecycle* (this entry). The `<uuid>.<hmac>`
+   token above carried no version, issued-at or expiry, never expired,
+   could not be renewed, and was signed with `JWT_ACCESS_SECRET`. The
+   login-merge routes also passed the raw header straight to the
+   database with no verification (in production a genuine signed token
+   never matched the stored owner, so merge silently did nothing, while a
+   raw owner id was accepted unverified). Replaced with
+   `gs1.<ownerId>.<issuedAt>.<expiresAt>.<mac>`: HMAC-SHA256 over the
+   version, owner and both timestamps with a dedicated
+   `GUEST_SESSION_SIGNING_SECRET` (required in production, must differ
+   from `JWT_ACCESS_SECRET`; outside production a domain-separated key is
+   derived when unset). Expiry is enforced server-side on every request
+   (`GUEST_SESSION_TTL_SECONDS`, default 30 days, the same lifetime as
+   customer refresh tokens). `POST /storefront/guest-session/renew`
+   re-signs the owner of a currently valid token only, so the owner - and
+   the cart, wishlist and guest orders stored under it - is stable across
+   renewal; issuance takes no owner input at all. Invalid or expired
+   credentials are 401. Merge routes now use the same verification. The
+   dev/test acceptance of raw unsigned ids is an explicit
+   `GUEST_SESSION_ALLOW_UNSIGNED` switch that defaults off in production
+   and is a startup error if turned on there. The storefront client
+   renews at half-life, replaces expired/unrecognized tokens, and drops a
+   token the server rejects. The TTL is a credential lifetime, not data
+   retention: `CUST-001` is untouched and no guest data is deleted when a
+   token expires. Testing also exposed a check-then-insert race in guest
+   cart/wishlist creation (concurrent first requests on one owner
+   returned 500 on the unique constraint); the losing create now reuses
+   the winner's row.
+2. *MFA upgrade compatibility.* The M31 reader decrypted every stored
+   `mfaSecret` and threw a plain `Error` on anything else, so every staff
+   user enrolled before M31 (plaintext base32 seed) got a 500 on MFA
+   login. Stored format is now versioned (`v1:<iv>:<tag>:<ct>`); the
+   reader accepts only v1 and fails closed (generic 401 plus a
+   reason-only `staff.mfa.secret_unreadable` audit row) for legacy
+   plaintext, corrupt data or a wrong key - never a plaintext fallback.
+   An explicit, idempotent, compare-and-swap backfill
+   (`npm run mfa:backfill`) encrypts legacy plaintext and re-wraps the
+   never-released unversioned M31 format; it refuses to write if existing
+   v1 rows do not decrypt with the configured key. See DEPLOYMENT.md for
+   ordering. Production also refuses placeholder / repeated-pattern
+   `MFA_SECRET_ENCRYPTION_KEY` and `JWT_ACCESS_SECRET` values.
+3. *Rate-limit bucket selection.* The checkout/payment limiter keyed on
+   the raw `Authorization` or guest header, so each fresh string was a
+   fresh bucket. It now keys only on verified identity (`c:<customerId>`
+   from a valid JWT, `g:<ownerId>` from a valid guest token) and puts
+   everything unverifiable in the caller's IP bucket. The IP itself is
+   now resolved through exactly `TRUST_PROXY_HOPS` proxies (default 1)
+   instead of `trustProxy: true`, which took the leftmost, client-supplied
+   `X-Forwarded-For` entry. Guest-session issuance is limited per IP and
+   renewal per verified owner. `AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX` is a
+   startup error in production.
+
+Evidence: `test/integration/mfa-upgrade.test.ts`,
+`guest-session-lifecycle.test.ts`, `rate-limit-identity.test.ts`,
+`test/unit/cart-identity.test.ts`, `mfa-secret-crypto.test.ts`,
+`config-production-guards.test.ts`; plus an end-to-end run of the real
+pre-M31 code (`7f59f6a`) enrolling MFA, followed by forward migrations,
+the backfill, and a successful MFA login on the repaired code. The
+adversarial limiter tests fail against the pre-repair key generator.
+Not self-certified; awaiting independent re-review.
+
 ---
 
 ## CHK — Checkout

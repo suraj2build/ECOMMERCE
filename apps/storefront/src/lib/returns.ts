@@ -1,5 +1,7 @@
 'use client';
 
+import { getExistingGuestSessionToken } from './guest-session';
+
 /**
  * Returns client (M19, specs/18-returns.md). Same guest-or-customer
  * identity pattern as lib/orders.ts/lib/checkout.ts - a return is
@@ -9,16 +11,7 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const GUEST_HEADER = 'x-guest-session-id';
-const GUEST_SESSION_KEY = 'fcp_guest_session_id';
 const CUSTOMER_SESSION_KEY = 'fcp_customer_session';
-
-function getGuestSessionId(): string | null {
-  try {
-    return localStorage.getItem(GUEST_SESSION_KEY);
-  } catch {
-    return null;
-  }
-}
 
 function getStoredCustomerToken(): string | null {
   try {
@@ -30,17 +23,17 @@ function getStoredCustomerToken(): string | null {
   }
 }
 
-function identityHeaders(): Record<string, string> {
+async function identityHeaders(): Promise<Record<string, string>> {
   const token = getStoredCustomerToken();
   if (token) return { authorization: `Bearer ${token}` };
-  const guestSessionId = getGuestSessionId();
+  const guestSessionId = await getExistingGuestSessionToken();
   return guestSessionId ? { [GUEST_HEADER]: guestSessionId } : {};
 }
 
 async function returnsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...identityHeaders(), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...(await identityHeaders()), ...init?.headers },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
@@ -121,7 +114,7 @@ export async function uploadMyReturnEvidence(returnId: string, lineId: string, f
   form.append('file', file, file.name);
   const res = await fetch(`${API_URL}/api/v1/storefront/returns/${returnId}/lines/${lineId}/evidence`, {
     method: 'POST',
-    headers: identityHeaders(),
+    headers: await identityHeaders(),
     body: form,
   });
   if (!res.ok) {

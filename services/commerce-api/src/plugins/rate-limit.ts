@@ -30,9 +30,11 @@ import { loadEnv } from '@fcp/config';
  * often sub-second interval by infrastructure that is not the attacker
  * surface this control exists for.
  *
- * Keyed by IP by default (`request.ip`, honoring `trustProxy: true` set
- * in app.ts) - genuinely identity-aware routes (OTP by mobile, staff
- * login by email) additionally key by that identifier at the route level
+ * Keyed by IP by default (`request.ip`, resolved through exactly
+ * TRUST_PROXY_HOPS trusted proxies - see app.ts - so a client-supplied
+ * X-Forwarded-For prefix cannot choose its own bucket) - genuinely
+ * identity-aware routes (OTP by mobile, staff login by email)
+ * additionally key by that identifier at the route level
  * so an attacker cannot defeat the per-identity limit by rotating source
  * IPs, and cannot defeat a naive shared-IP limit by targeting many
  * identities from one IP (e.g. an office NAT) - see each route's own

@@ -66,6 +66,13 @@ const envSchema = z.object({
 
   // --- Service ---
   PORT: z.coerce.number().int().positive().default(4000),
+  // Number of reverse-proxy hops in front of the API whose
+  // X-Forwarded-For entries are trusted. request.ip (used for per-IP rate
+  // limiting and audit) is the address that many hops back, so
+  // client-supplied X-Forwarded-For prefixes are ignored. 1 = one load
+  // balancer in front; set to the real hop count (e.g. CDN + LB = 2) in
+  // production; 0 = trust no proxy (use the socket address).
+  TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(1),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   // --- CORS (M11 - the storefront's client-side PIN-check/review/OTP
@@ -100,6 +107,34 @@ const envSchema = z.object({
   // test-environment-only override" idiom COD_MAX_ORDER_VALUE_INR above
   // already established.
   AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: z.coerce.number().int().positive().optional(),
+
+  // --- Guest session credential (CART-004, M31 certification repair) ---
+  // The guest-session token is a bearer credential for a guest's cart,
+  // wishlist, checkout and guest orders, signed with its OWN secret
+  // (never JWT_ACCESS_SECRET, so the two credential types can never be
+  // confused or share a compromise). Required in production (see the
+  // production guards below); outside production, when unset, a key is
+  // derived from JWT_ACCESS_SECRET with a fixed domain-separation label
+  // so dev/test setups need no new variable.
+  GUEST_SESSION_SIGNING_SECRET: z.string().min(32, 'GUEST_SESSION_SIGNING_SECRET must be at least 32 characters').optional(),
+  // Credential lifetime, enforced server-side from the token's own
+  // authenticated expiry. This is a SECURITY TTL for the bearer token,
+  // not a data-retention period (CUST-001 remains UNDER_REVIEW and is
+  // untouched): an expired token simply stops authenticating; no cart,
+  // order or guest data is deleted. Default 30 days, the same lifetime
+  // this codebase already uses for customer refresh tokens
+  // (JWT_REFRESH_TTL_SECONDS). Active guests renew before expiry via
+  // POST /storefront/guest-session/renew, which keeps the same guest owner.
+  GUEST_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(2_592_000),
+  // Per-IP ceiling on minting brand-new guest identities (each one is a
+  // fresh credential). Renewal of an existing valid token is keyed by
+  // its verified owner instead, so it never consumes this budget.
+  GUEST_SESSION_ISSUE_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  // Dev/test-only compatibility: accept a raw, unsigned client-supplied
+  // guest id (every pre-existing integration fixture uses one). Defaults
+  // to enabled outside production and disabled in production; explicitly
+  // enabling it in production is a hard startup error (see below).
+  GUEST_SESSION_ALLOW_UNSIGNED: z.enum(['true', 'false']).optional(),
 
   // --- Razorpay (M14, ADR-0011, PAY-001/002/003/005) ---
   // Deliberately optional with an empty-string default, never required:
@@ -257,7 +292,66 @@ const envSchema = z.object({
   CHANNEL_PUBLISH_STALE_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
 });
 
-export type Env = z.infer<typeof envSchema>;
+const PLACEHOLDER_SECRET_MARKERS = ['change-me', 'changeme', 'ci-only', 'test-only', 'dev-only', 'placeholder', 'example', 'replace-me'];
+
+function looksLikePlaceholderSecret(value: string): boolean {
+  const lower = value.toLowerCase();
+  return PLACEHOLDER_SECRET_MARKERS.some((marker) => lower.includes(marker));
+}
+
+/**
+ * A genuinely random 64-hex-char key uses ~16 distinct hex digits; the
+ * repeated-pattern placeholders used in .env.example / CI / tests
+ * (c1c1..., aaaa...) use one or two.
+ */
+function looksLikeLowEntropyHexKey(value: string): boolean {
+  return new Set(value.toLowerCase()).size < 10;
+}
+
+/**
+ * Production-only guards (M31 certification repair): refuse to boot with
+ * a placeholder/low-entropy secret, a missing or shared guest-session
+ * signing secret, or a test-only relaxation switched on. Outside
+ * production none of these apply, so local dev/test/CI keep working with
+ * their documented placeholders.
+ */
+const validatedEnvSchema = envSchema
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV !== 'production') return;
+    const fail = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
+    if (looksLikePlaceholderSecret(env.JWT_ACCESS_SECRET)) {
+      fail('JWT_ACCESS_SECRET', 'must be a real secret in production, not a placeholder');
+    }
+    if (looksLikeLowEntropyHexKey(env.MFA_SECRET_ENCRYPTION_KEY)) {
+      fail('MFA_SECRET_ENCRYPTION_KEY', 'must be a randomly generated key in production (e.g. openssl rand -hex 32), not a repeated-pattern placeholder');
+    }
+    if (!env.GUEST_SESSION_SIGNING_SECRET) {
+      fail('GUEST_SESSION_SIGNING_SECRET', 'is required in production');
+    } else {
+      if (env.GUEST_SESSION_SIGNING_SECRET === env.JWT_ACCESS_SECRET) {
+        fail('GUEST_SESSION_SIGNING_SECRET', 'must differ from JWT_ACCESS_SECRET');
+      }
+      if (looksLikePlaceholderSecret(env.GUEST_SESSION_SIGNING_SECRET)) {
+        fail('GUEST_SESSION_SIGNING_SECRET', 'must be a real secret in production, not a placeholder');
+      }
+    }
+    if (env.GUEST_SESSION_ALLOW_UNSIGNED === 'true') {
+      fail('GUEST_SESSION_ALLOW_UNSIGNED', 'unsigned guest identities can never be enabled in production');
+    }
+    if (env.AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX !== undefined) {
+      fail('AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX', 'is a test-only override and must not be set in production');
+    }
+  })
+  .transform((env) => ({
+    ...env,
+    GUEST_SESSION_ALLOW_UNSIGNED:
+      env.GUEST_SESSION_ALLOW_UNSIGNED === undefined
+        ? env.NODE_ENV !== 'production'
+        : env.GUEST_SESSION_ALLOW_UNSIGNED === 'true',
+  }));
+
+export type Env = z.infer<typeof validatedEnvSchema>;
 
 let cachedEnv: Env | undefined;
 
@@ -268,7 +362,7 @@ let cachedEnv: Env | undefined;
  */
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (cachedEnv) return cachedEnv;
-  const result = envSchema.safeParse(source);
+  const result = validatedEnvSchema.safeParse(source);
   if (!result.success) {
     const issues = result.error.issues
       .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)

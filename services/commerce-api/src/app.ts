@@ -45,17 +45,27 @@ import analyticsRoutes from './modules/analytics/routes.js';
 import cmsRoutes from './modules/cms/routes.js';
 import supportRoutes from './modules/support/routes.js';
 
-export async function buildApp(): Promise<FastifyInstance> {
+export interface BuildAppOptions {
+  /** Test seam: route log output to a caller-supplied stream instead of stdout. */
+  logDestination?: Parameters<typeof createLogger>[2];
+  /** Test seam: keep per-request logging on under NODE_ENV=test (off by default there). */
+  requestLogging?: boolean;
+}
+
+export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const env = loadEnv();
-  const logger: FastifyBaseLogger = createLogger('commerce-api', env.LOG_LEVEL);
+  const logger: FastifyBaseLogger = createLogger('commerce-api', env.LOG_LEVEL, options.logDestination);
 
   const app = Fastify({
     // Fastify v5: a pre-built pino instance goes via loggerInstance, not
     // logger (that option now only accepts true/false/a pino config
     // object) - see docs/decisions/0018-fastify-v5-cve-migration.md.
     loggerInstance: logger,
-    disableRequestLogging: env.NODE_ENV === 'test',
-    trustProxy: true,
+    disableRequestLogging: options.requestLogging === undefined ? env.NODE_ENV === 'test' : !options.requestLogging,
+    // Trust exactly TRUST_PROXY_HOPS proxies (the same rule proxy-addr
+    // applies for a numeric setting), so request.ip is never taken from a
+    // client-supplied X-Forwarded-For prefix.
+    trustProxy: (_address: string, hop: number) => hop < env.TRUST_PROXY_HOPS,
     // M33 observability review (2026-09-29): Fastify's own default
     // reqId is a per-process incrementing counter - fine for a single
     // instance, but not a real correlation ID across multiple replicas

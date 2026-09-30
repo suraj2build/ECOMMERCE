@@ -1,9 +1,9 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AuthService } from './service.js';
+import { AuthService, readMfaSeedOrDeny } from './service.js';
 import { generateMfaSecret, buildMfaOtpAuthUrl } from './mfa.js';
 import { verifyMfaToken } from './mfa.js';
-import { encryptMfaSecret, decryptMfaSecret } from './mfa-secret-crypto.js';
+import { encryptMfaSecret } from './mfa-secret-crypto.js';
 import { UnauthorizedError, ValidationError } from '@fcp/shared';
 import { loadEnv } from '@fcp/config';
 
@@ -219,7 +219,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       if (!staffUser.mfaSecret) {
         throw new ValidationError('No MFA enrollment in progress - call /mfa/enroll first');
       }
-      if (!verifyMfaToken(code, decryptMfaSecret(staffUser.mfaSecret))) {
+      if (!verifyMfaToken(code, await readMfaSeedOrDeny(fastify.prisma, staffUserId, staffUser.mfaSecret))) {
         throw new UnauthorizedError('Invalid MFA code');
       }
       await fastify.prisma.staffUser.update({

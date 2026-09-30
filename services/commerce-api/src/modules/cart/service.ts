@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { Prisma, PrismaClient } from '@fcp/db';
+import { Prisma, type PrismaClient } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { CatalogService } from '../catalog/service.js';
@@ -69,9 +69,20 @@ export class CartService {
     const existing = await this.findCartRow(this.prisma, identity);
 
     if (!existing) {
-      return this.prisma.cart.create({
-        data: { customerId: identity.customerId, guestSessionId: identity.guestSessionId },
-      });
+      try {
+        return await this.prisma.cart.create({
+          data: { customerId: identity.customerId, guestSessionId: identity.guestSessionId },
+        });
+      } catch (err) {
+        // Concurrent first requests for the same owner: the unique
+        // customerId/guestSessionId constraint lets exactly one create
+        // win; everyone else uses the row it created.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          const created = await this.findCartRow(this.prisma, identity);
+          if (created) return created;
+        }
+        throw err;
+      }
     }
 
     if (identity.guestSessionId) {

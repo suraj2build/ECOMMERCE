@@ -22,6 +22,16 @@ ongoing automated check going forward, not a one-time manual read.
 - `MFA_SECRET_ENCRYPTION_KEY` (new, this pass) — **required, no
   default**, exact-length-validated (64 hex chars). Same fail-safe-on-
   missing-secret discipline.
+- `GUEST_SESSION_SIGNING_SECRET` (M31 certification repair) — signs
+  guest-session credentials. **Required in production**, at least 32
+  characters, must differ from `JWT_ACCESS_SECRET`. Optional outside
+  production (a domain-separated key is derived from `JWT_ACCESS_SECRET`).
+- Production start-up guards (M31 certification repair): `loadEnv()`
+  refuses placeholder `JWT_ACCESS_SECRET` / `GUEST_SESSION_SIGNING_SECRET`
+  values (the `.env.example` and CI markers), a repeated-pattern
+  `MFA_SECRET_ENCRYPTION_KEY`, `GUEST_SESSION_ALLOW_UNSIGNED=true`, and
+  any `AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX` (test-only). Proven in
+  `test/unit/config-production-guards.test.ts`.
 - `RAZORPAY_KEY_ID`/`KEY_SECRET`/`WEBHOOK_SECRET` — deliberately default
   to an empty string, but this is a DIFFERENT, intentional pattern (see
   `security/PAYMENT_SECURITY_REVIEW.md`): an empty value makes the

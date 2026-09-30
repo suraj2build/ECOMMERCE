@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { __resetEnvCacheForTests } from '@fcp/config';
+import { enterProductionEnv } from '../helpers/production-env.js';
 import { resolveShippingProvider } from '../../src/modules/shipping/provider.js';
 import { getMarketingProvider } from '../../src/modules/marketing/provider.js';
 
@@ -16,14 +16,14 @@ import { getMarketingProvider } from '../../src/modules/marketing/provider.js';
  * ever happening.
  */
 describe('Provider production guards (M31)', () => {
+  let restoreEnv: (() => void) | undefined;
   afterEach(() => {
-    process.env.NODE_ENV = 'test';
-    __resetEnvCacheForTests();
+    restoreEnv?.();
+    restoreEnv = undefined;
   });
 
   function asProduction() {
-    process.env.NODE_ENV = 'production';
-    __resetEnvCacheForTests();
+    restoreEnv = enterProductionEnv();
   }
 
   describe('resolveShippingProvider', () => {

@@ -864,31 +864,23 @@ describe('Shipping / Tracking (M17)', () => {
       const shipmentB = (await createShipmentHttp(fulfilmentB, token, 'idem-split-b')).json();
       expect(shipmentA.id).not.toBe(shipmentB.id);
 
-      const bodyA = trackingEvent(shipmentA.providerShipmentRef, 'in_transit', new Date(), 'evt-split-a-1');
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/webhooks/shipping/mock',
-        headers: { 'content-type': 'application/json', 'x-shipping-signature': signShipping(bodyA) },
-        payload: bodyA,
-      });
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/webhooks/shipping/mock',
-        headers: {
-          'content-type': 'application/json',
-          'x-shipping-signature': signShipping(trackingEvent(shipmentA.providerShipmentRef, 'out_for_delivery', new Date(), 'evt-split-a-2')),
-        },
-        payload: trackingEvent(shipmentA.providerShipmentRef, 'out_for_delivery', new Date(), 'evt-split-a-2'),
-      });
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/webhooks/shipping/mock',
-        headers: {
-          'content-type': 'application/json',
-          'x-shipping-signature': signShipping(trackingEvent(shipmentA.providerShipmentRef, 'delivered', new Date(), 'evt-split-a-3')),
-        },
-        payload: trackingEvent(shipmentA.providerShipmentRef, 'delivered', new Date(), 'evt-split-a-3'),
-      });
+      // Each body is built once and the signature is computed over exactly
+      // the bytes sent (occurred_at has millisecond precision, so building
+      // it twice could sign a different timestamp than the one posted).
+      for (const [status, eventId] of [
+        ['in_transit', 'evt-split-a-1'],
+        ['out_for_delivery', 'evt-split-a-2'],
+        ['delivered', 'evt-split-a-3'],
+      ] as const) {
+        const body = trackingEvent(shipmentA.providerShipmentRef, status, new Date(), eventId);
+        const res = await app.inject({
+          method: 'POST',
+          url: '/api/v1/webhooks/shipping/mock',
+          headers: { 'content-type': 'application/json', 'x-shipping-signature': signShipping(body) },
+          payload: body,
+        });
+        expect(res.statusCode).toBe(200);
+      }
 
       const refreshedA = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipmentA.id } });
       const refreshedB = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipmentB.id } });

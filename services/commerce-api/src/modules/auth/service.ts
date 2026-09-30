@@ -6,9 +6,32 @@ import { UnauthorizedError, ConflictError, ValidationError } from '@fcp/shared';
 import { loadEnv } from '@fcp/config';
 import { generateOtpCode, ConsoleOtpProvider, type OtpProvider } from './otp-provider.js';
 import { verifyMfaToken } from './mfa.js';
-import { decryptMfaSecret } from './mfa-secret-crypto.js';
+import { decryptMfaSecret, MfaSecretUnreadableError } from './mfa-secret-crypto.js';
 import { StaffSessionStore } from './staff-session.js';
 import { recordAudit } from '../audit/service.js';
+
+/**
+ * Decrypts a staff user's stored TOTP seed for verification. A value
+ * that cannot be read (legacy plaintext awaiting the backfill, wrong
+ * key, tampered/corrupt ciphertext) fails closed: a generic 401 to the
+ * caller and an audit row carrying only the reason, never any part of
+ * the stored value. There is no plaintext fallback.
+ */
+export async function readMfaSeedOrDeny(prisma: PrismaClient, staffUserId: string, stored: string): Promise<string> {
+  try {
+    return decryptMfaSecret(stored);
+  } catch (err) {
+    if (!(err instanceof MfaSecretUnreadableError)) throw err;
+    await recordAudit(prisma, {
+      actorType: 'SYSTEM',
+      action: 'staff.mfa.secret_unreadable',
+      entityType: 'StaffUser',
+      entityId: staffUserId,
+      reference: err.reason,
+    }).catch(() => undefined);
+    throw new UnauthorizedError('Invalid MFA code');
+  }
+}
 
 function hashOtp(code: string): string {
   return createHash('sha256').update(code).digest('hex');
@@ -158,7 +181,8 @@ export class AuthService {
       if (!mfaCode) {
         return { mfaRequired: true };
       }
-      if (!verifyMfaToken(mfaCode, decryptMfaSecret(staffUser.mfaSecret))) {
+      const seed = await readMfaSeedOrDeny(this.prisma, staffUser.id, staffUser.mfaSecret);
+      if (!verifyMfaToken(mfaCode, seed)) {
         throw new UnauthorizedError('Invalid MFA code');
       }
     }

@@ -96,7 +96,11 @@ deployment, not a certification that incident response is "ready."
    has `MFA_SECRET_ENCRYPTION_KEY` can decrypt and generate valid codes.
    Rotate `MFA_SECRET_ENCRYPTION_KEY` and force every staff account to
    re-enroll MFA (§2 step 2, applied to every affected account, not just
-   one).
+   one). After rotation, existing v1 values no longer decrypt: logins
+   fail closed (401 + `staff.mfa.secret_unreadable` audit, reason
+   `decrypt_failed`) rather than falling back, and the backfill refuses to
+   run against rows it cannot decrypt - re-enrollment, not the backfill,
+   is the recovery path.
 4. Formal breach-notification obligations are outside this document's
    scope (see §1.4).
 
@@ -110,12 +114,15 @@ deployment, not a certification that incident response is "ready."
 - **One staff account**: `StaffUser.isActive = false` (see §2).
 - **One customer account**: revoke refresh tokens (see §3) — note the
   access-JWT caveat there.
-- **All guest-session tokens**: not centrally revocable by design (M31
-  CART-004) — the token is stateless (self-verifying HMAC, no DB/Redis
-  row). Rotating `JWT_ACCESS_SECRET` would invalidate every guest token
-  AND every customer JWT simultaneously (they share the same signing
-  secret) — an extreme, last-resort action with wide blast radius, not
-  a routine one.
+- **All guest-session tokens**: stateless (self-verifying HMAC, no
+  DB/Redis row), so not individually revocable. Each token expires on
+  its own after `GUEST_SESSION_TTL_SECONDS` (default 30 days; lowering it
+  immediately invalidates longer-lived tokens already issued). To revoke
+  every guest token at once, rotate `GUEST_SESSION_SIGNING_SECRET` - a
+  dedicated secret since the M31 certification repair, so this no longer
+  touches customer JWTs. Guests then obtain a new session; carts, orders
+  and store credit under the old owner ids stay in the database but are
+  no longer reachable from the old tokens.
 
 ## 7. Known, accepted architectural gaps (not fixed by this pass)
 

@@ -78,6 +78,30 @@ detailed findings. Headline points, in brief:
   at `ENGINEERING_READY_FOR_PRODUCTION_GATES`, never
   `PRODUCTION_APPROVED`/`DPDP_COMPLIANT`/`GST_COMPLIANT`.
 
+**M31 INDEPENDENT-REVIEW CERTIFICATION REPAIR (2026-09-30, review head
+`7f769ef`):** three findings, all in M31, each reproduced from source
+first; M30/M32/M33 were not functionally reopened. (1) *MFA upgrade
+compatibility* - the M31 reader threw on every pre-M31 plaintext seed
+(500 on MFA login). Stored seeds are now versioned (`v1:`), the reader
+fails closed with no plaintext fallback, and an explicit idempotent
+compare-and-swap backfill (`npm run mfa:backfill`, ordering in
+DEPLOYMENT.md) upgrades legacy rows - proven in
+`test/integration/mfa-upgrade.test.ts` and end to end against the real
+pre-M31 code. (2) *CART-004 guest-session lifecycle* - the token had no
+version/issued-at/expiry and shared `JWT_ACCESS_SECRET`; it is now
+`gs1.<owner>.<iat>.<exp>.<mac>` with a dedicated
+`GUEST_SESSION_SIGNING_SECRET`, server-enforced TTL, owner-preserving
+renewal, verified login-merge routes, and a dev/test-only unsigned mode
+that cannot be enabled in production. Testing also found and fixed a
+guest cart/wishlist check-then-insert race. (3) *Rate-limit keys* - the
+checkout/payment limiter keyed on raw attacker-chosen headers; it now
+keys only on verified identity, everything else shares the caller's IP
+bucket, and `request.ip` is resolved through `TRUST_PROXY_HOPS` instead
+of trusting a client-supplied `X-Forwarded-For` prefix. Production now
+refuses placeholder secrets at startup. See CART-004 in
+`blueprint/DECISION_REGISTER.md` and `acceptance/m31-security-hardening.md`.
+**Not self-certified; awaiting independent re-review.**
+
 **This agent does not self-declare any of these four milestones
 certified** — the same discipline as every milestone since Phase 1.
 This agent has stopped and is awaiting independent review. **No M34+

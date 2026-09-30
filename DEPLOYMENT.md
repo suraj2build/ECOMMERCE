@@ -131,6 +131,47 @@ production-unsafe value). No real credentials are committed — verified
 by this pass's own `gitleaks` CI step (§3) and, historically, by every
 milestone's own dependency/secret hygiene review.
 
+Production refuses to start (at `loadEnv()`) unless, in addition to the
+required variables above:
+
+- `GUEST_SESSION_SIGNING_SECRET` is set, at least 32 characters, not a
+  placeholder, and different from `JWT_ACCESS_SECRET`;
+- `JWT_ACCESS_SECRET` and `MFA_SECRET_ENCRYPTION_KEY` are real generated
+  values, not the `.env.example` / CI placeholders;
+- `GUEST_SESSION_ALLOW_UNSIGNED` and `AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX`
+  are not set.
+
+`TRUST_PROXY_HOPS` must equal the number of reverse proxies in front of
+the API (default 1 = one load balancer; e.g. CDN + load balancer = 2).
+Per-IP rate limiting uses the client address that many hops back, and
+the API must not be reachable except through those proxies.
+
+### Upgrading an existing database: MFA secret backfill
+
+Staff MFA seeds written before M31 are plaintext; the application only
+reads the v1 encrypted format and never falls back to plaintext, so
+affected staff cannot complete MFA login until the backfill has run. It
+is application code (only the application holds the key), idempotent,
+and safe to run while the service is up. Order:
+
+1. Stop or drain every instance running pre-M31 code (pre-M31 code
+   writes and reads plaintext; it must not run after step 3).
+2. `prisma migrate deploy` (packages/db).
+3. With the production `DATABASE_URL` and `MFA_SECRET_ENCRYPTION_KEY`:
+   `node services/commerce-api/dist/scripts/backfill-mfa-secrets.js`
+   (or `npm run mfa:backfill --workspace=services/commerce-api` from
+   source). It prints counts and staff user ids only. Exit code 2 means
+   some stored values were unreadable (corrupt or encrypted under a
+   different key) - those users must re-enroll MFA; they are listed by
+   id. It aborts without writing if existing v1 rows do not decrypt with
+   the configured key.
+4. Start the new code. At startup the API logs
+   `pendingMfaUpgrades` (a count, never a value) if any non-v1 secret
+   remains.
+5. Re-running step 3 is a no-op.
+
+On a fresh database there is nothing to backfill.
+
 ## 6. Backup / restore / observability
 
 See `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`'s `NFR-003` section for

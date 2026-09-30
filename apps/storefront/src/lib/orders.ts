@@ -1,5 +1,7 @@
 'use client';
 
+import { getExistingGuestSessionToken } from './guest-session';
+
 /**
  * Order history client (M15, specs/14-order-management.md - "Full order
  * history MUST be retained and queryable for the customer's account").
@@ -9,16 +11,7 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const GUEST_HEADER = 'x-guest-session-id';
-const GUEST_SESSION_KEY = 'fcp_guest_session_id';
 const CUSTOMER_SESSION_KEY = 'fcp_customer_session';
-
-function getGuestSessionId(): string | null {
-  try {
-    return localStorage.getItem(GUEST_SESSION_KEY);
-  } catch {
-    return null;
-  }
-}
 
 function getStoredCustomerToken(): string | null {
   try {
@@ -30,17 +23,17 @@ function getStoredCustomerToken(): string | null {
   }
 }
 
-function identityHeaders(): Record<string, string> {
+async function identityHeaders(): Promise<Record<string, string>> {
   const token = getStoredCustomerToken();
   if (token) return { authorization: `Bearer ${token}` };
-  const guestSessionId = getGuestSessionId();
+  const guestSessionId = await getExistingGuestSessionToken();
   return guestSessionId ? { [GUEST_HEADER]: guestSessionId } : {};
 }
 
 async function ordersFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...identityHeaders(), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...(await identityHeaders()), ...init?.headers },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;

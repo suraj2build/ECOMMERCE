@@ -1,6 +1,6 @@
 'use client';
 
-import { getOrCreateGuestSessionToken } from './guest-session';
+import { getOrCreateGuestSessionToken, discardGuestSessionToken } from './guest-session';
 
 /**
  * Cart / Wishlist client (M12, specs/11-wishlist-cart.md, CART-001).
@@ -40,10 +40,12 @@ async function identityHeaders(): Promise<Record<string, string>> {
 }
 
 async function cartFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const identity = await identityHeaders();
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(await identityHeaders()), ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...identity, ...init?.headers },
   });
+  if (res.status === 401 && identity[GUEST_HEADER]) discardGuestSessionToken(identity[GUEST_HEADER]);
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
     throw new Error(body?.error?.message ?? `Request failed (${res.status})`);

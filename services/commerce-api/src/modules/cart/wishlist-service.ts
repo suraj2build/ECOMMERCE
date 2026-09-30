@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@fcp/db';
+import { Prisma, type PrismaClient } from '@fcp/db';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { CatalogService } from '../catalog/service.js';
 import { CartService, type CartView } from './service.js';
@@ -44,9 +44,20 @@ export class WishlistService {
       : await this.prisma.wishlist.findUnique({ where: { guestSessionId: identity.guestSessionId } });
 
     if (existing) return existing;
-    return this.prisma.wishlist.create({
-      data: { customerId: identity.customerId, guestSessionId: identity.guestSessionId },
-    });
+    try {
+      return await this.prisma.wishlist.create({
+        data: { customerId: identity.customerId, guestSessionId: identity.guestSessionId },
+      });
+    } catch (err) {
+      // Same concurrent-first-request convergence as CartService.getOrCreateCartRow.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const created = identity.customerId
+          ? await this.prisma.wishlist.findUnique({ where: { customerId: identity.customerId } })
+          : await this.prisma.wishlist.findUnique({ where: { guestSessionId: identity.guestSessionId } });
+        if (created) return created;
+      }
+      throw err;
+    }
   }
 
   async addItem(identity: CartOwnerIdentity, skuId: string): Promise<WishlistItemView[]> {

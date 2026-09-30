@@ -1,5 +1,7 @@
 'use client';
 
+import { getExistingGuestSessionToken } from './guest-session';
+
 /**
  * Refunds / store-credit client (M20, specs/19-refunds.md,
  * specs/33-store-credit-gift-cards.md). Same guest-or-customer identity
@@ -11,16 +13,7 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const GUEST_HEADER = 'x-guest-session-id';
-const GUEST_SESSION_KEY = 'fcp_guest_session_id';
 const CUSTOMER_SESSION_KEY = 'fcp_customer_session';
-
-function getGuestSessionId(): string | null {
-  try {
-    return localStorage.getItem(GUEST_SESSION_KEY);
-  } catch {
-    return null;
-  }
-}
 
 function getStoredCustomerToken(): string | null {
   try {
@@ -32,15 +25,15 @@ function getStoredCustomerToken(): string | null {
   }
 }
 
-function identityHeaders(): Record<string, string> {
+async function identityHeaders(): Promise<Record<string, string>> {
   const token = getStoredCustomerToken();
   if (token) return { authorization: `Bearer ${token}` };
-  const guestSessionId = getGuestSessionId();
+  const guestSessionId = await getExistingGuestSessionToken();
   return guestSessionId ? { [GUEST_HEADER]: guestSessionId } : {};
 }
 
 async function refundsFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...identityHeaders() } });
+  const res = await fetch(`${API_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...(await identityHeaders()) } });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
     throw new Error(body?.error?.message ?? `Request failed (${res.status})`);

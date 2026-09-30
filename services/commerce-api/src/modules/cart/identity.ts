@@ -1,7 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import { loadEnv } from '@fcp/config';
-import { ValidationError } from '@fcp/shared';
+import { UnauthorizedError, ValidationError } from '@fcp/shared';
 
 export const GUEST_SESSION_HEADER = 'x-guest-session-id';
 
@@ -11,139 +11,212 @@ export interface CartOwnerIdentity {
 }
 
 /**
- * M31 Security Hardening (5E) - a rate-limit key for checkout/payment
- * routes based on the CALLER'S OWN claimed identity (the raw
- * Authorization header or guest-session header), not IP alone. Reads the
- * headers directly rather than calling resolveCartIdentity/requiring a
- * verified customer, since a rate-limit key only needs to be a stable,
- * hard-to-spoof-for-free bucket - it doesn't need the identity to be
- * authoritative the way an actual authorization decision does, and this
- * must be usable in an `onRequest`-stage keyGenerator (before
- * preHandler/preValidation), which the default IP-only key already runs
- * at. Falls back to `request.ip` when neither header is present, which
- * @fastify/rate-limit's own default key would do anyway.
+ * CART-004 guest-session credential (M31, lifecycle added by the M31
+ * certification repair).
  *
- * Keying by identity instead of IP matters here in both directions: a
- * genuine attacker probing checkout repeatedly from one guest identity
- * is throttled regardless of how many source IPs they rotate through,
- * and many DISTINCT genuine guests/customers sharing one IP (a mobile
- * carrier NAT, an office network) are never unfairly bucketed together.
+ * The guest header is a bearer credential: whoever presents a valid one
+ * gets that guest's cart, wishlist, checkout sessions and guest orders.
+ * Format (version 1):
+ *
+ *   gs1.<ownerId>.<issuedAt>.<expiresAt>.<mac>
+ *
+ *  - ownerId: server-generated UUIDv4, the stable guest owner stored in
+ *    Cart/Wishlist/Order/etc. `guestSessionId` columns. Never chosen by
+ *    the client and never changed by renewal.
+ *  - issuedAt / expiresAt: integer epoch seconds.
+ *  - mac: base64url HMAC-SHA256 over `gs1.<ownerId>.<issuedAt>.<expiresAt>`
+ *    with a dedicated signing key, so the version, owner, and both
+ *    timestamps are all authenticated - changing any of them invalidates
+ *    the token.
+ *
+ * Expiry is enforced here on every request from the token's own
+ * authenticated `expiresAt`. A token whose lifetime exceeds the currently
+ * configured GUEST_SESSION_TTL_SECONDS is also rejected, so lowering the
+ * TTL takes effect immediately. Renewal (renewGuestSessionToken) re-signs
+ * the SAME verified owner with a fresh issuedAt/expiresAt; it is only
+ * possible from a currently valid token.
+ *
+ * The TTL is a credential lifetime, not data retention (CUST-001 is
+ * untouched): an expired token stops authenticating, nothing is deleted.
  */
-export function checkoutRateLimitKey(request: FastifyRequest): string {
-  const auth = request.headers.authorization;
-  if (typeof auth === 'string' && auth) return auth;
-  const header = request.headers[GUEST_SESSION_HEADER];
-  const guestSessionId = Array.isArray(header) ? header[0] : header;
-  if (guestSessionId) return guestSessionId;
-  return request.ip;
+const TOKEN_VERSION = 'gs1';
+const DERIVED_KEY_LABEL = 'fcp-guest-session-signing-key/v1';
+const MAX_CLOCK_SKEW_SECONDS = 60;
+const MAX_GUEST_HEADER_LENGTH = 256;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const EPOCH_SECONDS_PATTERN = /^\d{1,12}$/;
+const MAC_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+export interface GuestSessionClaims {
+  ownerId: string;
+  issuedAt: number;
+  expiresAt: number;
 }
 
-const MAX_GUEST_SESSION_ID_LENGTH = 256;
+export interface IssuedGuestSession {
+  token: string;
+  claims: GuestSessionClaims;
+}
 
-/**
- * M31 CART-004 closure: mints a fresh, server-issued guest-session
- * token - `<uuid-v4>.<hmac-hex>`, the HMAC computed over the uuid with
- * `JWT_ACCESS_SECRET` (the same HMAC-then-compare idiom this codebase
- * already uses for Razorpay/carrier webhook signatures, reused here
- * rather than inventing a second signing convention or a new secret
- * env var). Stateless by design - no DB row, no expiry job - the token
- * IS its own proof of server issuance; verifyGuestSessionToken below is
- * the only thing that can accept one as valid.
- */
-export function mintGuestSessionToken(): string {
-  const id = randomUUID();
+export function nowInSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+function signingKey(): Buffer {
   const env = loadEnv();
-  const signature = createHmac('sha256', env.JWT_ACCESS_SECRET).update(id).digest('hex');
-  return `${id}.${signature}`;
+  if (env.GUEST_SESSION_SIGNING_SECRET) return Buffer.from(env.GUEST_SESSION_SIGNING_SECRET, 'utf8');
+  // Outside production only (config refuses to boot production without a
+  // dedicated secret): a domain-separated derivation, so a guest token
+  // can never double as any other credential signed with the JWT secret.
+  return createHmac('sha256', env.JWT_ACCESS_SECRET).update(DERIVED_KEY_LABEL).digest();
 }
 
-/**
- * Verifies a presented token was genuinely minted by this server (never
- * merely well-formatted) - constant-time comparison, the same
- * `timingSafeEqual` discipline every other HMAC verification in this
- * codebase uses. Returns the underlying id on success, null otherwise -
- * never throws, since an invalid/forged token is not itself special
- * (see resolveCartIdentity's own production-mode handling below).
- */
-function verifyGuestSessionToken(token: string): string | null {
+function macFor(payload: string): string {
+  return createHmac('sha256', signingKey()).update(payload).digest('base64url');
+}
+
+function sign(claims: GuestSessionClaims): IssuedGuestSession {
+  const payload = `${TOKEN_VERSION}.${claims.ownerId}.${claims.issuedAt}.${claims.expiresAt}`;
+  return { token: `${payload}.${macFor(payload)}`, claims };
+}
+
+/** Issues a credential for a brand-new guest owner. Takes no owner input by design. */
+export function mintGuestSessionToken(now: number = nowInSeconds()): IssuedGuestSession {
+  const ttl = loadEnv().GUEST_SESSION_TTL_SECONDS;
+  return sign({ ownerId: randomUUID(), issuedAt: now, expiresAt: now + ttl });
+}
+
+export function isVersionedGuestToken(value: string): boolean {
+  return value.startsWith(`${TOKEN_VERSION}.`);
+}
+
+/** Returns the authenticated claims of a valid, unexpired token, or null. Never throws. */
+export function verifyGuestSessionToken(token: string, now: number = nowInSeconds()): GuestSessionClaims | null {
   const parts = token.split('.');
-  if (parts.length !== 2) return null;
-  const [id, signature] = parts;
-  if (!id || !signature) return null;
-  const env = loadEnv();
-  const expected = createHmac('sha256', env.JWT_ACCESS_SECRET).update(id).digest('hex');
-  const expectedBuf = Buffer.from(expected, 'hex');
-  const signatureBuf = Buffer.from(signature, 'hex');
-  if (expectedBuf.length !== signatureBuf.length) return null;
-  if (!timingSafeEqual(expectedBuf, signatureBuf)) return null;
-  return id;
+  if (parts.length !== 5) return null;
+  const [version, ownerId, issuedAtRaw, expiresAtRaw, mac] = parts as [string, string, string, string, string];
+  if (version !== TOKEN_VERSION) return null;
+  if (!UUID_PATTERN.test(ownerId) || !EPOCH_SECONDS_PATTERN.test(issuedAtRaw) || !EPOCH_SECONDS_PATTERN.test(expiresAtRaw)) return null;
+  if (!MAC_PATTERN.test(mac)) return null;
+
+  const expected = Buffer.from(macFor(`${version}.${ownerId}.${issuedAtRaw}.${expiresAtRaw}`), 'base64url');
+  const presented = Buffer.from(mac, 'base64url');
+  if (expected.length !== presented.length || !timingSafeEqual(expected, presented)) return null;
+
+  const issuedAt = Number(issuedAtRaw);
+  const expiresAt = Number(expiresAtRaw);
+  if (expiresAt <= issuedAt) return null;
+  if (expiresAt - issuedAt > loadEnv().GUEST_SESSION_TTL_SECONDS) return null;
+  if (issuedAt > now + MAX_CLOCK_SKEW_SECONDS) return null;
+  if (now >= expiresAt) return null;
+  return { ownerId, issuedAt, expiresAt };
 }
 
 /**
- * Resolves who a cart/wishlist/checkout request belongs to (CART-001).
- * A logged-in customer's bearer token (already verified by the route's
- * tryCustomerAuth preHandler) always wins; otherwise the caller must
- * supply a guest-session identity via the guest header. Never both,
- * never neither - the Cart/Wishlist tables' own CHECK constraints
- * enforce the same XOR at the storage layer as defense in depth.
- *
- * CART-004 (blueprint/DECISION_REGISTER.md): this header functions as a
- * bearer credential - whoever presents a given value gets that guest's
- * cart/wishlist/checkout-session access, so its strength genuinely
- * matters. The previously-shipped design trusted ANY client-supplied
- * string verbatim (length-capped only) - a real gap, since a
- * non-storefront caller could present a short/guessed/reused value and
- * be accepted identically to the storefront's own genuine
- * `crypto.randomUUID()`-based id.
- *
- * Fixed with a server-issued, HMAC-signed token
- * (`mintGuestSessionToken`/`POST /storefront/guest-session`) that the
- * real storefront client (`apps/storefront/src/lib/cart.ts`) now
- * fetches instead of generating locally - genuinely server-authoritative
- * end to end, not merely format-validated. In `NODE_ENV=production`
- * (the ONLY environment where this vulnerability is actually
- * exploitable by a real attacker - see SECURITY.md's own dev/test-vs-
- * production posture, and the identical `getChannelProvider` MOCK_*
- * production guard's precedent for this exact "strict in production,
- * permissive in dev/test" shape), a header that fails signature
- * verification is REJECTED outright (never silently substituted with a
- * fresh identity, which would require threading a new response header
- * through every cart/wishlist/checkout route - a much larger, riskier
- * change than this fix needs) - the client is expected to call
- * `POST /storefront/guest-session` first, exactly as the real storefront
- * already does on its very first cart interaction, so this path is
- * reached by a genuine non-storefront caller (correctly rejected) or a
- * real client bug (correctly surfaced, never papered over), never a
- * normal guest checkout. Outside production, a raw client-supplied
- * string is still accepted verbatim (length-capped) - preserving every
- * existing integration test fixture across every storefront milestone
- * without a large, unrelated test-suite rewrite; those environments are
- * never reachable by a real attacker.
+ * Re-signs the owner of a currently valid token with a fresh lifetime.
+ * The owner comes only from the verified token - there is no parameter
+ * through which a caller could ask for any other owner to be signed.
+ */
+export function renewGuestSessionToken(token: string, now: number = nowInSeconds()): IssuedGuestSession | null {
+  const claims = verifyGuestSessionToken(token, now);
+  if (!claims) return null;
+  const ttl = loadEnv().GUEST_SESSION_TTL_SECONDS;
+  return sign({ ownerId: claims.ownerId, issuedAt: now, expiresAt: now + ttl });
+}
+
+function readGuestHeader(request: FastifyRequest): string | undefined {
+  const header = request.headers[GUEST_SESSION_HEADER];
+  const value = Array.isArray(header) ? header[0] : header;
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/**
+ * The guest owner id a request is entitled to act as, or undefined when
+ * no guest header was sent. A present-but-invalid/expired credential is
+ * rejected with 401 - never silently replaced with a new identity.
+ * GUEST_SESSION_ALLOW_UNSIGNED (dev/test only; a startup error in
+ * production) additionally accepts a raw unsigned id for pre-existing
+ * test fixtures; a value that claims to be a gs1 token must still verify.
+ */
+export function resolveGuestOwner(request: FastifyRequest): string | undefined {
+  const value = readGuestHeader(request);
+  if (!value) return undefined;
+  if (value.length > MAX_GUEST_HEADER_LENGTH) {
+    throw new ValidationError(`The '${GUEST_SESSION_HEADER}' header must be at most ${MAX_GUEST_HEADER_LENGTH} characters`);
+  }
+  if (isVersionedGuestToken(value)) {
+    const claims = verifyGuestSessionToken(value);
+    if (!claims) {
+      throw new UnauthorizedError('Guest session is invalid or expired - obtain a new one via POST /storefront/guest-session');
+    }
+    return claims.ownerId;
+  }
+  if (loadEnv().GUEST_SESSION_ALLOW_UNSIGNED) return value;
+  throw new UnauthorizedError('Guest session must be a server-issued token - obtain one via POST /storefront/guest-session');
+}
+
+/**
+ * Resolves who a cart/wishlist/checkout/order request belongs to
+ * (CART-001). A verified customer (tryCustomerAuth ran first) always
+ * wins; otherwise a valid guest credential is required.
  */
 export function resolveCartIdentity(request: FastifyRequest): CartOwnerIdentity {
   if (request.customer) return { customerId: request.customer.id };
-
-  const header = request.headers[GUEST_SESSION_HEADER];
-  const guestSessionId = Array.isArray(header) ? header[0] : header;
-  if (!guestSessionId?.trim()) {
+  const guestOwner = resolveGuestOwner(request);
+  if (!guestOwner) {
     throw new ValidationError(
       `A guest request requires the '${GUEST_SESSION_HEADER}' header when no customer session is present`,
     );
   }
-  const trimmed = guestSessionId.trim();
-  if (trimmed.length > MAX_GUEST_SESSION_ID_LENGTH) {
-    throw new ValidationError(`The '${GUEST_SESSION_HEADER}' header must be at most ${MAX_GUEST_SESSION_ID_LENGTH} characters`);
-  }
+  return { guestSessionId: guestOwner };
+}
 
-  if (loadEnv().NODE_ENV === 'production') {
-    const verifiedId = verifyGuestSessionToken(trimmed);
-    if (!verifiedId) {
-      throw new ValidationError(
-        `The '${GUEST_SESSION_HEADER}' header must be a server-issued token - call POST /storefront/guest-session first`,
-      );
+function verifiedGuestOwnerOrNull(request: FastifyRequest): string | null {
+  const value = readGuestHeader(request);
+  if (!value || value.length > MAX_GUEST_HEADER_LENGTH) return null;
+  if (isVersionedGuestToken(value)) return verifyGuestSessionToken(value)?.ownerId ?? null;
+  return loadEnv().GUEST_SESSION_ALLOW_UNSIGNED ? value : null;
+}
+
+function bearerToken(request: FastifyRequest): string | null {
+  const header = request.headers.authorization;
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return null;
+  const token = header.slice('Bearer '.length).trim();
+  return token || null;
+}
+
+/**
+ * Rate-limit key for guest-or-customer storefront routes (checkout,
+ * payment retry). Only a VERIFIED identity earns its own bucket:
+ *  - a customer JWT that verifies           -> `c:<customerId>`
+ *  - a guest credential that verifies       -> `g:<ownerId>`
+ *  - anything else (absent, forged, expired,
+ *    garbage bearer or guest header)         -> `ip:<client ip>`
+ * so rotating fake credentials only ever lands in the caller's one IP
+ * bucket and cannot mint fresh buckets. Runs at onRequest (before the
+ * route's own auth preHandler), so it verifies the credentials itself;
+ * both checks are stateless (JWT signature / HMAC). Ordinary identity and
+ * IP throttling - no device fingerprinting.
+ */
+export function checkoutRateLimitKey(request: FastifyRequest): string {
+  const bearer = bearerToken(request);
+  if (bearer) {
+    try {
+      const payload = request.server.jwt.verify<{ sub?: string }>(bearer);
+      if (payload?.sub) return `c:${payload.sub}`;
+    } catch {
+      // unverifiable bearer - fall through to the IP bucket
     }
-    return { guestSessionId: verifiedId };
+    return `ip:${request.ip}`;
   }
+  const guestOwner = verifiedGuestOwnerOrNull(request);
+  return guestOwner ? `g:${guestOwner}` : `ip:${request.ip}`;
+}
 
-  return { guestSessionId: trimmed };
+/** Rate-limit key for guest-session renewal: the verified owner, or the IP for anything unverifiable. */
+export function guestRenewalRateLimitKey(request: FastifyRequest): string {
+  const value = readGuestHeader(request);
+  const owner = value && isVersionedGuestToken(value) ? verifyGuestSessionToken(value)?.ownerId : undefined;
+  return owner ? `g:${owner}` : `ip:${request.ip}`;
 }

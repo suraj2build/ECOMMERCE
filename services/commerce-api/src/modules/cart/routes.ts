@@ -1,14 +1,31 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { loadEnv } from '@fcp/config';
+import { UnauthorizedError } from '@fcp/shared';
 import { CartService } from './service.js';
 import { WishlistService } from './wishlist-service.js';
-import { resolveCartIdentity, mintGuestSessionToken, GUEST_SESSION_HEADER } from './identity.js';
+import {
+  resolveCartIdentity,
+  resolveGuestOwner,
+  mintGuestSessionToken,
+  renewGuestSessionToken,
+  guestRenewalRateLimitKey,
+  GUEST_SESSION_HEADER,
+  type IssuedGuestSession,
+} from './identity.js';
 
 const addItemSchema = z.object({ skuId: z.string().uuid(), quantity: z.number().int().positive().default(1) });
 const updateQuantitySchema = z.object({ quantity: z.number().int().positive() });
 const moveToCartSchema = z.object({ quantity: z.number().int().positive().default(1) });
 const skuIdParamSchema = z.object({ skuId: z.string().uuid() });
-const guestHeaderSchema = z.object({ [GUEST_SESSION_HEADER]: z.string().min(1).optional() });
+
+function guestSessionResponse(issued: IssuedGuestSession) {
+  return {
+    guestSessionId: issued.token,
+    issuedAt: new Date(issued.claims.issuedAt * 1000).toISOString(),
+    expiresAt: new Date(issued.claims.expiresAt * 1000).toISOString(),
+  };
+}
 
 /**
  * Cart/Wishlist storefront routes (M12). Every route below serves both
@@ -23,18 +40,51 @@ const cartRoutes: FastifyPluginAsync = async (fastify) => {
 
   const identityAuth = { preHandler: fastify.tryCustomerAuth };
 
-  // --- Guest session issuance (M31, CART-004) ---
+  // --- Guest session credential (CART-004) - see identity.ts ---
   //
-  // No auth/identity requirement at all - this IS how an identity gets
-  // established for a brand-new guest. Unauthenticated, unlimited by
-  // permission (rate limiting, not RBAC, is the right control here -
-  // see M31's own rate-limiting plugin). The real storefront client
-  // calls this once, lazily, on its first cart/wishlist interaction,
-  // and caches the result - see identity.ts's own docblock for the full
-  // CART-004 design record.
-  fastify.post('/storefront/guest-session', async (_request, reply) => {
-    reply.status(201).send({ guestSessionId: mintGuestSessionToken() });
-  });
+  // Issuance mints a brand-new guest owner; it reads nothing from the
+  // request, so no caller can have a chosen owner id signed. Limited per
+  // client IP since every call creates a fresh credential.
+  const env = loadEnv();
+  const e2eOverride = env.AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX;
+  fastify.post(
+    '/storefront/guest-session',
+    {
+      config: {
+        rateLimit: {
+          max: e2eOverride ?? env.GUEST_SESSION_ISSUE_RATE_LIMIT_PER_MINUTE,
+          timeWindow: '1 minute',
+          keyGenerator: (request) => `ip:${request.ip}`,
+        },
+      },
+    },
+    async (_request, reply) => {
+      reply.status(201).send(guestSessionResponse(mintGuestSessionToken()));
+    },
+  );
+
+  // Renewal: re-signs the owner of the CURRENTLY VALID token in the
+  // guest header with a fresh lifetime - same owner, so the existing
+  // cart/wishlist/orders stay attached. An invalid or expired token is
+  // 401; the client then obtains a new session. Limited per verified
+  // owner (unverifiable callers share their IP bucket).
+  fastify.post(
+    '/storefront/guest-session/renew',
+    {
+      config: {
+        rateLimit: { max: e2eOverride ?? 10, timeWindow: '1 minute', keyGenerator: guestRenewalRateLimitKey },
+      },
+    },
+    async (request, reply) => {
+      const header = request.headers[GUEST_SESSION_HEADER];
+      const presented = (Array.isArray(header) ? header[0] : header)?.trim() ?? '';
+      const renewed = renewGuestSessionToken(presented);
+      if (!renewed) {
+        throw new UnauthorizedError('Guest session is invalid or expired - obtain a new one via POST /storefront/guest-session');
+      }
+      reply.status(200).send(guestSessionResponse(renewed));
+    },
+  );
 
   // --- Cart ---
 
@@ -66,9 +116,9 @@ const cartRoutes: FastifyPluginAsync = async (fastify) => {
     '/storefront/cart/merge',
     { preHandler: fastify.requireCustomerAuth },
     async (request, reply) => {
-      const { [GUEST_SESSION_HEADER]: guestSessionId } = guestHeaderSchema.parse(request.headers);
-      if (guestSessionId) {
-        await cartService.mergeGuestCartIntoCustomer(request.customer!.id, guestSessionId);
+      const guestOwner = resolveGuestOwner(request);
+      if (guestOwner) {
+        await cartService.mergeGuestCartIntoCustomer(request.customer!.id, guestOwner);
       }
       reply.status(200).send(await cartService.getCartView({ customerId: request.customer!.id }));
     },
@@ -104,9 +154,9 @@ const cartRoutes: FastifyPluginAsync = async (fastify) => {
     '/storefront/wishlist/merge',
     { preHandler: fastify.requireCustomerAuth },
     async (request, reply) => {
-      const { [GUEST_SESSION_HEADER]: guestSessionId } = guestHeaderSchema.parse(request.headers);
-      if (guestSessionId) {
-        await wishlistService.mergeGuestWishlistIntoCustomer(request.customer!.id, guestSessionId);
+      const guestOwner = resolveGuestOwner(request);
+      if (guestOwner) {
+        await wishlistService.mergeGuestWishlistIntoCustomer(request.customer!.id, guestOwner);
       }
       reply.status(200).send(await wishlistService.listItems({ customerId: request.customer!.id }));
     },
