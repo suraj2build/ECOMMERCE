@@ -7,6 +7,9 @@
  * token is a staff session token (StaffSessionStore, M01), not a JWT -
  * every authenticated call sends it as a Bearer token, exactly like the
  * integration tests' `createAuthenticatedStaff` fixture.
+ *
+ * The permission list stored here only decides what the console shows;
+ * every action is still authorized by the server.
  */
 
 const STORAGE_KEY = 'fcp_admin_session';
@@ -44,14 +47,27 @@ function storeSession(session: StaffSession): void {
   }
 }
 
-export async function staffLogin(email: string, password: string): Promise<StaffSession> {
+/** Thrown when the password was accepted but the account needs its authenticator code (AUTH-002). */
+export class MfaRequiredError extends Error {
+  constructor() {
+    super('Enter the 6-digit code from your authenticator app.');
+  }
+}
+
+/**
+ * Password login, with the MFA code on a second submit when the server
+ * answers 401 MFA_REQUIRED. The code is only ever sent to the login
+ * route; it is never stored.
+ */
+export async function staffLogin(email: string, password: string, mfaCode?: string): Promise<StaffSession> {
   const res = await fetch(`${API_URL}/api/v1/auth/staff/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(mfaCode ? { mfaCode } : {}) }),
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+    const body = (await res.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    if (body?.error?.code === 'MFA_REQUIRED') throw new MfaRequiredError();
     throw new Error(body?.error?.message ?? 'Invalid email or password.');
   }
   const { token } = (await res.json()) as { token: string; expiresAt: string };
@@ -65,4 +81,16 @@ export async function staffLogin(email: string, password: string): Promise<Staff
   const session: StaffSession = { token, staffUserId: me.id, roles: me.roles, permissions: me.permissions };
   storeSession(session);
   return session;
+}
+
+/** Revokes the session server-side (POST /auth/staff/logout), then forgets it locally either way. */
+export async function staffLogout(): Promise<void> {
+  const session = getStoredSession();
+  try {
+    if (session) {
+      await fetch(`${API_URL}/api/v1/auth/staff/logout`, { method: 'POST', headers: { authorization: `Bearer ${session.token}` } });
+    }
+  } finally {
+    clearSession();
+  }
 }

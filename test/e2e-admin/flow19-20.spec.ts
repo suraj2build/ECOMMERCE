@@ -83,6 +83,20 @@ test.describe('FLOW 19 / FLOW 20 - Admin RBAC and inventory adjustment (M29)', (
     await prisma.$disconnect();
   });
 
+  // P1: the adjustment form picks the SKU by code and the location by name
+  // (no id entry), and asks for confirmation before submitting.
+  async function fillAdjustment(page: import('@playwright/test').Page, delta: string, justification?: string) {
+    await page.getByRole('combobox', { name: 'SKU' }).fill('E2E-ADMIN-STYLE-BLK-M');
+    await page.getByRole('option', { name: /E2E-ADMIN-STYLE-BLK-M/ }).click();
+    await page.getByLabel('Location', { exact: true }).selectOption({ label: 'E2E Admin Warehouse (E2E-ADMIN-WH)' });
+    await page.getByLabel('Quantity delta').fill(delta);
+    if (justification !== undefined) await page.getByLabel('Justification (required by the server)').fill(justification);
+    await page.getByRole('button', { name: 'Submit adjustment' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Record adjustment' }).click();
+  }
+
+  const outcome = (page: import('@playwright/test').Page) => page.locator('form').getByRole('status');
+
   async function loginAs(page: import('@playwright/test').Page, email: string) {
     await page.goto('/login');
     await page.getByLabel('Email').fill(email);
@@ -127,13 +141,9 @@ test.describe('FLOW 19 / FLOW 20 - Admin RBAC and inventory adjustment (M29)', (
     // the real proof this milestone requires is that navigating there
     // directly and submitting is rejected server-side, not merely hidden.
     await page.goto('/dashboard/inventory-adjustments');
-    await page.getByLabel('SKU ID').fill(skuId);
-    await page.getByLabel('Location ID').fill(locationId);
-    await page.getByLabel('Quantity delta').fill('5');
-    await page.getByLabel('Justification (required by the server)').fill('E2E unauthorized attempt');
-    await page.getByRole('button', { name: 'Submit adjustment' }).click();
+    await fillAdjustment(page, '5', 'E2E unauthorized attempt');
 
-    await expect(page.getByRole('status')).toContainText('Forbidden');
+    await expect(outcome(page)).toContainText('Forbidden');
 
     const denial = await prisma.auditLog.findFirst({ where: { action: 'authz.denied', entityId: 'inventory:adjust' }, orderBy: { createdAt: 'desc' } });
     expect(denial).not.toBeNull();
@@ -143,13 +153,9 @@ test.describe('FLOW 19 / FLOW 20 - Admin RBAC and inventory adjustment (M29)', (
     await loginAs(page, 'e2e-warehouse-manager@example.com');
 
     await page.goto('/dashboard/inventory-adjustments');
-    await page.getByLabel('SKU ID').fill(skuId);
-    await page.getByLabel('Location ID').fill(locationId);
-    await page.getByLabel('Quantity delta').fill('3');
-    await page.getByLabel('Justification (required by the server)').fill('E2E below-threshold cycle count');
-    await page.getByRole('button', { name: 'Submit adjustment' }).click();
+    await fillAdjustment(page, '3', 'E2E below-threshold cycle count');
 
-    await expect(page.getByRole('status')).toContainText('Adjustment recorded');
+    await expect(outcome(page)).toContainText('Adjustment recorded');
 
     const audit = await prisma.auditLog.findFirst({
       where: { action: 'inventory.adjust', entityId: `${skuId}/${locationId}` },
@@ -162,11 +168,9 @@ test.describe('FLOW 19 / FLOW 20 - Admin RBAC and inventory adjustment (M29)', (
     await loginAs(page, 'e2e-warehouse-manager@example.com');
 
     await page.goto('/dashboard/inventory-adjustments');
-    await page.getByLabel('SKU ID').fill(skuId);
-    await page.getByLabel('Location ID').fill(locationId);
-    await page.getByLabel('Quantity delta').fill('1');
-    await page.getByRole('button', { name: 'Submit adjustment' }).click();
+    await fillAdjustment(page, '1');
 
-    await expect(page.getByRole('status')).not.toContainText('Adjustment recorded');
+    await expect(outcome(page)).toBeVisible();
+    await expect(outcome(page)).not.toContainText('Adjustment recorded');
   });
 });

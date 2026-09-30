@@ -292,6 +292,39 @@ export class AdminQueryService {
     return { items: rows.map((r) => ({ ...r, totalCost: money(r.totalCost) })), total };
   }
 
+  /**
+   * A PO's lines with SKU descriptions, plus approval history with approver
+   * names. GET /procurement/purchase-orders/:id returns bare SKU and staff
+   * ids, and an approver (po:read) may not hold product:read.
+   */
+  async getPurchaseOrderLines(poId: string) {
+    const po = await this.prisma.purchaseOrder.findUnique({
+      where: { id: poId },
+      select: {
+        id: true,
+        submittedBy: { select: { id: true, fullName: true } },
+        approvedBy: { select: { id: true, fullName: true } },
+        lines: {
+          select: {
+            id: true,
+            skuId: true,
+            orderedQty: true,
+            receivedQty: true,
+            unitCost: true,
+            sku: { select: { skuCode: true, style: { select: { name: true } }, colour: { select: { name: true } }, size: { select: { label: true } } } },
+          },
+          orderBy: { sku: { skuCode: 'asc' } },
+        },
+        approvals: {
+          select: { id: true, action: true, comment: true, createdAt: true, staff: { select: { id: true, fullName: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    if (!po) return null;
+    return { ...po, lines: po.lines.map((l) => ({ ...l, unitCost: money(l.unitCost) })) };
+  }
+
   /** Stock positions across SKUs/locations. `available` uses the inventory domain's own definition. */
   async listStock(params: { q?: string; locationId?: string; skuId?: string; take?: number; skip?: number }) {
     const term = params.q?.trim();

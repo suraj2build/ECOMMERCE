@@ -1,29 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getStoredSession, clearSession, type StaffSession } from '@/lib/staff-auth';
+import { getStoredSession, staffLogout, type StaffSession } from '@/lib/staff-auth';
+import { SessionProvider } from '@/lib/session';
+import { visibleNav } from '@/lib/nav';
 
-interface NavItem {
-  href: string;
-  label: string;
-  permission: string;
+function isCurrent(pathname: string, href: string): boolean {
+  if (href === '/dashboard') return pathname === '/dashboard';
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard/cms/banners', label: 'CMS - Banners', permission: 'cms:read' },
-  { href: '/dashboard/cms/content-blocks', label: 'CMS - Content Blocks', permission: 'cms:read' },
-  { href: '/dashboard/cms/landing-pages', label: 'CMS - Landing Pages', permission: 'cms:read' },
-  { href: '/dashboard/cms/navigation-menus', label: 'CMS - Navigation Menus', permission: 'cms:read' },
-  { href: '/dashboard/inventory-adjustments', label: 'Inventory Adjustments', permission: 'inventory:adjust' },
-  { href: '/dashboard/customer-360', label: 'Customer 360', permission: 'customer_service:manage' },
-  { href: '/dashboard/channels', label: 'Channel Publishing', permission: 'channel:read' },
-  { href: '/dashboard/analytics', label: 'Analytics', permission: 'analytics:read' },
-];
-
+/**
+ * Console shell: grouped navigation filtered by the session's
+ * permissions (UX only - the API authorizes every read and action), a
+ * skip link, and server-side sign-out.
+ */
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname() ?? '/dashboard';
   const [session, setSession] = useState<StaffSession | undefined>(undefined);
 
   useEffect(() => {
@@ -37,50 +33,54 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!session) return null;
 
-  const visibleItems = NAV_ITEMS.filter((item) => session.permissions.includes(item.permission));
+  const groups = visibleNav(session.permissions);
+  // The longest matching href is the current page (so /inventory does not also light up under /inventory/transfers).
+  const current = groups
+    .flatMap((g) => g.items)
+    .filter((i) => isCurrent(pathname, i.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <nav
-        style={{
-          width: 240,
-          flexShrink: 0,
-          background: 'var(--color-surface)',
-          borderRight: '1px solid var(--color-border)',
-          padding: '1.25rem 1rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.25rem',
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: '1rem' }}>Admin</div>
-        {visibleItems.length === 0 && (
-          <p style={{ fontSize: '0.85rem', color: 'var(--color-ink-muted)' }}>
-            No admin sections are available for your role.
-          </p>
-        )}
-        {visibleItems.map((item) => (
-          <Link key={item.href} href={item.href} style={{ padding: '0.4rem 0.5rem', borderRadius: 6, textDecoration: 'none' }}>
-            {item.label}
-          </Link>
-        ))}
-        <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--color-border)' }}>
-          <p style={{ fontSize: '0.8rem', color: 'var(--color-ink-muted)', margin: 0 }}>
-            Roles: {session.roles.join(', ') || 'none'}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              clearSession();
-              router.replace('/login');
-            }}
-            style={{ marginTop: '0.5rem', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
-          >
-            Sign out
-          </button>
-        </div>
-      </nav>
-      <main style={{ flex: 1, padding: '1.5rem 2rem' }}>{children}</main>
-    </div>
+    <SessionProvider value={session}>
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+      <div className="shell">
+        <nav className="sidebar" aria-label="Console">
+          <div className="sidebar-brand">Operations console</div>
+          {groups.map((g) => (
+            <div key={g.title} className="nav-group">
+              <p className="nav-group-title">{g.title}</p>
+              <ul>
+                {g.items.map((item) => (
+                  <li key={item.href}>
+                    <Link href={item.href} className="nav-link" aria-current={item.href === current ? 'page' : undefined}>
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          <div className="sidebar-footer">
+            <p style={{ margin: 0 }}>Roles: {session.roles.join(', ') || 'none'}</p>
+            <button
+              type="button"
+              className="link-button"
+              style={{ marginTop: '0.5rem' }}
+              onClick={async () => {
+                await staffLogout();
+                router.replace('/login');
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        </nav>
+        <main id="main" className="main" tabIndex={-1}>
+          {children}
+        </main>
+      </div>
+    </SessionProvider>
   );
 }

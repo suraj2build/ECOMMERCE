@@ -102,6 +102,13 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
     return service.listPurchaseOrders(q);
   });
 
+  fastify.get('/admin/purchase-orders/:id/lines', auth('po:read'), async (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const view = await service.getPurchaseOrderLines(id);
+    if (!view) throw new NotFoundError('PurchaseOrder', id);
+    return view;
+  });
+
   fastify.get('/admin/inventory/stock', auth('inventory:read'), async (request) => {
     const q = z
       .object({ q: z.string().trim().max(100).optional(), locationId: z.string().uuid().optional(), skuId: z.string().uuid().optional(), ...page })

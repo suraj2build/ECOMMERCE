@@ -130,6 +130,7 @@ describe('Admin query endpoints (P1)', () => {
     { url: () => '/admin/promotion-types', permission: 'promotion:read' },
     { url: () => '/admin/orders', permission: 'order:read' },
     { url: () => '/admin/fulfilments', permission: 'order:read' },
+    { url: () => '/admin/purchase-orders/00000000-0000-4000-8000-000000000000/lines', permission: 'po:read' },
   ];
 
   it('every query endpoint rejects an unauthenticated request with 401', async () => {
@@ -306,7 +307,7 @@ describe('Admin query endpoints (P1)', () => {
     const ctx = await seedContext();
     const sku = await checkoutableSku(ctx, `GRN-${counter}`);
     const buyer = await staff('BUYING', ['supplier:write', 'po:create', 'po:submit', 'po:read']);
-    const finance = await staff('FINANCE', ['po:approve']);
+    const finance = await staff('FINANCE', ['po:approve', 'po:read']);
     const receiver = await staff('WAREHOUSE_MANAGER', ['grn:create', 'grn:read']);
     await testPrisma.staffUser.update({ where: { id: receiver.staffUserId }, data: { mfaSecret: 'v1:aa:bb:cc', mfaEnabled: true } });
     const hb = { authorization: `Bearer ${buyer.token}` };
@@ -333,6 +334,17 @@ describe('Admin query endpoints (P1)', () => {
       },
     });
     expect(grn.statusCode).toBe(201);
+
+    // The PO line view gives the approver (po:read, no product:read) SKU codes, receipt progress and approver names.
+    const lines = (await get(`/admin/purchase-orders/${poId}/lines`, finance.token)).json();
+    expect(lines.lines).toEqual([
+      expect.objectContaining({ skuId: sku.skuId, orderedQty: 2, receivedQty: 2, unitCost: 100, sku: expect.objectContaining({ skuCode: sku.skuCode }) }),
+    ]);
+    expect(lines.submittedBy).toEqual({ id: buyer.staffUserId, fullName: 'Test Staff' });
+    expect(lines.approvedBy).toEqual({ id: finance.staffUserId, fullName: 'Test Staff' });
+    expect(lines.approvals.map((a: { action: string }) => a.action)).toEqual(['SUBMITTED', 'APPROVED']);
+    expect(JSON.stringify(lines)).not.toMatch(/passwordHash|mfaSecret|email/);
+    expect((await get('/admin/purchase-orders/00000000-0000-4000-8000-000000000000/lines', finance.token)).statusCode).toBe(404);
 
     const detail = await get(`/grn/${grn.json().id}`, receiver.token);
     expect(detail.statusCode).toBe(200);
