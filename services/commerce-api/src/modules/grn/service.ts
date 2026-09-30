@@ -240,7 +240,15 @@ export class GrnService {
   async getGoodsReceipt(id: string) {
     const grn = await this.prisma.goodsReceipt.findUnique({
       where: { id },
-      include: { lines: true, po: true, location: true, receivedBy: true },
+      // receivedBy is selected field-by-field: including the relation
+      // whole returned the staff member's passwordHash and mfaSecret
+      // (found by the P1 admin build; see security/AUTHORIZATION_SWEEP.md).
+      include: {
+        lines: true,
+        po: true,
+        location: true,
+        receivedBy: { select: { id: true, fullName: true, email: true } },
+      },
     });
     if (!grn) throw new NotFoundError('GoodsReceipt', id);
     return grn;

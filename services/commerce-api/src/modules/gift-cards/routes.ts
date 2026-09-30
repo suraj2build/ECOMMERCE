@@ -9,7 +9,10 @@ import { resolveCartIdentity } from '../cart/identity.js';
 // CheckoutService.toView) explicitly converts to Number before sending
 // the HTTP response, so gift cards follow the same convention rather
 // than leaking a raw Decimal/string.
-function giftCardView(giftCard: GiftCard & { entries?: GiftCardLedgerEntry[] }) {
+// codeHash is omitted: it is the stored form of the spendable secret and,
+// per security/PII_DATA_INVENTORY.md, is only ever compared, never read
+// back (it was previously returned here; found by the P1 admin build).
+function giftCardView({ codeHash: _codeHash, ...giftCard }: GiftCard & { entries?: GiftCardLedgerEntry[] }) {
   return {
     ...giftCard,
     initialValue: Number(giftCard.initialValue),

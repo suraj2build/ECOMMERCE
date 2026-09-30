@@ -14,6 +14,16 @@ export interface InventoryBalanceSnapshot {
 }
 
 /**
+ * Per-location available quantity: on-hand stock not held by a
+ * reservation (damaged/returnPending/inTransit are tracked separately and
+ * never counted). The single definition used by getBalance, the row-locked
+ * balance read, and the staff stock list (admin-queries).
+ */
+export function availableAtLocation(balance: { onHand: number; reserved: number }): number {
+  return balance.onHand - balance.reserved;
+}
+
+/**
  * Inventory Ledger (M06, specs/06-inventory.md, ADR-0012) - the platform's
  * most financially/operationally critical domain.
  *
@@ -118,7 +128,7 @@ export class InventoryService {
 
     const row = rows[0];
     if (!row) throw new NotFoundError('InventoryBalance', `${skuId}/${locationId}`);
-    return { ...row, available: row.onHand - row.reserved };
+    return { ...row, available: availableAtLocation(row) };
   }
 
   async getBalance(skuId: string, locationId: string): Promise<InventoryBalanceSnapshot> {
@@ -128,7 +138,7 @@ export class InventoryService {
     if (!balance) {
       return { onHand: 0, reserved: 0, damaged: 0, returnPending: 0, inTransit: 0, available: 0 };
     }
-    return { ...balance, available: balance.onHand - balance.reserved };
+    return { ...balance, available: availableAtLocation(balance) };
   }
 
   /**

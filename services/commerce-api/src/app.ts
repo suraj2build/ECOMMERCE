@@ -44,6 +44,7 @@ import channelRoutes from './modules/channels/routes.js';
 import analyticsRoutes from './modules/analytics/routes.js';
 import cmsRoutes from './modules/cms/routes.js';
 import supportRoutes from './modules/support/routes.js';
+import adminQueryRoutes from './modules/admin-queries/routes.js';
 
 export interface BuildAppOptions {
   /** Test seam: route log output to a caller-supplied stream instead of stdout. */
@@ -194,6 +195,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(analyticsRoutes, { prefix: '/api/v1' });
   await app.register(cmsRoutes, { prefix: '/api/v1' });
   await app.register(supportRoutes, { prefix: '/api/v1' });
+  await app.register(adminQueryRoutes, { prefix: '/api/v1' });
 
   return app;
 }
