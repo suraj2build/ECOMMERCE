@@ -30,7 +30,10 @@ import {
 let fx: Fixture;
 let tee: ProvisionedStyle;
 let mobileSeq = 0;
-const nextMobile = () => `98${RUN.replace(/\D/g, '').padEnd(4, '7').slice(0, 4)}${String(++mobileSeq).padStart(4, '0')}`;
+// Millisecond digits, not RUN's: RUN is base36, and its digits repeat across runs made
+// minutes apart against the same database.
+const MOBILE_PREFIX = String(Date.now()).slice(-4);
+const nextMobile = () => `98${MOBILE_PREFIX}${String(++mobileSeq).padStart(4, '0')}`;
 
 test.beforeAll(async () => {
   fx = await setUpFixture();
@@ -320,7 +323,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await confirmDialog(page, 'Request exchange');
     await expect(page.getByText('Exchange requested.')).toBeVisible();
     const exchange = await prisma.exchange.findUniqueOrThrow({ where: { orderLineId: order.lineId } });
-    expect(exchange.paymentDirection).toBe('EVEN');
+    expect(exchange).toMatchObject({ replacementSkuId: medium!.skuId, paymentDirection: 'EVEN' });
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
     await page.goto(`/dashboard/exchanges/${exchange.id}`);
@@ -334,7 +337,7 @@ test.describe('P1 Commerce Operations Console', () => {
 
     // The replacement's pick task appears in the normal pick queue.
     await page.goto(`/dashboard/warehouse/picks?locationId=${fx.locationA.id}`);
-    const pickRow = page.getByRole('row').filter({ hasText: 'Exchange replacement' }).filter({ hasText: 'P1-M' });
+    const pickRow = page.getByRole('row').filter({ hasText: 'Exchange replacement' }).filter({ hasText: medium!.sizeLabel });
     await pickRow.first().getByRole('button', { name: 'Record pick' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Record pick' }).click();
     await expect(page.getByRole('dialog')).toBeHidden();
@@ -357,8 +360,8 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(fulfilment.shipment?.provider).toBe('MOCK');
     expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(1);
     // No second order or order line was created for the replacement.
-    const { contactMobile } = await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } });
-    expect(await prisma.order.count({ where: { contactMobile } })).toBe(1);
+    const { contactMobile, createdAt } = await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } });
+    expect(await prisma.order.count({ where: { contactMobile, createdAt: { gte: createdAt } } })).toBe(1);
     expect(await prisma.orderLine.count({ where: { orderId: order.orderId } })).toBe(1);
   });
 

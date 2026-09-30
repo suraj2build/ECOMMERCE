@@ -148,7 +148,9 @@ export async function provisionStyle(fx: Fixture, name: string, price = 999): Pr
     await expectOk(await api.post(`/api/v1/products/styles/${style.id}/${step}`, { headers: auth }), step);
   }
   await expectOk(await api.post('/api/v1/catalog/prices', { headers: auth, data: { styleId: style.id, mrp: price, sellingPrice: price } }), 'Price');
-  const skus = await prisma.sku.findMany({ where: { styleId: style.id }, include: { size: true }, orderBy: { skuCode: 'asc' } });
+  // Size order, not SKU-code order: generated codes end in a hash of the size id, so
+  // sorting by code would make skus[0]/skus[1] vary between databases.
+  const skus = await prisma.sku.findMany({ where: { styleId: style.id }, include: { size: true }, orderBy: { size: { sortOrder: 'asc' } } });
   return { styleId: style.id, styleCode, name, skus: skus.map((s) => ({ skuId: s.id, skuCode: s.skuCode, sizeLabel: s.size.label })) };
 }
 
