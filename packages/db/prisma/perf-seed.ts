@@ -43,7 +43,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 async function main() {
-  console.log(`[perf-seed] starting - target ${STYLE_COUNT} styles x ${COLOURS_PER_STYLE} colours x ${SIZES_PER_STYLE} sizes`);
+  console.warn(`[perf-seed] starting - target ${STYLE_COUNT} styles x ${COLOURS_PER_STYLE} colours x ${SIZES_PER_STYLE} sizes`);
   const startedAt = Date.now();
 
   const brand = await prisma.brand.upsert({
@@ -88,7 +88,7 @@ async function main() {
   for (const batch of chunk(styleRows, 2000)) {
     await prisma.style.createMany({ data: batch });
   }
-  console.log(`[perf-seed] ${styleIds.length} styles created`);
+  console.warn(`[perf-seed] ${styleIds.length} styles created`);
 
   // --- Colours ---
   type ColourRow = { id: string; styleId: string; name: string; colourCode: string };
@@ -101,7 +101,7 @@ async function main() {
   for (const batch of chunk(colourRows, 5000)) {
     await prisma.colour.createMany({ data: batch });
   }
-  console.log(`[perf-seed] ${colourRows.length} colours created`);
+  console.warn(`[perf-seed] ${colourRows.length} colours created`);
 
   // --- Prices (one per style, applies to all colours) ---
   const priceRows = styleIds.map((styleId) => ({
@@ -114,7 +114,7 @@ async function main() {
   for (const batch of chunk(priceRows, 5000)) {
     await prisma.price.createMany({ data: batch });
   }
-  console.log(`[perf-seed] ${priceRows.length} prices created`);
+  console.warn(`[perf-seed] ${priceRows.length} prices created`);
 
   // --- SKUs + InventoryBalance ---
   type SkuRow = { id: string; skuCode: string; styleId: string; colourId: string; sizeId: string };
@@ -135,7 +135,7 @@ async function main() {
   for (const batch of chunk(skuRows, 5000)) {
     await prisma.sku.createMany({ data: batch });
   }
-  console.log(`[perf-seed] ${skuRows.length} SKUs created`);
+  console.warn(`[perf-seed] ${skuRows.length} SKUs created`);
 
   const balanceRows = skuRows.map((s) => ({
     skuId: s.id,
@@ -146,12 +146,12 @@ async function main() {
   for (const batch of chunk(balanceRows, 5000)) {
     await prisma.inventoryBalance.createMany({ data: batch });
   }
-  console.log(`[perf-seed] ${balanceRows.length} inventory balances created`);
+  console.warn(`[perf-seed] ${balanceRows.length} inventory balances created`);
 
-  console.log(`[perf-seed] catalog scale complete in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
-  console.log(`[perf-seed] totals: styles=${styleIds.length} colours=${colourRows.length} skus=${skuRows.length}`);
-  console.log(`[perf-seed] reference style id for PDP benchmarking: ${styleIds[0]}`);
-  console.log(`[perf-seed] reference style code for search benchmarking: ${styleRows[0]!.styleCode}`);
+  console.warn(`[perf-seed] catalog scale complete in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+  console.warn(`[perf-seed] totals: styles=${styleIds.length} colours=${colourRows.length} skus=${skuRows.length}`);
+  console.warn(`[perf-seed] reference style id for PDP benchmarking: ${styleIds[0]}`);
+  console.warn(`[perf-seed] reference style code for search benchmarking: ${styleRows[0]!.styleCode}`);
 
   await prisma.$disconnect();
 }
