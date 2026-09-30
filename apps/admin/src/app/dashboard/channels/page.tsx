@@ -1,7 +1,26 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { SkuPicker, type SkuOption } from '@/components/pickers';
+import {
+  ActionMessage,
+  Can,
+  ConfirmDialog,
+  DataState,
+  DataTable,
+  DateText,
+  Drawer,
+  Ident,
+  Money,
+  Notice,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  TextField,
+} from '@/components/ui';
+import { apiFetch, apiSend, errorMessage, qs } from '@/lib/api';
+import { useAction, useApi, useCan } from '@/lib/session';
 
 interface Channel {
   id: string;
@@ -15,114 +34,286 @@ interface ChannelListing {
   id: string;
   skuId: string;
   status: string;
-  lastPublishedAt: string | null;
+  externalId: string | null;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+  retryCount: number;
+  updatedAt: string;
 }
 
+interface Attempt {
+  id: string;
+  action: string;
+  status: string;
+  errorMessage: string | null;
+  attemptedAt: string;
+}
+
+interface FeedItem {
+  externalId: string;
+  title: string;
+  price: number;
+  currency: string;
+  availability: string;
+  imageUrl: string | null;
+}
+
+/**
+ * Channel publishing (M26). Publish and unpublish call the channel service,
+ * which records every attempt. An ambiguous outcome (the provider call
+ * failed after dispatch) stays ambiguous until an operator re-issues the
+ * same action; re-issuing reuses the listing's operation id, so the
+ * provider can de-duplicate it. Nothing here retries automatically.
+ */
 export default function ChannelsPage() {
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [selectedChannelId, setSelectedChannelId] = useState<string>('');
-  const [listings, setListings] = useState<ChannelListing[]>([]);
-  const [skuId, setSkuId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  async function loadChannels() {
-    try {
-      const data = await apiFetch<Channel[]>('/channels');
-      setChannels(data);
-      if (data.length > 0 && !selectedChannelId) setSelectedChannelId(data[0]!.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load channels.');
-    }
-  }
-
-  async function loadListings(channelId: string) {
-    if (!channelId) return;
-    try {
-      setListings(await apiFetch<ChannelListing[]>(`/channels/${channelId}/listings`));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load listings.');
-    }
-  }
+  const channels = useApi<Channel[]>('/channels');
+  const [channelId, setChannelId] = useState('');
+  useEffect(() => {
+    if (!channelId && channels.data?.[0]) setChannelId(channels.data[0].id);
+  }, [channels.data, channelId]);
+  const listings = useApi<ChannelListing[]>(channelId ? `/channels/${channelId}/listings` : null);
+  const canProduct = useCan('product:read');
+  const skuIds = (listings.data ?? []).map((l) => l.skuId);
+  const labels = useApi<{ skus: Record<string, string> }>(canProduct && skuIds.length ? `/admin/lookup/labels${qs({ skuIds: skuIds.slice(0, 200).join(',') })}` : null);
+  const action = useAction();
+  const [sku, setSku] = useState<SkuOption | null>(null);
+  const [preview, setPreview] = useState<FeedItem | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [attemptsFor, setAttemptsFor] = useState<ChannelListing | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: 'publish' | 'unpublish'; skuId: string; label: string } | { kind: 'reclaim' | 'resync' } | null>(null);
+  const channel = channels.data?.find((c) => c.id === channelId);
 
   useEffect(() => {
-    void loadChannels();
-  }, []);
+    setPreview(null);
+    setPreviewError(null);
+    if (!sku || !channelId) return;
+    apiFetch<FeedItem>(`/channels/${channelId}/preview/${sku.id}`)
+      .then(setPreview)
+      .catch((err) => setPreviewError(errorMessage(err)));
+  }, [sku, channelId]);
 
-  useEffect(() => {
-    void loadListings(selectedChannelId);
-  }, [selectedChannelId]);
-
-  async function onPublish(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await apiFetch(`/channels/${selectedChannelId}/skus/${skuId}/publish`, { method: 'POST' });
-      setSkuId('');
-      await loadListings(selectedChannelId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not publish SKU.');
-    }
-  }
-
-  async function onUnpublish(listing: ChannelListing) {
-    setError(null);
-    try {
-      await apiFetch(`/channels/${selectedChannelId}/skus/${listing.skuId}/unpublish`, { method: 'POST' });
-      await loadListings(selectedChannelId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not unpublish SKU.');
+  async function run() {
+    if (!confirm) return;
+    const c = confirm;
+    const call =
+      c.kind === 'publish' || c.kind === 'unpublish'
+        ? () => apiSend('POST', `/channels/${channelId}/skus/${c.skuId}/${c.kind}`)
+        : () => apiSend('POST', c.kind === 'reclaim' ? '/channels/sweep/reclaim-stale' : '/channels/sweep/resync-stale');
+    const ok = await action.run(call, c.kind === 'publish' ? 'Publish attempt recorded - see the listing status.' : c.kind === 'unpublish' ? 'Unpublish attempt recorded.' : 'Sweep finished.');
+    setConfirm(null);
+    if (ok) {
+      listings.reload();
+      if (c.kind === 'publish') setSku(null);
     }
   }
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.25rem' }}>Channel Publishing</h1>
-      {error && <p className="error-banner">{error}</p>}
-      <div className="field" style={{ maxWidth: 320 }}>
-        <label htmlFor="channel">Channel</label>
-        <select id="channel" value={selectedChannelId} onChange={(e) => setSelectedChannelId(e.target.value)}>
-          {channels.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} ({c.providerName})
-            </option>
-          ))}
-        </select>
-      </div>
+      <PageHeader
+        title="Channel publishing"
+        breadcrumbs={[{ label: 'Commercial' }, { label: 'Channels' }]}
+        actions={
+          <Can anyOf={['channel:manage']}>
+            <button type="button" className="btn" onClick={() => setConfirm({ kind: 'resync' })}>
+              Resync stale availability
+            </button>
+            <button type="button" className="btn" onClick={() => setConfirm({ kind: 'reclaim' })}>
+              Reclaim stuck attempts
+            </button>
+          </Can>
+        }
+      />
+      <ActionMessage message={confirm ? null : action.message} />
+      <DataState state={channels} isEmpty={(d) => d.length === 0} empty="No channels are configured yet.">
+        {(list) => (
+          <SelectField
+            label="Channel"
+            value={channelId}
+            onChange={setChannelId}
+            options={list.map((c) => ({ value: c.id, label: `${c.name} (${c.providerName})${c.isActive ? '' : ' - inactive'}` }))}
+          />
+        )}
+      </DataState>
+      <Can anyOf={['channel:manage']}>
+        <NewChannel onCreated={channels.reload} />
+      </Can>
 
-      <form onSubmit={onPublish} className="card" style={{ maxWidth: 420, marginBottom: '1.5rem' }}>
-        <div className="field">
-          <label htmlFor="skuId">SKU ID to publish</label>
-          <input id="skuId" required value={skuId} onChange={(e) => setSkuId(e.target.value)} />
-        </div>
-        <button className="primary" type="submit" disabled={!selectedChannelId}>
-          Publish SKU
+      {channel && (
+        <>
+          <Can anyOf={['channel:manage']}>
+            <Section title={`Publish a SKU to ${channel.name}`}>
+              <SkuPicker value={sku} onChange={setSku} />
+              {previewError && <Notice kind="error">{previewError}</Notice>}
+              {preview && (
+                <dl className="dl" style={{ marginBottom: '0.75rem' }}>
+                  <dt>Feed title</dt>
+                  <dd>{preview.title}</dd>
+                  <dt>Price</dt>
+                  <dd>
+                    <Money value={preview.price} currency={preview.currency} />
+                  </dd>
+                  <dt>Availability</dt>
+                  <dd>{preview.availability.replace('_', ' ')}</dd>
+                  <dt>External id</dt>
+                  <dd>
+                    <Ident>{preview.externalId}</Ident>
+                  </dd>
+                </dl>
+              )}
+              <button type="button" className="primary" disabled={!sku} onClick={() => sku && setConfirm({ kind: 'publish', skuId: sku.id, label: sku.skuCode })}>
+                Publish SKU
+              </button>
+            </Section>
+          </Can>
+          <Section title="Listings">
+            <DataState state={listings}>
+              {(rows) => (
+                <DataTable
+                  caption="Channel listings"
+                  rows={rows}
+                  rowKey={(l) => l.id}
+                  empty="Nothing listed on this channel."
+                  columns={[
+                    { header: 'SKU', cell: (l) => <Ident>{labels.data?.skus[l.skuId] ?? l.skuId.slice(0, 8)}</Ident> },
+                    {
+                      header: 'Status',
+                      cell: (l) => (
+                        <>
+                          <StatusBadge status={l.status} />
+                          {l.status === 'AMBIGUOUS_RECONCILIATION_REQUIRED' && (
+                            <div className="muted" style={{ fontSize: '0.8rem' }}>
+                              Outcome unknown. Check the channel, then re-issue the same action.
+                            </div>
+                          )}
+                          {l.lastError && <div className="muted">{l.lastError}</div>}
+                        </>
+                      ),
+                    },
+                    { header: 'External id', cell: (l) => <Ident>{l.externalId ?? '—'}</Ident> },
+                    { header: 'Last synced', cell: (l) => <DateText value={l.lastSyncedAt} withTime /> },
+                    {
+                      header: 'Actions',
+                      cell: (l) => (
+                        <span className="row">
+                          <button type="button" className="btn small" onClick={() => setAttemptsFor(l)}>
+                            Attempts
+                          </button>
+                          <Can anyOf={['channel:manage']}>
+                            <button
+                              type="button"
+                              className="btn small"
+                              onClick={() => setConfirm({ kind: 'publish', skuId: l.skuId, label: labels.data?.skus[l.skuId] ?? 'this SKU' })}
+                            >
+                              {l.status === 'PUBLISHED' ? 'Resync' : 'Publish'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn small danger"
+                              onClick={() => setConfirm({ kind: 'unpublish', skuId: l.skuId, label: labels.data?.skus[l.skuId] ?? 'this SKU' })}
+                            >
+                              Unpublish
+                            </button>
+                          </Can>
+                        </span>
+                      ),
+                    },
+                  ]}
+                />
+              )}
+            </DataState>
+          </Section>
+        </>
+      )}
+
+      <Drawer open={attemptsFor !== null} title="Publication attempts" onClose={() => setAttemptsFor(null)}>
+        {attemptsFor && <Attempts listingId={attemptsFor.id} />}
+      </Drawer>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={
+          confirm?.kind === 'publish'
+            ? 'Publish to channel'
+            : confirm?.kind === 'unpublish'
+              ? 'Unpublish from channel'
+              : confirm?.kind === 'reclaim'
+                ? 'Reclaim stuck attempts'
+                : 'Resync stale availability'
+        }
+        confirmLabel={confirm?.kind === 'publish' ? 'Publish' : confirm?.kind === 'unpublish' ? 'Unpublish' : 'Run sweep'}
+        danger={confirm?.kind === 'unpublish'}
+        busy={action.busy}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => void run()}
+      >
+        {confirm && (confirm.kind === 'publish' || confirm.kind === 'unpublish') && (
+          <p>
+            {confirm.kind === 'publish' ? 'Publish' : 'Unpublish'} <span className="mono">{confirm.label}</span> on {channel?.name}. The attempt and its outcome are
+            recorded; an unknown outcome is marked for reconciliation, never assumed.
+          </p>
+        )}
+        {confirm?.kind === 'reclaim' && <p>Marks attempts stuck in processing past the stale window as needing reconciliation. It never re-sends anything.</p>}
+        {confirm?.kind === 'resync' && <p>Re-publishes published listings whose stock availability has changed since they were last sent.</p>}
+        {action.message?.kind === 'error' && <ActionMessage message={action.message} />}
+      </ConfirmDialog>
+    </div>
+  );
+}
+
+function Attempts({ listingId }: { listingId: string }) {
+  const attempts = useApi<Attempt[]>(`/channels/listings/${listingId}/attempts`);
+  return (
+    <DataState state={attempts}>
+      {(rows) => (
+        <DataTable
+          caption="Attempts"
+          rows={rows}
+          rowKey={(a) => a.id}
+          empty="No attempts recorded."
+          columns={[
+            { header: 'When', cell: (a) => <DateText value={a.attemptedAt} withTime /> },
+            { header: 'Action', cell: (a) => a.action.toLowerCase() },
+            { header: 'Outcome', cell: (a) => <StatusBadge status={a.status} /> },
+            { header: 'Error', cell: (a) => a.errorMessage ?? '—' },
+          ]}
+        />
+      )}
+    </DataState>
+  );
+}
+
+function NewChannel({ onCreated }: { onCreated: () => void }) {
+  const action = useAction();
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ key: '', name: '', providerName: 'MOCK' });
+  return (
+    <details open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)} style={{ marginBottom: '1rem' }}>
+      <summary>Add a channel</summary>
+      <form
+        className="card"
+        style={{ marginTop: '0.5rem', maxWidth: 520 }}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (await action.run(() => apiSend('POST', '/channels', f), 'Channel created.')) {
+            setF({ key: '', name: '', providerName: 'MOCK' });
+            onCreated();
+          }
+        }}
+      >
+        <ActionMessage message={action.message} />
+        <TextField label="Channel key" required value={f.key} onChange={(v) => setF((x) => ({ ...x, key: v }))} />
+        <TextField label="Channel name" required value={f.name} onChange={(v) => setF((x) => ({ ...x, name: v }))} />
+        <TextField
+          label="Provider"
+          required
+          value={f.providerName}
+          onChange={(v) => setF((x) => ({ ...x, providerName: v }))}
+          hint="Only test providers exist today; production refuses any MOCK provider."
+        />
+        <button className="primary" type="submit" disabled={action.busy}>
+          Create channel
         </button>
       </form>
-
-      <table>
-        <thead>
-          <tr>
-            <th>SKU ID</th>
-            <th>Status</th>
-            <th>Last published</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {listings.map((l) => (
-            <tr key={l.id}>
-              <td>{l.skuId}</td>
-              <td>{l.status}</td>
-              <td>{l.lastPublishedAt ? new Date(l.lastPublishedAt).toLocaleString() : '-'}</td>
-              <td>
-                <button type="button" onClick={() => onUnpublish(l)}>
-                  Unpublish
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    </details>
   );
 }

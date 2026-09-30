@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PageHeader } from '@/components/ui';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface Banner {
@@ -56,8 +57,8 @@ export default function BannersPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.25rem' }}>CMS - Homepage Banners</h1>
-      {error && <p className="error-banner">{error}</p>}
+      <PageHeader title="Banners" breadcrumbs={[{ label: 'Content' }, { label: 'Banners' }]} description="Homepage banners shown on the storefront. Changes go live without a deployment." />
+      {error && <p className="error-banner" role="alert">{error}</p>}
       <form onSubmit={onCreate} className="card" style={{ maxWidth: 480, marginBottom: '1.5rem' }}>
         <div className="field">
           <label htmlFor="title">Title</label>
@@ -75,6 +76,7 @@ export default function BannersPage() {
           Create banner
         </button>
       </form>
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -99,6 +101,7 @@ export default function BannersPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

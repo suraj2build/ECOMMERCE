@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PageHeader } from '@/components/ui';
 import { apiFetch } from '@/lib/api';
 
 interface LandingPage {
@@ -65,8 +66,8 @@ export default function LandingPagesPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.25rem' }}>CMS - Campaign Landing Pages</h1>
-      {error && <p className="error-banner">{error}</p>}
+      <PageHeader title="Landing pages" breadcrumbs={[{ label: 'Content' }, { label: 'Landing pages' }]} description="Campaign landing pages; only published pages are visible on the storefront." />
+      {error && <p className="error-banner" role="alert">{error}</p>}
       <form onSubmit={onCreate} className="card" style={{ maxWidth: 480, marginBottom: '1.5rem' }}>
         <div className="field">
           <label htmlFor="slug">Slug</label>
@@ -84,6 +85,7 @@ export default function LandingPagesPage() {
           Create landing page
         </button>
       </form>
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -108,6 +110,7 @@ export default function LandingPagesPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

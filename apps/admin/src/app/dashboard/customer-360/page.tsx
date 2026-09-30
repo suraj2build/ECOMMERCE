@@ -1,7 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { Can, DataTable, DateText, Ident, Money, Notice, PageHeader, Section, StatusBadge, TextField } from '@/components/ui';
+import { apiFetch, ApiError, errorMessage, qs } from '@/lib/api';
+import { formatNumber } from '@/lib/format';
+import { useCan } from '@/lib/session';
 
 interface Customer360 {
   id: string;
@@ -22,9 +26,11 @@ interface Customer360 {
 /**
  * Internal Customer 360 (M29, ADM-002) - a data-minimized staff view,
  * deliberately narrower than the customer's own self-service profile
- * (no address book, recently-viewed, or saved sizes).
+ * (no address book, recently-viewed, or saved sizes). Found by exact
+ * mobile number only; there is no customer browse or search.
  */
 export default function Customer360Page() {
+  const canOrders = useCan('order:read');
   const [mobile, setMobile] = useState('');
   const [view, setView] = useState<Customer360 | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,10 +42,10 @@ export default function Customer360Page() {
     setView(null);
     setLoading(true);
     try {
-      const customer = await apiFetch<{ id: string }>(`/support/customers/lookup?mobile=${encodeURIComponent(mobile)}`);
+      const customer = await apiFetch<{ id: string }>(`/support/customers/lookup${qs({ mobile })}`);
       setView(await apiFetch<Customer360>(`/support/customers/${customer.id}/360`));
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 404 ? 'No customer found for that mobile number.' : err instanceof Error ? err.message : 'Lookup failed.');
+      setError(err instanceof ApiError && err.status === 404 ? 'No customer found for that mobile number.' : errorMessage(err, 'Lookup failed.'));
     } finally {
       setLoading(false);
     }
@@ -47,55 +53,88 @@ export default function Customer360Page() {
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.25rem' }}>Internal Customer 360</h1>
-      <form onSubmit={onLookup} className="card" style={{ maxWidth: 420, marginBottom: '1.5rem' }}>
-        {error && <p className="error-banner">{error}</p>}
-        <div className="field">
-          <label htmlFor="mobile">Customer mobile number</label>
-          <input id="mobile" required value={mobile} onChange={(e) => setMobile(e.target.value)} />
-        </div>
-        <button className="primary" type="submit" disabled={loading}>
+      <PageHeader
+        title="Customer 360"
+        breadcrumbs={[{ label: 'Customers' }, { label: 'Customer 360' }]}
+        description="Look up one customer by their exact mobile number. Addresses, browsing history and saved sizes are deliberately not shown."
+      />
+      <form onSubmit={onLookup} className="card row" style={{ maxWidth: 560, alignItems: 'flex-end' }}>
+        <TextField label="Customer mobile number" required value={mobile} onChange={setMobile} autoComplete="off" />
+        <button className="primary" type="submit" disabled={loading} style={{ marginBottom: '0.75rem' }}>
           {loading ? 'Looking up...' : 'Look up'}
         </button>
       </form>
+      {error && <Notice kind="error">{error}</Notice>}
 
       {view && (
-        <div className="card" style={{ maxWidth: 640 }}>
-          <h2 style={{ fontSize: '1.1rem' }}>{view.fullName ?? 'Unnamed customer'}</h2>
-          <p>
-            {view.mobile} {view.isMobileVerified ? '(verified)' : '(unverified)'} - {view.email ?? 'no email'}
-          </p>
-          <p>Customer since {new Date(view.customerSince).toLocaleDateString()}</p>
-          <p>
-            Lifetime orders: {view.lifetimeOrderCount} - Lifetime spend: {view.lifetimeSpend}
-          </p>
-          <p>
-            Loyalty: {view.loyalty.availablePoints} available, {view.loyalty.pendingPoints} pending
-          </p>
-          <p>Store credit balance: {view.storeCreditBalance}</p>
-          <p>
-            Open returns: {view.openReturnsCount} - Open exchanges: {view.openExchangesCount}
-          </p>
-          <h3 style={{ fontSize: '1rem' }}>Recent orders</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Order #</th>
-                <th>Status</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.recentOrders.map((o) => (
-                <tr key={o.id}>
-                  <td>{o.orderNumber}</td>
-                  <td>{o.status}</td>
-                  <td>{o.grandTotal}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <section className="kpis" aria-label="Customer summary">
+            <div className="kpi">
+              <div className="kpi-label">Lifetime orders</div>
+              <div className="kpi-value">{formatNumber(view.lifetimeOrderCount)}</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Lifetime spend</div>
+              <div className="kpi-value">
+                <Money value={view.lifetimeSpend} />
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Loyalty available</div>
+              <div className="kpi-value">{formatNumber(view.loyalty.availablePoints)}</div>
+              <div className="kpi-hint">{formatNumber(view.loyalty.pendingPoints)} pending</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Store credit</div>
+              <div className="kpi-value">
+                <Money value={view.storeCreditBalance} />
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Open returns</div>
+              <div className="kpi-value">{formatNumber(view.openReturnsCount)}</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">Open exchanges</div>
+              <div className="kpi-value">{formatNumber(view.openExchangesCount)}</div>
+            </div>
+          </section>
+          <div className="grid-2">
+            <Section title={view.fullName ?? 'Unnamed customer'}>
+              <dl className="dl">
+                <dt>Mobile</dt>
+                <dd>
+                  {view.mobile} {view.isMobileVerified ? <StatusBadge status="ACTIVE" /> : <span className="muted">(unverified)</span>}
+                </dd>
+                <dt>Email</dt>
+                <dd>{view.email ?? '—'}</dd>
+                <dt>Customer since</dt>
+                <dd>
+                  <DateText value={view.customerSince} />
+                </dd>
+              </dl>
+              <Can anyOf={['loyalty:adjust']}>
+                <p>
+                  <Link href={`/dashboard/loyalty${qs({ mobile: view.mobile })}`}>Adjust loyalty points</Link>
+                </p>
+              </Can>
+            </Section>
+            <Section title="Recent orders">
+              <DataTable
+                caption="Recent orders"
+                rows={view.recentOrders}
+                rowKey={(o) => o.id}
+                empty="No orders."
+                columns={[
+                  { header: 'Order', cell: (o) => (canOrders ? <Link href={`/dashboard/orders/${o.id}`}><Ident>{o.orderNumber}</Ident></Link> : <Ident>{o.orderNumber}</Ident>) },
+                  { header: 'Status', cell: (o) => <StatusBadge status={o.status} /> },
+                  { header: 'Total', numeric: true, cell: (o) => <Money value={o.grandTotal} /> },
+                  { header: 'Placed', cell: (o) => <DateText value={o.createdAt} /> },
+                ]}
+              />
+            </Section>
+          </div>
+        </>
       )}
     </div>
   );

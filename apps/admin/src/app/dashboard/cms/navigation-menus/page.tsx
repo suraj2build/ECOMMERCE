@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PageHeader } from '@/components/ui';
 import { apiFetch } from '@/lib/api';
 
 interface NavigationMenu {
@@ -41,8 +42,8 @@ export default function NavigationMenusPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.25rem' }}>CMS - Navigation Menus</h1>
-      {error && <p className="error-banner">{error}</p>}
+      <PageHeader title="Navigation menus" breadcrumbs={[{ label: 'Content' }, { label: 'Navigation menus' }]} description="Storefront navigation menus by key." />
+      {error && <p className="error-banner" role="alert">{error}</p>}
       <form onSubmit={onSave} className="card" style={{ maxWidth: 560, marginBottom: '1.5rem' }}>
         <div className="field">
           <label htmlFor="key">Menu key</label>
@@ -56,6 +57,7 @@ export default function NavigationMenusPage() {
           Save menu
         </button>
       </form>
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -72,6 +74,7 @@ export default function NavigationMenusPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

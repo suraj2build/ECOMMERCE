@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PageHeader } from '@/components/ui';
 import { apiFetch } from '@/lib/api';
 
 interface ContentBlock {
@@ -56,8 +57,8 @@ export default function ContentBlocksPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.25rem' }}>CMS - Content Blocks</h1>
-      {error && <p className="error-banner">{error}</p>}
+      <PageHeader title="Content blocks" breadcrumbs={[{ label: 'Content' }, { label: 'Content blocks' }]} description="Keyed content blocks read by the storefront." />
+      {error && <p className="error-banner" role="alert">{error}</p>}
       <form onSubmit={onCreate} className="card" style={{ maxWidth: 480, marginBottom: '1.5rem' }}>
         <div className="field">
           <label htmlFor="key">Key (stable identifier)</label>
@@ -75,6 +76,7 @@ export default function ContentBlocksPage() {
           Create content block
         </button>
       </form>
+      <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -99,6 +101,7 @@ export default function ContentBlocksPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
