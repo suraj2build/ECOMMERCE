@@ -26,6 +26,9 @@ const money = (v: Prisma.Decimal | number | string | null | undefined) => (v ===
 export const STAFF_CAPABILITIES = {
   'inventory-coapprover': { requires: 'inventory:adjust', holds: 'inventory:adjust:coapprove' },
   'grn-qc-signoff': { requires: 'grn:create', holds: 'grn:qc:manager_signoff' },
+  // A pick shortfall posts an inventory adjustment (WarehouseService.recordPickOutcome),
+  // so at/above the threshold it needs the same finance co-approver.
+  'pick-shortfall-coapprover': { requires: 'warehouse:pick', holds: 'inventory:adjust:coapprove' },
 } as const satisfies Record<string, { requires: PermissionKey; holds: PermissionKey }>;
 export type StaffCapability = keyof typeof STAFF_CAPABILITIES;
 
@@ -110,6 +113,130 @@ export class AdminQueryService {
       orderBy: { name: 'asc' },
       take: boundedTake(take, MAX_LOOKUP, 10),
     });
+  }
+
+  /** Bounded supplier directory (GET /suppliers returns every row). */
+  async listSuppliers(params: { q?: string; type?: string; isActive?: boolean; take?: number; skip?: number }) {
+    const term = params.q?.trim();
+    const where: Prisma.SupplierWhereInput = {
+      ...(params.type ? { type: params.type as never } : {}),
+      ...(params.isActive !== undefined ? { isActive: params.isActive } : {}),
+      ...(term ? { OR: [{ code: { contains: term, mode: 'insensitive' } }, { name: { contains: term, mode: 'insensitive' } }] } : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.supplier.findMany({
+        where,
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          type: true,
+          contactName: true,
+          leadTimeDays: true,
+          paymentTerms: true,
+          isActive: true,
+          createdAt: true,
+          _count: { select: { supplierSkus: true, purchaseOrders: true } },
+        },
+        orderBy: { name: 'asc' },
+        take: boundedTake(params.take, MAX_PAGE, 25),
+        skip: params.skip ?? 0,
+      }),
+      this.prisma.supplier.count({ where }),
+    ]);
+    return { items, total };
+  }
+
+  /** SKU cost links for one supplier (written by POST /suppliers/sku-links; no read route existed). */
+  async listSupplierSkuLinks(supplierId: string, params: { take?: number; skip?: number }) {
+    const where: Prisma.SupplierSkuWhereInput = { supplierId };
+    const [rows, total] = await Promise.all([
+      this.prisma.supplierSku.findMany({
+        where,
+        select: {
+          id: true,
+          cost: true,
+          currency: true,
+          isPreferred: true,
+          createdAt: true,
+          sku: { select: { id: true, skuCode: true, colour: { select: { name: true } }, size: { select: { label: true } } } },
+          style: { select: { id: true, styleCode: true, name: true } },
+        },
+        orderBy: { sku: { skuCode: 'asc' } },
+        take: boundedTake(params.take, MAX_PAGE, 50),
+        skip: params.skip ?? 0,
+      }),
+      this.prisma.supplierSku.count({ where }),
+    ]);
+    return { items: rows.map((r) => ({ ...r, cost: money(r.cost) })), total };
+  }
+
+  /** The PromotionType reference table (seeded; POST /promotions takes its key). */
+  async listPromotionTypes() {
+    return this.prisma.promotionType.findMany({ select: { id: true, key: true, name: true }, orderBy: { name: 'asc' }, take: 100 });
+  }
+
+  /** Order search by order number. Contact details stay on the detail route (GET /orders/:id). */
+  async listOrders(params: { q?: string; status?: string; invoiceStatus?: string; take?: number; skip?: number }) {
+    const term = params.q?.trim();
+    const where: Prisma.OrderWhereInput = {
+      ...(params.status ? { status: params.status as never } : {}),
+      ...(params.invoiceStatus ? { invoiceStatus: params.invoiceStatus as never } : {}),
+      ...(term ? { orderNumber: { contains: term, mode: 'insensitive' } } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          paymentMethod: true,
+          grandTotal: true,
+          currency: true,
+          invoiceStatus: true,
+          refundRequired: true,
+          createdAt: true,
+          _count: { select: { lines: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: boundedTake(params.take, MAX_PAGE, 25),
+        skip: params.skip ?? 0,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return { items: rows.map((r) => ({ ...r, grandTotal: money(r.grandTotal) })), total };
+  }
+
+  /** Fulfilment queue (pack / ready-to-ship / ship / deliver work), order- and exchange-sourced alike. */
+  async listFulfilments(params: { status?: string; take?: number; skip?: number }) {
+    const where: Prisma.OrderFulfilmentWhereInput = params.status ? { status: params.status as never } : {};
+    const [items, total] = await Promise.all([
+      this.prisma.orderFulfilment.findMany({
+        where,
+        select: {
+          id: true,
+          orderId: true,
+          exchangeId: true,
+          status: true,
+          carrierName: true,
+          trackingRef: true,
+          packedAt: true,
+          shippedAt: true,
+          deliveredAt: true,
+          createdAt: true,
+          order: { select: { orderNumber: true } },
+          exchange: { select: { exchangeNumber: true } },
+          shipment: { select: { id: true, provider: true, status: true, trackingRef: true, deliveryAttempts: true, maxDeliveryAttempts: true } },
+          _count: { select: { lines: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: boundedTake(params.take, MAX_PAGE, 50),
+        skip: params.skip ?? 0,
+      }),
+      this.prisma.orderFulfilment.count({ where }),
+    ]);
+    return { items, total };
   }
 
   /** Staff who hold `holds`, for the co-approver / sign-off pickers. Identity only - never credentials. */

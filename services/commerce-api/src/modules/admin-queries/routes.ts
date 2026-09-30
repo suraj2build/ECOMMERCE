@@ -139,6 +139,44 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
     return collection;
   });
 
+  fastify.get('/admin/suppliers', auth('supplier:read'), async (request) => {
+    const q = z
+      .object({
+        q: z.string().trim().max(100).optional(),
+        type: z.enum(['FINISHED_GOODS', 'MANUFACTURING']).optional(),
+        isActive: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+        ...page,
+      })
+      .parse(request.query);
+    return service.listSuppliers(q);
+  });
+
+  fastify.get('/admin/suppliers/:id/sku-links', auth('supplier:read'), async (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    return service.listSupplierSkuLinks(id, z.object(page).parse(request.query));
+  });
+
+  fastify.get('/admin/promotion-types', auth('promotion:read'), async () => service.listPromotionTypes());
+
+  fastify.get('/admin/orders', auth('order:read'), async (request) => {
+    const q = z
+      .object({
+        q: z.string().trim().max(100).optional(),
+        status: z.enum(['CONFIRMED', 'PROCESSING', 'DELIVERED', 'CANCELLED', 'RTO', 'EXCEPTION']).optional(),
+        invoiceStatus: z.enum(['PENDING', 'ISSUED', 'FAILED']).optional(),
+        ...page,
+      })
+      .parse(request.query);
+    return service.listOrders(q);
+  });
+
+  fastify.get('/admin/fulfilments', auth('order:read'), async (request) => {
+    const q = z
+      .object({ status: z.enum(['PENDING', 'PACKED', 'READY_TO_SHIP', 'SHIPPED', 'DELIVERED']).optional(), ...page })
+      .parse(request.query);
+    return service.listFulfilments(q);
+  });
+
   fastify.get('/admin/dashboard/workload', staffOnly, async (request) => service.workload(request.staffUser!.permissions));
 };
 

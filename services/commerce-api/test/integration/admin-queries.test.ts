@@ -124,6 +124,12 @@ describe('Admin query endpoints (P1)', () => {
     { url: () => '/admin/catalog/collections', permission: 'product:read' },
     { url: () => '/admin/lookup/staff?capability=inventory-coapprover', permission: 'inventory:adjust' },
     { url: () => '/admin/lookup/labels?supplierIds=00000000-0000-4000-8000-000000000000', permission: 'supplier:read' },
+    { url: () => '/admin/lookup/staff?capability=pick-shortfall-coapprover', permission: 'warehouse:pick' },
+    { url: () => '/admin/suppliers', permission: 'supplier:read' },
+    { url: () => '/admin/suppliers/00000000-0000-4000-8000-000000000000/sku-links', permission: 'supplier:read' },
+    { url: () => '/admin/promotion-types', permission: 'promotion:read' },
+    { url: () => '/admin/orders', permission: 'order:read' },
+    { url: () => '/admin/fulfilments', permission: 'order:read' },
   ];
 
   it('every query endpoint rejects an unauthenticated request with 401', async () => {
@@ -258,6 +264,44 @@ describe('Admin query endpoints (P1)', () => {
     expect((await get('/admin/purchase-orders?status=APPROVED', buyer.token)).json().total).toBe(0);
   });
 
+  it('supplier list is paginated with link/PO counts, and a supplier\'s SKU cost links are listed with SKU codes', async () => {
+    const ctx = await seedContext();
+    const sku = await checkoutableSku(ctx, `SL-${counter}`);
+    const buyer = await staff('BUYING', ['supplier:read', 'supplier:write']);
+    const h = { authorization: `Bearer ${buyer.token}` };
+    const a = (await app.inject({ method: 'POST', url: '/api/v1/suppliers', headers: h, payload: { code: `SLA-${counter}`, name: 'Alpha Mills', type: 'FINISHED_GOODS' } })).json();
+    const b = (await app.inject({ method: 'POST', url: '/api/v1/suppliers', headers: h, payload: { code: `SLB-${counter}`, name: 'Beta Weaves', type: 'MANUFACTURING' } })).json();
+    await app.inject({ method: 'POST', url: `/api/v1/suppliers/${b.id}/deactivate`, headers: h });
+    const link = await app.inject({
+      method: 'POST',
+      url: '/api/v1/suppliers/sku-links',
+      headers: h,
+      payload: { supplierId: a.id, skuId: sku.skuId, styleId: sku.styleId, cost: 310.5, isPreferred: true },
+    });
+    expect(link.statusCode).toBe(201);
+
+    const page1 = (await get('/admin/suppliers?take=1', buyer.token)).json();
+    expect(page1.total).toBe(2);
+    expect(page1.items).toHaveLength(1);
+    expect(page1.items[0]).toMatchObject({ name: 'Alpha Mills', _count: { supplierSkus: 1, purchaseOrders: 0 } });
+    expect((await get('/admin/suppliers?isActive=false', buyer.token)).json().items.map((s: { id: string }) => s.id)).toEqual([b.id]);
+    expect((await get('/admin/suppliers?type=MANUFACTURING', buyer.token)).json().total).toBe(1);
+    expect((await get('/admin/suppliers?q=alpha', buyer.token)).json().total).toBe(1);
+
+    const links = (await get(`/admin/suppliers/${a.id}/sku-links`, buyer.token)).json();
+    expect(links.total).toBe(1);
+    expect(links.items[0]).toMatchObject({ cost: 310.5, isPreferred: true, sku: { id: sku.skuId, skuCode: sku.skuCode }, style: { id: sku.styleId } });
+    expect((await get(`/admin/suppliers/${b.id}/sku-links`, buyer.token)).json().total).toBe(0);
+  });
+
+  it('promotion types list the seeded reference table that POST /promotions takes a key from', async () => {
+    await testPrisma.promotionType.createMany({ data: [{ key: 'PROMOTIONAL', name: 'Promotional coupon' }, { key: 'CAMPAIGN', name: 'Campaign coupon' }] });
+    const { token } = await staff('MARKETING', ['promotion:read']);
+    const types = (await get('/admin/promotion-types', token)).json();
+    expect(types.map((t: { key: string }) => t.key).sort()).toEqual(['CAMPAIGN', 'PROMOTIONAL']);
+    expect(Object.keys(types[0]).sort()).toEqual(['id', 'key', 'name']);
+  });
+
   it('GRN detail no longer exposes the receiving staff member\'s password hash or MFA secret', async () => {
     const ctx = await seedContext();
     const sku = await checkoutableSku(ctx, `GRN-${counter}`);
@@ -365,6 +409,17 @@ describe('Admin query endpoints (P1)', () => {
     const task = await testPrisma.pickTask.findUniqueOrThrow({ where: { orderLineId: lineId } });
     await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: hw, payload: { idempotencyKey: `pick-${lineId}`, outcome: 'FULL', pickedQuantity: 1 } });
     const fulfilmentId = (await app.inject({ method: 'POST', url: `/api/v1/orders/${order.id}/fulfilments`, headers: hw, payload: { lineIds: [lineId] } })).json().id as string;
+
+    // Order search by number and the fulfilment queue, before shipping.
+    const found = (await get(`/admin/orders?q=${order.orderNumber.slice(-6)}`, wh.token)).json();
+    expect(found.total).toBe(1);
+    expect(found.items[0]).toMatchObject({ id: order.id, orderNumber: order.orderNumber, paymentMethod: 'COD', grandTotal: Number(order.grandTotal), _count: { lines: 1 } });
+    expect(found.items[0]).not.toHaveProperty('contactMobile');
+    expect(found.items[0]).not.toHaveProperty('shippingAddress');
+    const pending = (await get('/admin/fulfilments?status=PENDING', wh.token)).json();
+    expect(pending.total).toBe(1);
+    expect(pending.items[0]).toMatchObject({ id: fulfilmentId, orderId: order.id, exchangeId: null, order: { orderNumber: order.orderNumber }, shipment: null, _count: { lines: 1 } });
+
     for (const step of ['pack', 'ready-to-ship', 'ship', 'deliver']) {
       const res = await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/${step}`, headers: hw, payload: step === 'ship' ? {} : undefined });
       expect(res.statusCode, step).toBe(200);
@@ -372,6 +427,10 @@ describe('Admin query endpoints (P1)', () => {
     const ret = await app.inject({ method: 'POST', url: '/api/v1/returns', headers: hw, payload: { orderId: order.id, lines: [{ orderLineId: lineId, reason: 'Too big' }], method: 'DROP_OFF', idempotencyKey: `ret-${lineId}` } });
     await app.inject({ method: 'POST', url: `/api/v1/returns/${ret.json().id}/receive`, headers: hw });
     await app.inject({ method: 'POST', url: `/api/v1/returns/${ret.json().id}/lines/${ret.json().lines[0].id}/qc`, headers: hw, payload: { qcResult: 'PASS', disposition: 'RESTOCK_SELLABLE' } });
+
+    expect((await get('/admin/fulfilments?status=PENDING', wh.token)).json().total).toBe(0);
+    expect((await get('/admin/fulfilments?status=DELIVERED', wh.token)).json().items[0]).toMatchObject({ id: fulfilmentId });
+    expect((await get('/admin/orders?status=DELIVERED', wh.token)).json().total).toBe(1);
 
     const finance = await staff('FINANCE', ['payment:refund', 'order:read']);
     const refund = await app.inject({ method: 'POST', url: '/api/v1/refunds', headers: { authorization: `Bearer ${finance.token}` }, payload: { orderId: order.id, orderLineId: lineId, idempotencyKey: `rf-${lineId}` } });
