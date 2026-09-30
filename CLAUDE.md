@@ -6,6 +6,25 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-09-30: `P1 COMMERCE OPERATIONS CONSOLE BUILT —
+AWAITING INDEPENDENT REVIEW.`** The human project owner authorized "P1 —
+Commerce Operations Console, large functional build pass" on the protected
+baseline `b0237d1efb34504b8b6f9ad01b99ca40db9faf15` (M31 final delta
+repair). P1 is a build pass over existing capabilities, not a milestone
+(no M34). `apps/admin` became a permission-aware console across ten
+navigation groups; every action posts to the owning domain's existing
+route and the server decides every transition. New API surface is a
+read-only `/api/v1/admin/*` query layer (`docs/admin/P1_QUERY_ENDPOINTS.md`).
+Two stored-secret exposures were found and fixed (`GET /grn/:id` returned
+the receiving staff member's `passwordHash`/`mfaSecret`; gift-card staff
+views returned `codeHash`) - see `security/AUTHORIZATION_SWEEP.md`. No
+schema or migration change. Playwright flows P1-01..P1-12
+(`test/e2e-admin/p1-console.spec.ts`) cover the operator workflows.
+Open items: `docs/admin/P1_DECISIONS.md` (D-1..D-4). **Not
+self-certified. P2 (storefront redesign), P3 and P4 are not authorized by
+this pass and were not started.** Acceptance:
+`acceptance/p1-commerce-operations-console.md`.
+
 **Status as of 2026-09-29: `M30–M33 FINAL ENGINEERING PHASE IMPLEMENTED
 — AWAITING INDEPENDENT REVIEW. NO FURTHER MILESTONES REMAIN.`** The
 human project owner gave explicit **"FINAL ENGINEERING PHASE — M30 →

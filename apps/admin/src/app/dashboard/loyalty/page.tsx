@@ -85,7 +85,7 @@ function AdjustPoints() {
       <Section title="Adjust a customer's points">
         <Notice kind="info">
           Finding a customer needs Customer 360 access (customer_service:manage), which your role does not have. Whether Finance should get a separate customer
-          lookup for loyalty corrections is an open decision (see docs/admin/P1_DECISIONS.md).
+          lookup for loyalty corrections is an open decision (P1 decision D-1).
         </Notice>
       </Section>
     );

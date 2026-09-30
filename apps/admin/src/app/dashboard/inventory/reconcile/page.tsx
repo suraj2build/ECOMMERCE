@@ -81,7 +81,7 @@ export default function ReconcilePage() {
               </div>
               <p className="muted">
                 Manual adjustments are recorded without a sign on the ledger row, so the service excludes them from the replay and reports a
-                match whenever any exist (see InventoryService.reconcileBalance).
+                match whenever any exist (P1 decision D-4).
               </p>
             </Section>
           )}

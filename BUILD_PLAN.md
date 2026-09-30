@@ -1,5 +1,22 @@
 # Build Plan
 
+## STATUS (2026-09-30): P1 COMMERCE OPERATIONS CONSOLE BUILT — AWAITING INDEPENDENT REVIEW.
+
+> **2026-09-30: "P1 — Commerce Operations Console" functional build
+> pass**, on the protected baseline `b0237d1` (M31 final delta repair).
+> P1 is a build pass over existing capabilities, not a milestone: no M34
+> was added. `apps/admin` is now a permission-aware operating console
+> (merchandise, procurement, inventory, orders/fulfilment, post-purchase,
+> commercial, customers, content, insights) over the existing domain
+> APIs, plus a read-only `/api/v1/admin/*` query layer. Two stored-secret
+> exposures found on the way were fixed (GRN detail returned staff
+> credentials; gift-card views returned `codeHash`). Twelve Playwright
+> flows (P1-01..P1-12) cover the operator workflows. See
+> `acceptance/p1-commerce-operations-console.md` and `docs/admin/`. Four
+> DECISION_REQUIRED items are recorded in `docs/admin/P1_DECISIONS.md`.
+> Not self-certified. P2 (storefront), P3 and P4 not started. The M30–M33
+> record below is unchanged.
+
 ## STATUS: M30–M33 (FINAL ENGINEERING PHASE) IMPLEMENTED — AWAITING INDEPENDENT REVIEW. NO FURTHER MILESTONES REMAIN.
 
 > **2026-09-29: the human project owner gave explicit "START BUILD —

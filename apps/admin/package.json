@@ -2,7 +2,7 @@
   "name": "@fcp/admin",
   "version": "0.0.0",
   "private": true,
-  "description": "Internal staff admin application (M29, specs/28-admin.md) - role-gated CMS, inventory adjustment, internal Customer 360, channel publishing, and analytics screens. Genuinely separate from apps/storefront, which is customer-facing only.",
+  "description": "Internal staff operations console (M29 admin app, extended by the P1 Commerce Operations Console build) - permission-aware screens over the commerce-api domains. Separate from apps/storefront, which is customer-facing only.",
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",

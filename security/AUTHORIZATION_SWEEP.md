@@ -107,3 +107,28 @@ authorization/session space are recorded separately:
 `security/AUTH_SESSION_SECURITY.md` (rate limiting, MFA secret
 encryption) and the CART-004 closure
 (`blueprint/DECISION_REGISTER.md`).
+
+## P1 Commerce Operations Console findings (2026-09-30)
+
+The P1 console build (`acceptance/p1-commerce-operations-console.md`)
+read every staff route it wired a screen to and found two exposures of
+stored secret material to authorized staff. Both were reproduced against
+the running API before being fixed; both now have regression tests in
+`services/commerce-api/test/integration/admin-queries.test.ts`.
+
+1. **`GET /grn/:id` returned the receiving staff member's credentials.**
+   `GrnService.getGoodsReceipt` included the `receivedBy` relation whole,
+   so any `grn:read` holder received that staff member's `passwordHash`
+   (a bcrypt hash) and `mfaSecret` ciphertext. The relation is now
+   selected field by field (id, full name, email). A repository-wide
+   check of every `StaffUser` relation include found no other instance.
+2. **Gift-card staff views returned `codeHash`.** `GET /gift-cards/:id`,
+   the issue response and the disable response included the stored hash
+   of the spendable code, although `security/PII_DATA_INVENTORY.md` says
+   it is only ever compared, never read back. `giftCardView` now omits it;
+   the new `GET /admin/gift-cards` list never selects it.
+
+The new `/api/v1/admin/*` read endpoints were built to the same rules
+(permission reuse, 403 + `authz.denied` on denial, identity-only staff
+pickers, no contact details in order search) and are listed in
+`docs/admin/P1_QUERY_ENDPOINTS.md`.
