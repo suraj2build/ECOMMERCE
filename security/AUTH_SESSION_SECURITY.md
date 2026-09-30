@@ -131,7 +131,11 @@ confirm paths read only v1 and fail closed - generic 401 plus a
 plaintext seeds are upgraded by the explicit, idempotent backfill
 (`npm run mfa:backfill`; ordering in DEPLOYMENT.md), which uses
 compare-and-swap writes so it cannot overwrite a concurrent
-re-enrollment. Proven by `test/integration/mfa-upgrade.test.ts` and by
+re-enrollment, and writes nothing at all unless every existing encrypted
+value first decrypts with the configured key. In production the API will
+not start while any non-v1 secret remains, or if it cannot check. Proven
+by `test/integration/mfa-upgrade.test.ts`,
+`test/integration/mfa-upgrade-safety.test.ts`, and by
 an end-to-end run of the real pre-M31 code enrolling MFA, followed by
 migration, backfill, and a successful MFA login on the repaired code.
 

@@ -104,3 +104,34 @@ locally with CI's exact secrets:
   Observed, not changed (outside this repair): cart add-item computes
   the new quantity from a read before its upsert, so concurrent adds of
   the same SKU can under-count quantity (no error, no duplicate row).
+
+## Final independent-review delta repair (2026-09-30, review head `d0dad56`)
+
+Two MFA upgrade-safety findings; guest-session, rate-limit, M30, M32 and
+M33 untouched. Engineering evidence below; not self-certified.
+
+- [x] **Backfill preflight.** It previously aborted only when every v1
+      row failed to decrypt, so a mixed state (some valid, some not)
+      still encrypted legacy rows. Now every existing encrypted value
+      (v1 and the unversioned format) must authenticate-decrypt before
+      any write; otherwise zero rows are modified, the CLI exits 1, and
+      only a count and staff user ids are reported. Evidence:
+      `test/integration/mfa-upgrade-safety.test.ts` tests 1/1b (mixed
+      valid-v1 + corrupt-v1 + legacy; every `staff_users` row, including
+      `updatedAt`, byte-identical afterwards; real CLI process exit 1),
+      2/2b (wrong key), 3 (all-valid v1 + legacy migrates), 4 (rerun
+      no-op); existing `mfa-upgrade.test.ts` G/H and I tightened to the
+      same zero-write guarantee.
+- [x] **Production startup gate.** Startup previously logged a warning
+      and listened; a failed count was read as zero. `startServer`
+      (the only path from `buildApp` to `listen`, used by `src/index.ts`)
+      now refuses to listen in production while any non-v1 secret remains
+      or when the check cannot run, logging the count only; it never runs
+      the backfill. Development keeps a warning. Evidence: tests 5, 6, 7,
+      the two development cases, and 8 (no seed or stored value in logs or
+      errors). A full production process cannot boot in any environment
+      yet (the existing production guard refuses the `MOCK` shipping
+      provider, SHIP-001), so the gate is proven through `startServer`
+      with a real app, database and `listen`.
+- Mutation check: reintroducing the old preflight rule and the old
+  warn-only startup makes 6 of these tests fail.

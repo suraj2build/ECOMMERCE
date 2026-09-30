@@ -1,6 +1,6 @@
 import { loadEnv } from '@fcp/config';
 import { buildApp } from './app.js';
-import { countNonV1MfaSecrets } from './modules/auth/mfa-secret-backfill.js';
+import { startServer } from './server.js';
 
 async function main() {
   const env = loadEnv();
@@ -14,18 +14,12 @@ async function main() {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
-  // Safety net for the MFA upgrade deployment step (DEPLOYMENT.md): if the
-  // backfill was skipped, affected staff cannot complete MFA login (the
-  // reader never falls back to plaintext), so say so loudly - count only.
-  const pendingMfaUpgrades = await countNonV1MfaSecrets(app.prisma).catch(() => 0);
-  if (pendingMfaUpgrades > 0) {
-    app.log.warn(
-      { pendingMfaUpgrades },
-      'Stored MFA secrets not yet in v1 encrypted format - run the MFA backfill (npm run mfa:backfill) before serving staff logins',
-    );
+  try {
+    await startServer(app, { production: env.NODE_ENV === 'production', port: env.PORT, host: '0.0.0.0' });
+  } catch (err) {
+    await app.close().catch(() => undefined);
+    throw err;
   }
-
-  await app.listen({ port: env.PORT, host: '0.0.0.0' });
 }
 
 main().catch((err) => {

@@ -160,14 +160,21 @@ and safe to run while the service is up. Order:
 3. With the production `DATABASE_URL` and `MFA_SECRET_ENCRYPTION_KEY`:
    `node services/commerce-api/dist/scripts/backfill-mfa-secrets.js`
    (or `npm run mfa:backfill --workspace=services/commerce-api` from
-   source). It prints counts and staff user ids only. Exit code 2 means
-   some stored values were unreadable (corrupt or encrypted under a
-   different key) - those users must re-enroll MFA; they are listed by
-   id. It aborts without writing if existing v1 rows do not decrypt with
-   the configured key.
-4. Start the new code. At startup the API logs
-   `pendingMfaUpgrades` (a count, never a value) if any non-v1 secret
-   remains.
+   source). It prints counts and staff user ids only. Before any write
+   it checks that EVERY existing encrypted MFA secret decrypts with the
+   configured key; if even one does not, it exits 1 having modified no
+   row and lists the affected staff user ids (it does not guess whether
+   the key is wrong or the data is corrupt - investigate before
+   re-running; a genuinely corrupt row is resolved by resetting that
+   user's MFA and having them re-enroll). Exit code 2 means the backfill
+   completed but some values were in no recognised format; those users
+   must re-enroll MFA and are listed by id.
+4. Start the new code. With `NODE_ENV=production` the API refuses to
+   start (exits non-zero, never listens) while any non-v1 MFA secret
+   remains, logging only the count (`pendingMfaUpgrades`), and also
+   refuses if that check itself cannot run. It never runs the backfill
+   itself - step 3 stays the explicit, authoritative step. Outside
+   production the same condition is a warning only.
 5. Re-running step 3 is a no-op.
 
 On a fresh database there is nothing to backfill.

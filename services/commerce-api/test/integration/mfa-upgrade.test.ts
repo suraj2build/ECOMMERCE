@@ -12,7 +12,7 @@ import { encryptMfaSecret, decryptMfaSecret, classifyStoredMfaSecret } from '../
 import {
   backfillLegacyMfaSecrets,
   upgradeStoredMfaSecret,
-  MfaBackfillKeyMismatchError,
+  MfaBackfillPreflightError,
 } from '../../src/modules/auth/mfa-secret-backfill.js';
 import { runMfaBackfillCli } from '../../src/scripts/backfill-mfa-secrets.js';
 
@@ -111,7 +111,7 @@ describe('MFA upgrade compatibility (M31 certification repair)', () => {
     expect(denial.reference).toBe('legacy_plaintext_requires_backfill');
 
     const report = await backfillLegacyMfaSecrets(testPrisma);
-    expect(report).toMatchObject({ scanned: 1, encryptedLegacyPlaintext: 1, alreadyV1: 0, unreadableStaffUserIds: [], corruptV1StaffUserIds: [] });
+    expect(report).toMatchObject({ scanned: 1, encryptedLegacyPlaintext: 1, alreadyV1: 0, unreadableStaffUserIds: [] });
 
     const after = await stored(user.id);
     expect(classifyStoredMfaSecret(after)).toBe('v1'); // B: encrypted
@@ -182,9 +182,13 @@ describe('MFA upgrade compatibility (M31 certification repair)', () => {
     const audit = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'staff.mfa.secret_unreadable', entityId: user.id } });
     expect(audit.reference).toBe('decrypt_failed');
 
-    const report = await backfillLegacyMfaSecrets(testPrisma);
-    expect(report.corruptV1StaffUserIds).toEqual([user.id]);
+    // One valid and one undecryptable v1 row: the backfill refuses outright (ids only) and writes nothing.
+    const goodBefore = await stored(good.id);
+    const aborted = await backfillLegacyMfaSecrets(testPrisma).catch((err: unknown) => err);
+    expect(aborted).toBeInstanceOf(MfaBackfillPreflightError);
+    expect((aborted as MfaBackfillPreflightError).undecryptableStaffUserIds).toEqual([user.id]);
     expect(await stored(user.id)).toBe(corrupted); // untouched - no guess, no fallback
+    expect(await stored(good.id)).toBe(goodBefore);
     expect((await login(good.email, good.seed)).statusCode).toBe(200); // others unaffected
   });
 
@@ -197,7 +201,7 @@ describe('MFA upgrade compatibility (M31 certification repair)', () => {
     expect(await stored(user.id)).toBe('not a valid mfa secret');
   });
 
-  it('I: a value encrypted under a different key fails safely at login, and a backfill with a key that matches no v1 row writes nothing', async () => {
+  it('I: a value encrypted under a different key fails safely at login, and a backfill whose key does not decrypt the existing v1 rows writes nothing', async () => {
     const otherKey = randomBytes(32);
     const encryptedElsewhere = await preM31MfaUser('other-key');
     await testPrisma.staffUser.update({
@@ -210,8 +214,10 @@ describe('MFA upgrade compatibility (M31 certification repair)', () => {
     const audit = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'staff.mfa.secret_unreadable', entityId: encryptedElsewhere.id } });
     expect(audit.reference).toBe('decrypt_failed');
 
-    await expect(backfillLegacyMfaSecrets(testPrisma)).rejects.toBeInstanceOf(MfaBackfillKeyMismatchError);
+    const elsewhereBefore = await stored(encryptedElsewhere.id);
+    await expect(backfillLegacyMfaSecrets(testPrisma)).rejects.toBeInstanceOf(MfaBackfillPreflightError);
     expect(await stored(legacy.id)).toBe(legacy.seed); // not encrypted with the wrong key
+    expect(await stored(encryptedElsewhere.id)).toBe(elsewhereBefore);
   });
 
   it('J: a new enrollment through the current routes is stored encrypted (v1) and works end to end', async () => {

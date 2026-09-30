@@ -613,8 +613,11 @@ change:
    plaintext, corrupt data or a wrong key - never a plaintext fallback.
    An explicit, idempotent, compare-and-swap backfill
    (`npm run mfa:backfill`) encrypts legacy plaintext and re-wraps the
-   never-released unversioned M31 format; it refuses to write if existing
-   v1 rows do not decrypt with the configured key. See DEPLOYMENT.md for
+   never-released unversioned M31 format; it refuses to write anything
+   unless every existing encrypted value decrypts with the configured key
+   (final delta repair: previously it only refused when all of them
+   failed). Production startup refuses to listen while any non-v1 MFA
+   secret remains or when that check cannot run. See DEPLOYMENT.md for
    ordering. Production also refuses placeholder / repeated-pattern
    `MFA_SECRET_ENCRYPTION_KEY` and `JWT_ACCESS_SECRET` values.
 3. *Rate-limit bucket selection.* The checkout/payment limiter keyed on
