@@ -50,14 +50,28 @@ function emailKey(request: FastifyRequest): string {
 // default everywhere, including production and rate-limiting.test.ts's
 // own run) set ONLY by the E2E step itself - see packages/config's own
 // comment for the full rationale.
-const authRateLimitMax = (() => {
+//
+// Computed lazily (a function, called from inside the plugin body below)
+// rather than as a module-top-level constant - this pass's own testing
+// caught a genuine bug in an earlier draft that computed this eagerly at
+// module-import time: `loadEnv()` caches its result on first call
+// (packages/config's own documented, intentional behavior), so an eager
+// top-level call here fired the instant this module was FIRST imported -
+// which happens transitively (auth/routes.ts -> app.ts -> a test file's
+// own `createTestApp()` import) BEFORE that test file's own later
+// `process.env.RAZORPAY_KEY_ID = ...`-style module-body statements had a
+// chance to run, permanently caching a stale/incomplete environment for
+// the rest of that test process. Every other `loadEnv()` call site in
+// this codebase is already inside a function for exactly this reason;
+// this one now matches that pattern.
+function computeAuthRateLimitMax() {
   const override = loadEnv().AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX;
   return {
     otpRequest: override ?? 5,
     otpVerify: override ?? 10,
     staffLogin: override ?? 10,
   };
-})();
+}
 
 const otpRequestSchema = z.object({ mobile: z.string().min(10).max(15) });
 const otpVerifySchema = z.object({ mobile: z.string().min(10).max(15), code: z.string().length(6) });
@@ -82,6 +96,7 @@ const createStaffUserSchema = z.object({
  */
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   const authService = new AuthService(fastify);
+  const authRateLimitMax = computeAuthRateLimitMax();
 
   // --- Customer: mobile OTP ---
   fastify.post(
