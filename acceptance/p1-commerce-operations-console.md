@@ -110,3 +110,17 @@ recorded for P2.
 Not GST_COMPLIANT, DPDP_COMPLIANT, SECURITY_CERTIFIED, PRODUCTION_READY
 or PRODUCTION_APPROVED. No production deployment was made. P2 (storefront
 redesign), P3 and P4 were not started.
+
+## Independent review (2026-10-01)
+
+Reviewed head `c3b90ce`. One defect repaired: `GET /admin/products/styles`
+(`lifecycleState`) and `GET /admin/purchase-orders` (`status`) answered
+500 for an unknown filter value; they now answer 400 like every other
+invalid enum. Regression test: `admin-queries.test.ts`, "rejects an unknown
+lifecycle state or PO status filter with 400, not 500".
+
+D-4 is confirmed and classified as an existing inventory-domain defect
+(M06), not a P1 defect. Its repair needs a ledger/schema change and awaits
+Product Owner authorization. D-1..D-3 were confirmed as stated. The
+evidence and the non-blocking findings are in
+`docs/admin/P1_DECISIONS.md`. Not self-certified.

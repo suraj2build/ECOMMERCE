@@ -68,6 +68,59 @@ Owner or a later, separately authorized pass.
   the adjustment sign (a schema/ledger change) and replay adjustments.
 - **Why blocked:** option (b) changes inventory-ledger semantics, which P1
   must not do. The console shows the service's verdict with the caveat.
+- **Independent review (2026-10-01), classification: existing
+  inventory-domain defect (M06), not a P1 defect.** Reproduced against
+  real Postgres through `InventoryService` itself:
+
+  | Ledger | Stored onHand | Replayed onHand | `matches` |
+  |---|---|---|---|
+  | RECEIPT 10, ADJUSTMENT 5 (a +5) | 15 | 10 | true |
+  | RECEIPT 10, ADJUSTMENT 3 (a −3) | 7 | 10 | true |
+  | RECEIPT 10, balance corrupted to 99 | 99 | 10 | false (detected) |
+  | same corruption, then one −1 adjustment | 98 | 10 | true (drift hidden) |
+
+  Receipt, reservation/release, allocation and transfer out/in replay
+  correctly when no adjustment exists. `postAdjustment` stores
+  `Math.abs(quantityDelta)` and `reconcileBalance` skips ADJUSTMENT rows,
+  so the schema's own invariant ("InventoryBalance must always equal the
+  replay of InventoryTransaction") cannot be checked for any balance that
+  was ever adjusted, including pick shortfalls, which post adjustments.
+  A repair needs the ledger to record direction: a signed or
+  direction column, or separate increase/decrease transaction types. Both
+  are schema changes and a change to inventory-ledger semantics, so they
+  need Product Owner authorization; nothing was changed.
+
+## Independent review findings (2026-10-01)
+
+Repaired: `GET /admin/products/styles?lifecycleState=` and
+`GET /admin/purchase-orders?status=` accepted any string and passed it to
+Prisma, so an unknown value answered 500 instead of 400. Both are now
+validated as enums (regression test in `admin-queries.test.ts`).
+
+D-1, D-2 and D-3 were re-verified as stated above (D-3 at runtime: a −50
+manual adjustment on a zero balance is accepted and leaves −50).
+
+Non-blocking, not changed:
+
+- `InventoryBalance.inTransit` is never written by any code; transfers
+  track in-transit stock on the `InventoryTransfer` row. The console's
+  "In transit" balance column is therefore always 0. In-transit transfers
+  are listed under Inventory → Transfers.
+- The reconciliation screen's success banner says the stored balance
+  "matches" when the service reports a match, even where adjustments make
+  the two columns differ; the note under the table explains why (D-4).
+- A NUL byte in a search term answers 500 (Postgres rejects it). This is a
+  platform-wide behaviour shared with pre-existing routes such as
+  `GET /support/customers/lookup` and `POST /suppliers`; the response is
+  the generic safe error body.
+- Several lists sort on a non-unique column (`updatedAt`, `createdAt`,
+  supplier `name`) without an id tie-break, so rows with identical values
+  can shift between pages.
+- `GET /admin/catalog/collections` returns at most 200 collections and a
+  collection's detail at most 500 styles, without saying when it stops;
+  the co-approver picker lists at most 25 people.
+- A 401 in the middle of a session shows "Your session has expired" on
+  the screen but only returns to the sign-in page on the next full load.
 
 ## Known limitations (not business decisions)
 

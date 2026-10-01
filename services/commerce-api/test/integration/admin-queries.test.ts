@@ -197,6 +197,20 @@ describe('Admin query endpoints (P1)', () => {
     expect(published.items[0]).toMatchObject({ name: 'Published Tee', brand: { name: expect.any(String) }, _count: { skus: 1, colours: 1, media: 1 } });
   });
 
+  // Independent-review finding: these two filters were typed as free strings and an
+  // unknown value reached Prisma as an invalid enum, answering 500 instead of the
+  // 400 every other invalid enum gets (api-input-failures.test.ts).
+  it('rejects an unknown lifecycle state or PO status filter with 400, not 500', async () => {
+    const { token } = await staff('CATALOG', ['product:read', 'po:read']);
+    for (const url of ['/admin/products/styles?lifecycleState=BOGUS', '/admin/purchase-orders?status=BOGUS']) {
+      const res = await get(url, token);
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json().error.code, url).toBe('VALIDATION_ERROR');
+    }
+    expect((await get('/admin/products/styles?lifecycleState=PUBLISHED', token)).statusCode).toBe(200);
+    expect((await get('/admin/purchase-orders?status=SUBMITTED', token)).statusCode).toBe(200);
+  });
+
   it('staff lookup lists only active holders of the approving permission, identity only, never the caller', async () => {
     await grantPermissions('FINANCE', ['inventory:adjust:coapprove']);
     const approver = await createAuthenticatedStaff(app, ['FINANCE']);

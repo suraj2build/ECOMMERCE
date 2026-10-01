@@ -91,13 +91,24 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get('/admin/products/styles', auth('product:read'), async (request) => {
-    const q = z.object({ q: z.string().trim().max(100).optional(), lifecycleState: z.string().optional(), ...page }).parse(request.query);
+    const q = z
+      .object({
+        q: z.string().trim().max(100).optional(),
+        lifecycleState: z.enum(['DRAFT', 'READY_FOR_ENRICHMENT', 'READY_FOR_QA', 'PUBLISHED', 'UNPUBLISHED', 'ARCHIVED']).optional(),
+        ...page,
+      })
+      .parse(request.query);
     return service.listStyles(q);
   });
 
   fastify.get('/admin/purchase-orders', auth('po:read'), async (request) => {
     const q = z
-      .object({ q: z.string().trim().max(100).optional(), status: z.string().optional(), supplierId: z.string().uuid().optional(), ...page })
+      .object({
+        q: z.string().trim().max(100).optional(),
+        status: z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'PARTIALLY_RECEIVED', 'FULLY_RECEIVED', 'CLOSED', 'CANCELLED']).optional(),
+        supplierId: z.string().uuid().optional(),
+        ...page,
+      })
       .parse(request.query);
     return service.listPurchaseOrders(q);
   });

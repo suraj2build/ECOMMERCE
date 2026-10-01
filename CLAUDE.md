@@ -6,6 +6,17 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-01: `P1 INDEPENDENT REVIEW COMPLETE — AWAITING
+PRODUCT OWNER DECISION.`** An independent review of P1 (head `c3b90ce`)
+repaired one defect (two admin list filters answered 500 instead of 400
+for an unknown value). It confirmed D-4 as an existing inventory-domain
+(M06) defect: `InventoryService.reconcileBalance` cannot check any
+balance that has an unsigned ADJUSTMENT row. The repair needs a
+ledger/schema change and must not start without Product Owner
+authorization. D-1..D-3 were confirmed and remain open. See
+`docs/admin/P1_DECISIONS.md`. Not self-certified; P2/P3/P4 and M34+ are
+not authorized.
+
 **Status as of 2026-09-30: `P1 COMMERCE OPERATIONS CONSOLE BUILT —
 AWAITING INDEPENDENT REVIEW.`** The human project owner authorized "P1 —
 Commerce Operations Console, large functional build pass" on the protected

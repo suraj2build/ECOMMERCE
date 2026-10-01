@@ -1,5 +1,15 @@
 # Build Plan
 
+## STATUS (2026-10-01): P1 INDEPENDENT REVIEW COMPLETE — AWAITING PRODUCT OWNER DECISION.
+
+> **2026-10-01: independent review of P1** (head `c3b90ce`). One defect
+> repaired: two admin list filters answered 500 instead of 400 for an
+> unknown value. D-4 is confirmed as an existing inventory-domain (M06)
+> defect: reconciliation cannot check any balance that has ever been
+> adjusted. Repairing it needs a ledger/schema change, so it awaits Product
+> Owner authorization. D-1..D-3 confirmed and still open. Details in
+> `docs/admin/P1_DECISIONS.md`. Not self-certified.
+
 ## STATUS (2026-09-30): P1 COMMERCE OPERATIONS CONSOLE BUILT — AWAITING INDEPENDENT REVIEW.
 
 > **2026-09-30: "P1 — Commerce Operations Console" functional build
