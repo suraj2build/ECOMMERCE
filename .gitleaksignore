@@ -1,0 +1,8 @@
+# Verified false positives only. Each line is one gitleaks finding fingerprint
+# (commit:file:rule:line); nothing else is suppressed.
+#
+# warehouse.test.ts:390 in 4887a8d held a short test idempotency label, not a
+# credential. generic-api-key matched it on the field name and entropy. The
+# label was renamed in a later commit; the historical commit cannot be
+# rewritten (pushed history).
+4887a8d7622c6c7ee1a199953324c1459df06490:services/commerce-api/test/integration/warehouse.test.ts:generic-api-key:390

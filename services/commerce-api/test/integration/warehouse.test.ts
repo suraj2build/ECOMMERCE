@@ -387,7 +387,7 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
       const order = await codOrder(skuId, 'guest-wh-d4-short', 'idem-wh-d4-short', 3);
       const token = await warehouseToken();
       const task = await onePickTask(order.id);
-      const payload = { idempotencyKey: 'd4-short-pick', outcome: 'SHORT', pickedQuantity: 2, exceptionReason: 'Found only 2' };
+      const payload = { idempotencyKey: 'idem-wh-d4-pick', outcome: 'SHORT', pickedQuantity: 2, exceptionReason: 'Found only 2' };
 
       const first = await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: { authorization: `Bearer ${token}` }, payload });
       expect(first.statusCode).toBe(200);
