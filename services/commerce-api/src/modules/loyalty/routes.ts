@@ -2,6 +2,10 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { LoyaltyService } from './service.js';
 
+// Exact mobile number only (digits, optional leading +, same 10-15 length
+// as the OTP routes): no wildcard, prefix or free-text search.
+const adjustmentLookupSchema = z.object({ mobile: z.string().trim().regex(/^\+?\d{10,15}$/, 'mobile must be 10-15 digits') });
+
 const manualAdjustSchema = z.object({
   customerId: z.string().uuid(),
   pointsDelta: z.number().int(),
@@ -28,6 +32,14 @@ const loyaltyRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/storefront/account/loyalty/ledger', customerAuth, async (request, reply) => {
     reply.status(200).send(await loyalty.listLedgerForCustomer(request.customer!.id));
+  });
+
+  // P1 decision D-1: the restricted lookup a loyalty:adjust holder (e.g.
+  // Finance) uses to find the customer an adjustment is for, without
+  // Customer 360 access (customer_service:manage).
+  fastify.get('/loyalty/customers/lookup', { preHandler: staffAuth }, async (request, reply) => {
+    const { mobile } = adjustmentLookupSchema.parse(request.query);
+    reply.status(200).send(await loyalty.lookupCustomerForAdjustment(mobile));
   });
 
   fastify.post('/loyalty/adjust', { preHandler: staffAuth }, async (request, reply) => {

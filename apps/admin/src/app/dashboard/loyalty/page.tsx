@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react';
 import { ActionMessage, Can, ConfirmDialog, Notice, PageHeader, Section, TextArea, TextField } from '@/components/ui';
 import { ApiError, apiFetch, apiSend, errorMessage, newIdempotencyKey, qs } from '@/lib/api';
 import { formatNumber } from '@/lib/format';
-import { useAction, useCan } from '@/lib/session';
+import { useAction } from '@/lib/session';
 
-interface CustomerSummary {
+/** GET /loyalty/customers/lookup (P1 decision D-1): identity and loyalty balance only. */
+interface AdjustmentCustomer {
   id: string;
   fullName: string | null;
-  mobile: string;
-  loyalty: { availablePoints: number; pendingPoints: number };
+  maskedMobile: string;
+  loyalty: { availablePoints: number; pendingPoints: number; tierName: string | null };
 }
 
 type Sweep = 'vest' | 'expire' | 'release-stale-holds';
@@ -32,7 +33,10 @@ const SWEEPS: Record<Sweep, { label: string; body: string }> = {
 /**
  * Loyalty tools (loyalty:adjust). Manual adjustment and the three sweeps
  * call the loyalty service, which owns the ledger, vesting (LOY-006) and
- * expiry rules. Sweeps are privileged: each needs typed confirmation.
+ * expiry rules. The customer is found through the restricted lookup
+ * (decision D-1), not Customer 360, and the service rejects a deduction
+ * that would take the balance below zero (decision D-3). Sweeps are
+ * privileged: each needs typed confirmation.
  */
 export default function LoyaltyToolsPage() {
   return (
@@ -51,10 +55,9 @@ export default function LoyaltyToolsPage() {
 }
 
 function AdjustPoints() {
-  const canLookup = useCan('customer_service:manage');
   const action = useAction();
   const [mobile, setMobile] = useState('');
-  const [customer, setCustomer] = useState<CustomerSummary | null>(null);
+  const [customer, setCustomer] = useState<AdjustmentCustomer | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [points, setPoints] = useState('');
   const [reason, setReason] = useState('');
@@ -65,8 +68,7 @@ function AdjustPoints() {
     setLookupError(null);
     setCustomer(null);
     try {
-      const found = await apiFetch<{ id: string }>(`/support/customers/lookup${qs({ mobile: m })}`);
-      setCustomer(await apiFetch<CustomerSummary>(`/support/customers/${found.id}/360`));
+      setCustomer(await apiFetch<AdjustmentCustomer>(`/loyalty/customers/lookup${qs({ mobile: m.trim() })}`));
     } catch (err) {
       setLookupError(err instanceof ApiError && err.status === 404 ? 'No customer has that mobile number.' : errorMessage(err));
     }
@@ -74,22 +76,14 @@ function AdjustPoints() {
 
   useEffect(() => {
     const m = new URLSearchParams(window.location.search).get('mobile');
-    if (m && canLookup) {
+    if (m) {
       setMobile(m);
       void lookup(m);
     }
-  }, [canLookup]);
+  }, []);
 
-  if (!canLookup) {
-    return (
-      <Section title="Adjust a customer's points">
-        <Notice kind="info">
-          Finding a customer needs Customer 360 access (customer_service:manage), which your role does not have. Whether Finance should get a separate customer
-          lookup for loyalty corrections is an open decision (P1 decision D-1).
-        </Notice>
-      </Section>
-    );
-  }
+  const delta = Number(points);
+  const preview = customer && points !== '' && Number.isInteger(delta) ? customer.loyalty.availablePoints + delta : null;
 
   return (
     <Section title="Adjust a customer's points">
@@ -101,7 +95,7 @@ function AdjustPoints() {
           void lookup(mobile);
         }}
       >
-        <TextField label="Customer mobile number" required value={mobile} onChange={setMobile} />
+        <TextField label="Customer mobile number" required value={mobile} onChange={setMobile} hint="The full mobile number; partial numbers are not searched." />
         <button className="btn" type="submit" style={{ marginBottom: '0.75rem' }}>
           Find customer
         </button>
@@ -110,8 +104,9 @@ function AdjustPoints() {
       {customer && (
         <>
           <p>
-            <strong>{customer.fullName ?? 'Unnamed customer'}</strong> · available <strong data-testid="loyalty-available">{formatNumber(customer.loyalty.availablePoints)}</strong>,
-            pending {formatNumber(customer.loyalty.pendingPoints)} points
+            <strong>{customer.fullName ?? 'Unnamed customer'}</strong> <span className="muted mono">{customer.maskedMobile}</span> · available{' '}
+            <strong data-testid="loyalty-available">{formatNumber(customer.loyalty.availablePoints)}</strong>, pending {formatNumber(customer.loyalty.pendingPoints)} points
+            {customer.loyalty.tierName && <> · {customer.loyalty.tierName}</>}
           </p>
           <ActionMessage message={confirming ? null : action.message} />
           <form
@@ -121,7 +116,14 @@ function AdjustPoints() {
             }}
             style={{ maxWidth: 520 }}
           >
-            <TextField label="Points to add or remove" type="number" required value={points} onChange={setPoints} hint="Negative removes points. The service does not cap a removal at the available balance (see P1 decision D-3), so check the balance above first." />
+            <TextField
+              label="Points to add or remove"
+              type="number"
+              required
+              value={points}
+              onChange={setPoints}
+              hint="Negative removes points. A removal larger than the available balance is refused by the loyalty service."
+            />
             <TextArea label="Reason" required value={reason} onChange={setReason} />
             <button className="primary" type="submit" disabled={action.busy}>
               Adjust points
@@ -135,7 +137,7 @@ function AdjustPoints() {
             onCancel={() => setConfirming(false)}
             onConfirm={async () => {
               const ok = await action.run(
-                () => apiSend('POST', '/loyalty/adjust', { customerId: customer.id, pointsDelta: Number(points), reason, idempotencyKey: key }),
+                () => apiSend('POST', '/loyalty/adjust', { customerId: customer.id, pointsDelta: delta, reason, idempotencyKey: key }),
                 'Adjustment recorded.',
               );
               setConfirming(false);
@@ -143,14 +145,20 @@ function AdjustPoints() {
                 setPoints('');
                 setReason('');
                 setKey(newIdempotencyKey('loyalty-adjust'));
-                void lookup(mobile);
               }
+              // Success or refusal, show the balance the server now holds.
+              void lookup(mobile);
             }}
           >
             <p>
-              {Number(points) >= 0 ? 'Add' : 'Remove'} {formatNumber(Math.abs(Number(points)))} points for {customer.fullName ?? customer.mobile}. This writes an audited
-              ADJUST ledger entry.
+              {delta >= 0 ? 'Add' : 'Remove'} {formatNumber(Math.abs(delta))} points for {customer.fullName ?? customer.maskedMobile}. This writes an audited ADJUST ledger
+              entry.
             </p>
+            {preview !== null && (
+              <p className="muted">
+                Balance after this adjustment would be {formatNumber(preview)} points, if nothing else changes it first. The loyalty service makes the final check.
+              </p>
+            )}
             {action.message?.kind === 'error' && <ActionMessage message={action.message} />}
           </ConfirmDialog>
         </>

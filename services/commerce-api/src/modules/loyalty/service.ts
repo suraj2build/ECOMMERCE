@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type PrismaClient, type LoyaltyAccount, type LoyaltyLedgerEntry, type Order, type OrderLine } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
-import { NotFoundError, ValidationError } from '@fcp/shared';
+import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { resolveReturnPolicy, isWithinWindow } from '../returns/policy.js';
 import { NotificationService } from '../notifications/service.js';
@@ -790,6 +790,31 @@ export class LoyaltyService {
 
   // --- Manual staff adjustment ---
 
+  /**
+   * Finds the customer a manual loyalty adjustment is for (P1 decision
+   * D-1). Exact mobile match only, so it returns at most one customer and
+   * cannot be used to list them. Returns identity and loyalty balance
+   * only - deliberately narrower than Customer 360
+   * (SupportService.getInternalCustomer360): no full mobile, email,
+   * addresses, orders or other history.
+   */
+  async lookupCustomerForAdjustment(mobile: string): Promise<{
+    id: string;
+    fullName: string | null;
+    maskedMobile: string;
+    loyalty: { availablePoints: number; pendingPoints: number; tierName: string | null };
+  }> {
+    const customer = await this.prisma.customer.findUnique({ where: { mobile }, select: { id: true, fullName: true, mobile: true } });
+    if (!customer) throw new NotFoundError('Customer');
+    const balance = await this.getBalanceForCustomer(customer.id);
+    return {
+      id: customer.id,
+      fullName: customer.fullName,
+      maskedMobile: `${'*'.repeat(Math.max(customer.mobile.length - 4, 0))}${customer.mobile.slice(-4)}`,
+      loyalty: { availablePoints: balance.balance, pendingPoints: balance.pendingPoints, tierName: balance.tier?.name ?? null },
+    };
+  }
+
   async manualAdjust(customerId: string, pointsDelta: number, reason: string, actorStaffId: string, idempotencyKey: string): Promise<LoyaltyLedgerEntry> {
     if (pointsDelta === 0) throw new ValidationError('An adjustment must be non-zero');
     if (!reason?.trim()) throw new ValidationError('A reason is required for a manual loyalty adjustment');
@@ -800,6 +825,15 @@ export class LoyaltyService {
 
     return this.prisma.$transaction(async (tx) => {
       const account = await this.lockOrCreateAccountByCustomerId(tx, customerId);
+
+      // P1 decision D-3 (Product Owner, 2026-10-01): a manual deduction that
+      // would take the balance below zero is rejected whole - never capped,
+      // never partially applied. `account` was read under the FOR UPDATE
+      // lock above, so a concurrent adjustment to the same account waits
+      // here and then checks against the committed balance.
+      if (account.balance + pointsDelta < 0) {
+        throw new ConflictError(`This adjustment would take the loyalty balance below zero (${account.balance} points available)`);
+      }
 
       let entry: LoyaltyLedgerEntry;
       try {
