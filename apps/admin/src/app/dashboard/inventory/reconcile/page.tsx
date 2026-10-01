@@ -9,9 +9,21 @@ import { useApi } from '@/lib/session';
 
 interface Reconciliation {
   matches: boolean;
+  status: 'MATCH' | 'MISMATCH' | 'UNVERIFIABLE';
+  unverifiableAdjustments: number;
   stored: Balance;
   replayed: Balance;
 }
+
+const VERDICT: Record<Reconciliation['status'], { kind: 'success' | 'error' | 'warning'; text: (r: Reconciliation) => string }> = {
+  MATCH: { kind: 'success', text: () => 'The stored balance matches the ledger replay.' },
+  MISMATCH: { kind: 'error', text: () => 'Mismatch: the stored balance differs from the ledger replay. Escalate for investigation.' },
+  UNVERIFIABLE: {
+    kind: 'warning',
+    text: (r) =>
+      `Cannot be verified: ${r.unverifiableAdjustments} older adjustment${r.unverifiableAdjustments === 1 ? '' : 's'} recorded before adjustments carried a direction, with no audit evidence of which way ${r.unverifiableAdjustments === 1 ? 'it' : 'they'} went.`,
+  },
+};
 
 const FIELDS: Array<[keyof Balance, string]> = [
   ['onHand', 'On hand'],
@@ -25,8 +37,8 @@ const FIELDS: Array<[keyof Balance, string]> = [
 /**
  * Ledger reconciliation (GET /inventory/reconcile): the stored balance
  * next to the balance the inventory service rebuilds by replaying the
- * ledger. The match verdict and its rules (e.g. how manual adjustments
- * are treated) are the service's; this screen only shows them.
+ * ledger, adjustments included (P1 decision D-4). The verdict is the
+ * service's; this screen only shows it.
  */
 export default function ReconcilePage() {
   const [sku, setSku] = useState<SkuOption | null>(null);
@@ -51,8 +63,8 @@ export default function ReconcilePage() {
         <DataState state={result}>
           {(r) => (
             <Section title={`Result for ${sku.skuCode}`}>
-              <Notice kind={r.matches ? 'success' : 'error'}>
-                {r.matches ? 'The stored balance matches the ledger replay.' : 'Mismatch: the stored balance differs from the ledger replay. Escalate for investigation.'}
+              <Notice kind={VERDICT[r.status].kind}>
+                <span data-testid="reconcile-status">{VERDICT[r.status].text(r)}</span>
               </Notice>
               <div className="table-wrap">
                 <table>
@@ -79,10 +91,6 @@ export default function ReconcilePage() {
                   </tbody>
                 </table>
               </div>
-              <p className="muted">
-                Manual adjustments are recorded without a sign on the ledger row, so the service excludes them from the replay and reports a
-                match whenever any exist (P1 decision D-4).
-              </p>
             </Section>
           )}
         </DataState>

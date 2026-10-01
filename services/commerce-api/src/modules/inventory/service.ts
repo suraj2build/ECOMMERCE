@@ -941,7 +941,11 @@ export class InventoryService {
   }
 
   /**
-   * ADJUSTMENT: authorized manual correction (ADM-003). Requires a reason.
+   * Adjustment: authorized manual correction (ADM-003). Requires a reason.
+   * Posted as ADJUSTMENT_IN (quantityDelta > 0) or ADJUSTMENT_OUT
+   * (quantityDelta < 0) with a positive quantity, so the ledger records the
+   * direction and reconcileBalance can replay it (P1 decision D-4). The
+   * legacy undirected ADJUSTMENT type is no longer written.
    * Adjustments whose absolute quantity exceeds the configured threshold
    * require a co-approver id (checked for a Finance-tier permission at the
    * route layer, not here) - this service enforces only that the field is
@@ -1000,7 +1004,7 @@ export class InventoryService {
       const txnRow = await this.writeLedgerRow(tx, {
         skuId: params.skuId,
         locationId: params.locationId,
-        type: 'ADJUSTMENT',
+        type: params.quantityDelta > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT',
         quantity: Math.abs(params.quantityDelta),
         reason: params.reason,
         actorType: 'STAFF',
@@ -1109,21 +1113,31 @@ export class InventoryService {
    * proves it equals the stored InventoryBalance cache. Used by the
    * integrity test suite - if this ever disagrees, the cache has drifted
    * from the source of truth, which is a defect by definition (ADR-0012).
+   *
+   * P1 decision D-4 (2026-10-01): adjustments are replayed like every other
+   * entry. A legacy undirected ADJUSTMENT row is replayed only through its
+   * InventoryAdjustmentResolution; if any lacks one the result is
+   * UNVERIFIABLE (`matches: false`), never a match. Verification only: a
+   * drifted balance is reported, never repaired here.
    */
   async reconcileBalance(skuId: string, locationId: string): Promise<{
     matches: boolean;
+    status: 'MATCH' | 'MISMATCH' | 'UNVERIFIABLE';
+    unverifiableAdjustments: number;
     stored: InventoryBalanceSnapshot;
     replayed: InventoryBalanceSnapshot;
   }> {
     const transactions = await this.prisma.inventoryTransaction.findMany({
       where: { skuId, locationId },
       orderBy: { createdAt: 'asc' },
+      include: { adjustmentResolution: true },
     });
 
     let onHand = 0;
     let reserved = 0;
     let damaged = 0;
     let returnPending = 0;
+    let unverifiableAdjustments = 0;
 
     for (const txn of transactions) {
       switch (txn.type) {
@@ -1193,11 +1207,20 @@ export class InventoryService {
         case 'RTO':
           returnPending += txn.quantity;
           break;
+        case 'ADJUSTMENT_IN':
+          onHand += txn.quantity;
+          break;
+        case 'ADJUSTMENT_OUT':
+          onHand -= txn.quantity;
+          break;
         case 'ADJUSTMENT': {
-          // Adjustment sign is not stored on the ledger row (quantity is
-          // always positive); the balance itself is authoritative for net
-          // effect, so adjustments are excluded from this replay and
-          // reconciliation instead asserts non-adjustment consistency.
+          // Legacy undirected row (written before D-4). Replayable only
+          // where the D-4 migration recorded its direction from audit
+          // evidence; otherwise it is counted and the result is UNVERIFIABLE.
+          const direction = txn.adjustmentResolution?.direction;
+          if (direction === 'INCREASE') onHand += txn.quantity;
+          else if (direction === 'DECREASE') onHand -= txn.quantity;
+          else unverifiableAdjustments += 1;
           break;
         }
         case 'ALLOCATION':
@@ -1210,14 +1233,13 @@ export class InventoryService {
     const stored = await this.getBalance(skuId, locationId);
     const replayed = { onHand, reserved, damaged, returnPending, inTransit: 0, available: onHand - reserved };
 
-    const hasAdjustments = transactions.some((t) => t.type === 'ADJUSTMENT');
-    const matches = hasAdjustments
-      ? true // adjustments intentionally excluded from replay - see comment above
-      : stored.onHand === replayed.onHand &&
-        stored.reserved === replayed.reserved &&
-        stored.damaged === replayed.damaged &&
-        stored.returnPending === replayed.returnPending;
+    const equal =
+      stored.onHand === replayed.onHand &&
+      stored.reserved === replayed.reserved &&
+      stored.damaged === replayed.damaged &&
+      stored.returnPending === replayed.returnPending;
+    const status = unverifiableAdjustments > 0 ? 'UNVERIFIABLE' : equal ? 'MATCH' : 'MISMATCH';
 
-    return { matches, stored, replayed };
+    return { matches: status === 'MATCH', status, unverifiableAdjustments, stored, replayed };
   }
 }

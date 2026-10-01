@@ -763,9 +763,20 @@ enum InventoryTxnType {
   // EXC-004 in blueprint/DECISION_REGISTER.md).
   EXCHANGE_DISPATCH
   RTO
+  // Legacy, undirected manual adjustment (before 2026-10-01). Its quantity
+  // is unsigned and its type says nothing about direction, so the ledger
+  // alone cannot replay it. No longer written: see ADJUSTMENT_IN/OUT and
+  // InventoryAdjustmentResolution (P1 decision D-4).
   ADJUSTMENT
   TRANSFER_OUT
   TRANSFER_IN
+  // P1 decision D-4 (Product Owner, 2026-10-01): a manual or pick-shortfall
+  // adjustment records its direction in its type, like every other entry
+  // here (quantity stays positive). ADJUSTMENT_IN: onHand += quantity;
+  // ADJUSTMENT_OUT: onHand -= quantity. Posted by
+  // InventoryService.postAdjustment.
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
 }
 
 // Append-only ledger - the source of truth. Never mutated after insert.
@@ -789,10 +800,36 @@ model InventoryTransaction {
   actorStaff      StaffUser? @relation("InventoryAdjustmentActor", fields: [actorStaffId], references: [id], onDelete: Restrict)
   coApproverStaff StaffUser? @relation("InventoryAdjustmentCoApprover", fields: [coApproverStaffId], references: [id], onDelete: Restrict)
 
+  adjustmentResolution InventoryAdjustmentResolution?
+
   @@index([skuId, locationId])
   @@index([type])
   @@index([referenceType, referenceId])
   @@map("inventory_transactions")
+}
+
+enum InventoryAdjustmentDirection {
+  INCREASE
+  DECREASE
+}
+
+// P1 decision D-4 (Product Owner, 2026-10-01): the direction of a legacy,
+// undirected ADJUSTMENT ledger row, recorded beside it because the ledger
+// itself is append-only and is never rewritten. Written only by migration
+// 20261001100000_inventory_adjustment_direction, and only where the
+// original `inventory.adjust` audit rows settle the direction with no
+// guessing (see that migration's rule). A legacy row with no resolution
+// stays unreplayable, and InventoryService.reconcileBalance reports its
+// balance as UNVERIFIABLE rather than as a match. Append-only.
+model InventoryAdjustmentResolution {
+  transactionId String                       @id
+  direction     InventoryAdjustmentDirection
+  evidence      String
+  createdAt     DateTime                     @default(now())
+
+  transaction InventoryTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@map("inventory_adjustment_resolutions")
 }
 
 // Derived, transactionally-maintained cache. Must always equal the replay

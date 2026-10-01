@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
+import { InventoryService } from '../../src/modules/inventory/service.js';
 
 const GUEST_HEADER = 'x-guest-session-id';
 const SERVICEABLE_PINCODE = '110001';
@@ -375,6 +376,35 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
     });
   });
 
+  describe('D-4: a pick shortfall adjustment replays in reconciliation', () => {
+    it('stock received through the ledger, reserved, allocated and short-picked reconciles exactly; a replayed pick posts nothing more', async () => {
+      const { skuId, locationId } = await setupCheckoutableSku(500, undefined, 0);
+      const inventory = new InventoryService(app);
+      // 5 on hand for 3 ordered: a shortfall that would take onHand below
+      // reserved trips inventory_balances_reserved_le_onHand (a separate,
+      // pre-existing pick-shortfall finding recorded in P1_DECISIONS.md).
+      await inventory.postReceipt({ skuId, locationId, quantity: 5, referenceType: 'TEST', referenceId: 'd4-shortpick-receipt' });
+      const order = await codOrder(skuId, 'guest-wh-d4-short', 'idem-wh-d4-short', 3);
+      const token = await warehouseToken();
+      const task = await onePickTask(order.id);
+      const payload = { idempotencyKey: 'd4-short-pick', outcome: 'SHORT', pickedQuantity: 2, exceptionReason: 'Found only 2' };
+
+      const first = await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: { authorization: `Bearer ${token}` }, payload });
+      expect(first.statusCode).toBe(200);
+      const replay = await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: { authorization: `Bearer ${token}` }, payload });
+      expect(replay.statusCode).toBe(200);
+
+      const out = await testPrisma.inventoryTransaction.findMany({ where: { skuId, type: 'ADJUSTMENT_OUT' } });
+      expect(out).toHaveLength(1);
+      expect(out[0]!.quantity).toBe(1);
+
+      const result = await inventory.reconcileBalance(skuId, locationId);
+      expect(result).toMatchObject({ status: 'MATCH', matches: true, unverifiableAdjustments: 0 });
+      expect(result.stored).toMatchObject({ onHand: 4, reserved: 3 });
+      expect(result.replayed).toMatchObject({ onHand: 4, reserved: 3 });
+    });
+  });
+
   describe('G: pack more than picked (short-picked line routed to exception)', () => {
     it('a short-picked line cannot be assigned to a fulfilment - it is routed to EXCEPTION instead', async () => {
       const { skuId } = await setupCheckoutableSku(500);
@@ -399,7 +429,8 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
 
       // The 1-unit shortfall posted an authorized, audited inventory
       // adjustment (specs/15-warehouse-fulfilment.md, binding).
-      const adjustment = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: 'ADJUSTMENT' } });
+      // D-4: the shortfall is recorded as a decrease (ADJUSTMENT_OUT).
+      const adjustment = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: 'ADJUSTMENT_OUT' } });
       expect(adjustment).not.toBeNull();
       expect(adjustment!.quantity).toBe(1);
 
@@ -428,7 +459,7 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
       expect(res.json().status).toBe('EXCEPTION');
       expect(res.json().exceptionType).toBe('STOCK_NOT_FOUND');
 
-      const adjustment = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: 'ADJUSTMENT' } });
+      const adjustment = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: 'ADJUSTMENT_OUT' } });
       expect(adjustment!.quantity).toBe(2); // full allocatedQuantity, never guessed at a partial figure
 
       const line = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: order.lines[0]!.id } });
@@ -697,7 +728,7 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
       expect(stillPending.exceptionType).toBeNull();
       expect(stillPending.pickedAt).toBeNull();
 
-      const adjustment = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: 'ADJUSTMENT' } });
+      const adjustment = await testPrisma.inventoryTransaction.findFirst({ where: { skuId, type: { in: ['ADJUSTMENT', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT'] } } });
       expect(adjustment).toBeNull();
 
       const auditEntries = await testPrisma.auditLog.findMany({ where: { action: 'warehouse.pick.record', entityId: task.id } });
