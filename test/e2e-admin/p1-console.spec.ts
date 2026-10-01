@@ -439,7 +439,8 @@ test.describe('P1 Commerce Operations Console', () => {
     await page.getByRole('link', { name: 'Loyalty tools' }).click();
     await page.getByLabel('Customer mobile number').fill(mobile);
     await page.getByRole('button', { name: 'Find customer' }).click();
-    await expect(page.getByText(`P1 Finance Case ${RUN}`)).toBeVisible();
+    // exact: the closed confirmation dialog also holds the name inside a longer sentence.
+    await expect(page.getByText(`P1 Finance Case ${RUN}`, { exact: true })).toBeVisible();
     await expect(page.getByText(`******${mobile.slice(-4)}`)).toBeVisible();
     await expect(page.getByText(mobile, { exact: true })).toHaveCount(0); // full number never shown
     await expect(page.getByTestId('loyalty-available')).toHaveText('0');
@@ -456,7 +457,8 @@ test.describe('P1 Commerce Operations Console', () => {
     await page.getByRole('button', { name: 'Adjust points' }).click();
     await expect(page.getByRole('dialog').getByText('Balance after this adjustment would be -1 points')).toBeVisible();
     await page.getByRole('dialog').getByRole('button', { name: 'Record adjustment' }).click();
-    await expect(page.getByText(/below zero/)).toBeVisible();
+    // The refusal shows on the page once the dialog closes; the closed dialog keeps a hidden copy.
+    await expect(page.locator('text=/below zero/ >> visible=true')).toBeVisible();
     await expect(page.getByTestId('loyalty-available')).toHaveText('40');
 
     await page.getByLabel('Points to add or remove').fill('-40');
