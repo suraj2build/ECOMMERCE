@@ -87,6 +87,13 @@ platform.
   `specs/30-audit-compliance.md`).
 - Safety/buffer stock is supported as a configurable per-SKU/category
   buffer subtracted from `AVAILABLE`.
+- (P1 decision D-4, Product Owner, 2026-10-01.) An adjustment's ledger
+  entry records its direction (`ADJUSTMENT_IN` / `ADJUSTMENT_OUT`, positive
+  quantity), so reconciliation replays it like any other entry and a
+  drifted balance is reported even when adjustments exist. Legacy
+  undirected rows are replayed only where the migration recorded their
+  direction from audit evidence; otherwise reconciliation reports
+  `UNVERIFIABLE`. See `docs/admin/P1_DECISIONS.md`.
 
 ## Remaining open items
 

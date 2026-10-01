@@ -1,6 +1,17 @@
 # Build Plan
 
-## STATUS (2026-10-01): P1 INDEPENDENT REVIEW COMPLETE — AWAITING PRODUCT OWNER DECISION.
+## STATUS (2026-10-01): P1 D-1 / D-2 / D-3 / D-4 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.
+
+> **2026-10-01: Product Owner decisions D-1 to D-4 implemented** on
+> `6e7cb2d`. D-1 restricted loyalty customer lookup for `loyalty:adjust`;
+> D-2 promotion gift-card compatibility set at creation; D-3 manual
+> loyalty deductions may not go below zero; D-4 directed inventory
+> adjustments with a reconciliation that replays them (one forward-only
+> migration, 40 total; legacy ledger rows untouched). Details in
+> `docs/admin/P1_DECISIONS.md`. Not self-certified; P2/P3/P4 and M34+ not
+> started.
+
+## STATUS (2026-10-01, superseded): P1 INDEPENDENT REVIEW COMPLETE — AWAITING PRODUCT OWNER DECISION.
 
 > **2026-10-01: independent review of P1** (head `c3b90ce`). One defect
 > repaired: two admin list filters answered 500 instead of 400 for an

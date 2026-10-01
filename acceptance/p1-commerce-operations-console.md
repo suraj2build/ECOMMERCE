@@ -124,3 +124,21 @@ D-4 is confirmed and classified as an existing inventory-domain defect
 Product Owner authorization. D-1..D-3 were confirmed as stated. The
 evidence and the non-blocking findings are in
 `docs/admin/P1_DECISIONS.md`. Not self-certified.
+
+## Product Owner decisions D-1 to D-4 (2026-10-01)
+
+Implemented on top of `6e7cb2d`; details and test lists in
+`docs/admin/P1_DECISIONS.md`. Not self-certified.
+
+- [x] D-1: `GET /loyalty/customers/lookup` (`loyalty:adjust`): exact
+      mobile, one result, identity and points only; Finance has no
+      Customer 360. Playwright P1-13.
+- [x] D-2: `giftCardCompatible` accepted by `POST /promotions` (default
+      unchanged) and enforced at checkout from the stored value.
+      Playwright P1-09.
+- [x] D-3: a manual loyalty deduction below zero is refused whole (409),
+      including under concurrency. Playwright P1-13.
+- [x] D-4: adjustments are directed in the ledger; reconciliation replays
+      them and reports MATCH / MISMATCH / UNVERIFIABLE; migration
+      `20261001100000_inventory_adjustment_direction` (forward-only,
+      legacy rows untouched). Playwright P1-03.

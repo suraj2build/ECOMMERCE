@@ -186,6 +186,12 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(after.onHand).toBe(before.onHand - 3);
     const audit = await prisma.auditLog.findFirst({ where: { action: 'inventory.adjust', entityId: `${sku.skuId}/${fx.locationA.id}` }, orderBy: { createdAt: 'desc' } });
     expect(audit?.newValue).toMatchObject({ quantityDelta: -3, reason: 'P1 cycle count shortfall' });
+    // D-4: the ledger records the direction, and reconciliation replays it.
+    const ledger = await prisma.inventoryTransaction.findFirstOrThrow({ where: { skuId: sku.skuId, locationId: fx.locationA.id, reason: 'P1 cycle count shortfall' } });
+    expect(ledger).toMatchObject({ type: 'ADJUSTMENT_OUT', quantity: 3 });
+
+    await page.goto(`/dashboard/inventory/reconcile?sku=${encodeURIComponent(sku.skuCode)}&locationId=${fx.locationA.id}`);
+    await expect(page.getByTestId('reconcile-status')).toHaveText('The stored balance matches the ledger replay.');
   });
 
   test('P1-04 transfer out and in between locations', async ({ page }) => {
@@ -380,6 +386,8 @@ test.describe('P1 Commerce Operations Console', () => {
     await page.getByLabel('Maximum discount (INR)').fill('300');
     await page.getByLabel('Starts').fill('2026-01-01T00:00');
     await page.getByLabel('Stack group').fill(`p1-${RUN}`);
+    await expect(page.getByLabel('Can combine with a gift card')).toBeChecked(); // default unchanged
+    await page.getByLabel('Can combine with a gift card').uncheck(); // D-2
     await page.getByRole('button', { name: 'Create promotion' }).click();
 
     const row = page.getByRole('row').filter({ hasText: name });
@@ -393,7 +401,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await confirmDialog(page, 'Activate');
     await expect(row.getByText('Active', { exact: true })).toBeVisible();
     const promo = await prisma.promotion.findFirstOrThrow({ where: { name } });
-    expect(promo).toMatchObject({ isActive: true, discountType: 'PERCENTAGE', isCoupon: true, couponCode: `P1AUT${RUN}`, stackGroup: `p1-${RUN}` });
+    expect(promo).toMatchObject({ isActive: true, discountType: 'PERCENTAGE', isCoupon: true, couponCode: `P1AUT${RUN}`, stackGroup: `p1-${RUN}`, giftCardCompatible: false });
     expect(Number(promo.discountValue)).toBe(15);
   });
 
@@ -420,6 +428,45 @@ test.describe('P1 Commerce Operations Console', () => {
     const account = await prisma.loyaltyAccount.findUniqueOrThrow({ where: { customerId: customer.id }, include: { entries: true } });
     expect(account.balance).toBe(50);
     expect(account.entries.map((e) => e.type)).toEqual(['ADJUST']);
+  });
+
+  test('P1-13 Finance corrects loyalty points through the restricted lookup; a deduction below zero is refused', async ({ page }) => {
+    const mobile = nextMobile();
+    const customer = await prisma.customer.create({ data: { mobile, fullName: `P1 Finance Case ${RUN}`, mobileVerifiedAt: new Date() } });
+
+    await loginAs(page, 'FINANCE');
+    await expect(page.getByRole('link', { name: 'Customer 360' })).toHaveCount(0); // D-1: no Customer 360 for Finance
+    await page.getByRole('link', { name: 'Loyalty tools' }).click();
+    await page.getByLabel('Customer mobile number').fill(mobile);
+    await page.getByRole('button', { name: 'Find customer' }).click();
+    await expect(page.getByText(`P1 Finance Case ${RUN}`)).toBeVisible();
+    await expect(page.getByText(`******${mobile.slice(-4)}`)).toBeVisible();
+    await expect(page.getByText(mobile, { exact: true })).toHaveCount(0); // full number never shown
+    await expect(page.getByTestId('loyalty-available')).toHaveText('0');
+
+    await page.getByLabel('Points to add or remove').fill('40');
+    await page.getByLabel('Reason').fill('Goodwill credit');
+    await page.getByRole('button', { name: 'Adjust points' }).click();
+    await confirmDialog(page, 'Record adjustment');
+    await expect(page.getByTestId('loyalty-available')).toHaveText('40');
+
+    // D-3: removing more than the balance is refused by the server, and nothing changes.
+    await page.getByLabel('Points to add or remove').fill('-41');
+    await page.getByLabel('Reason').fill('Reverse goodwill');
+    await page.getByRole('button', { name: 'Adjust points' }).click();
+    await expect(page.getByRole('dialog').getByText('Balance after this adjustment would be -1 points')).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: 'Record adjustment' }).click();
+    await expect(page.getByText(/below zero/)).toBeVisible();
+    await expect(page.getByTestId('loyalty-available')).toHaveText('40');
+
+    await page.getByLabel('Points to add or remove').fill('-40');
+    await page.getByRole('button', { name: 'Adjust points' }).click();
+    await confirmDialog(page, 'Record adjustment');
+    await expect(page.getByTestId('loyalty-available')).toHaveText('0');
+
+    const account = await prisma.loyaltyAccount.findUniqueOrThrow({ where: { customerId: customer.id }, include: { entries: { orderBy: { createdAt: 'asc' } } } });
+    expect(account.balance).toBe(0);
+    expect(account.entries.map((e) => e.pointsDelta)).toEqual([40, -40]);
   });
 
   test('P1-11 gift card is issued, found by last four, adjusted and disabled', async ({ page }) => {

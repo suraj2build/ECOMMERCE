@@ -81,7 +81,7 @@ SUPER_ADMIN holds everything.
 | Promotions | Create / activate / deactivate | `POST /promotions`, `PATCH /promotions/:id/active` | `promotion:manage` |
 | Gift cards | Issue / adjust / disable / release stale holds | `POST /gift-cards/issue`, `/:id/adjust`, `/:id/disable`, `/sweep/release-stale-holds` | `giftcard:manage` |
 | Channels | Create channel / publish / unpublish / reclaim / resync | `POST /channels`, `/channels/:id/skus/:skuId/publish`, `/unpublish`, `/channels/sweep/*` | `channel:manage` |
-| Loyalty tools | Manual adjustment | `POST /loyalty/adjust` | `loyalty:adjust` (customer found via Customer 360: `customer_service:manage`) |
+| Loyalty tools | Find customer (exact mobile; identity and points only), manual adjustment (refused below zero) | `GET /loyalty/customers/lookup`, `POST /loyalty/adjust` | `loyalty:adjust` (D-1, D-3) |
 | | Vest / expire / release-hold sweeps (type RUN to confirm) | `POST /loyalty/sweep/vest`, `/expire`, `/release-stale-holds` | `loyalty:adjust` |
 | Customer 360 | Look up by exact mobile | `GET /support/customers/lookup`, `/support/customers/:id/360` | `customer_service:manage` |
 | CMS | Existing M29 actions | `/cms/*` | `cms:manage` / `cms:read` |

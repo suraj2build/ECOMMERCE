@@ -1,10 +1,73 @@
-# P1 console: open decisions, known limitations, external dependencies
+# P1 console: decisions, known limitations, external dependencies
 
-Recorded by the P1 Commerce Operations Console build (2026-09-30). None of
-the items below was guessed or implemented; each is left for the Product
-Owner or a later, separately authorized pass.
+Recorded by the P1 Commerce Operations Console build (2026-09-30). The
+Product Owner decided D-1 to D-4 on 2026-10-01; they are implemented as
+described in the next section (awaiting independent review, not
+self-certified). The original DECISION_REQUIRED records follow unchanged
+as history.
 
-## DECISION_REQUIRED
+## Product Owner decisions implemented (2026-10-01)
+
+### D-1 — RESOLVED: restricted customer lookup for loyalty corrections
+
+- `GET /api/v1/loyalty/customers/lookup?mobile=` gated by the existing
+  `loyalty:adjust` permission (Finance and Customer Service hold it).
+  Finance still does not hold `customer_service:manage`; Customer 360 is
+  unchanged.
+- Exact mobile only: digits with an optional leading `+`, 10-15 long,
+  validated before any query. At most one result; no partial, prefix or
+  wildcard search; unknown mobile answers 404.
+- Response: `id`, `fullName`, `maskedMobile` (last four digits),
+  `loyalty.availablePoints`, `loyalty.pendingPoints`, `loyalty.tierName`.
+  No full mobile, email, address, orders, returns, payments or any
+  credential material.
+- The admin Loyalty tools screen uses it for every holder of
+  `loyalty:adjust`.
+- Tests: `loyalty-staff-adjustment.test.ts`; Playwright P1-13.
+
+### D-2 — RESOLVED: gift-card compatibility is set on the promotion
+
+- `POST /promotions` accepts `giftCardCompatible` (boolean, optional).
+  Omitted keeps the existing default `true`; existing promotions are
+  unchanged. There is no promotion update route, so it is chosen at
+  creation.
+- Checkout (`CheckoutService.startCheckout`) refuses a gift card with a
+  promotion whose stored value is `false`; it reads only the stored value.
+- Admin promotion form: "Can combine with a gift card" (default on).
+- Tests: `gift-cards.test.ts` (D-2 block); Playwright P1-09.
+
+### D-3 — RESOLVED: a manual deduction may not take the balance below zero
+
+- `LoyaltyService.manualAdjust` rejects, with 409 CONFLICT, an adjustment
+  that would leave the balance below zero. Nothing is written: no ledger
+  entry, no audit row, no partial deduction, no cap. The check uses the
+  balance read under the account row lock, so concurrent deductions are
+  checked against the committed balance one at a time.
+- `manualAdjust` is used only by `POST /loyalty/adjust`; automated loyalty
+  paths (earn, vest, redeem, reverse, expire) are unchanged.
+- Tests: `loyalty-staff-adjustment.test.ts`; Playwright P1-13.
+
+### D-4 — RESOLVED: adjustments are directed and reconciliation replays them
+
+- New adjustments are posted as `ADJUSTMENT_IN` / `ADJUSTMENT_OUT` with a
+  positive quantity (manual and pick-shortfall alike).
+- Legacy `ADJUSTMENT` rows are not modified (the ledger is append-only).
+  Migration `20261001100000_inventory_adjustment_direction` records their
+  direction in `inventory_adjustment_resolutions` only where the original
+  `inventory.adjust` audit rows settle it (rule in the migration).
+- `reconcileBalance` / `GET /inventory/reconcile` return
+  `status: MATCH | MISMATCH | UNVERIFIABLE`, `unverifiableAdjustments` and
+  `matches` (true only for MATCH). A legacy row without a resolution makes
+  the result UNVERIFIABLE, never a match. Reconciliation only reports; it
+  never repairs a balance.
+- Tests: `inventory-reconciliation.test.ts`, `warehouse.test.ts`;
+  Playwright P1-03. Upgrade of a copy of the E2E database (18 legacy
+  rows): 18 resolved, all 17 adjusted balances MATCH, a corrupted one
+  reports MISMATCH.
+- `InventoryBalance.inTransit` was deliberately not changed (separate
+  finding below).
+
+## DECISION_REQUIRED (history: decided 2026-10-01, see above)
 
 ### D-1 — Customer lookup for loyalty corrections by Finance
 
@@ -106,9 +169,10 @@ Non-blocking, not changed:
   track in-transit stock on the `InventoryTransfer` row. The console's
   "In transit" balance column is therefore always 0. In-transit transfers
   are listed under Inventory → Transfers.
-- The reconciliation screen's success banner says the stored balance
-  "matches" when the service reports a match, even where adjustments make
-  the two columns differ; the note under the table explains why (D-4).
+- (Resolved by D-4.) The reconciliation screen's success banner said the
+  stored balance "matches" even where adjustments made the two columns
+  differ. The service now replays adjustments and the screen shows its
+  MATCH / MISMATCH / UNVERIFIABLE verdict.
 - A NUL byte in a search term answers 500 (Postgres rejects it). This is a
   platform-wide behaviour shared with pre-existing routes such as
   `GET /support/customers/lookup` and `POST /suppliers`; the response is
@@ -121,6 +185,19 @@ Non-blocking, not changed:
   the co-approver picker lists at most 25 people.
 - A 401 in the middle of a session shows "Your session has expired" on
   the screen but only returns to the sign-in page on the next full load.
+
+Found while implementing D-1 to D-4 (pre-existing, outside the
+authorization, not changed):
+
+- A pick shortfall when on-hand equals reserved answers 500. Reproduced
+  with 3 units received, a 3-unit order and a short pick of 2: the
+  shortfall adjustment lowers `onHand` to 2 while the allocation keeps
+  `reserved` at 3, which violates `inventory_balances_reserved_le_onHand`.
+  The shortfall does not release the matching reservation. Changing that
+  is a warehouse/inventory semantics decision (M16), not part of D-4.
+- `POST /inventory/adjustments` has no idempotency key, so a manual
+  adjustment retried after a lost response is applied twice. The pick
+  shortfall path is idempotent through the pick task's key.
 
 ## Known limitations (not business decisions)
 

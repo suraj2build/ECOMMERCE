@@ -179,6 +179,37 @@ and safe to run while the service is up. Order:
 
 On a fresh database there is nothing to backfill.
 
+### Upgrading an existing database: inventory adjustment direction (P1 D-4)
+
+Migration `20261001100000_inventory_adjustment_direction` is applied by
+`prisma migrate deploy` like any other; there is no separate script and
+no ordering requirement beyond deploying the new code after it.
+
+- It adds the `ADJUSTMENT_IN` / `ADJUSTMENT_OUT` ledger types (new
+  adjustments use them) and the append-only
+  `inventory_adjustment_resolutions` table.
+- It never modifies existing `inventory_transactions` rows. For each
+  legacy `ADJUSTMENT` row it records a direction only when the original
+  `inventory.adjust` audit rows settle it (rule in the migration file);
+  other legacy rows stay unresolved. Re-running the statement is a no-op.
+- After deploying, count what stayed unresolved:
+
+  ```sql
+  SELECT count(*) FROM inventory_transactions t
+  LEFT JOIN inventory_adjustment_resolutions r ON r."transactionId" = t.id
+  WHERE t.type = 'ADJUSTMENT' AND r."transactionId" IS NULL;
+  ```
+
+  `GET /api/v1/inventory/reconcile` reports any balance with such a row as
+  `UNVERIFIABLE` (never as a match). Resolving one needs evidence from
+  outside the system (for example a count sheet) and a deliberate, separately
+  authorized correction; the migration does not guess.
+- Old code reads the new types as unknown and does not replay them, so do
+  not run pre-D-4 instances against the migrated database for longer than
+  the deployment itself.
+
+On a fresh database the resolution step finds nothing.
+
 ## 6. Backup / restore / observability
 
 See `blueprint/NON_FUNCTIONAL_REQUIREMENTS.md`'s `NFR-003` section for

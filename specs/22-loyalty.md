@@ -28,6 +28,11 @@ loyalty value, backed by an auditable ledger.
   structure.
 - Loyalty **MUST** use an auditable ledger supporting: earn, redeem,
   reverse, expire, and manual adjustment (per ADR-0013).
+- (P1 decision D-3, Product Owner, 2026-10-01.) A manual adjustment that
+  would take the points balance below zero **MUST** be rejected whole: no
+  cap, no partial deduction, no negative balance. (D-1: staff holding
+  `loyalty:adjust` find the customer through a restricted exact-mobile
+  lookup, not Customer 360.) See `docs/admin/P1_DECISIONS.md`.
 - **Points are earned based on qualifying purchase value.** Exact
   earning rate is a **configurable business parameter** — no fixed
   commercial percentage is set by this spec.

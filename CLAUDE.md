@@ -6,8 +6,23 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-01 (later): `D-1 / D-2 / D-3 / D-4 IMPLEMENTATION
+COMPLETE — AWAITING INDEPENDENT REVIEW.`** The Product Owner authorized
+"P1 Product-Owner Decision Implementation, D-1/D-2/D-3/D-4 only" on
+`6e7cb2d`. D-1: `GET /loyalty/customers/lookup` (`loyalty:adjust`;
+exact mobile, identity and points only; Finance still has no Customer
+360). D-2: `giftCardCompatible` accepted by `POST /promotions` (default
+unchanged), enforced by checkout from the stored value. D-3:
+`LoyaltyService.manualAdjust` refuses a deduction below zero (409) under
+the account row lock. D-4: adjustments are `ADJUSTMENT_IN`/`ADJUSTMENT_OUT`;
+migration `20261001100000_inventory_adjustment_direction` records the
+direction of legacy rows only where audit evidence settles it, without
+modifying the append-only ledger; `reconcileBalance` returns
+MATCH/MISMATCH/UNVERIFIABLE. See `docs/admin/P1_DECISIONS.md` and
+DEPLOYMENT.md. Not self-certified; P2/P3/P4 and M34+ are not authorized.
+
 **Status as of 2026-10-01: `P1 INDEPENDENT REVIEW COMPLETE — AWAITING
-PRODUCT OWNER DECISION.`** An independent review of P1 (head `c3b90ce`)
+PRODUCT OWNER DECISION.`** (superseded by the entry above) An independent review of P1 (head `c3b90ce`)
 repaired one defect (two admin list filters answered 500 instead of 400
 for an unknown value). It confirmed D-4 as an existing inventory-domain
 (M06) defect: `InventoryService.reconcileBalance` cannot check any

@@ -132,3 +132,18 @@ The new `/api/v1/admin/*` read endpoints were built to the same rules
 (permission reuse, 403 + `authz.denied` on denial, identity-only staff
 pickers, no contact details in order search) and are listed in
 `docs/admin/P1_QUERY_ENDPOINTS.md`.
+
+## P1 Product Owner decisions D-1 to D-4 (2026-10-01)
+
+One new route: `GET /api/v1/loyalty/customers/lookup` (D-1), gated by the
+existing `loyalty:adjust` permission with the standard 403 +
+`authz.denied` contract. It is narrower than Customer 360 by design: an
+exact mobile match (validated as 10-15 digits before any query), at most
+one result, and only id, full name, masked mobile and loyalty balance -
+no full mobile, email, address, order or credential data (asserted in
+`loyalty-staff-adjustment.test.ts`). `customer_service:manage` and the
+Customer 360 routes are unchanged, and Finance still does not hold that
+permission. D-2 (`giftCardCompatible` on `POST /promotions`), D-3 (manual
+loyalty deduction floor) and D-4 (adjustment direction, reconciliation
+status) add no new routes and no new response fields carrying secret or
+personal data.
