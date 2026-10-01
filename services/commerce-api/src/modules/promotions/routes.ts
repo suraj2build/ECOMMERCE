@@ -20,6 +20,10 @@ const createPromotionSchema = z.object({
   usageLimitPerCustomer: z.number().int().positive().optional(),
   loyaltyCompatible: z.boolean().optional(),
   storeCreditCompatible: z.boolean().optional(),
+  // P1 decision D-2: staff choose whether the promotion may be combined
+  // with a gift card. Omitted keeps the existing default (true, set in
+  // PromotionService.createPromotion); checkout reads only the stored value.
+  giftCardCompatible: z.boolean().optional(),
 });
 
 const setActiveSchema = z.object({ isActive: z.boolean() });

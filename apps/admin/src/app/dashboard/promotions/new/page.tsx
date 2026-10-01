@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ActionMessage, Checkbox, Notice, PageHeader, Section, SelectField, TextArea, TextField } from '@/components/ui';
+import { ActionMessage, Checkbox, PageHeader, Section, SelectField, TextArea, TextField } from '@/components/ui';
 import { apiSend } from '@/lib/api';
 import { useAction, useApi } from '@/lib/session';
 
@@ -33,6 +33,7 @@ export default function NewPromotionPage() {
     usageLimitPerCustomer: '',
     loyaltyCompatible: true,
     storeCreditCompatible: true,
+    giftCardCompatible: true,
   });
   const set = <K extends keyof typeof f>(k: K) => (v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const num = (v: string) => (v === '' ? undefined : Number(v));
@@ -66,6 +67,7 @@ export default function NewPromotionPage() {
               usageLimitPerCustomer: num(f.usageLimitPerCustomer),
               loyaltyCompatible: f.loyaltyCompatible,
               storeCreditCompatible: f.storeCreditCompatible,
+              giftCardCompatible: f.giftCardCompatible,
             }),
           );
           if (ok) router.push('/dashboard/promotions');
@@ -117,7 +119,7 @@ export default function NewPromotionPage() {
           </div>
           <Checkbox label="Can combine with loyalty points" checked={f.loyaltyCompatible} onChange={set('loyaltyCompatible')} />
           <Checkbox label="Can combine with store credit" checked={f.storeCreditCompatible} onChange={set('storeCreditCompatible')} />
-          <Notice kind="info">Gift-card compatibility is not settable through the promotions API; new promotions keep the default (combinable).</Notice>
+          <Checkbox label="Can combine with a gift card" checked={f.giftCardCompatible} onChange={set('giftCardCompatible')} />
         </Section>
         <button className="primary" type="submit" disabled={action.busy}>
           {action.busy ? 'Creating…' : 'Create promotion'}

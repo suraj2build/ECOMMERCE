@@ -659,4 +659,127 @@ describe('Gift Cards (M30)', () => {
     expect(await testPrisma.storeCreditEntry.count()).toBe(0);
     expect(await testPrisma.loyaltyLedgerEntry.count()).toBe(0);
   });
+
+  // --- P1 decision D-2 (2026-10-01): staff choose gift-card compatibility ---
+  // POST /promotions now accepts giftCardCompatible. Omitted keeps the
+  // existing default (combinable); checkout reads only the persisted value.
+
+  describe('D-2 promotion gift-card compatibility is set through the promotions API', () => {
+    async function createPromotion(token: string, overrides: Record<string, unknown> = {}) {
+      await testPrisma.promotionType.upsert({ where: { key: 'PROMOTIONAL' }, update: {}, create: { key: 'PROMOTIONAL', name: 'Promotional' } });
+      return app.inject({
+        method: 'POST',
+        url: '/api/v1/promotions',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          name: `D2 promo ${counter}`,
+          promotionTypeKey: 'PROMOTIONAL',
+          isCoupon: true,
+          couponCode: `D2C${counter}${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+          discountType: 'PERCENTAGE',
+          discountValue: 10,
+          startsAt: new Date(Date.now() - 86_400_000).toISOString(),
+          ...overrides,
+        },
+      });
+    }
+
+    async function checkoutWithCoupon(couponCode: string, extra: Record<string, unknown> = {}) {
+      const ctx = await seedContext();
+      const { skuId } = await setupCheckoutableSku(3000, ctx);
+      const { giftCard, code } = await giftCardWithBalance(500);
+      const headers = { 'x-guest-session-id': `guest-d2-${counter}-${Math.random().toString(36).slice(2, 6)}` };
+      await addToCart(skuId, headers);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-d2-${counter}-${Math.random()}`, couponCode, giftCardCode: code, giftCardAmountToApply: 300, ...extra }),
+      });
+      return { res, giftCard };
+    }
+
+    it('omitting giftCardCompatible keeps the existing default (true) and the read returns it', async () => {
+      const token = await merchandisingToken();
+      const res = await createPromotion(token);
+      expect(res.statusCode).toBe(201);
+      expect(res.json().giftCardCompatible).toBe(true);
+      const read = await app.inject({ method: 'GET', url: `/api/v1/promotions/${res.json().id}`, headers: { authorization: `Bearer ${token}` } });
+      expect(read.json().giftCardCompatible).toBe(true);
+    });
+
+    it('explicit false and explicit true are persisted as given', async () => {
+      const token = await merchandisingToken();
+      const off = await createPromotion(token, { giftCardCompatible: false });
+      const on = await createPromotion(token, { giftCardCompatible: true });
+      expect(off.statusCode).toBe(201);
+      expect(on.statusCode).toBe(201);
+      expect((await testPrisma.promotion.findUniqueOrThrow({ where: { id: off.json().id } })).giftCardCompatible).toBe(false);
+      expect((await testPrisma.promotion.findUniqueOrThrow({ where: { id: on.json().id } })).giftCardCompatible).toBe(true);
+    });
+
+    it('rejects a non-boolean giftCardCompatible with 400 and creates nothing', async () => {
+      const token = await merchandisingToken();
+      for (const value of ['false', 0, 1, null, 'yes']) {
+        const res = await createPromotion(token, { giftCardCompatible: value });
+        expect(res.statusCode, JSON.stringify(value)).toBe(400);
+      }
+      expect(await testPrisma.promotion.count()).toBe(0);
+    });
+
+    it('a staff member without promotion:manage cannot create a promotion with the setting', async () => {
+      await grantPermissions('MARKETING', ['promotion:read']);
+      const { token } = await createAuthenticatedStaff(app, ['MARKETING']);
+      const res = await createPromotion(token, { giftCardCompatible: false });
+      expect(res.statusCode).toBe(403);
+      expect(await testPrisma.promotion.count()).toBe(0);
+    });
+
+    it('checkout refuses a gift card with a promotion created as not combinable', async () => {
+      const token = await merchandisingToken();
+      const promo = (await createPromotion(token, { giftCardCompatible: false })).json();
+      const { res, giftCard } = await checkoutWithCoupon(promo.couponCode);
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toMatch(/cannot be combined with a gift card/i);
+      expect(await testPrisma.giftCardRedemptionHold.count({ where: { giftCardId: giftCard.id } })).toBe(0);
+      expect(Number((await testPrisma.giftCard.findUniqueOrThrow({ where: { id: giftCard.id } })).balance)).toBe(500);
+    });
+
+    it('checkout combines a gift card with a promotion created as combinable, and the gift card is debited once', async () => {
+      const token = await merchandisingToken();
+      const promo = (await createPromotion(token, { giftCardCompatible: true })).json();
+      const { res, giftCard } = await checkoutWithCoupon(promo.couponCode);
+      expect(res.statusCode).toBe(201);
+      const order = await testPrisma.order.findFirstOrThrow({ where: { checkoutSessionId: res.json().id } });
+      expect(await testPrisma.promotionRedemption.count({ where: { promotionId: promo.id, status: 'CONVERTED' } })).toBe(1);
+      expect(Number((await testPrisma.giftCard.findUniqueOrThrow({ where: { id: giftCard.id } })).balance)).toBe(200);
+      expect(await testPrisma.giftCardLedgerEntry.count({ where: { giftCardId: giftCard.id, type: 'REDEEM' } })).toBe(1);
+      expect(order.id).toBeDefined();
+    });
+
+    it('a checkout request cannot override the persisted setting', async () => {
+      const token = await merchandisingToken();
+      const promo = (await createPromotion(token, { giftCardCompatible: false })).json();
+      const { res } = await checkoutWithCoupon(promo.couponCode, { giftCardCompatible: true, promotions: [{ id: promo.id, giftCardCompatible: true }] });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toMatch(/cannot be combined with a gift card/i);
+    });
+
+    it('a not-combinable promotion still applies normally when no gift card is used', async () => {
+      const token = await merchandisingToken();
+      const promo = (await createPromotion(token, { giftCardCompatible: false })).json();
+      const ctx = await seedContext();
+      const { skuId } = await setupCheckoutableSku(3000, ctx);
+      const headers = { 'x-guest-session-id': `guest-d2-nogc-${counter}` };
+      await addToCart(skuId, headers);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: checkoutPayload({ idempotencyKey: `idem-d2-nogc-${counter}`, couponCode: promo.couponCode }),
+      });
+      expect(res.statusCode).toBe(201);
+      expect(await testPrisma.promotionRedemption.count({ where: { promotionId: promo.id, status: 'CONVERTED' } })).toBe(1);
+    });
+  });
 });
