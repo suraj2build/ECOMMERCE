@@ -218,6 +218,21 @@ export async function getPublicCollections(): Promise<PublicCollectionSummary[]>
   return apiGet<PublicCollectionSummary[]>('/api/v1/storefront/collections', 60);
 }
 
+export interface PublicCollectionDetail extends PublicCollectionSummary {
+  styles: PublicStyleSummary[];
+}
+
+export async function getPublicCollection(slug: string): Promise<PublicCollectionDetail | null> {
+  const res = await fetch(`${API_URL}/api/v1/storefront/collections/${encodeURIComponent(slug)}`, {
+    next: { revalidate: 60 },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`commerce-api request failed: GET /storefront/collections/${slug} -> ${res.status}`);
+  }
+  return res.json() as Promise<PublicCollectionDetail>;
+}
+
 export interface StorefrontSearchHit {
   id: string;
   styleCode: string;

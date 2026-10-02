@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { getCart, getWishlist } from '@/lib/cart';
 import { useDepartment } from './DepartmentContext';
+import { VanyaBagDrawer } from './VanyaBagDrawer';
 
 export function Header() {
   const { department, clearDepartment } = useDepartment();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
+  const [bagOpen, setBagOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,13 +95,15 @@ export function Header() {
           <Link href="/wishlist" className="relative flex min-h-[44px] items-center px-2 text-xs hover:text-[var(--color-primary)]" aria-label={`Wishlist, ${wishlistCount} item${wishlistCount === 1 ? '' : 's'}`}>
             ♡<span className="ml-1 hidden sm:inline">Wishlist</span>{wishlistCount > 0 ? <span className="ml-1">({wishlistCount})</span> : null}
           </Link>
-          <Link href="/bag" className="relative flex min-h-[44px] items-center px-2 text-xs font-medium hover:text-[var(--color-primary)]" aria-label={`Shopping bag, ${cartCount} item${cartCount === 1 ? '' : 's'}`}>
+          <button type="button" onClick={() => setBagOpen(true)} className="relative flex min-h-[44px] items-center px-2 text-xs font-medium hover:text-[var(--color-primary)]" aria-label={`Shopping bag, ${cartCount} item${cartCount === 1 ? '' : 's'}`}>
             Bag{cartCount > 0 ? ` (${cartCount})` : ''}
-          </Link>
+          </button>
         </div>
       </div>
 
       <div className={`h-[1.5px] w-full bg-gradient-to-r from-transparent via-[var(--color-primary)] to-transparent transition-opacity ${department ? 'opacity-80' : 'opacity-30'}`} />
+
+      <VanyaBagDrawer open={bagOpen} onClose={() => setBagOpen(false)} />
 
       {mobileOpen && (
         <nav id="vanya-mobile-nav" aria-label="Primary mobile" className="border-t border-[#efece6] bg-white lg:hidden">
