@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getProductDetail, SITE_URL } from '@/lib/api';
 import { Container } from '@/components/ui/Container';
-import { ProductDetailInteractive } from '@/components/pdp/ProductDetailInteractive';
+import { VanyaProductDetail } from '@/components/pdp/VanyaProductDetail';
 import { PincodeChecker } from '@/components/pdp/PincodeChecker';
 import { ReviewsSection } from '@/components/pdp/ReviewsSection';
 import { CrossSellStrip } from '@/components/pdp/CrossSellStrip';
@@ -88,7 +88,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbStructuredData) }} />
       <Container className="py-6 sm:py-8 lg:py-10">
         <Breadcrumbs items={breadcrumbItems} />
-        <ProductDetailInteractive product={product} />
+        <VanyaProductDetail product={product} />
         <PincodeChecker />
         <ReviewsSection
           styleId={product.id}
