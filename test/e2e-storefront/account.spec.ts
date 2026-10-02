@@ -90,7 +90,7 @@ test.describe('Customer 360 account', () => {
     await expectOk(await api.post(`/api/v1/products/styles/${styleId}/qa-check`, { headers: authHeaders }), 'QA check');
     await expectOk(await api.post(`/api/v1/products/styles/${styleId}/publish`, { headers: authHeaders }), 'Publish style');
     await expectOk(await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId, mrp: 2499, sellingPrice: 2499 } }), 'Set price');
-    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }), 'Inventory adjustment');
+    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-account-stock-${sku.skuId}` } }), 'Inventory adjustment');
   });
 
   test.afterAll(async () => {
