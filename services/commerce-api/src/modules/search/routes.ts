@@ -25,7 +25,12 @@ function buildFilter(params: z.infer<typeof searchQuerySchema>): string[] {
   const filters: string[] = [];
   if (params.category) filters.push(`categorySlug = ${quote(params.category)}`);
   if (params.brand) filters.push(`brandName = ${quote(params.brand)}`);
-  if (params.gender) filters.push(`gender = ${quote(params.gender)}`);
+  if (params.gender) {
+    const normalized = params.gender.toLowerCase();
+    const titleCase = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    const upper = normalized.toUpperCase();
+    filters.push(`(gender IN [${quote(normalized)}, ${quote(titleCase)}, ${quote(upper)}] OR department IN [${quote(normalized)}, ${quote(titleCase)}, ${quote(upper)}])`);
+  }
   if (params.markdown !== undefined) filters.push(`isMarkdown = ${params.markdown}`);
   if (params.color) {
     const values = params.color.split(',').map((v) => v.trim()).filter(Boolean);
