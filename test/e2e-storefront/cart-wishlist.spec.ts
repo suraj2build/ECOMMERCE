@@ -114,7 +114,7 @@ test.describe('Cart / Wishlist', () => {
     await expectOk(
       await api.post('/api/v1/inventory/adjustments', {
         headers: authHeaders,
-        data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' },
+        data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-cart-stock-${sku.skuId}` },
       }),
       'Inventory adjustment',
     );
@@ -134,21 +134,25 @@ test.describe('Cart / Wishlist', () => {
     await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });
 
     // The header's live count updates from the real cart, not a guess.
-    await expect(page.getByRole('link', { name: /Shopping bag, 1 item/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Shopping bag, 1 item/ })).toBeVisible();
 
     const reservations = await prisma.inventoryReservation.count({ where: { sku: { styleId } } });
     expect(reservations).toBe(0);
 
-    await page.getByRole('link', { name: /Shopping bag/ }).click();
+    await page.getByRole('button', { name: /Shopping bag/ }).click();
+    const bagDrawer = page.getByRole('dialog', { name: 'Shopping bag' });
+    await expect(bagDrawer).toBeVisible();
+    await expect(bagDrawer.getByText('E2E Cart Jacket').first()).toBeVisible();
+    await bagDrawer.getByRole('link', { name: 'View full bag' }).click();
     await expect(page).toHaveURL(/\/bag$/);
     await expect(page.getByText('E2E Cart Jacket').first()).toBeVisible();
     await expect(page.getByText('₹2999').first()).toBeVisible();
 
-    await page.getByLabel(/Quantity for/).selectOption('2');
+    await page.getByRole('button', { name: 'Increase quantity for E2E Cart Jacket' }).click();
     await expect(page.getByText('Subtotal (2 items)')).toBeVisible();
 
     await page.getByRole('button', { name: 'Remove' }).click();
-    await expect(page.getByText('Your bag is empty.')).toBeVisible();
+    await expect(page.getByText('Your bag is empty')).toBeVisible();
   });
 
   test('saves an item to the wishlist from the PDP and moves it to the bag from the wishlist page', async ({ page }) => {

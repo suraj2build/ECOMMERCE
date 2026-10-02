@@ -1,53 +1,56 @@
-/**
- * Design tokens (M09, specs/08-storefront.md). The default palette here
- * is the "HOUSE" seed brand. A second owned brand overrides these under
- * `[data-brand="brand-code"]` without touching tailwind.config.ts or any
- * component - the multi-brand requirement in specs/31 in concrete form.
- *
- * Contrast has been checked against WCAG 2.1 AA (4.5:1 body text,
- * 3:1 large text/UI) for the ink-on-canvas and accent-ink-on-accent pairs
- * used by default components.
- */
-:root {
-  /* Editorial neutral palette: warm off-white canvas, near-black ink,
-     a single restrained accent - not a bright SaaS blue. */
-  --color-canvas: #faf8f5;
+:root,
+:root[data-theme='women'] {
+  --color-canvas: #faf6fb;
   --color-surface: #ffffff;
-  --color-ink: #1a1816;
-  --color-ink-muted: #6b6560;
-  --color-border: #e4dfd8;
-  --color-accent: #2f3b2e; /* deep olive - editorial, not marketplace-bright */
+  --color-surface-soft: #f6edf7;
+  --color-ink: #231c26;
+  --color-ink-muted: #695c6f;
+  --color-border: #e8d6eb;
+  --color-accent: #866791;
+  --color-accent-hover: #72527d;
   --color-accent-ink: #ffffff;
-  --color-danger: #a23b2e;
+  --color-primary: #866791;
+  --color-primary-hover: #72527d;
+  --color-badge-bg: #f1e6f3;
+  --color-badge-text: #5f4268;
+  --color-secondary: #d49da6;
   --color-success: #2f5d3a;
-
-  --font-display: 'Fraunces', ui-serif, Georgia, serif;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-
-  /* Restrained radii - no pill-everything marketplace look. */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 8px;
-
-  /* Minimal shadow scale - one subtle elevation, not layered SaaS shadows. */
-  --shadow-subtle: 0 1px 2px rgba(26, 24, 22, 0.06), 0 1px 1px rgba(26, 24, 22, 0.04);
-
+  --color-danger: #962e3b;
+  --color-glow: rgba(134, 103, 145, 0.16);
+  --font-display: var(--font-playfair), Georgia, serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --shadow-subtle: 0 8px 30px rgba(35, 28, 38, 0.06);
   --container-max: 1440px;
   --gutter: 16px;
 }
 
-@media (min-width: 768px) {
-  :root {
-    --gutter: 32px;
-  }
+:root[data-theme='men'] {
+  --color-canvas: #faf7f2;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f4ece1;
+  --color-ink: #241f1a;
+  --color-ink-muted: #6b6157;
+  --color-border: #e5ddd0;
+  --color-accent: #8f6b4e;
+  --color-accent-hover: #78563a;
+  --color-accent-ink: #ffffff;
+  --color-primary: #8f6b4e;
+  --color-primary-hover: #78563a;
+  --color-badge-bg: #f1e7dc;
+  --color-badge-text: #66482f;
+  --color-secondary: #a88365;
+  --color-success: #2f5d3a;
+  --color-danger: #962e3b;
+  --color-glow: rgba(143, 107, 78, 0.15);
 }
 
-:root[data-theme='dark'] {
-  --color-canvas: #161513;
-  --color-surface: #1f1e1b;
-  --color-ink: #f2efe9;
-  --color-ink-muted: #a8a29a;
-  --color-border: #322f2a;
-  --color-accent: #9fb89b;
-  --color-accent-ink: #161513;
+@media (min-width: 768px) {
+  :root { --gutter: 24px; }
+}
+
+@media (min-width: 1280px) {
+  :root { --gutter: 32px; }
 }

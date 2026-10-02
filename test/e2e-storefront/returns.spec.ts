@@ -164,7 +164,7 @@ test.describe('Returns', () => {
     await expectOk(
       await api.post('/api/v1/inventory/adjustments', {
         headers: staffAuthHeaders,
-        data: { skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' },
+        data: { skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-returns-stock-${skuId}` },
       }),
       'Inventory adjustment',
     );

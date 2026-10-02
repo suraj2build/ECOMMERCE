@@ -1,59 +1,60 @@
 import Link from 'next/link';
 import { Container } from '../ui/Container';
 
-const FOOTER_SECTIONS = [
+const GROUPS = [
   {
-    heading: 'Help',
+    title: 'Client services',
     links: [
-      { label: 'Track Order', href: '/help/track-order' },
-      { label: 'Returns & Exchanges', href: '/help/returns' },
-      { label: 'Shipping Info', href: '/help/shipping' },
-      { label: 'Contact Us', href: '/help/contact' },
+      ['Orders & tracking', '/orders'],
+      ['Returns & exchanges', '/account'],
+      ['Wishlist', '/wishlist'],
+      ['Shopping bag', '/bag'],
     ],
   },
   {
-    heading: 'Company',
+    title: 'Discover',
     links: [
-      { label: 'About', href: '/about' },
-      { label: 'Careers', href: '/careers' },
+      ['Women', '/category/women'],
+      ['Men', '/category/men'],
+      ['Collections', '/collections'],
+      ['Watch & Shop', '/watch-and-shop'],
     ],
   },
   {
-    heading: 'Legal',
+    title: 'Legal',
     links: [
-      { label: 'Terms of Service', href: '/legal/terms' },
-      { label: 'Privacy Policy', href: '/legal/privacy' },
+      ['Privacy Policy', '/legal/privacy'],
+      ['Terms', '/legal/terms'],
     ],
   },
-];
+] as const;
 
 export function Footer() {
   return (
-    <footer className="mt-24 border-t border-border bg-surface">
-      <Container className="grid grid-cols-2 gap-8 py-12 md:grid-cols-4">
-        <div className="col-span-2 md:col-span-1">
-          <p className="font-display text-lg text-ink">HOUSE</p>
-          <p className="mt-2 max-w-xs text-sm text-ink-muted">
-            Considered fashion, made to last. Delivered across India.
+    <footer className="mt-20 border-t border-border bg-[#171411] text-[#f4eee6]">
+      <Container className="grid gap-10 py-12 sm:grid-cols-2 lg:grid-cols-4 lg:py-16">
+        <div>
+          <p className="font-display text-3xl uppercase tracking-[0.24em]">VANYA</p>
+          <p className="mt-2 text-[9px] uppercase tracking-[0.22em] text-[#bdb2a5]">Indian roots · modern form</p>
+          <p className="mt-5 max-w-xs text-xs leading-6 text-[#bdb2a5]">
+            Timeless silhouettes and contemporary craftsmanship for modern India.
           </p>
         </div>
-        {FOOTER_SECTIONS.map((section) => (
-          <nav key={section.heading} aria-label={section.heading}>
-            <h2 className="text-sm font-medium text-ink">{section.heading}</h2>
-            <ul className="mt-3 space-y-2">
-              {section.links.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className="text-sm text-ink-muted hover:text-ink">
-                    {link.label}
-                  </Link>
+        {GROUPS.map((group) => (
+          <nav key={group.title} aria-label={group.title}>
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f4eee6]">{group.title}</h2>
+            <ul className="mt-4 space-y-3">
+              {group.links.map(([label, href]) => (
+                <li key={href + label}>
+                  <Link href={href} className="text-xs text-[#bdb2a5] transition-colors hover:text-white">{label}</Link>
                 </li>
               ))}
             </ul>
           </nav>
         ))}
       </Container>
-      <Container className="border-t border-border py-6 text-xs text-ink-muted">
-        &copy; {new Date().getFullYear()} House Label. All rights reserved.
+      <Container className="border-t border-white/10 py-5 text-[9px] uppercase tracking-[0.16em] text-[#8f857a]">
+        &copy; {new Date().getFullYear()} VANYA. India.
       </Container>
     </footer>
   );

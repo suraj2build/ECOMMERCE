@@ -146,13 +146,13 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
   function validAddress() {
     return { line1: '9 Exchange Street', city: 'New Delhi', state: 'Delhi', stateCode: 'DL', pincode: SERVICEABLE_PINCODE };
   }
-  async function addToCart(skuId: string, headers: Record<string, string>) {
-    const res = await app.inject({ method: 'POST', url: '/api/v1/storefront/cart/items', headers, payload: { skuId, quantity: 1 } });
+  async function addToCart(skuId: string, headers: Record<string, string>, quantity = 1) {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/storefront/cart/items', headers, payload: { skuId, quantity } });
     expect(res.statusCode).toBe(201);
   }
-  async function codOrder(skuId: string, guestId: string, idempotencyKey: string) {
+  async function codOrder(skuId: string, guestId: string, idempotencyKey: string, quantity = 1) {
     const headers = { [GUEST_HEADER]: guestId };
-    await addToCart(skuId, headers);
+    await addToCart(skuId, headers, quantity);
     const res = await app.inject({
       method: 'POST',
       url: '/api/v1/storefront/checkout',
@@ -200,9 +200,19 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
   }
 
   /** Drives one full same-size/size-exchange fixture to REPLACEMENT_ALLOCATED (its own auto-created PickTask included). */
-  async function toReplacementAllocated(token: string, guestSuffix: string, ctx?: Awaited<ReturnType<typeof seedContext>>) {
+  async function toReplacementAllocated(
+    token: string,
+    guestSuffix: string,
+    ctx?: Awaited<ReturnType<typeof seedContext>>,
+    quantity = 1,
+  ) {
     const fixture = await setupExchangeableStyle(1500, ctx);
-    const { orderId } = await codOrder(fixture.skuM.id, `guest-exf-${guestSuffix}-${counter}`, `idem-exf-${guestSuffix}-${counter}`);
+    const { orderId } = await codOrder(
+      fixture.skuM.id,
+      `guest-exf-${guestSuffix}-${counter}`,
+      `idem-exf-${guestSuffix}-${counter}`,
+      quantity,
+    );
     const { lineId } = await deliverOrderLine(orderId, token);
     const initRes = await initiateExchange(orderId, lineId, fixture.skuL.id, token, `exc-exf-${guestSuffix}-${counter}`);
     expect(initRes.statusCode).toBe(201);
@@ -480,12 +490,73 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
 
     const exchange = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchangeId } });
     expect(exchange.status).toBe('REPLACEMENT_UNAVAILABLE');
+    const replacementReservation = await testPrisma.inventoryReservation.findUniqueOrThrow({
+      where: { id: exchange.replacementReservationId! },
+    });
+    expect(replacementReservation).toMatchObject({
+      status: 'RELEASED',
+      allocationReleasedQuantity: task.allocatedQuantity,
+    });
     const unavailableAudit = await testPrisma.auditLog.findFirst({ where: { action: 'exchange.replacement.unavailable', entityId: exchangeId } });
     expect(unavailableAudit).toBeTruthy();
 
     // Cannot then be assigned to a fulfilment - the pick task is terminal (EXCEPTION), not PICKED.
     const assignRes = await assignReplacementToFulfilment(exchangeId, token);
     expect(assignRes.statusCode).toBe(400);
+  });
+
+  it('a partial exchange short-pick releases the entire terminal replacement allocation while writing off only the missing units', async () => {
+    const token = await warehouseToken();
+    const { exchangeId, fixture } = await toReplacementAllocated(token, 'partial-pickfail', undefined, 3);
+    const task = await testPrisma.pickTask.findUniqueOrThrow({ where: { exchangeId } });
+    expect(task.allocatedQuantity).toBe(3);
+
+    const before = await testPrisma.inventoryBalance.findUniqueOrThrow({
+      where: { skuId_locationId: { skuId: fixture.skuL.id, locationId: fixture.locationId } },
+    });
+    expect(before).toMatchObject({ onHand: 10, reserved: 3 });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        idempotencyKey: 'exc-partial-pick-short',
+        outcome: 'SHORT',
+        pickedQuantity: 2,
+        exceptionReason: 'Only two replacement units found',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'SHORT_PICKED', pickedQuantity: 2 });
+
+    const exchange = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchangeId } });
+    expect(exchange.status).toBe('REPLACEMENT_UNAVAILABLE');
+    const reservation = await testPrisma.inventoryReservation.findUniqueOrThrow({
+      where: { id: exchange.replacementReservationId! },
+    });
+    expect(reservation).toMatchObject({
+      status: 'RELEASED',
+      quantity: 3,
+      allocationReleasedQuantity: 3,
+    });
+
+    const after = await testPrisma.inventoryBalance.findUniqueOrThrow({
+      where: { skuId_locationId: { skuId: fixture.skuL.id, locationId: fixture.locationId } },
+    });
+    // Only the genuinely missing unit leaves physical onHand; all three
+    // committed units are released because this replacement cannot proceed.
+    expect(after).toMatchObject({ onHand: 9, reserved: 0 });
+
+    const releases = await testPrisma.inventoryTransaction.findMany({
+      where: { type: 'CANCELLATION', referenceType: 'PICK_TASK', referenceId: task.id },
+    });
+    expect(releases).toHaveLength(1);
+    expect(releases[0]!.quantity).toBe(3);
+    const adjustments = await testPrisma.inventoryTransaction.findMany({
+      where: { type: 'ADJUSTMENT_OUT', referenceType: null, skuId: fixture.skuL.id },
+    });
+    expect(adjustments.some((row) => row.quantity === 1 && row.idempotencyKey?.startsWith(`pick-adjust:${task.id}:`))).toBe(true);
   });
 
   // --- 13. Cancellation/terminal exchange cannot enter warehouse flow ---

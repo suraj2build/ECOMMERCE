@@ -380,10 +380,10 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
     it('stock received through the ledger, reserved, allocated and short-picked reconciles exactly; a replayed pick posts nothing more', async () => {
       const { skuId, locationId } = await setupCheckoutableSku(500, undefined, 0);
       const inventory = new InventoryService(app);
-      // 5 on hand for 3 ordered: a shortfall that would take onHand below
-      // reserved trips inventory_balances_reserved_le_onHand (a separate,
-      // pre-existing pick-shortfall finding recorded in P1_DECISIONS.md).
-      await inventory.postReceipt({ skuId, locationId, quantity: 5, referenceType: 'TEST', referenceId: 'd4-shortpick-receipt' });
+      // Exact boundary: all 3 physical units are reserved for this order.
+      // A one-unit shortfall must reduce reserved and onHand together,
+      // preserving reserved <= onHand and keeping ledger replay exact.
+      await inventory.postReceipt({ skuId, locationId, quantity: 3, referenceType: 'TEST', referenceId: 'd4-shortpick-receipt' });
       const order = await codOrder(skuId, 'guest-wh-d4-short', 'idem-wh-d4-short', 3);
       const token = await warehouseToken();
       const task = await onePickTask(order.id);
@@ -400,8 +400,18 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
 
       const result = await inventory.reconcileBalance(skuId, locationId);
       expect(result).toMatchObject({ status: 'MATCH', matches: true, unverifiableAdjustments: 0 });
-      expect(result.stored).toMatchObject({ onHand: 4, reserved: 3 });
-      expect(result.replayed).toMatchObject({ onHand: 4, reserved: 3 });
+      expect(result.stored).toMatchObject({ onHand: 2, reserved: 2 });
+      expect(result.replayed).toMatchObject({ onHand: 2, reserved: 2 });
+
+      const cancellation = await testPrisma.inventoryTransaction.findMany({
+        where: { referenceType: 'PICK_TASK', referenceId: task.id, type: 'CANCELLATION' },
+      });
+      expect(cancellation).toHaveLength(1);
+      expect(cancellation[0]!.quantity).toBe(1);
+      const reservation = await testPrisma.inventoryReservation.findUniqueOrThrow({
+        where: { id: order.lines[0]!.reservationId! },
+      });
+      expect(reservation).toMatchObject({ status: 'CONVERTED', quantity: 3, allocationReleasedQuantity: 1 });
     });
   });
 
@@ -464,6 +474,117 @@ describe('Warehouse / Fulfilment - Picking (M16)', () => {
 
       const line = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: order.lines[0]!.id } });
       expect(line.status).toBe('EXCEPTION');
+    });
+
+    it('a full pick exception at the onHand==reserved boundary releases the full allocation before correcting onHand', async () => {
+      const { skuId, locationId } = await setupCheckoutableSku(500, undefined, 0);
+      const inventory = new InventoryService(app);
+      await inventory.postReceipt({ skuId, locationId, quantity: 2, referenceType: 'TEST', referenceId: 'm16-full-exception-receipt' });
+      const order = await codOrder(skuId, 'guest-wh-full-exception-boundary', 'idem-wh-full-exception-boundary', 2);
+      const token = await warehouseToken();
+      const task = await onePickTask(order.id);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { idempotencyKey: 'full-exception-boundary', outcome: 'EXCEPTION', exceptionType: 'STOCK_NOT_FOUND', exceptionReason: 'Bin empty' },
+      });
+      expect(res.statusCode).toBe(200);
+
+      const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId, locationId } } });
+      expect(balance).toMatchObject({ onHand: 0, reserved: 0 });
+      const reservation = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: order.lines[0]!.reservationId! } });
+      expect(reservation).toMatchObject({ status: 'RELEASED', quantity: 2, allocationReleasedQuantity: 2 });
+      const reconciliation = await inventory.reconcileBalance(skuId, locationId);
+      expect(reconciliation).toMatchObject({ status: 'MATCH', matches: true });
+    });
+
+    it('cancelling after a partial short pick releases only the still-backed allocation', async () => {
+      const { skuId, locationId } = await setupCheckoutableSku(500, undefined, 0);
+      const inventory = new InventoryService(app);
+      await inventory.postReceipt({ skuId, locationId, quantity: 3, referenceType: 'TEST', referenceId: 'm16-cancel-short-receipt' });
+      const order = await codOrder(skuId, 'guest-wh-cancel-short', 'idem-wh-cancel-short', 3);
+      const token = await warehouseToken();
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:exception:manage']);
+      const task = await onePickTask(order.id);
+
+      const pick = await app.inject({
+        method: 'POST',
+        url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { idempotencyKey: 'cancel-short-pick', outcome: 'SHORT', pickedQuantity: 2, exceptionReason: 'One missing' },
+      });
+      expect(pick.statusCode).toBe(200);
+
+      const cancel = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${order.id}/lines/${order.lines[0]!.id}/exception/resolve`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { resolution: 'CANCEL', reason: 'Cannot replenish' },
+      });
+      expect(cancel.statusCode).toBe(200);
+
+      const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId, locationId } } });
+      expect(balance).toMatchObject({ onHand: 2, reserved: 0 });
+      const reservation = await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: order.lines[0]!.reservationId! } });
+      expect(reservation).toMatchObject({ status: 'RELEASED', quantity: 3, allocationReleasedQuantity: 3 });
+      const cancellations = await testPrisma.inventoryTransaction.findMany({
+        where: { skuId, locationId, type: 'CANCELLATION' },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(cancellations.map((row) => row.quantity).sort((a, b) => a - b)).toEqual([1, 2]);
+      const reconciliation = await inventory.reconcileBalance(skuId, locationId);
+      expect(reconciliation).toMatchObject({ status: 'MATCH', matches: true });
+    });
+
+    it('REINSTATE cannot over-reserve at the boundary; after replenishment it restores exactly the released shortfall', async () => {
+      const { skuId, locationId } = await setupCheckoutableSku(500, undefined, 0);
+      const inventory = new InventoryService(app);
+      await inventory.postReceipt({ skuId, locationId, quantity: 2, referenceType: 'TEST', referenceId: 'm16-reinstate-boundary-receipt' });
+      const order = await codOrder(skuId, 'guest-wh-reinstate-boundary', 'idem-wh-reinstate-boundary', 2);
+      const token = await warehouseToken();
+      await grantPermissions('WAREHOUSE_MANAGER', ['order:exception:manage']);
+      const task = await onePickTask(order.id);
+
+      const pick = await app.inject({
+        method: 'POST',
+        url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { idempotencyKey: 'reinstate-boundary-pick', outcome: 'SHORT', pickedQuantity: 1, exceptionReason: 'One missing' },
+      });
+      expect(pick.statusCode).toBe(200);
+
+      const beforeReplenishment = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${order.id}/lines/${order.lines[0]!.id}/exception/resolve`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { resolution: 'REINSTATE', reason: 'Try before replenishment' },
+      });
+      expect(beforeReplenishment.statusCode).toBe(409);
+
+      expect(await testPrisma.pickTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'SHORT_PICKED', pickedQuantity: 1 });
+      expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: order.lines[0]!.id } })).toMatchObject({ status: 'EXCEPTION' });
+      expect(await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: order.lines[0]!.reservationId! } }))
+        .toMatchObject({ status: 'CONVERTED', allocationReleasedQuantity: 1 });
+
+      await inventory.postReceipt({ skuId, locationId, quantity: 1, referenceType: 'TEST', referenceId: 'm16-replenishment' });
+
+      const afterReplenishment = await app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/${order.id}/lines/${order.lines[0]!.id}/exception/resolve`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { resolution: 'REINSTATE', reason: 'Stock replenished' },
+      });
+      expect(afterReplenishment.statusCode).toBe(200);
+
+      expect(await testPrisma.pickTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({ status: 'PENDING', pickedQuantity: 0, idempotencyKey: null });
+      expect(await testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: order.lines[0]!.reservationId! } }))
+        .toMatchObject({ status: 'CONVERTED', quantity: 2, allocationReleasedQuantity: 0 });
+      const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId, locationId } } });
+      expect(balance).toMatchObject({ onHand: 2, reserved: 2 });
+      const reconciliation = await inventory.reconcileBalance(skuId, locationId);
+      expect(reconciliation).toMatchObject({ status: 'MATCH', matches: true });
     });
 
     it('reinstating a short-picked line resets its PickTask to PENDING for a fresh pick attempt', async () => {

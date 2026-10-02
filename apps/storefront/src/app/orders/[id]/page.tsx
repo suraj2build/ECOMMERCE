@@ -321,7 +321,7 @@ export default function OrderDetailPage() {
 
   if (error) {
     return (
-      <Container className="py-8">
+      <Container className="py-10 sm:py-14">
         <p role="alert" className="text-sm text-danger">
           {error}
         </p>
@@ -331,35 +331,35 @@ export default function OrderDetailPage() {
 
   if (!order) {
     return (
-      <Container className="py-8">
-        <p className="text-sm text-ink-muted">Loading...</p>
+      <Container className="py-10 sm:py-14">
+        <p className="text-sm text-[#6e6359]">Loading...</p>
       </Container>
     );
   }
 
   return (
-    <Container className="py-8">
-      <h1 className="font-display text-2xl text-ink">Order {order.orderNumber}</h1>
-      <p role="status" className="mt-2 text-sm text-ink-muted">
+    <Container className="py-10 sm:py-14">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Order details</p>\n      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Order {order.orderNumber}</h1>
+      <p role="status" className="mt-2 text-sm text-[#6e6359]">
         {STATUS_LABEL[order.status]}
         {order.refundRequired ? ' - a refund is being processed' : ''}
       </p>
 
-      <div className="mt-6 rounded-sm border border-border p-6">
+      <div className="mt-8 rounded-[24px] border border-[#e6ddd0] bg-white p-5 sm:p-7">
         <ul className="space-y-4">
           {order.lines.map((line) => (
             <li key={line.id} className="border-b border-border pb-4 text-sm last:border-b-0 last:pb-0">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-ink">
+                  <p className="text-[#181716]">
                     {line.styleName} - {line.colourName} - {line.sizeLabel} x{line.quantity}
                   </p>
-                  <p className="mt-1 text-xs text-ink-muted">
+                  <p className="mt-1 text-xs text-[#6e6359]">
                     {LINE_STATUS_LABEL[line.status] ?? line.status}
                     {line.cancelledReason ? `: ${line.cancelledReason}` : ''}
                   </p>
                 </div>
-                <span className="text-ink">&#8377;{line.lineTotalInclusive}</span>
+                <span className="text-[#181716]">&#8377;{line.lineTotalInclusive}</span>
               </div>
 
               {/* M18 (CAN-001): convenience gating only - the server is
@@ -372,22 +372,22 @@ export default function OrderDetailPage() {
                     setCancelReason('');
                     setCancelError(null);
                   }}
-                  className="mt-2 min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                  className="mt-2 min-h-[44px] text-xs font-medium text-[#181716] underline underline-offset-2"
                 >
                   Cancel this item
                 </button>
               )}
 
               {cancellingLineId === line.id && (
-                <div className="mt-3 space-y-2 rounded-sm border border-border p-3">
-                  <label htmlFor={`cancel-reason-${line.id}`} className="block text-xs text-ink-muted">
+                <div className="mt-3 space-y-3 rounded-[16px] border border-[#e6ddd0] bg-[#faf8f5] p-4">
+                  <label htmlFor={`cancel-reason-${line.id}`} className="block text-xs text-[#6e6359]">
                     Reason (optional)
                   </label>
                   <textarea
                     id={`cancel-reason-${line.id}`}
                     value={cancelReason}
                     onChange={(e) => setCancelReason(e.target.value)}
-                    className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                    className="w-full rounded-[12px] border border-[#d8d0c6] bg-white p-3 text-sm text-[#181716]"
                     rows={2}
                   />
                   {cancelError && (
@@ -420,7 +420,7 @@ export default function OrderDetailPage() {
                   has actually created a Refund record for this line - never
                   implies money is moving before it genuinely is. */}
               {refundForLine(line.id) && (
-                <p className="mt-1 text-xs text-ink-muted">
+                <p className="mt-1 text-xs text-[#6e6359]">
                   {REFUND_STATUS_LABEL[refundForLine(line.id)!.status]}
                   {refundForLine(line.id)!.status === 'COMPLETED'
                     ? ` - ₹${refundForLine(line.id)!.amount} ${refundForLine(line.id)!.method === 'STORE_CREDIT' ? 'as store credit' : 'to your original payment method'}`
@@ -436,7 +436,7 @@ export default function OrderDetailPage() {
                   return (
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-ink-muted">
+                        <p className="text-xs text-[#6e6359]">
                           {existing.ret.returnNumber}: {RETURN_STATUS_LABEL[existing.ret.status]}
                           {existing.ret.status === 'CANCELLED' && existing.ret.cancelledReason ? ` (${existing.ret.cancelledReason})` : ''}
                         </p>
@@ -445,7 +445,7 @@ export default function OrderDetailPage() {
                             type="button"
                             disabled={returnInFlight}
                             onClick={() => withdrawReturn(existing.ret.id)}
-                            className="min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                            className="min-h-[44px] text-xs font-medium text-[#181716] underline underline-offset-2"
                           >
                             Cancel return
                           </button>
@@ -453,7 +453,7 @@ export default function OrderDetailPage() {
                       </div>
                       {evidenceActive && (
                         <div className="flex flex-col gap-1">
-                          <label htmlFor={`return-evidence-${line.id}`} className="text-xs text-ink-muted">
+                          <label htmlFor={`return-evidence-${line.id}`} className="text-xs text-[#6e6359]">
                             {existing.line.evidenceRequired ? 'Photo of item condition (required)' : 'Add a photo of item condition (optional)'}
                             {evidenceCount > 0 ? ` - ${evidenceCount} photo${evidenceCount === 1 ? '' : 's'} added` : ''}
                           </label>
@@ -470,9 +470,9 @@ export default function OrderDetailPage() {
                               // (existing.line.id), never the OrderLine's id (line.id).
                               if (file) void handleEvidenceUpload(existing.ret.id, existing.line.id, file);
                             }}
-                            className="text-xs text-ink-muted"
+                            className="text-xs text-[#6e6359]"
                           />
-                          {evidenceUploadingLineId === line.id && <p className="text-xs text-ink-muted">Uploading...</p>}
+                          {evidenceUploadingLineId === line.id && <p className="text-xs text-[#6e6359]">Uploading...</p>}
                           {evidenceError && (
                             <p role="alert" className="text-xs text-danger">
                               {evidenceError}
@@ -495,7 +495,7 @@ export default function OrderDetailPage() {
                         setReturnReason('');
                         setReturnError(null);
                       }}
-                      className="mt-2 min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                      className="mt-2 min-h-[44px] text-xs font-medium text-[#181716] underline underline-offset-2"
                     >
                       Return this item
                     </button>
@@ -503,21 +503,21 @@ export default function OrderDetailPage() {
                 }
 
                 return (
-                  <div className="mt-3 space-y-2 rounded-sm border border-border p-3">
-                    <label htmlFor={`return-reason-${line.id}`} className="block text-xs text-ink-muted">
+                  <div className="mt-3 space-y-3 rounded-[16px] border border-[#e6ddd0] bg-[#faf8f5] p-4">
+                    <label htmlFor={`return-reason-${line.id}`} className="block text-xs text-[#6e6359]">
                       Reason (required)
                     </label>
                     <textarea
                       id={`return-reason-${line.id}`}
                       value={returnReason}
                       onChange={(e) => setReturnReason(e.target.value)}
-                      className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                      className="w-full rounded-[12px] border border-[#d8d0c6] bg-white p-3 text-sm text-[#181716]"
                       rows={2}
                       required
                     />
                     <fieldset className="flex gap-4">
-                      <legend className="text-xs text-ink-muted">How would you like to return it?</legend>
-                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                      <legend className="text-xs text-[#6e6359]">How would you like to return it?</legend>
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-[#181716]">
                         <input
                           type="radio"
                           name={`return-method-${line.id}`}
@@ -526,7 +526,7 @@ export default function OrderDetailPage() {
                         />
                         Carrier pickup
                       </label>
-                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-[#181716]">
                         <input
                           type="radio"
                           name={`return-method-${line.id}`}
@@ -562,7 +562,7 @@ export default function OrderDetailPage() {
                 if (existing) {
                   return (
                     <div className="mt-2 flex items-center justify-between gap-2">
-                      <p className="text-xs text-ink-muted">
+                      <p className="text-xs text-[#6e6359]">
                         {EXCHANGE_STATUS_LABEL[existing.status]}
                         {existing.paymentDirection === 'CUSTOMER_PAYS' && existing.paymentStatus === 'PENDING' && (
                           <>
@@ -595,7 +595,7 @@ export default function OrderDetailPage() {
                           type="button"
                           disabled={exchangeInFlight}
                           onClick={() => withdrawExchange(existing.id)}
-                          className="min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                          className="min-h-[44px] text-xs font-medium text-[#181716] underline underline-offset-2"
                         >
                           Cancel exchange
                         </button>
@@ -612,7 +612,7 @@ export default function OrderDetailPage() {
                     <button
                       type="button"
                       onClick={() => openExchangeForm(line.styleId, line.skuId, line.id)}
-                      className="mt-2 min-h-[44px] text-xs font-medium text-ink underline underline-offset-2"
+                      className="mt-2 min-h-[44px] text-xs font-medium text-[#181716] underline underline-offset-2"
                     >
                       Exchange this item
                     </button>
@@ -620,15 +620,15 @@ export default function OrderDetailPage() {
                 }
 
                 return (
-                  <div className="mt-3 space-y-2 rounded-sm border border-border p-3">
-                    <label htmlFor={`exchange-replacement-${line.id}`} className="block text-xs text-ink-muted">
+                  <div className="mt-3 space-y-3 rounded-[16px] border border-[#e6ddd0] bg-[#faf8f5] p-4">
+                    <label htmlFor={`exchange-replacement-${line.id}`} className="block text-xs text-[#6e6359]">
                       Replacement (required)
                     </label>
                     <select
                       id={`exchange-replacement-${line.id}`}
                       value={exchangeReplacementSkuId}
                       onChange={(e) => setExchangeReplacementSkuId(e.target.value)}
-                      className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                      className="w-full rounded-[12px] border border-[#d8d0c6] bg-white p-3 text-sm text-[#181716]"
                     >
                       {exchangeOptions.length === 0 && <option value="">No other sizes/colours currently in stock</option>}
                       {exchangeOptions.map((opt) => (
@@ -637,24 +637,24 @@ export default function OrderDetailPage() {
                         </option>
                       ))}
                     </select>
-                    <label htmlFor={`exchange-reason-${line.id}`} className="block text-xs text-ink-muted">
+                    <label htmlFor={`exchange-reason-${line.id}`} className="block text-xs text-[#6e6359]">
                       Reason (required)
                     </label>
                     <textarea
                       id={`exchange-reason-${line.id}`}
                       value={exchangeReason}
                       onChange={(e) => setExchangeReason(e.target.value)}
-                      className="w-full rounded-sm border border-border p-2 text-sm text-ink"
+                      className="w-full rounded-[12px] border border-[#d8d0c6] bg-white p-3 text-sm text-[#181716]"
                       rows={2}
                       required
                     />
                     <fieldset className="flex gap-4">
-                      <legend className="text-xs text-ink-muted">How would you like to send the original back?</legend>
-                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                      <legend className="text-xs text-[#6e6359]">How would you like to send the original back?</legend>
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-[#181716]">
                         <input type="radio" name={`exchange-method-${line.id}`} checked={exchangeMethod === 'PICKUP'} onChange={() => setExchangeMethod('PICKUP')} />
                         Carrier pickup
                       </label>
-                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-ink">
+                      <label className="flex min-h-[44px] items-center gap-1 text-xs text-[#181716]">
                         <input type="radio" name={`exchange-method-${line.id}`} checked={exchangeMethod === 'DROP_OFF'} onChange={() => setExchangeMethod('DROP_OFF')} />
                         Drop-off
                       </label>
@@ -681,9 +681,9 @@ export default function OrderDetailPage() {
 
         {order.fulfilments.length > 0 && (
           <div className="mt-4 space-y-2 border-t border-border pt-4">
-            <p className="text-sm font-medium text-ink">Shipments</p>
+            <p className="text-sm font-medium text-[#181716]">Shipments</p>
             {order.fulfilments.map((f) => (
-              <p key={f.id} className="text-sm text-ink-muted">
+              <p key={f.id} className="text-sm text-[#6e6359]">
                 {f.status === 'DELIVERED' ? 'Delivered' : f.status === 'SHIPPED' ? 'Shipped' : f.status === 'PACKED' ? 'Packed' : 'Preparing'}
                 {f.carrierName ? ` via ${f.carrierName}` : ''}
                 {f.trackingRef ? ` (${f.trackingRef})` : ''}
@@ -698,8 +698,8 @@ export default function OrderDetailPage() {
         )}
 
         <div className="mt-4 flex justify-between border-t border-border pt-4 text-sm font-medium">
-          <span className="text-ink">Total</span>
-          <span className="text-ink">&#8377;{order.grandTotal}</span>
+          <span className="text-[#181716]">Total</span>
+          <span className="text-[#181716]">&#8377;{order.grandTotal}</span>
         </div>
       </div>
 

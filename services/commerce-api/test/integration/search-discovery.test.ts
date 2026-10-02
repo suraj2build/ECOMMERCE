@@ -233,7 +233,13 @@ describe('Search / Discovery (M10)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: { authorization: `Bearer ${whToken}` },
-      payload: { skuId, locationId: location.id, quantityDelta: 10, reason: 'Initial stock load' },
+      payload: {
+        skuId,
+        locationId: location.id,
+        quantityDelta: 10,
+        reason: 'Initial stock load',
+        idempotencyKey: 'search-stock-adjust-srch-004',
+      },
     });
 
     const afterAdjust = await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Kurta' });

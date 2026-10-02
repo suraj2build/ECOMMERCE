@@ -97,7 +97,7 @@ export default function CheckoutConfirmationPage() {
 
   if (error) {
     return (
-      <Container className="py-8">
+      <Container className="py-10 sm:py-14">
         <p role="alert" className="text-sm text-danger">
           {error}
         </p>
@@ -107,8 +107,8 @@ export default function CheckoutConfirmationPage() {
 
   if (!session) {
     return (
-      <Container className="py-8">
-        <p className="text-sm text-ink-muted">Loading...</p>
+      <Container className="py-10 sm:py-14">
+        <p className="text-sm text-[#6e6359]">Loading...</p>
       </Container>
     );
   }
@@ -117,32 +117,32 @@ export default function CheckoutConfirmationPage() {
   const canReopenWidget = session.status === 'RESERVED' && session.payment?.status === 'INITIATED' && !!session.payment.providerOrderId;
 
   return (
-    <Container className="py-8">
+    <Container className="py-10 sm:py-14">
       {session.status === 'CONFIRMED' ? (
         <>
-          <h1 className="font-display text-2xl text-ink">Order placed</h1>
-          <p role="status" className="mt-2 text-sm text-ink-muted">
+          <h1 className="font-display text-4xl text-[#181716] sm:text-5xl">Order placed</h1>
+          <p role="status" className="mt-2 text-sm text-[#6e6359]">
             Thank you, {session.contactName} - your {session.paymentMethod === 'COD' ? 'Cash on Delivery' : ''} order is confirmed.
           </p>
         </>
       ) : session.status === 'PAYMENT_FAILED' ? (
         <>
-          <h1 className="font-display text-2xl text-ink">Payment did not go through</h1>
-          <p role="status" className="mt-2 text-sm text-ink-muted">
+          <h1 className="font-display text-4xl text-[#181716] sm:text-5xl">Payment did not go through</h1>
+          <p role="status" className="mt-2 text-sm text-[#6e6359]">
             Your items are still reserved. You can retry payment below.
           </p>
         </>
       ) : session.status === 'EXPIRED' ? (
         <>
-          <h1 className="font-display text-2xl text-ink">This checkout has expired</h1>
-          <p role="status" className="mt-2 text-sm text-ink-muted">
+          <h1 className="font-display text-4xl text-[#181716] sm:text-5xl">This checkout has expired</h1>
+          <p role="status" className="mt-2 text-sm text-[#6e6359]">
             Your reservation window has passed - please start a new checkout.
           </p>
         </>
       ) : (
         <>
-          <h1 className="font-display text-2xl text-ink">Order created - payment pending</h1>
-          <p role="status" className="mt-2 text-sm text-ink-muted">
+          <h1 className="font-display text-4xl text-[#181716] sm:text-5xl">Order created - payment pending</h1>
+          <p role="status" className="mt-2 text-sm text-[#6e6359]">
             {processing
               ? 'Confirming your payment...'
               : (session.payment?.message ?? 'Your items are reserved. Complete payment to confirm your order.')}
@@ -167,17 +167,17 @@ export default function CheckoutConfirmationPage() {
         </button>
       )}
 
-      <div className="mt-6 rounded-sm border border-border p-6">
-        <p className="text-sm text-ink-muted">Order reference</p>
-        <p className="text-sm text-ink">{session.id}</p>
+      <div className="mt-8 rounded-[24px] border border-[#e6ddd0] bg-white p-6 sm:p-8">
+        <p className="text-sm text-[#6e6359]">Order reference</p>
+        <p className="text-sm text-[#181716]">{session.id}</p>
 
         <ul className="mt-4 space-y-3 border-t border-border pt-4">
           {session.lines.map((line) => (
             <li key={line.skuId} className="flex justify-between text-sm">
-              <span className="text-ink">
+              <span className="text-[#181716]">
                 {line.styleName} - {line.colourName} - {line.sizeLabel} x{line.quantity}
               </span>
-              <span className="text-ink">&#8377;{line.lineTotalInclusive}</span>
+              <span className="text-[#181716]">&#8377;{line.lineTotalInclusive}</span>
             </li>
           ))}
         </ul>
@@ -185,37 +185,37 @@ export default function CheckoutConfirmationPage() {
         <div className="mt-4 space-y-1 border-t border-border pt-4 text-sm">
           {session.promotionDiscountTotal > 0 && (
             <div className="flex justify-between">
-              <span className="text-ink-muted">Promotion discount</span>
-              <span className="text-ink">-&#8377;{session.promotionDiscountTotal}</span>
+              <span className="text-[#6e6359]">Promotion discount</span>
+              <span className="text-[#181716]">-&#8377;{session.promotionDiscountTotal}</span>
             </div>
           )}
           <div className="flex justify-between">
-            <span className="text-ink-muted">Subtotal</span>
-            <span className="text-ink">&#8377;{session.subtotal}</span>
+            <span className="text-[#6e6359]">Subtotal</span>
+            <span className="text-[#181716]">&#8377;{session.subtotal}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-ink-muted">Shipping</span>
-            <span className="text-ink">{session.shippingCost === 0 ? 'Free' : `₹${session.shippingCost}`}</span>
+            <span className="text-[#6e6359]">Shipping</span>
+            <span className="text-[#181716]">{session.shippingCost === 0 ? 'Free' : `₹${session.shippingCost}`}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-ink-muted">Total</span>
-            <span className="text-ink">&#8377;{session.grandTotal}</span>
+            <span className="text-[#6e6359]">Total</span>
+            <span className="text-[#181716]">&#8377;{session.grandTotal}</span>
           </div>
           {session.loyaltyPointsRedeemed > 0 && (
             <div className="flex justify-between">
-              <span className="text-ink-muted">Loyalty points redeemed ({session.loyaltyPointsRedeemed} pts)</span>
-              <span className="text-ink">-&#8377;{session.loyaltyRedemptionValue}</span>
+              <span className="text-[#6e6359]">Loyalty points redeemed ({session.loyaltyPointsRedeemed} pts)</span>
+              <span className="text-[#181716]">-&#8377;{session.loyaltyRedemptionValue}</span>
             </div>
           )}
           {session.storeCreditApplied > 0 && (
             <div className="flex justify-between">
-              <span className="text-ink-muted">Store credit applied</span>
-              <span className="text-ink">-&#8377;{session.storeCreditApplied}</span>
+              <span className="text-[#6e6359]">Store credit applied</span>
+              <span className="text-[#181716]">-&#8377;{session.storeCreditApplied}</span>
             </div>
           )}
           <div className="flex justify-between border-t border-border pt-2 font-medium">
-            <span className="text-ink">Amount payable</span>
-            <span className="text-ink">&#8377;{session.amountPayable}</span>
+            <span className="text-[#181716]">Amount payable</span>
+            <span className="text-[#181716]">&#8377;{session.amountPayable}</span>
           </div>
         </div>
       </div>

@@ -152,6 +152,27 @@ export async function getProductDetail(styleId: string): Promise<ProductDetail |
   return res.json() as Promise<ProductDetail>;
 }
 
+export async function getProductDetailLive(styleId: string): Promise<ProductDetail> {
+  const res = await fetch(`${API_URL}/api/v1/storefront/products/${styleId}`, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(`Could not load product (${res.status})`);
+  }
+  return res.json() as Promise<ProductDetail>;
+}
+
+export async function recordWatchAndShopEvent(
+  mediaId: string,
+  eventType: 'VIEW' | 'TAG_TAP' | 'ADD_TO_BAG',
+  sessionRef?: string,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/content/watch-and-shop/${mediaId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ eventType, sessionRef }),
+  });
+  if (!res.ok) throw new Error(`Could not record Watch & Shop event (${res.status})`);
+}
+
 export interface ServiceabilityResult {
   pincode: string;
   known: boolean;
@@ -195,6 +216,95 @@ export async function getPublicStyles(take = 12, skip = 0): Promise<PublicStyleS
 
 export async function getPublicCollections(): Promise<PublicCollectionSummary[]> {
   return apiGet<PublicCollectionSummary[]>('/api/v1/storefront/collections', 60);
+}
+
+export interface PublicCollectionDetail extends PublicCollectionSummary {
+  styles: PublicStyleSummary[];
+}
+
+export async function getPublicCollection(slug: string): Promise<PublicCollectionDetail | null> {
+  const res = await fetch(`${API_URL}/api/v1/storefront/collections/${encodeURIComponent(slug)}`, {
+    next: { revalidate: 60 },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`commerce-api request failed: GET /storefront/collections/${slug} -> ${res.status}`);
+  }
+  return res.json() as Promise<PublicCollectionDetail>;
+}
+
+export interface StorefrontSearchHit {
+  id: string;
+  styleCode: string;
+  name: string;
+  brandName: string;
+  categoryName: string;
+  categorySlug: string;
+  gender: string | null;
+  colours: string[];
+  sizes: string[];
+  mrp: number;
+  sellingPrice: number;
+  currency: string;
+  isMarkdown: boolean;
+  availableQuantity: number;
+  inStock: boolean;
+  publishedAt: number;
+  thumbnailUrl: string | null;
+}
+
+export interface StorefrontSearchResult {
+  hits: StorefrontSearchHit[];
+  page: number;
+  pageSize: number;
+  totalHits: number;
+  totalPages: number;
+  facetDistribution: Record<string, Record<string, number>>;
+  unavailable?: boolean;
+}
+
+export async function searchStorefront(params: {
+  q?: string;
+  category?: string;
+  brand?: string;
+  gender?: string;
+  markdown?: boolean;
+  color?: string;
+  size?: string;
+  priceMin?: number;
+  priceMax?: number;
+  sort?: 'relevance' | 'price_asc' | 'price_desc' | 'newest';
+  page?: number;
+  pageSize?: number;
+} = {}): Promise<StorefrontSearchResult> {
+  const query = new URLSearchParams();
+  if (params.q) query.set('q', params.q);
+  if (params.category) query.set('category', params.category);
+  if (params.brand) query.set('brand', params.brand);
+  if (params.gender) query.set('gender', params.gender);
+  if (params.markdown !== undefined) query.set('markdown', String(params.markdown));
+  if (params.color) query.set('color', params.color);
+  if (params.size) query.set('size', params.size);
+  if (params.priceMin !== undefined) query.set('priceMin', String(params.priceMin));
+  if (params.priceMax !== undefined) query.set('priceMax', String(params.priceMax));
+  if (params.sort) query.set('sort', params.sort);
+  if (params.page) query.set('page', String(params.page));
+  if (params.pageSize) query.set('pageSize', String(params.pageSize));
+  return apiGet<StorefrontSearchResult>(`/api/v1/storefront/search?${query.toString()}`, 30);
+}
+
+export async function searchStorefrontLive(params: {
+  q?: string;
+  gender?: string;
+  pageSize?: number;
+} = {}): Promise<StorefrontSearchResult> {
+  const query = new URLSearchParams();
+  if (params.q) query.set('q', params.q);
+  if (params.gender) query.set('gender', params.gender);
+  query.set('pageSize', String(params.pageSize ?? 8));
+  const res = await fetch(`${API_URL}/api/v1/storefront/search?${query.toString()}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Search failed (${res.status})`);
+  return res.json() as Promise<StorefrontSearchResult>;
 }
 
 // M27 (specs/26-seo.md): sitemap.xml must stay current as products

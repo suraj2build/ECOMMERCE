@@ -2,24 +2,16 @@ import type { ButtonHTMLAttributes } from 'react';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'inverse' | 'inverse-outline';
 
-// Each variant is a complete, self-contained class set - never combined
-// with another variant's classes via string concatenation, since two
-// utility classes setting the same CSS property (e.g. text-ink and
-// text-canvas both set `color`) race on Tailwind's generated stylesheet
-// order rather than on className string order. `inverse` exists
-// specifically for a dark/image background (e.g. the Hero) instead of
-// overriding `secondary`'s ink-colored defaults from the call site.
 const variantClasses: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-accent-ink hover:opacity-90',
-  secondary: 'bg-transparent text-ink border border-ink hover:bg-ink hover:text-canvas',
-  ghost: 'bg-transparent text-ink hover:bg-surface',
-  inverse: 'bg-canvas text-ink hover:bg-canvas/90',
-  'inverse-outline': 'bg-transparent text-canvas border border-canvas hover:bg-canvas hover:text-ink',
+  primary: 'bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]',
+  secondary: 'bg-white text-[#181716] border border-[#d8d0c6] hover:border-[#181716]',
+  ghost: 'bg-transparent text-[#181716] hover:bg-[var(--color-surface-soft)]',
+  inverse: 'bg-white text-[#181716] hover:bg-[#f4eee7]',
+  'inverse-outline': 'bg-black/20 text-white border border-white/80 hover:bg-white hover:text-[#181716]',
 };
 
-/** Shared class string so a real <a>/<Link> can look like a button without nesting interactive elements inside a <button>. */
 export function buttonClassName(variant: ButtonVariant = 'primary', className = ''): string {
-  return `inline-flex min-h-[44px] items-center justify-center rounded-sm px-6 py-2.5 text-sm font-medium tracking-wide transition-colors focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${variantClasses[variant]} ${className}`;
+  return `inline-flex min-h-[46px] items-center justify-center rounded-full px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] transition-all focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${variantClasses[variant]} ${className}`;
 }
 
 export function Button({

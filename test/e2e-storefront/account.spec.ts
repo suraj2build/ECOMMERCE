@@ -90,7 +90,7 @@ test.describe('Customer 360 account', () => {
     await expectOk(await api.post(`/api/v1/products/styles/${styleId}/qa-check`, { headers: authHeaders }), 'QA check');
     await expectOk(await api.post(`/api/v1/products/styles/${styleId}/publish`, { headers: authHeaders }), 'Publish style');
     await expectOk(await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId, mrp: 2499, sellingPrice: 2499 } }), 'Set price');
-    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }), 'Inventory adjustment');
+    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: sku.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-account-stock-${sku.skuId}` } }), 'Inventory adjustment');
   });
 
   test.afterAll(async () => {
@@ -174,9 +174,19 @@ test.describe('Customer 360 account', () => {
     await expect(page.getByText('Default')).toBeVisible();
 
     // --- E: recently viewed, real PDP visit, dedupe ---
+    const firstView = page.waitForResponse((response) =>
+      response.url().endsWith(`/account/recently-viewed/${styleId}`) &&
+      response.request().method() === 'POST' && response.ok(),
+    );
     await page.goto(`/product/${styleId}`);
     await expect(page.getByRole('heading', { name: 'E2E Account Jacket' })).toBeVisible({ timeout: 10_000 });
+    await firstView;
+    const secondView = page.waitForResponse((response) =>
+      response.url().endsWith(`/account/recently-viewed/${styleId}`) &&
+      response.request().method() === 'POST' && response.ok(),
+    );
     await page.goto(`/product/${styleId}`); // a second view of the SAME product
+    await secondView;
     await page.goto('/account/recently-viewed');
     await expect(page.getByText('E2E Account Jacket')).toBeVisible({ timeout: 10_000 });
     const recentlyViewedRows = await page.locator('li', { hasText: 'E2E Account Jacket' }).count();

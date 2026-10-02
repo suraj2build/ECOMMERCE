@@ -24,6 +24,7 @@ const SERVICEABLE_PINCODE = '110002';
 describe('Admin query endpoints (P1)', () => {
   let app: FastifyInstance;
   let counter = 0;
+  let stockOperationCounter = 0;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -104,7 +105,13 @@ describe('Admin query endpoints (P1)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: { authorization: `Bearer ${token}` },
-      payload: { skuId, locationId, quantityDelta: qty, reason: 'P1 test opening stock' },
+      payload: {
+        skuId,
+        locationId,
+        quantityDelta: qty,
+        reason: 'P1 test opening stock',
+        idempotencyKey: `admin-stock-${counter}-${++stockOperationCounter}`,
+      },
     });
     expect(res.statusCode).toBe(201);
   }

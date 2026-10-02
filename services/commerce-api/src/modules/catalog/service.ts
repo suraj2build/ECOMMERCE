@@ -378,7 +378,59 @@ export class CatalogService {
       }));
   }
 
-  /** Public: active collections with a handful of their publishable styles, for Home's "Collections/Stories" module. */
+  /** Public collection detail, gated by collection activation, style publication and an active price. */
+  async getPublicCollection(slug: string) {
+    const collection = await this.prisma.collection.findUnique({
+      where: { slug },
+      include: {
+        styles: {
+          include: {
+            style: {
+              include: {
+                brand: true,
+                media: { where: { colourId: null }, take: 1, orderBy: { sortOrder: 'asc' } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!collection?.isActive) return null;
+
+    const published = collection.styles
+      .map((link) => link.style)
+      .filter((style) => style.lifecycleState === 'PUBLISHED');
+    const priceByStyleId = await this.getActivePricesByStyleIds(published.map((style) => style.id));
+
+    const styles = published
+      .map((style) => ({ style, activePrice: priceByStyleId.get(style.id) ?? null }))
+      .filter((entry) => entry.activePrice !== null)
+      .map(({ style, activePrice }) => ({
+        id: style.id,
+        styleCode: style.styleCode,
+        name: style.name,
+        brandName: style.brand.name,
+        thumbnailUrl: style.media[0]?.url ?? null,
+        mrp: activePrice!.mrp,
+        sellingPrice: activePrice!.sellingPrice,
+        isMarkdown: activePrice!.isMarkdown,
+        publishedAt: style.publishedAt,
+      }));
+
+    return {
+      id: collection.id,
+      name: collection.name,
+      slug: collection.slug,
+      description: collection.description,
+      styleThumbnails: styles
+        .map((style) => style.thumbnailUrl)
+        .filter((url): url is string => Boolean(url))
+        .slice(0, 4),
+      styles,
+    };
+  }
+
+  /** Public: active collections with publishable, actively-priced style thumbnails for Home. */
   async listPublicCollections(take = 6) {
     const collections = await this.prisma.collection.findMany({
       where: { isActive: true },
@@ -386,19 +438,36 @@ export class CatalogService {
       orderBy: { createdAt: 'desc' },
       include: {
         styles: {
-          take: 4,
-          include: { style: { include: { media: { where: { colourId: null }, take: 1, orderBy: { sortOrder: 'asc' } } } } },
+          include: {
+            style: {
+              include: {
+                media: { where: { colourId: null }, take: 1, orderBy: { sortOrder: 'asc' } },
+              },
+            },
+          },
         },
       },
     });
-    return collections.map((c) => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug,
-      description: c.description,
-      styleThumbnails: c.styles
-        .map((cs) => cs.style.media[0]?.url)
-        .filter((url): url is string => Boolean(url)),
+
+    const publishedStyleIds = collections.flatMap((collection) =>
+      collection.styles
+        .map((link) => link.style)
+        .filter((style) => style.lifecycleState === 'PUBLISHED')
+        .map((style) => style.id),
+    );
+    const priceByStyleId = await this.getActivePricesByStyleIds(publishedStyleIds);
+
+    return collections.map((collection) => ({
+      id: collection.id,
+      name: collection.name,
+      slug: collection.slug,
+      description: collection.description,
+      styleThumbnails: collection.styles
+        .map((link) => link.style)
+        .filter((style) => style.lifecycleState === 'PUBLISHED' && priceByStyleId.has(style.id))
+        .map((style) => style.media[0]?.url)
+        .filter((url): url is string => Boolean(url))
+        .slice(0, 4),
     }));
   }
 }

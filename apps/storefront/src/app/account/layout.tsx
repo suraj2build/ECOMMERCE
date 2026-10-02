@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { Container } from '@/components/ui/Container';
 import { AccountGate } from '@/components/account/AccountGate';
 
 const NAV = [
@@ -15,60 +14,35 @@ const NAV = [
   { label: 'My Sizes', href: '/account/sizes' },
   { label: 'Reviews', href: '/account/reviews' },
   { label: 'Store Credit', href: '/account/store-credit' },
-  // M23 (Loyalty) is now built - real balance/tier/ledger, replacing the
-  // earlier DEPENDENCY_DEFERRED "Coming soon" placeholder.
   { label: 'Loyalty', href: '/account/loyalty' },
-  { label: 'Communication Preferences', href: '/account/preferences' },
+  { label: 'Preferences', href: '/account/preferences' },
 ];
-
-// M24 (Promotions/Coupons) is authorized but not yet built within this
-// phase's own sequencing (M23 -> M24 -> M25) - represented honestly as
-// a disabled, not-yet-available state (DEPENDENCY_DEFERRED - M24), never
-// a fabricated coupon list.
-const DEFERRED_NAV = [{ label: 'Coupons', reason: 'Coming soon' }];
 
 export default function AccountLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-
   return (
-    <Container className="py-8">
-      <h1 className="font-display text-2xl text-ink">Your Account</h1>
-      <div className="mt-6 flex flex-col gap-8 md:flex-row">
-        <nav aria-label="Account" className="shrink-0 md:w-56">
-          <ul className="flex flex-row flex-wrap gap-2 md:flex-col md:gap-0">
+    <div className="mx-auto max-w-[1200px] px-gutter py-10 sm:py-14">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Personal atelier</p>
+      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Your Account</h1>
+      <div className="mt-8 grid gap-8 lg:grid-cols-[240px_1fr]">
+        <nav aria-label="Account" className="h-fit overflow-x-auto rounded-[20px] border border-[#e6ddd0] bg-white p-2 lg:sticky lg:top-28">
+          <ul className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">
             {NAV.map((item) => {
               const active = pathname === item.href;
               return (
                 <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    aria-current={active ? 'page' : undefined}
-                    className={`block min-h-[44px] rounded-sm px-3 py-2 text-sm ${
-                      active ? 'bg-surface font-medium text-ink' : 'text-ink-muted hover:bg-surface hover:text-ink'
-                    }`}
-                  >
+                  <Link href={item.href} aria-current={active ? 'page' : undefined} className={'block min-h-[42px] rounded-full px-4 py-3 text-xs font-medium transition-colors ' + (active ? 'bg-[#181716] text-white' : 'text-[#5f554c] hover:bg-[var(--color-surface-soft)] hover:text-[#181716]')}>
                     {item.label}
                   </Link>
                 </li>
               );
             })}
-            {DEFERRED_NAV.map((item) => (
-              <li key={item.label}>
-                <span
-                  className="block min-h-[44px] cursor-not-allowed rounded-sm px-3 py-2 text-sm text-ink-muted/60"
-                  aria-disabled="true"
-                  title={item.reason}
-                >
-                  {item.label} <span className="text-xs">({item.reason})</span>
-                </span>
-              </li>
-            ))}
           </ul>
         </nav>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 rounded-[22px] border border-[#e6ddd0] bg-white p-5 sm:p-7">
           <AccountGate>{children}</AccountGate>
         </div>
       </div>
-    </Container>
+    </div>
   );
 }

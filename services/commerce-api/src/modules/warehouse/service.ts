@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type PrismaClient, type PickTaskStatus, type PickExceptionType } from '@fcp/db';
-import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
+import { NotFoundError, ValidationError, ConflictError, InventoryIntegrityError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { recordAudit } from '../audit/service.js';
 
@@ -273,6 +273,7 @@ export class WarehouseService {
       // so an exchange this task belongs to can never be cancelled out
       // from under it the way an OrderLine can.
       let orderLineId: string | null = null;
+      let reservationId: string | null = null;
       if (task.orderLineId) {
         // Re-verify against the live OrderLine - a line can be cancelled
         // by a staff/CS action between task creation and this pick
@@ -299,6 +300,23 @@ export class WarehouseService {
           );
         }
         orderLineId = task.orderLineId;
+        reservationId = line.reservationId;
+        if (!reservationId) {
+          throw new InventoryIntegrityError(
+            `Order line '${task.orderLineId}' has no backing inventory reservation`,
+          );
+        }
+      } else if (task.exchangeId) {
+        const exchange = await tx.exchange.findUnique({
+          where: { id: task.exchangeId },
+          select: { replacementReservationId: true },
+        });
+        reservationId = exchange?.replacementReservationId ?? null;
+        if (!reservationId) {
+          throw new InventoryIntegrityError(
+            `Exchange '${task.exchangeId}' has no backing replacement inventory reservation`,
+          );
+        }
       }
 
       let status: PickTaskStatus;
@@ -371,14 +389,44 @@ export class WarehouseService {
           });
         }
 
+        if (!reservationId) {
+          throw new InventoryIntegrityError(
+            `Pick task '${task.id}' has no backing inventory reservation for its shortfall`,
+          );
+        }
+
+        const adjustmentReason = `${reasonPrefix} on pick task '${task.id}' (${sourceLabel})`;
+        // An order-line exception can be reinstated, so only the missing
+        // units lose their committed backing; the units actually found stay
+        // reserved for that line. An exchange short-pick is different:
+        // REPLACEMENT_UNAVAILABLE is terminal for this warehouse flow and
+        // has no reinstate path, so release the ENTIRE replacement
+        // allocation. The found units remain physically onHand and become
+        // available to other demand; only the genuinely missing shortfall
+        // is written off below.
+        const allocationReleaseQuantity = orderLineId ? shortfall : task.allocatedQuantity;
+        await this.inventory.releaseConvertedAllocationQuantity(
+          {
+            reservationId,
+            quantity: allocationReleaseQuantity,
+            reason: adjustmentReason,
+            referenceType: 'PICK_TASK',
+            referenceId: task.id,
+            idempotencyKey: `pick-release:${task.id}:${params.idempotencyKey}`,
+            actorStaffId: params.staffId,
+          },
+          tx,
+        );
+
         await this.inventory.postAdjustment(
           {
             skuId: task.skuId,
             locationId: task.locationId,
             quantityDelta: -shortfall,
-            reason: `${reasonPrefix} on pick task '${task.id}' (${sourceLabel})`,
+            reason: adjustmentReason,
             actorStaffId: params.staffId,
             coApproverStaffId: params.coApproverStaffId,
+            idempotencyKey: `pick-adjust:${task.id}:${params.idempotencyKey}`,
           },
           tx,
         );
