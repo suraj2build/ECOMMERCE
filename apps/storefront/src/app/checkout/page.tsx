@@ -194,7 +194,8 @@ export default function CheckoutPage() {
   if (cart && cart.items.length === 0) {
     return (
       <Container className="py-10 sm:py-14">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Secure checkout</p>\n      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Complete your order</h1>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Secure checkout</p>
+        <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Complete your order</h1>
         <p className="mt-4 text-sm text-[#6e6359]">Your bag is empty.</p>
       </Container>
     );

@@ -287,7 +287,7 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     // promo product below.
     await page.goto('/bag');
     await page.getByRole('button', { name: 'Remove' }).first().click();
-    await expect(page.getByText('Your bag is empty.')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Your bag is empty', exact: true })).toBeVisible({ timeout: 10_000 });
 
     await page.goto(`/product/${styleId}`);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();

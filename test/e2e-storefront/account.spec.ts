@@ -174,9 +174,19 @@ test.describe('Customer 360 account', () => {
     await expect(page.getByText('Default')).toBeVisible();
 
     // --- E: recently viewed, real PDP visit, dedupe ---
+    const firstView = page.waitForResponse((response) =>
+      response.url().endsWith(`/account/recently-viewed/${styleId}`) &&
+      response.request().method() === 'POST' && response.ok(),
+    );
     await page.goto(`/product/${styleId}`);
     await expect(page.getByRole('heading', { name: 'E2E Account Jacket' })).toBeVisible({ timeout: 10_000 });
+    await firstView;
+    const secondView = page.waitForResponse((response) =>
+      response.url().endsWith(`/account/recently-viewed/${styleId}`) &&
+      response.request().method() === 'POST' && response.ok(),
+    );
     await page.goto(`/product/${styleId}`); // a second view of the SAME product
+    await secondView;
     await page.goto('/account/recently-viewed');
     await expect(page.getByText('E2E Account Jacket')).toBeVisible({ timeout: 10_000 });
     const recentlyViewedRows = await page.locator('li', { hasText: 'E2E Account Jacket' }).count();

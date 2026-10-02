@@ -1,11 +1,21 @@
 'use client';
 
 import Image from 'next/image';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ProductDetail } from '@/lib/api';
 import { addToCart, addToWishlist } from '@/lib/cart';
+import { getStoredSession } from '@/lib/customer-auth';
+import { recordProductView } from '@/lib/account';
 
 export function VanyaProductDetail({ product }: { product: ProductDetail }) {
+  // Restore Customer 360's authenticated-only history in the new PDP.
+  // An expired session or failed history request must not block shopping.
+  useEffect(() => {
+    if (getStoredSession()) {
+      void recordProductView(product.id).catch(() => {});
+    }
+  }, [product.id]);
+
   const colours = useMemo(() => {
     const map = new Map<string, { id: string; name: string; hexSwatch: string | null }>();
     for (const variant of product.variants) {
