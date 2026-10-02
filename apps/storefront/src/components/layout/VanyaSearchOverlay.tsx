@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,15 +12,15 @@ export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: 
   const { department } = useDepartment();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<StorefrontSearchHit[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);\n  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown);\n    const focusFrame = window.requestAnimationFrame(() => searchInputRef.current?.focus());
     document.body.style.overflow = 'hidden';
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown);\n      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = '';
     };
   }, [open, onClose]);
