@@ -5,14 +5,14 @@ const GROUPS = [
   {
     title: 'Client services',
     links: [
-      ['Track order', '/orders'],
+      ['Orders & tracking', '/orders'],
       ['Returns & exchanges', '/account'],
       ['Wishlist', '/wishlist'],
       ['Shopping bag', '/bag'],
     ],
   },
   {
-    title: 'Discover VANYA',
+    title: 'Discover',
     links: [
       ['Women', '/category/women'],
       ['Men', '/category/men'],

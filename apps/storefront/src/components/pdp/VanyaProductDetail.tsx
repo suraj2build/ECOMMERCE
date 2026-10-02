@@ -197,14 +197,14 @@ export function VanyaProductDetail({ product }: { product: ProductDetail }) {
           {message && <p role="status" className="mt-2 text-xs text-ink-muted">{message}</p>}
           {wishlistMessage && <p role="status" className="mt-1 text-xs text-ink-muted">{wishlistMessage}</p>}
 
-          <div className="mt-8 space-y-5 border-t border-border pt-6">
+          <dl className="mt-8 space-y-5 border-t border-border pt-6">
             <EditorialDetail label="Fabric" value={product.fabric} />
             <EditorialDetail label="Fit" value={product.fit} />
             <EditorialDetail label="Occasion" value={product.occasion} />
             <EditorialDetail label="Pattern" value={product.pattern} />
             <EditorialDetail label="Care" value={product.washCare} />
             <EditorialDetail label="Made in" value={product.countryOfOrigin} />
-          </div>
+          </dl>
 
           <div className="mt-8 grid grid-cols-3 gap-2 border-y border-border py-5 text-center">
             <Promise title="Live stock" body="Availability verified" />

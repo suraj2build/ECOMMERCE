@@ -33,8 +33,8 @@ export default function AccountProfilePage() {
 
   return (
     <section>
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">Profile</p>
-      <h2 className="mt-1 font-display text-3xl text-[#181716]">Your details</h2>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">Your account</p>
+      <h2 className="mt-1 font-display text-3xl text-[#181716]">Profile</h2>
       {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}
       {profile ? (
         <form onSubmit={handleSubmit} className="mt-6 max-w-xl space-y-5">

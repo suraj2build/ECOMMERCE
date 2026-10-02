@@ -47,7 +47,7 @@ export default function WishlistPage() {
 
       {items && items.length === 0 ? (
         <div className="mt-10 rounded-[24px] border border-[#e6ddd0] bg-white p-8 text-center">
-          <h2 className="font-display text-2xl text-[#181716]">Nothing saved yet</h2>
+          <h2 className="font-display text-2xl text-[#181716]">Nothing saved yet.</h2>
           <Link href="/" className="mt-6 inline-flex min-h-[46px] items-center rounded-full bg-[#181716] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white">Explore VANYA</Link>
         </div>
       ) : null}

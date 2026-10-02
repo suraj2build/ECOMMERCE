@@ -50,11 +50,11 @@ export default function BagPage() {
           <ul className="divide-y divide-[#e8dfd3] rounded-[24px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
             {cart.items.map((item) => (
               <li key={item.skuId} className="flex gap-4 py-5 first:pt-0 last:pb-0">
-                <Link href={'/product/' + item.styleId} className="relative h-36 w-28 shrink-0 overflow-hidden rounded-[16px] bg-[var(--color-surface-soft)]">
+                <Link href={'/product/' + item.styleId} aria-label="View product image" className="relative h-36 w-28 shrink-0 overflow-hidden rounded-[16px] bg-[var(--color-surface-soft)]">
                   {item.imageUrl ? <Image src={item.imageUrl} alt={item.styleName} fill sizes="112px" className="object-cover" /> : null}
                 </Link>
                 <div className="min-w-0 flex-1">
-                  <Link href={'/product/' + item.styleId} className="line-clamp-2 text-sm font-medium text-[#181716] hover:text-[var(--color-primary)]">{item.styleName}</Link>
+                  <Link href={'/product/' + item.styleId} aria-label="View product details" className="line-clamp-2 text-sm font-medium text-[#181716] hover:text-[var(--color-primary)]">{item.styleName}</Link>
                   <p className="mt-1 text-xs text-[#6e6359]">{item.colourName} · {item.sizeLabel}</p>
                   <p className="mt-2 text-sm font-semibold text-[#181716]">&#8377;{item.currentPrice ?? item.priceAtAdd}</p>
                   {!item.isPurchasable ? <p role="alert" className="mt-2 text-xs text-danger">This style is no longer purchasable.</p> : null}
