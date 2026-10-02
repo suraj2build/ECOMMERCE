@@ -43,13 +43,13 @@ export function VanyaBagDrawer({ open, onClose }: { open: boolean; onClose: () =
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex justify-end bg-black/45 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex justify-end">
+      <button type="button" aria-label="Close shopping bag" onClick={onClose} className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
       <section
         role="dialog"
         aria-modal="true"
         aria-label="Shopping bag"
-        className="flex h-full w-full max-w-lg flex-col bg-[#faf8f5] shadow-2xl sm:rounded-l-[26px]"
-        onClick={(event) => event.stopPropagation()}
+        className="relative z-10 flex h-full w-full max-w-lg flex-col bg-[#faf8f5] shadow-2xl sm:rounded-l-[26px]"
       >
         <div className="flex items-center justify-between border-b border-[#eae3d7] bg-white/80 p-5">
           <div>
