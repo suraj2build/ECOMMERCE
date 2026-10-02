@@ -1221,7 +1221,7 @@ export class InventoryService {
     }
 
     const expectedType: InventoryTxnType = params.quantityDelta > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT';
-    const assertMatchingReplay = (existing: {
+    const assertMatchingReplay = <T extends {
       skuId: string;
       locationId: string;
       type: InventoryTxnType;
@@ -1229,7 +1229,7 @@ export class InventoryService {
       reason: string | null;
       actorStaffId: string | null;
       coApproverStaffId: string | null;
-    }) => {
+    }>(existing: T): T => {
       if (
         existing.type !== expectedType ||
         existing.skuId !== params.skuId ||
@@ -1256,6 +1256,21 @@ export class InventoryService {
 
       await this.ensureBalanceRow(tx, params.skuId, params.locationId);
       const balance = await this.lockBalance(tx, params.skuId, params.locationId);
+
+      // The cheap pre-read above can race: two exact retries may both see
+      // "no row yet" before either commits. Once identical adjustment
+      // requests serialize on this balance lock, re-read the durable key
+      // BEFORE validating the now-changed balance. This is essential for
+      // negative adjustments: otherwise the loser could see stock already
+      // reduced by the winner and incorrectly return "negative on-hand"
+      // instead of the winner's idempotent result.
+      if (params.idempotencyKey) {
+        const committedAfterLock = await tx.inventoryTransaction.findUnique({
+          where: { idempotencyKey: params.idempotencyKey },
+        });
+        if (committedAfterLock) return assertMatchingReplay(committedAfterLock);
+      }
+
       const newOnHand = balance.onHand + params.quantityDelta;
       if (newOnHand < 0) {
         throw new ConflictError('Adjustment would result in negative on-hand stock');

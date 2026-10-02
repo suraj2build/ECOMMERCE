@@ -208,4 +208,50 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
     })).toBe(1);
   });
 
+  it('concurrent exact negative retries return the same result instead of re-validating against the winner-reduced balance', async () => {
+    const { staffUserId, token } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+
+    const opening = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/adjustments',
+      headers: auth(token),
+      payload: {
+        skuId,
+        locationId,
+        quantityDelta: 5,
+        reason: 'Opening count for negative retry',
+        idempotencyKey: 'flow20-negative-opening',
+      },
+    });
+    expect(opening.statusCode).toBe(201);
+
+    const auditBefore = await testPrisma.auditLog.count({
+      where: { action: 'inventory.adjust', actorStaffId: staffUserId, entityId: `${skuId}/${locationId}` },
+    });
+    const payload = {
+      skuId,
+      locationId,
+      quantityDelta: -5,
+      reason: 'Concurrent negative retry count',
+      idempotencyKey: 'flow20-concurrent-negative-retry',
+    };
+
+    const [a, b] = await Promise.all([
+      app.inject({ method: 'POST', url: '/api/v1/inventory/adjustments', headers: auth(token), payload }),
+      app.inject({ method: 'POST', url: '/api/v1/inventory/adjustments', headers: auth(token), payload }),
+    ]);
+
+    expect([a.statusCode, b.statusCode]).toEqual([201, 201]);
+    expect(a.json().id).toBe(b.json().id);
+    const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({
+      where: { skuId_locationId: { skuId, locationId } },
+    });
+    expect(balance.onHand).toBe(0);
+    expect(await testPrisma.inventoryTransaction.count({ where: { idempotencyKey: payload.idempotencyKey } })).toBe(1);
+    expect(await testPrisma.auditLog.count({
+      where: { action: 'inventory.adjust', actorStaffId: staffUserId, entityId: `${skuId}/${locationId}` },
+    })).toBe(auditBefore + 1);
+  });
+
+
 });
