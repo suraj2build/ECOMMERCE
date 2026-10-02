@@ -152,6 +152,27 @@ export async function getProductDetail(styleId: string): Promise<ProductDetail |
   return res.json() as Promise<ProductDetail>;
 }
 
+export async function getProductDetailLive(styleId: string): Promise<ProductDetail> {
+  const res = await fetch(`${API_URL}/api/v1/storefront/products/${styleId}`, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(`Could not load product (${res.status})`);
+  }
+  return res.json() as Promise<ProductDetail>;
+}
+
+export async function recordWatchAndShopEvent(
+  mediaId: string,
+  eventType: 'VIEW' | 'TAG_TAP' | 'ADD_TO_BAG',
+  sessionRef?: string,
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/content/watch-and-shop/${mediaId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ eventType, sessionRef }),
+  });
+  if (!res.ok) throw new Error(`Could not record Watch & Shop event (${res.status})`);
+}
+
 export interface ServiceabilityResult {
   pincode: string;
   known: boolean;

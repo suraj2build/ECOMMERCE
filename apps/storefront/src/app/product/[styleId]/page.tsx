@@ -64,7 +64,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
   const breadcrumbItems = [
     { name: 'Home', href: '/' },
-    { name: product.categoryName, href: '/' },
+    { name: product.categoryName, href: `/category/${product.categorySlug}` },
     { name: product.name, href: `/product/${product.id}` },
   ];
 
@@ -86,7 +86,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           than trusted as though it were a hard-coded constant. */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(structuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbStructuredData) }} />
-      <Container className="py-8">
+      <Container className="py-6 sm:py-8 lg:py-10">
         <Breadcrumbs items={breadcrumbItems} />
         <ProductDetailInteractive product={product} />
         <PincodeChecker />

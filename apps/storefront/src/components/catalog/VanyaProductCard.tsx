@@ -35,7 +35,7 @@ export function VanyaProductCard({ product }: { product: StorefrontSearchHit }) 
 
         <div className="flex flex-1 flex-col justify-between p-3.5 sm:p-4">
           <div>
-            <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.13em] text-[#8c8379]">
+            <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.13em] text-[#6e6359]">
               <span className="truncate">{product.brandName}</span>
               <span>{product.categoryName}</span>
             </div>
@@ -43,13 +43,13 @@ export function VanyaProductCard({ product }: { product: StorefrontSearchHit }) 
               {product.name}
             </h3>
             {product.colours.length > 0 ? (
-              <p className="mt-1 text-[11px] text-[#8c8379]">{product.colours.slice(0, 3).join(' · ')}{product.colours.length > 3 ? ` +${product.colours.length - 3}` : ''}</p>
+              <p className="mt-1 text-[11px] text-[#6e6359]">{product.colours.slice(0, 3).join(' · ')}{product.colours.length > 3 ? ` +${product.colours.length - 3}` : ''}</p>
             ) : null}
           </div>
 
           <div className="mt-3 flex items-baseline gap-2 border-t border-[#f5f2ec] pt-3">
             <span className="text-sm font-semibold text-[#181716]">&#8377;{product.sellingPrice}</span>
-            {product.isMarkdown ? <span className="text-xs text-[#9e958a] line-through">&#8377;{product.mrp}</span> : null}
+            {product.isMarkdown ? <span className="text-xs text-[#73685c] line-through">&#8377;{product.mrp}</span> : null}
           </div>
         </div>
       </Link>
