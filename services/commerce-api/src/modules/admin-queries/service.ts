@@ -173,7 +173,7 @@ export class AdminQueryService {
 
   /** The PromotionType reference table (seeded; POST /promotions takes its key). */
   async listPromotionTypes() {
-    return this.prisma.promotionType.findMany({ select: { id: true, key: true, name: true }, orderBy: { name: 'asc' }, take: 100 });
+    return this.prisma.promotionType.findMany({ select: { id: true, key: true, name: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
   }
 
   /** Order search by order number. Contact details stay on the detail route (GET /orders/:id). */

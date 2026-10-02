@@ -111,9 +111,9 @@ const returnRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/returns', { preHandler: readAuth }, async (request, reply) => {
     const query = z
-      .object({ status: z.enum(['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'DISPOSITIONED', 'CANCELLED']).optional() })
+      .object({ take: z.coerce.number().int().positive().max(200).optional(), skip: z.coerce.number().int().nonnegative().optional(), status: z.enum(['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'DISPOSITIONED', 'CANCELLED']).optional() })
       .parse(request.query);
-    reply.status(200).send(await returnService.listPendingWarehouseWork(query.status));
+    reply.status(200).send(await returnService.listPendingWarehouseWork(query.status, query));
   });
 
   fastify.post('/returns/:id/cancel', { preHandler: initiateAuth }, async (request, reply) => {

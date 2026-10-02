@@ -102,13 +102,14 @@ export class LoyaltyService {
     };
   }
 
-  async listLedgerForCustomer(customerId: string) {
+  async listLedgerForCustomer(customerId: string, page: { take?: number; skip?: number } = {}) {
     const account = await this.prisma.loyaltyAccount.findUnique({ where: { customerId } });
     if (!account) return [];
     const entries = await this.prisma.loyaltyLedgerEntry.findMany({
       where: { accountId: account.id },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      take: Math.min(page.take ?? 200, 200),
+      skip: page.skip ?? 0,
     });
     return entries.map((e) => ({
       id: e.id,

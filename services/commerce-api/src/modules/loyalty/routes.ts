@@ -31,7 +31,8 @@ const loyaltyRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get('/storefront/account/loyalty/ledger', customerAuth, async (request, reply) => {
-    reply.status(200).send(await loyalty.listLedgerForCustomer(request.customer!.id));
+    const page = z.object({ take: z.coerce.number().int().positive().max(200).optional(), skip: z.coerce.number().int().nonnegative().optional() }).parse(request.query);
+    reply.status(200).send(await loyalty.listLedgerForCustomer(request.customer!.id, page));
   });
 
   // P1 decision D-1: the restricted lookup a loyalty:adjust holder (e.g.

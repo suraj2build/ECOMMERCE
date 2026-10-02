@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { DataState, DataTable, DateText, Ident, PageHeader, SelectField, StatusBadge } from '@/components/ui';
 import { qs } from '@/lib/api';
 import { useApi, useCan, useUrlFilter } from '@/lib/session';
@@ -19,11 +20,12 @@ const STATUSES = ['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'DIS
 
 /**
  * Returns queue (GET /returns). With no status filter the return service
- * lists open warehouse work, oldest first, capped at 100.
+ * lists open warehouse work, oldest first, paged in batches of 100.
  */
 export default function ReturnsPage() {
+  const [skip, setSkip] = useState(0);
   const [status, setStatus, ready] = useUrlFilter('status');
-  const returns = useApi<ReturnRow[]>(ready ? `/returns${qs({ status })}` : null);
+  const returns = useApi<ReturnRow[]>(ready ? `/returns${qs({ status, take: 100, skip })}` : null);
   const canOrders = useCan('order:read');
   const orderIds = [...new Set((returns.data ?? []).map((r) => r.orderId))];
   const labels = useApi<{ orders: Record<string, string> }>(canOrders && orderIds.length ? `/admin/lookup/labels${qs({ orderIds: orderIds.join(',') })}` : null);
@@ -41,7 +43,7 @@ export default function ReturnsPage() {
           value={status}
           placeholder="Open work (requested to received)"
           options={STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ').toLowerCase() }))}
-          onChange={setStatus}
+          onChange={(value) => { setSkip(0); setStatus(value); }}
         />
       </div>
       <DataState state={returns}>
@@ -78,7 +80,7 @@ export default function ReturnsPage() {
                 { header: 'Requested', cell: (r) => <DateText value={r.createdAt} withTime /> },
               ]}
             />
-            {rows.length === 100 && <p className="muted">Showing the first 100 (the return service caps this queue). Filter by status to narrow it.</p>}
+            <div className="filter-bar"><button type="button" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - 100))}>Previous</button><button type="button" disabled={rows.length < 100} onClick={() => setSkip(skip + 100)}>Next</button></div>
           </>
         )}
       </DataState>
