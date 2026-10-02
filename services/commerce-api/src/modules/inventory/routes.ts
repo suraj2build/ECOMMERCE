@@ -19,6 +19,7 @@ const adjustSchema = z.object({
   quantityDelta: z.number().int().refine((n) => n !== 0, 'quantityDelta cannot be zero'),
   reason: z.string().min(1),
   coApproverStaffId: z.string().uuid().optional(),
+  idempotencyKey: z.string().trim().min(1),
 });
 
 const transferOutSchema = z.object({

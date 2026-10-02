@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { LocationSelect, SkuPicker, StaffSelect, type SkuOption } from '@/components/pickers';
 import { BalanceCard, useSkuLocationFromUrl } from '@/components/sku-location';
 import { ConfirmDialog, PageHeader, TextField } from '@/components/ui';
@@ -33,12 +33,19 @@ export default function InventoryAdjustmentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [version, setVersion] = useState(0);
+  const idempotencyKeyRef = useRef<string | null>(null);
   useSkuLocationFromUrl(setSku, setLocationId);
+
+  function startNewAdjustment() {
+    idempotencyKeyRef.current = null;
+  }
 
   async function submit() {
     setConfirming(false);
     setMessage(null);
     setSubmitting(true);
+    const idempotencyKey = idempotencyKeyRef.current ?? crypto.randomUUID();
+    idempotencyKeyRef.current = idempotencyKey;
     try {
       await apiSend('POST', '/inventory/adjustments', {
         skuId: sku?.id,
@@ -46,7 +53,9 @@ export default function InventoryAdjustmentsPage() {
         quantityDelta: Number(quantityDelta),
         reason: reason || undefined,
         coApproverStaffId: coApproverStaffId || undefined,
+        idempotencyKey,
       });
+      idempotencyKeyRef.current = null;
       setMessage({ kind: 'success', text: `Adjustment recorded for ${sku?.skuCode}.` });
       setQuantityDelta('');
       setReason('');
@@ -78,25 +87,52 @@ export default function InventoryAdjustmentsPage() {
               {message.text}
             </p>
           )}
-          <SkuPicker value={sku} onChange={setSku} required />
-          <LocationSelect value={locationId} onChange={setLocationId} required />
+          <SkuPicker
+            value={sku}
+            onChange={(value) => {
+              startNewAdjustment();
+              setSku(value);
+            }}
+            required
+          />
+          <LocationSelect
+            value={locationId}
+            onChange={(value) => {
+              startNewAdjustment();
+              setLocationId(value);
+            }}
+            required
+          />
           <TextField
             label="Quantity delta"
             type="number"
             required
             value={quantityDelta}
-            onChange={setQuantityDelta}
+            onChange={(value) => {
+              startNewAdjustment();
+              setQuantityDelta(value);
+            }}
             hint="Positive adds stock, negative removes it. The result can never go below zero."
           />
           <div className="field">
             <label htmlFor="reason">Justification (required by the server)</label>
-            <textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+            <textarea
+              id="reason"
+              value={reason}
+              onChange={(e) => {
+                startNewAdjustment();
+                setReason(e.target.value);
+              }}
+            />
           </div>
           <StaffSelect
             label="Finance co-approver (required above threshold)"
             capability="inventory-coapprover"
             value={coApproverStaffId}
-            onChange={setCoApproverStaffId}
+            onChange={(value) => {
+              startNewAdjustment();
+              setCoApproverStaffId(value);
+            }}
           />
           <button className="primary" type="submit" disabled={submitting || !sku || !locationId}>
             {submitting ? 'Submitting...' : 'Submit adjustment'}

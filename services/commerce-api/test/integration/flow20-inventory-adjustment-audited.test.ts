@@ -54,7 +54,7 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: auth(token),
-      payload: { skuId, locationId, quantityDelta: threshold - 1, reason: 'Cycle count correction' },
+      payload: { skuId, locationId, quantityDelta: threshold - 1, reason: 'Cycle count correction', idempotencyKey: 'flow20-below' },
     });
     expect(res.statusCode).toBe(201);
 
@@ -73,7 +73,7 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: auth(token),
-      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large damage write-off' },
+      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large damage write-off', idempotencyKey: 'flow20-large-no-coapproval' },
     });
     expect(withoutCoApproval.statusCode).toBe(400);
 
@@ -81,7 +81,7 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: auth(token),
-      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large damage write-off', coApproverStaffId: financeStaffId },
+      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large damage write-off', coApproverStaffId: financeStaffId, idempotencyKey: 'flow20-large-approved' },
     });
     expect(withCoApproval.statusCode).toBe(201);
 
@@ -98,7 +98,7 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: auth(token),
-      payload: { skuId, locationId, quantityDelta: 1 },
+      payload: { skuId, locationId, quantityDelta: 1, idempotencyKey: 'flow20-no-reason-below' },
     });
     expect(below.statusCode).toBe(400);
 
@@ -106,7 +106,7 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: auth(token),
-      payload: { skuId, locationId, quantityDelta: threshold },
+      payload: { skuId, locationId, quantityDelta: threshold, idempotencyKey: 'flow20-no-reason-above' },
     });
     expect(above.statusCode).toBe(400);
   });
@@ -119,7 +119,7 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: auth(token),
-      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large write-off', coApproverStaffId: unauthorizedCoApprover },
+      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large write-off', coApproverStaffId: unauthorizedCoApprover, idempotencyKey: 'flow20-bad-coapprover' },
     });
     expect(res.statusCode).toBe(400);
   });
@@ -132,8 +132,80 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       method: 'POST',
       url: '/api/v1/inventory/adjustments',
       headers: auth(token),
-      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large write-off', coApproverStaffId: staffUserId },
+      payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large write-off', coApproverStaffId: staffUserId, idempotencyKey: 'flow20-self-coapprover' },
     });
     expect(res.statusCode).toBe(400);
   });
+  it('requires an idempotency key at the HTTP boundary', async () => {
+    const { token } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/adjustments',
+      headers: auth(token),
+      payload: { skuId, locationId, quantityDelta: 1, reason: 'Missing retry key' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('replaying the same idempotency key and payload applies the adjustment and audit exactly once', async () => {
+    const { staffUserId, token } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+    const payload = { skuId, locationId, quantityDelta: 4, reason: 'Retry-safe count', idempotencyKey: 'flow20-exact-retry' };
+
+    const first = await app.inject({ method: 'POST', url: '/api/v1/inventory/adjustments', headers: auth(token), payload });
+    const retry = await app.inject({ method: 'POST', url: '/api/v1/inventory/adjustments', headers: auth(token), payload });
+    expect(first.statusCode).toBe(201);
+    expect(retry.statusCode).toBe(201);
+    expect(retry.json().id).toBe(first.json().id);
+
+    const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId, locationId } } });
+    expect(balance.onHand).toBe(4);
+    expect(await testPrisma.inventoryTransaction.count({ where: { idempotencyKey: payload.idempotencyKey } })).toBe(1);
+    expect(await testPrisma.auditLog.count({
+      where: { action: 'inventory.adjust', actorStaffId: staffUserId, entityId: `${skuId}/${locationId}` },
+    })).toBe(1);
+  });
+
+  it('reusing an adjustment idempotency key for a different payload returns 409 and does not apply it', async () => {
+    const { token } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+    const idempotencyKey = 'flow20-conflicting-reuse';
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/adjustments',
+      headers: auth(token),
+      payload: { skuId, locationId, quantityDelta: 2, reason: 'Original count', idempotencyKey },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const conflict = await app.inject({
+      method: 'POST',
+      url: '/api/v1/inventory/adjustments',
+      headers: auth(token),
+      payload: { skuId, locationId, quantityDelta: 3, reason: 'Changed count', idempotencyKey },
+    });
+    expect(conflict.statusCode).toBe(409);
+
+    const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId, locationId } } });
+    expect(balance.onHand).toBe(2);
+    expect(await testPrisma.inventoryTransaction.count({ where: { idempotencyKey } })).toBe(1);
+  });
+
+  it('concurrent exact retries converge to one ledger row, one audit and one stock effect', async () => {
+    const { staffUserId, token } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+    const payload = { skuId, locationId, quantityDelta: 5, reason: 'Concurrent retry count', idempotencyKey: 'flow20-concurrent-retry' };
+
+    const [a, b] = await Promise.all([
+      app.inject({ method: 'POST', url: '/api/v1/inventory/adjustments', headers: auth(token), payload }),
+      app.inject({ method: 'POST', url: '/api/v1/inventory/adjustments', headers: auth(token), payload }),
+    ]);
+    expect([a.statusCode, b.statusCode]).toEqual([201, 201]);
+    expect(a.json().id).toBe(b.json().id);
+
+    const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId, locationId } } });
+    expect(balance.onHand).toBe(5);
+    expect(await testPrisma.inventoryTransaction.count({ where: { idempotencyKey: payload.idempotencyKey } })).toBe(1);
+    expect(await testPrisma.auditLog.count({
+      where: { action: 'inventory.adjust', actorStaffId: staffUserId, entityId: `${skuId}/${locationId}` },
+    })).toBe(1);
+  });
+
 });

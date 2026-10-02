@@ -972,11 +972,15 @@ export class InventoryService {
       reason: string;
       actorStaffId: string;
       coApproverStaffId?: string;
+      idempotencyKey?: string;
     },
     externalTx?: Prisma.TransactionClient,
   ) {
     if (!params.reason?.trim()) throw new ValidationError('Adjustment reason is required');
     if (params.quantityDelta === 0) throw new ValidationError('Adjustment quantity delta cannot be zero');
+    if (params.idempotencyKey !== undefined && !params.idempotencyKey.trim()) {
+      throw new ValidationError('Adjustment idempotency key cannot be empty');
+    }
 
     const env = loadEnv();
     if (
@@ -988,7 +992,40 @@ export class InventoryService {
       );
     }
 
+    const expectedType: InventoryTxnType = params.quantityDelta > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT';
+    const assertMatchingReplay = (existing: {
+      skuId: string;
+      locationId: string;
+      type: InventoryTxnType;
+      quantity: number;
+      reason: string | null;
+      actorStaffId: string | null;
+      coApproverStaffId: string | null;
+    }) => {
+      if (
+        existing.type !== expectedType ||
+        existing.skuId !== params.skuId ||
+        existing.locationId !== params.locationId ||
+        existing.quantity !== Math.abs(params.quantityDelta) ||
+        existing.reason !== params.reason ||
+        existing.actorStaffId !== params.actorStaffId ||
+        existing.coApproverStaffId !== (params.coApproverStaffId ?? null)
+      ) {
+        throw new ConflictError(
+          `Idempotency key '${params.idempotencyKey}' was already used for a different inventory adjustment request`,
+        );
+      }
+      return existing;
+    };
+
     const run = async (tx: Prisma.TransactionClient) => {
+      if (params.idempotencyKey) {
+        const existing = await tx.inventoryTransaction.findUnique({
+          where: { idempotencyKey: params.idempotencyKey },
+        });
+        if (existing) return assertMatchingReplay(existing);
+      }
+
       await this.ensureBalanceRow(tx, params.skuId, params.locationId);
       const balance = await this.lockBalance(tx, params.skuId, params.locationId);
       const newOnHand = balance.onHand + params.quantityDelta;
@@ -1004,9 +1041,10 @@ export class InventoryService {
       const txnRow = await this.writeLedgerRow(tx, {
         skuId: params.skuId,
         locationId: params.locationId,
-        type: params.quantityDelta > 0 ? 'ADJUSTMENT_IN' : 'ADJUSTMENT_OUT',
+        type: expectedType,
         quantity: Math.abs(params.quantityDelta),
         reason: params.reason,
+        idempotencyKey: params.idempotencyKey,
         actorType: 'STAFF',
         actorStaffId: params.actorStaffId,
         coApproverStaffId: params.coApproverStaffId,
@@ -1025,7 +1063,27 @@ export class InventoryService {
       return txnRow;
     };
 
-    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+    if (externalTx) return run(externalTx);
+
+    try {
+      return await this.prisma.$transaction(run);
+    } catch (err) {
+      // Two concurrent retries can both pass the pre-read. The globally
+      // unique InventoryTransaction.idempotencyKey is the authoritative
+      // backstop; the losing transaction rolls its balance/audit work back,
+      // then resolves to the committed winner only when the payload matches.
+      if (
+        params.idempotencyKey &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const winner = await this.prisma.inventoryTransaction.findUnique({
+          where: { idempotencyKey: params.idempotencyKey },
+        });
+        if (winner) return assertMatchingReplay(winner);
+      }
+      throw err;
+    }
   }
 
   /** TRANSFER_OUT at source (onHand -= qty), creates an IN_TRANSIT transfer record. Preserves total stock. */
