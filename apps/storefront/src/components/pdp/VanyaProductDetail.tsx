@@ -215,13 +215,12 @@ export function VanyaProductDetail({ product }: { product: ProductDetail }) {
       </div>
 
       {sizeGuideOpen && product.sizeChart && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-6" role="presentation" onMouseDown={() => setSizeGuideOpen(false)}>
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-6" role="presentation">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="size-guide-title"
             className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-t-[24px] bg-surface p-6 sm:rounded-[24px]"
-            onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between">
               <div>
