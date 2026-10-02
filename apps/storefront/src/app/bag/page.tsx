@@ -62,11 +62,11 @@ export default function BagPage() {
                   {item.priceChanged ? <p role="status" className="mt-2 text-xs text-[#5f554c]">Price changed from &#8377;{item.priceAtAdd}.</p> : null}
                   <div className="mt-4 flex flex-wrap items-center gap-3">
                     <div className="inline-flex overflow-hidden rounded-full border border-[#d8d0c6]">
-                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity - 1)} disabled={pendingSkuId === item.skuId} className="min-h-[40px] min-w-[40px]" aria-label={'Decrease quantity for ' + item.styleName}>−</button>
+                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity - 1)} disabled={pendingSkuId === item.skuId} className="min-h-[44px] min-w-[44px]" aria-label={'Decrease quantity for ' + item.styleName}>−</button>
                       <span className="min-w-[36px] self-center text-center text-xs font-semibold">{item.quantity}</span>
-                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity + 1)} disabled={pendingSkuId === item.skuId} className="min-h-[40px] min-w-[40px]" aria-label={'Increase quantity for ' + item.styleName}>+</button>
+                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity + 1)} disabled={pendingSkuId === item.skuId} className="min-h-[44px] min-w-[44px]" aria-label={'Increase quantity for ' + item.styleName}>+</button>
                     </div>
-                    <button type="button" onClick={() => void handleQuantityChange(item.skuId, 0)} disabled={pendingSkuId === item.skuId} className="min-h-[40px] text-xs text-[#5f554c] underline underline-offset-4">Remove</button>
+                    <button type="button" onClick={() => void handleQuantityChange(item.skuId, 0)} disabled={pendingSkuId === item.skuId} className="min-h-[44px] text-xs text-[#5f554c] underline underline-offset-4">Remove</button>
                   </div>
                 </div>
               </li>
