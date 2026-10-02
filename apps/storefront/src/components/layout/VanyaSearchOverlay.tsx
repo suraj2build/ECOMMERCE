@@ -82,14 +82,14 @@ export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: 
           <div className="mt-8">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6e6359]">Explore</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {[
+              {([
                 ['Women', '/category/women'],
                 ['Men', '/category/men'],
                 ['New In', '/category/new'],
                 ['Sale', '/category/sale'],
                 ['Collections', '/collections'],
                 ['Watch & Shop', '/watch-and-shop'],
-              ].map(([label, href]) => (
+              ] as const).map(([label, href]) => (
                 <Link key={href} href={href} onClick={onClose} className="rounded-full border border-[#d8d0c6] bg-white px-4 py-2.5 text-xs text-[#181716] hover:border-[#181716]">
                   {label}
                 </Link>
