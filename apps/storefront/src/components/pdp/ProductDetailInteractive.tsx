@@ -205,7 +205,7 @@ export function ProductDetailInteractive({ product }: { product: ProductDetail }
 
         <fieldset className="mt-7">
           <div className="flex items-center justify-between">
-            <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-[#181716]">Select size</legend>
+            <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-[#181716]">Size</legend>
             {product.sizeChart ? (
               <button type="button" onClick={() => setShowSizeChart(true)} className="min-h-[36px] text-xs text-[#5f554c] underline underline-offset-4">
                 Size guide
