@@ -110,11 +110,11 @@ test.describe('Exchanges', () => {
     // is what produces the STORE_CREDIT direction.
     await expectOk(await api.post('/api/v1/catalog/prices', { headers: staffAuthHeaders, data: { styleId, mrp: 3000, sellingPrice: 3000 } }), 'Set initial price');
     await expectOk(
-      await api.post('/api/v1/inventory/adjustments', { headers: staffAuthHeaders, data: { skuId: expensiveSkuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }),
+      await api.post('/api/v1/inventory/adjustments', { headers: staffAuthHeaders, data: { skuId: expensiveSkuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-exchange-stock-${expensiveSkuId}` } }),
       'Inventory adjustment (expensive size)',
     );
     await expectOk(
-      await api.post('/api/v1/inventory/adjustments', { headers: staffAuthHeaders, data: { skuId: cheapSkuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }),
+      await api.post('/api/v1/inventory/adjustments', { headers: staffAuthHeaders, data: { skuId: cheapSkuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-exchange-stock-${cheapSkuId}` } }),
       'Inventory adjustment (cheap size)',
     );
   });
