@@ -12,15 +12,18 @@ export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: 
   const { department } = useDepartment();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<StorefrontSearchHit[]>([]);
-  const [loading, setLoading] = useState(false);\n  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKeyDown);\n    const focusFrame = window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    window.addEventListener('keydown', onKeyDown);
+    const focusFrame = window.requestAnimationFrame(() => searchInputRef.current?.focus());
     document.body.style.overflow = 'hidden';
     return () => {
-      window.removeEventListener('keydown', onKeyDown);\n      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener('keydown', onKeyDown);
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = '';
     };
   }, [open, onClose]);
@@ -66,7 +69,7 @@ export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: 
           <label htmlFor="vanya-search" className="sr-only">Search products</label>
           <input
             id="vanya-search"
-            autoFocus
+            ref={searchInputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search kurtas, sarees, linen, colours…"
