@@ -97,7 +97,7 @@ test.describe('Cancellation', () => {
     await expectOk(
       await api.post('/api/v1/inventory/adjustments', {
         headers: authHeaders,
-        data: { skuId: sku.skuId, locationId: opts.locationId, quantityDelta: 10, reason: 'E2E stock load' },
+        data: { skuId: sku.skuId, locationId: opts.locationId, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-cancel-stock-${sku.skuId}` },
       }),
       `Inventory adjustment ${opts.styleCode}`,
     );
