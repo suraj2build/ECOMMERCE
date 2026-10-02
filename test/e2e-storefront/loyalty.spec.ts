@@ -116,7 +116,7 @@ test.describe('Loyalty (M23)', () => {
     // relaxation of COD_MAX_ORDER_VALUE_INR (see .env, gitignored, never
     // committed) makes a single-unit COD purchase at this price possible.
     await expectOk(await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId, mrp: 12000, sellingPrice: 12000 } }), 'Set price');
-    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }), 'Inventory adjustment');
+    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-loyalty-stock-${skuId}` } }), 'Inventory adjustment');
   });
 
   test.afterAll(async () => {
