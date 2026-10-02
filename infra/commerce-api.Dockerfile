@@ -1,7 +1,7 @@
 # Builds and runs services/commerce-api from the monorepo root context
 # (see infra/docker-compose.yml). Multi-stage: install + build in one
 # layer, run the compiled output with only production dependencies.
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 RUN apk add --no-cache openssl
 WORKDIR /repo
 
@@ -27,7 +27,7 @@ RUN npm run build --workspace=packages/shared \
   && npm run build --workspace=services/commerce-api \
   && npm prune --omit=dev --ignore-scripts
 
-FROM node:20-alpine AS run
+FROM node:24-alpine AS run
 RUN apk add --no-cache openssl
 WORKDIR /repo
 ENV NODE_ENV=production
