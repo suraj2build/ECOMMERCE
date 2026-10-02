@@ -96,10 +96,20 @@ export function Header() {
                   </Link>
                 </li>
               ))}
+              <li>
+                <Link href="/collections" className="text-[10px] font-medium uppercase tracking-[0.14em] text-ink-muted transition-colors hover:text-ink">
+                  Collections
+                </Link>
+              </li>
+              <li className="hidden xl:list-item">
+                <Link href="/watch-and-shop" className="text-[10px] font-medium uppercase tracking-[0.14em] text-ink-muted transition-colors hover:text-ink">
+                  Watch & Shop
+                </Link>
+              </li>
             </ul>
           </nav>
 
-          <Link href="/" aria-label="Home" className="justify-self-center text-center">
+          <Link href="/" aria-label="VANYA home" className="justify-self-center text-center">
             <span className="block font-display text-2xl uppercase leading-none tracking-[0.24em] text-ink sm:text-[32px]">VANYA</span>
             <span className="mt-1 hidden text-[7px] uppercase tracking-[0.24em] text-ink-muted sm:block">— Indian roots · modern today —</span>
           </Link>
@@ -144,11 +154,26 @@ export function Header() {
               </button>
             </div>
             <ul>
+              <li className="border-b border-border">
+                <Link
+                  href={activeDepartment === 'men' ? '/category/men' : '/category/women'}
+                  onClick={() => setMobileOpen(false)}
+                  className="block min-h-[48px] px-gutter py-4 text-sm font-semibold text-ink"
+                >
+                  Shop {activeDepartment}
+                </Link>
+              </li>
               {nav.map((item) => (
                 <li key={item.href} className="border-b border-border">
                   <Link href={item.href} onClick={() => setMobileOpen(false)} className="block min-h-[48px] px-gutter py-4 text-sm text-ink">{item.label}</Link>
                 </li>
               ))}
+              <li className="border-b border-border">
+                <Link href="/collections" onClick={() => setMobileOpen(false)} className="block min-h-[48px] px-gutter py-4 text-sm text-ink">Collections</Link>
+              </li>
+              <li className="border-b border-border">
+                <Link href="/watch-and-shop" onClick={() => setMobileOpen(false)} className="block min-h-[48px] px-gutter py-4 text-sm text-ink">Watch & Shop</Link>
+              </li>
               <li className="grid grid-cols-3">
                 <Link href="/account" onClick={() => setMobileOpen(false)} className="px-gutter py-4 text-xs text-ink">Account</Link>
                 <Link href="/orders" onClick={() => setMobileOpen(false)} className="px-2 py-4 text-xs text-ink">Orders</Link>

@@ -23,7 +23,7 @@ const GROUPS = [
   {
     title: 'Legal',
     links: [
-      ['Privacy', '/legal/privacy'],
+      ['Privacy Policy', '/legal/privacy'],
       ['Terms', '/legal/terms'],
     ],
   },
