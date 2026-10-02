@@ -1,11 +1,6 @@
-import { getPublicCollections, getPublicStyles, getWatchAndShopFeed } from '@/lib/api';
+import { getPublicCollections, getWatchAndShopFeed, searchStorefront } from '@/lib/api';
 import { VanyaGateway } from '@/components/home/VanyaGateway';
-import { Hero } from '@/components/home/Hero';
-import { ShopByCategory } from '@/components/home/ShopByCategory';
-import { ProductGrid } from '@/components/home/ProductGrid';
-import { CollectionsStrip } from '@/components/home/CollectionsStrip';
-import { WatchAndShop } from '@/components/home/WatchAndShop';
-import { TrustPromises } from '@/components/home/TrustPromises';
+import { VanyaHome } from '@/components/home/VanyaHome';
 
 async function safeFetch<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try {
@@ -16,8 +11,9 @@ async function safeFetch<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 export default async function HomePage() {
-  const [styles, collections, watchAndShop] = await Promise.all([
-    safeFetch(() => getPublicStyles(12), []),
+  const [menResult, womenResult, collections, watch] = await Promise.all([
+    safeFetch(() => searchStorefront({ gender: 'men', sort: 'newest', pageSize: 12 }), null),
+    safeFetch(() => searchStorefront({ gender: 'women', sort: 'newest', pageSize: 12 }), null),
     safeFetch(() => getPublicCollections(), []),
     safeFetch(() => getWatchAndShopFeed(), []),
   ]);
@@ -25,12 +21,12 @@ export default async function HomePage() {
   return (
     <>
       <VanyaGateway />
-      <Hero />
-      <ShopByCategory />
-      <ProductGrid title="New & Trending" styles={styles} />
-      <WatchAndShop items={watchAndShop} />
-      <CollectionsStrip collections={collections} />
-      <TrustPromises />
+      <VanyaHome
+        men={menResult?.hits ?? []}
+        women={womenResult?.hits ?? []}
+        collections={collections}
+        watch={watch}
+      />
     </>
   );
 }
