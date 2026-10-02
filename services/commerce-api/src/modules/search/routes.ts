@@ -65,7 +65,7 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
     const sort = buildSort(params.sort);
 
     try {
-      await fastify.searchIndex.ensureCompletePagination();
+      await fastify.searchIndex.ensureCompletePagination(false, params.page * params.pageSize);
       const results = await fastify.meilisearch.index<StyleSearchDocument>(STYLES_INDEX_UID).search(params.q ?? '', {
         filter: filter.length ? filter : undefined,
         sort,
