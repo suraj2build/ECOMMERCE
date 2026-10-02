@@ -12,17 +12,23 @@ if (!response.ok) throw new Error(`Catalog setup failed: ${response.status}`);
 const styles = await response.json();
 if (!styles[0]?.id) throw new Error('A real published, priced test product is required.');
 const product = `${base}/api/v1/storefront/products/${styles[0].id}`;
+const storefront = process.env.LOAD_TEST_STOREFRONT_URL;
+if (!storefront) throw new Error('LOAD_TEST_STOREFRONT_URL is required to test the rendered product route.');
 const reports = [];
 for (const connections of [100, 200]) {
   for (const [name, url] of [
     ['same-product', product],
+    ['product-page', `${storefront}/product/${styles[0].id}`],
     ['catalog', `${base}/api/v1/storefront/styles?take=24`],
     ['search', `${base}/api/v1/storefront/search?pageSize=24`],
   ]) {
     const result = await new Promise((resolve, reject) => {
       autocannon({ url, connections, duration: connections === 100 ? 30 : 15,
         verifyBody(body) {
-          try { const value = JSON.parse(body); return value.unavailable !== true && !value.error; }
+          try {
+            if (name === 'product-page') return body.includes('<html') && body.includes(styles[0].id);
+            const value = JSON.parse(body); return value.unavailable !== true && !value.error;
+          }
           catch { return false; }
         },
       }, (error, metrics) => error ? reject(error) : resolve(metrics));

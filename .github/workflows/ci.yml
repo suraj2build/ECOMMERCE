@@ -175,7 +175,7 @@ jobs:
             sleep 1
           done
           npm run test:e2e
-          LOAD_TEST_ALLOWED=test-environment LOAD_TEST_API_URL=http://localhost:4000 node scripts/go-live-read-load.mjs
+          LOAD_TEST_ALLOWED=test-environment LOAD_TEST_API_URL=http://localhost:4000 LOAD_TEST_STOREFRONT_URL=http://localhost:3000 node scripts/go-live-read-load.mjs
         env:
           NEXT_PUBLIC_API_URL: 'http://localhost:4000'
           # M11: the PDP E2E spec logs in as the seeded super admin to
