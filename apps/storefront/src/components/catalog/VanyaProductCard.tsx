@@ -1,8 +1,19 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import type { StorefrontSearchHit } from '@/lib/api';
+export interface VanyaProductCardData {
+  id: string;
+  name: string;
+  brandName: string;
+  thumbnailUrl: string | null;
+  mrp: number | string;
+  sellingPrice: number | string;
+  isMarkdown: boolean;
+  categoryName?: string;
+  colours?: string[];
+  inStock?: boolean;
+}
 
-export function VanyaProductCard({ product }: { product: StorefrontSearchHit }) {
+export function VanyaProductCard({ product }: { product: VanyaProductCardData }) {
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-[18px] border border-[#efebe4] bg-white transition-all duration-300 hover:-translate-y-1 hover:border-[#dfd9ce] hover:shadow-[0_16px_35px_-18px_rgba(35,30,26,.24)]">
       <Link href={`/product/${product.id}`} className="block">
@@ -25,7 +36,7 @@ export function VanyaProductCard({ product }: { product: StorefrontSearchHit }) 
                 Sale
               </span>
             ) : null}
-            {!product.inStock ? (
+            {product.inStock === false ? (
               <span className="rounded-full bg-[#181716]/90 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-white">
                 Out of stock
               </span>
@@ -37,13 +48,16 @@ export function VanyaProductCard({ product }: { product: StorefrontSearchHit }) 
           <div>
             <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.13em] text-[#6e6359]">
               <span className="truncate">{product.brandName}</span>
-              <span>{product.categoryName}</span>
+              {product.categoryName ? <span>{product.categoryName}</span> : null}
             </div>
             <h3 className="mt-1.5 line-clamp-2 text-sm font-medium leading-snug text-[#181716] transition-colors group-hover:text-[var(--color-primary)]">
               {product.name}
             </h3>
-            {product.colours.length > 0 ? (
-              <p className="mt-1 text-[11px] text-[#6e6359]">{product.colours.slice(0, 3).join(' · ')}{product.colours.length > 3 ? ` +${product.colours.length - 3}` : ''}</p>
+            {(product.colours?.length ?? 0) > 0 ? (
+              <p className="mt-1 text-[11px] text-[#6e6359]">
+                {product.colours!.slice(0, 3).join(' · ')}
+                {product.colours!.length > 3 ? ` +${product.colours!.length - 3}` : ''}
+              </p>
             ) : null}
           </div>
 
