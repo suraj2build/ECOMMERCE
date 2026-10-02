@@ -49,3 +49,4 @@ services/commerce-api/var/
 
 # Generated test-load measurements
 read-load-results.json
+checkout-contention-results.json
