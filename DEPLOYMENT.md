@@ -146,6 +146,33 @@ the API (default 1 = one load balancer; e.g. CDN + load balancer = 2).
 Per-IP rate limiting uses the client address that many hops back, and
 the API must not be reachable except through those proxies.
 
+### Storefront build and product-page cache
+
+Build the storefront only with its own script (`npm run build
+--workspace=apps/storefront`). It runs `next build` in production mode
+and fails if the product route cannot render products that did not
+exist at build time. A plain `next build` under any other `NODE_ENV`
+silently produces a storefront where every product page is a 404.
+
+Product pages are cached for up to 30 seconds per storefront instance.
+Set `STOREFRONT_REVALIDATE_URL` on the API (the storefront's
+`/api/revalidate/product` URL, reachable from the API) and the same
+random `STOREFRONT_REVALIDATE_SECRET` (32+ characters) on both the API
+and the storefront. The API then drops a product's page after publish,
+unpublish, archive, media and price changes. Without them, those
+changes appear within 30 seconds, and a product opened before it was
+published keeps showing "not found" for up to 30 seconds after publish.
+
+- More than one storefront instance: each keeps its own cache; use a
+  shared Next.js cache handler or call every instance.
+- A CDN or shared cache in front of the storefront: product pages are
+  sent with `s-maxage=30, stale-while-revalidate`; either bypass the
+  CDN cache for `/product/*` or purge it on the same events.
+- Capacity: one storefront process served ~1,100 cached product pages
+  per second in CI-class testing before newly arriving visitors queued
+  for seconds; size instances or CDN offload to expected traffic
+  (`acceptance/go-live/2026-10-02-readiness.md`).
+
 ### Upgrading an existing database: MFA secret backfill
 
 Staff MFA seeds written before M31 are plaintext; the application only
