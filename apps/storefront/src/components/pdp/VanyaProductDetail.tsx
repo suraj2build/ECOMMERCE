@@ -187,7 +187,7 @@ export function VanyaProductDetail({ product }: { product: ProductDetail }) {
             <button
               type="button"
               onClick={handleWishlist}
-              aria-label="Save to wishlist"
+              aria-label="Save"
               className="min-h-[50px] min-w-[50px] rounded-full border border-border bg-surface px-4 text-lg text-ink hover:border-ink"
             >
               ♡
