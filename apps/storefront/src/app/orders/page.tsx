@@ -19,7 +19,11 @@ export default function OrdersPage() {
 
   useEffect(() => {
     let hasIdentity = false;
-    try { hasIdentity = !!(localStorage.getItem('fcp_guest_session_id') || localStorage.getItem('fcp_customer_session')); } catch {\n      // Storage may be unavailable in hardened/privacy browser contexts; empty history remains a safe fallback.\n    }
+    try {
+      hasIdentity = !!(localStorage.getItem('fcp_guest_session_id') || localStorage.getItem('fcp_customer_session'));
+    } catch {
+      // Storage may be unavailable in hardened/privacy browser contexts; empty history remains a safe fallback.
+    }
     if (!hasIdentity) { setOrders([]); return; }
     listMyOrders().then(setOrders).catch((err) => setError(err instanceof Error ? err.message : 'Could not load your orders.'));
   }, []);
