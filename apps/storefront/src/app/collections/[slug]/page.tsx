@@ -1,30 +1,21 @@
 import { notFound } from 'next/navigation';
-import { getPublicCollection, type StorefrontSearchHit } from '@/lib/api';
-import { VanyaProductCard } from '@/components/catalog/VanyaProductCard';
+import { getPublicCollection } from '@/lib/api';
+import { VanyaProductCard, type VanyaProductCardData } from '@/components/catalog/VanyaProductCard';
 
 export default async function CollectionDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const collection = await getPublicCollection(slug);
   if (!collection) notFound();
 
-  const products: StorefrontSearchHit[] = collection.styles.map((style) => ({
+  const products: VanyaProductCardData[] = collection.styles.map((style) => ({
     id: style.id,
-    styleCode: style.styleCode,
     name: style.name,
     brandName: style.brandName,
-    categoryName: collection.name,
-    categorySlug: collection.slug,
-    gender: null,
-    colours: [],
-    sizes: [],
-    mrp: Number(style.mrp),
-    sellingPrice: Number(style.sellingPrice),
-    currency: 'INR',
-    isMarkdown: style.isMarkdown,
-    availableQuantity: 0,
-    inStock: true,
-    publishedAt: style.publishedAt ? new Date(style.publishedAt).getTime() : 0,
     thumbnailUrl: style.thumbnailUrl,
+    mrp: style.mrp,
+    sellingPrice: style.sellingPrice,
+    isMarkdown: style.isMarkdown,
+    categoryName: collection.name,
   }));
 
   return (
