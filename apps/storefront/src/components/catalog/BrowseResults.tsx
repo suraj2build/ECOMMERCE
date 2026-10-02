@@ -47,6 +47,7 @@ export function BrowseResults({
 
       <div className="mx-auto max-w-container px-gutter py-6 md:py-8">
         <form action={basePath} method="get" className="grid gap-2 rounded-[20px] border border-border bg-surface p-3 shadow-subtle sm:grid-cols-2 lg:grid-cols-6">
+          {query.gender && <input type="hidden" name="gender" value={query.gender} />}
           <label className="lg:col-span-2">
             <span className="sr-only">Search within products</span>
             <input name="q" defaultValue={query.q ?? ''} placeholder="Search within" className="min-h-[44px] w-full rounded-full border border-border bg-canvas px-4 text-sm text-ink" />

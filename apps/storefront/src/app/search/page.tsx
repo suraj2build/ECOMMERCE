@@ -10,9 +10,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const query = {
     q: one(raw.q), brand: one(raw.brand), color: one(raw.color), size: one(raw.size),
     sort: one(raw.sort), page: one(raw.page),
+    gender: ['men', 'women'].includes(one(raw.gender) ?? '') ? one(raw.gender) : undefined,
   };
   const result = await searchStorefront({
-    q: query.q, brand: query.brand, color: query.color, size: query.size,
+    q: query.q, brand: query.brand, color: query.color, size: query.size, gender: query.gender,
     sort: (query.sort as 'relevance' | 'price_asc' | 'price_desc' | 'newest' | undefined) ?? 'relevance',
     page: num(query.page) ?? 1, pageSize: 24,
   });

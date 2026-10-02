@@ -1,5 +1,15 @@
 # Build Plan
 
+## STATUS (2026-10-02): P2 VANYA STOREFRONT REPLACEMENT IMPLEMENTED — FINAL CI GATE IN PR #2.
+
+The Product Owner authorized replacement of the prior storefront presentation
+with `suraj2build/Stitch-Spark_Ai_Studio`, preserving its flow, colours and
+typography while retaining the existing production commerce APIs. The final
+header follows the supplied “Vanya Luxury Fashion Header.png” reference.
+See `acceptance/p2-vanya-storefront.md` for scope, repairs and verification.
+This records implementation, not independent certification or production
+deployment. The historical entries below retain their original dates.
+
 ## STATUS (2026-10-01): P1 D-1 / D-2 / D-3 / D-4 IMPLEMENTED — AWAITING INDEPENDENT REVIEW.
 
 > **2026-10-01: Product Owner decisions D-1 to D-4 implemented** on

@@ -1,11 +1,12 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProductDetail } from '@/lib/api';
 import { addToCart, addToWishlist } from '@/lib/cart';
 import { getStoredSession } from '@/lib/customer-auth';
 import { recordProductView } from '@/lib/account';
+import { useModalFocus } from '@/components/layout/useModalFocus';
 
 export function VanyaProductDetail({ product }: { product: ProductDetail }) {
   // Restore Customer 360's authenticated-only history in the new PDP.
@@ -41,6 +42,8 @@ export function VanyaProductDetail({ product }: { product: ProductDetail }) {
   const [wishlistMessage, setWishlistMessage] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
+  const sizeGuideRef = useRef<HTMLDivElement>(null);
+  useModalFocus(sizeGuideOpen, sizeGuideRef, () => setSizeGuideOpen(false));
 
   const variants = product.variants.filter((variant) => variant.colourId === selectedColourId);
   const selectedVariant = variants.find((variant) => variant.sizeId === selectedSizeId) ?? null;
@@ -227,6 +230,8 @@ export function VanyaProductDetail({ product }: { product: ProductDetail }) {
       {sizeGuideOpen && product.sizeChart && (
         <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/55 p-0 sm:items-center sm:p-6" role="presentation">
           <div
+            ref={sizeGuideRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-labelledby="size-guide-title"

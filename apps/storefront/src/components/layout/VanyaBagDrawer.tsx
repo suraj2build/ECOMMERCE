@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { getCart, removeCartItem, updateCartItemQuantity, type CartView } from '@/lib/cart';
+import { useModalFocus } from './useModalFocus';
 
 export function VanyaBagDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalFocus(open, dialogRef, onClose);
   const [cart, setCart] = useState<CartView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingSku, setPendingSku] = useState<string | null>(null);
@@ -13,18 +16,15 @@ export function VanyaBagDrawer({ open, onClose }: { open: boolean; onClose: () =
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setCart(null);
+    setError(null);
     getCart()
       .then((next) => { if (!cancelled) setCart(next); })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load your bag.'); });
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKeyDown);
-    document.body.style.overflow = 'hidden';
     return () => {
       cancelled = true;
-      window.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = '';
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -46,6 +46,8 @@ export function VanyaBagDrawer({ open, onClose }: { open: boolean; onClose: () =
     <div className="fixed inset-0 z-[70] flex justify-end">
       <button type="button" aria-label="Close shopping bag" onClick={onClose} className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Shopping bag"
@@ -104,7 +106,7 @@ export function VanyaBagDrawer({ open, onClose }: { open: boolean; onClose: () =
         {cart && cart.items.length > 0 ? (
           <div className="border-t border-[#e6ddd0] bg-white p-5">
             <div className="flex justify-between text-sm text-[#5f554c]"><span>Subtotal ({cart.itemCount} items)</span><strong className="text-[#181716]">&#8377;{cart.subtotal}</strong></div>
-            <p className="mt-2 text-[11px] leading-5 text-[#6e6359]">Promotions, shipping, loyalty and store credit are calculated by the authoritative checkout service.</p>
+            <p className="mt-2 text-[11px] leading-5 text-[#6e6359]">Discounts, shipping, loyalty and store credit are calculated at checkout.</p>
             {cart.hasBlockingChanges ? <p role="alert" className="mt-2 text-xs text-danger">Resolve unavailable or changed items before checkout.</p> : null}
             <Link
               href="/checkout"

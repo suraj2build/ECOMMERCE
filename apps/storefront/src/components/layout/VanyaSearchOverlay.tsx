@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { searchStorefrontLive, type StorefrontSearchHit } from '@/lib/api';
 import { useDepartment } from './DepartmentContext';
+import { useModalFocus } from './useModalFocus';
 
 export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
@@ -14,23 +15,13 @@ export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: 
   const [results, setResults] = useState<StorefrontSearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKeyDown);
-    const focusFrame = window.requestAnimationFrame(() => searchInputRef.current?.focus());
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.cancelAnimationFrame(focusFrame);
-      document.body.style.overflow = '';
-    };
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalFocus(open, dialogRef, onClose, searchInputRef);
 
   useEffect(() => {
     if (!open || query.trim().length < 2) {
       setResults([]);
+      setLoading(false);
       return;
     }
     let cancelled = false;
@@ -50,13 +41,16 @@ export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: 
     event.preventDefault();
     const value = query.trim();
     onClose();
-    router.push(value ? '/search?q=' + encodeURIComponent(value) : '/search');
+    const params = new URLSearchParams();
+    if (value) params.set('q', value);
+    if (department) params.set('gender', department);
+    router.push('/search' + (params.size ? '?' + params.toString() : ''));
   }
 
   return (
     <div className="fixed inset-0 z-[80]">
       <button type="button" aria-label="Close search" onClick={onClose} className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
-      <section role="dialog" aria-modal="true" aria-label="Search VANYA" className="relative z-10 mx-auto mt-0 max-h-[92svh] w-full max-w-4xl overflow-y-auto rounded-b-[28px] bg-[#faf8f5] p-5 shadow-2xl sm:p-8">
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Search VANYA" className="relative z-10 mx-auto mt-0 max-h-[92svh] w-full max-w-4xl overflow-y-auto rounded-b-[28px] bg-[#faf8f5] p-5 shadow-2xl sm:p-8">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Discover</p>
@@ -73,7 +67,7 @@ export function VanyaSearchOverlay({ open, onClose }: { open: boolean; onClose: 
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search kurtas, sarees, linen, colours…"
-            className="min-h-[52px] flex-1 rounded-full border border-[#d8d0c6] bg-white px-5 text-base text-[#181716] outline-none focus:border-[#181716]"
+            className="min-h-[52px] min-w-0 flex-1 rounded-full border border-[#d8d0c6] bg-white px-5 text-base text-[#181716] outline-none focus:border-[#181716]"
           />
           <button type="submit" className="rounded-full bg-[#181716] px-6 text-xs font-semibold uppercase tracking-[0.12em] text-white">Search</button>
         </form>

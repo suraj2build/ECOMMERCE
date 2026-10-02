@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ProductDetail, ShoppableMediaSummary } from '@/lib/api';
 import { getProductDetailLive, recordWatchAndShopEvent } from '@/lib/api';
 import { addToCart, addToWishlist, getGuestSessionId } from '@/lib/cart';
+import { useModalFocus } from '@/components/layout/useModalFocus';
 
 export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] }) {
   const [preview, setPreview] = useState<ProductDetail | null>(null);
@@ -13,6 +14,8 @@ export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] })
   const [selectedColourId, setSelectedColourId] = useState<string | null>(null);
   const [selectedSizeId, setSelectedSizeId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const previewRef = useRef<HTMLElement>(null);
+  useModalFocus(preview !== null, previewRef, () => setPreview(null));
 
   useEffect(() => {
     const recorded = new Set<string>();
@@ -167,7 +170,7 @@ export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] })
       {preview ? (
         <div className="fixed inset-0 z-50 flex justify-end">
           <button type="button" aria-label="Close product preview" onClick={() => setPreview(null)} className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
-          <section role="dialog" aria-modal="true" aria-label="Product preview" className="relative z-10 h-full w-full max-w-lg overflow-y-auto bg-[#faf8f5] p-5 shadow-2xl sm:p-7">
+          <section ref={previewRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Product preview" className="relative z-10 h-full w-full max-w-lg overflow-y-auto bg-[#faf8f5] p-5 shadow-2xl sm:p-7">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-primary)]">Shop the story</p>

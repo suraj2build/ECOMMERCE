@@ -56,6 +56,10 @@ export async function verifyOtp(mobile: string, code: string): Promise<CustomerS
   const data = (await res.json()) as { accessToken: string; customerId: string };
   const session: CustomerSession = { accessToken: data.accessToken, customerId: data.customerId };
   storeSession(session);
-  void mergeGuestCartAndWishlist(session.accessToken);
+  window.dispatchEvent(new Event('fcp:customer-session-updated'));
+  void mergeGuestCartAndWishlist(session.accessToken).catch(() => {}).finally(() => {
+    window.dispatchEvent(new Event('fcp:cart-updated'));
+    window.dispatchEvent(new Event('fcp:wishlist-updated'));
+  });
   return session;
 }

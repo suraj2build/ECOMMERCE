@@ -23,6 +23,8 @@ export function DepartmentProvider({ children }: { children: React.ReactNode }) 
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored === 'men' || stored === 'women') setDepartment(stored);
+    } catch {
+      // Department choice still works when browser storage is blocked.
     } finally {
       setHydrated(true);
     }
@@ -37,11 +39,11 @@ export function DepartmentProvider({ children }: { children: React.ReactNode }) 
     hydrated,
     chooseDepartment(next) {
       setDepartment(next);
-      localStorage.setItem(STORAGE_KEY, next);
+      try { localStorage.setItem(STORAGE_KEY, next); } catch { /* Keep the in-memory choice. */ }
     },
     clearDepartment() {
       setDepartment(null);
-      localStorage.removeItem(STORAGE_KEY);
+      try { localStorage.removeItem(STORAGE_KEY); } catch { /* The gateway remains usable. */ }
     },
   }), [department, hydrated]);
 

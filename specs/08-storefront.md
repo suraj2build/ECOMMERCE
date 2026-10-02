@@ -90,3 +90,28 @@ assumption:
 - This section documents current status only and does **not**
   authorize any M09 implementation work; M09 remains gated on a
   separate, explicit **START BUILD** instruction per `CLAUDE.md` §0.
+
+
+## P2 design authority update — 2026-10-02
+
+The Product Owner explicitly authorized a full storefront presentation
+replacement with the VANYA AI Studio design, followed by continued
+implementation and verification. `suraj2build/Stitch-Spark_Ai_Studio`
+(source reviewed at `24b2399c593ca739bb035293bc81b2cbed036288`) supersedes
+`stitch-spark-cart` as the visual reference. The supplied
+“Vanya Luxury Fashion Header.png” is the authority for the final header:
+utility bar, separate centered wordmark, then aligned navigation/search/actions.
+
+Preserve Playfair Display/Inter, men's sand/brown and women's orchid palettes,
+the department gateway, editorial browsing, product selection, and shoppable
+media. Implement these in the existing Next.js storefront against its live
+APIs. AI Studio mock prices, loyalty balances, fabricated checkout results,
+delivery/tailoring promises and other prototype business rules are not adopted.
+Search/category filters must preserve the selected department through submit,
+sort and pagination. Header bag/wishlist/rewards counters use the existing APIs.
+
+This supersedes the earlier Lovable visual-reference choice only. The approved
+commerce-domain specs and security/payment boundaries remain authoritative.
+Watch & Shop is the existing implemented M25 feature under
+`specs/24-marketing.md`; the earlier M09-era unresolved-feature note is historical.
+See `acceptance/p2-vanya-storefront.md` for the implementation/verification record.

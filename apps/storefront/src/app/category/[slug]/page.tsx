@@ -16,11 +16,11 @@ export default async function CategoryPage({ params, searchParams }: { params: P
   const { slug } = await params;
   const raw = await searchParams;
   const preset = SPECIAL[slug];
-  const query = { q: one(raw.q), brand: one(raw.brand), color: one(raw.color), size: one(raw.size), sort: one(raw.sort), page: one(raw.page) };
+  const query = { q: one(raw.q), brand: one(raw.brand), color: one(raw.color), size: one(raw.size), sort: one(raw.sort), page: one(raw.page), gender: preset?.gender ?? (['men', 'women'].includes(one(raw.gender) ?? '') ? one(raw.gender) : undefined) };
   const result = await searchStorefront({
     q: query.q,
     category: preset ? undefined : slug,
-    gender: preset?.gender,
+    gender: query.gender,
     markdown: preset?.markdown,
     brand: query.brand,
     color: query.color,

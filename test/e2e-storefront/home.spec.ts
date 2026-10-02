@@ -72,4 +72,57 @@ test.describe('Storefront Home', () => {
       await expect(page.locator('body')).not.toContainText('404');
     }
   });
+
+  test('reference header separates the brand and navigation without overlap at desktop and mobile widths', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('vanya_department', 'men'));
+    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('/');
+      const brand = page.getByRole('link', { name: 'VANYA home' });
+      await expect(brand).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'men');
+      const dimensions = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+      expect(dimensions.content, `overflow at ${width}px`).toBeLessThanOrEqual(dimensions.width + 1);
+      if (width >= 1024) {
+        const nav = await page.getByRole('navigation', { name: 'Primary', exact: true }).boundingBox();
+        const logo = await brand.boundingBox();
+        const search = await page.getByRole('button', { name: 'Search', exact: true }).boundingBox();
+        expect(nav && logo && search).toBeTruthy();
+        expect(logo!.y + logo!.height).toBeLessThanOrEqual(nav!.y);
+        expect(nav!.x + nav!.width).toBeLessThanOrEqual(search!.x);
+      }
+    }
+  });
+
+  test('mobile search and bag contain keyboard focus; full search preserves the selected department', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(() => localStorage.setItem('vanya_department', 'men'));
+    await page.goto('/');
+    const trigger = page.getByRole('button', { name: 'Search', exact: true });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'men');
+    await trigger.click();
+    const search = page.getByRole('dialog', { name: 'Search VANYA' });
+    await expect(search.getByLabel('Search products')).toBeFocused();
+    await search.getByRole('button', { name: 'Close search', exact: true }).focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(search.getByRole('link', { name: 'Watch & Shop', exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(search).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    const bagTrigger = page.getByRole('button', { name: /Shopping bag/ });
+    await bagTrigger.click();
+    const bag = page.getByRole('dialog', { name: 'Shopping bag', exact: true });
+    await expect(bag.getByRole('button', { name: 'Close bag', exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(bagTrigger).toBeFocused();
+
+    await trigger.click();
+    await search.getByLabel('Search products').fill('linen');
+    await search.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page).toHaveURL(/\/search\?q=linen&gender=men$/);
+    await expect(page.locator('form input[name="gender"]')).toHaveValue('men');
+    await page.getByRole('button', { name: 'Apply filters' }).click();
+    await expect(page).toHaveURL(/gender=men/);
+  });
 });
