@@ -148,11 +148,11 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
     return service.listGiftCards(q);
   });
 
-  fastify.get('/admin/catalog/collections', auth('product:read'), async () => service.listCollections());
+  fastify.get('/admin/catalog/collections', auth('product:read'), async (request) => service.listCollections(z.object(page).parse(request.query)));
 
   fastify.get('/admin/catalog/collections/:id', auth('product:read'), async (request) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const collection = await service.getCollection(id);
+    const collection = await service.getCollection(id, z.object(page).parse(request.query));
     if (!collection) throw new NotFoundError('Collection', id);
     return collection;
   });

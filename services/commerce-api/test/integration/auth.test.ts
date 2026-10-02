@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { authenticator } from 'otplib';
 import { createTestApp } from '../helpers/app.js';
@@ -20,6 +20,7 @@ describe('Staff auth: password + MFA (AUTH-002)', () => {
     await resetDatabase();
     await seedRbac();
   });
+  afterEach(() => { vi.restoreAllMocks(); });
 
   async function createStaff(roleKey: string, email: string) {
     const staffUser = await testPrisma.staffUser.create({
@@ -42,6 +43,10 @@ describe('Staff auth: password + MFA (AUTH-002)', () => {
   });
 
   it('allows an MFA-required role to bootstrap: first login succeeds pre-enrollment so it can reach /mfa/enroll', async () => {
+    // This tests the enrollment/login flow, not a TOTP expiry boundary.
+    // Password hashing can cross a 30-second boundary after code creation.
+    // Freeze only Date.now; real I/O/timers and production MFA stay intact.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now());
     await createStaff('SUPER_ADMIN', 'bootstrap-admin@example.com');
     const loginRes = await app.inject({
       method: 'POST',

@@ -260,7 +260,7 @@ export class GrnService {
       include: { lines: true },
       take: params.take ?? 50,
       skip: params.skip ?? 0,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
     });
   }
 }

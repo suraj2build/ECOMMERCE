@@ -72,35 +72,44 @@ export class CrossSellService {
 
     const overrides = await this.prisma.crossSellOverride.findMany({
       where: { styleId },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     });
 
+    const atDate = new Date();
+    const eligiblePrice = {
+      colourId: null,
+      effectiveFrom: { lte: atDate },
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: atDate } }],
+    };
+    // Filter publishability in SQL before limiting; no per-candidate
+    // catalog/price lookups and no unpriced rows crowding out valid picks.
+    const manual = await this.prisma.style.findMany({
+      where: {
+        id: { in: overrides.map((o) => o.relatedStyleId), not: styleId },
+        lifecycleState: 'PUBLISHED', prices: { some: eligiblePrice },
+      },
+      select: { id: true },
+    });
+    const eligibleManual = new Set(manual.map((s) => s.id));
     const picks: { id: string; source: 'MANUAL' | 'RULE' }[] = [];
     const seen = new Set<string>([styleId]);
-
     for (const o of overrides) {
       if (picks.length >= limit) break;
-      if (seen.has(o.relatedStyleId)) continue;
-      const entry = await this.catalog.getCatalogEntry(o.relatedStyleId);
-      if (!entry.isPublishable) continue;
+      if (!eligibleManual.has(o.relatedStyleId) || seen.has(o.relatedStyleId)) continue;
       picks.push({ id: o.relatedStyleId, source: 'MANUAL' });
       seen.add(o.relatedStyleId);
     }
-
     if (picks.length < limit) {
-      const ruleCandidates = await this.prisma.style.findMany({
-        where: { categoryId: style.categoryId, lifecycleState: 'PUBLISHED', id: { notIn: [...seen] } },
-        orderBy: { publishedAt: 'desc' },
-        take: (limit - picks.length) * 2, // over-fetch since some published styles may lack an active price
+      const candidates = await this.prisma.style.findMany({
+        where: {
+          categoryId: style.categoryId, lifecycleState: 'PUBLISHED',
+          id: { notIn: [...seen] }, prices: { some: eligiblePrice },
+        },
+        orderBy: [{ publishedAt: 'desc' }, { id: 'asc' }],
+        take: limit - picks.length,
+        select: { id: true },
       });
-      for (const candidate of ruleCandidates) {
-        if (picks.length >= limit) break;
-        if (seen.has(candidate.id)) continue;
-        const activePrice = await this.catalog.getActivePrice(candidate.id);
-        if (!activePrice) continue;
-        picks.push({ id: candidate.id, source: 'RULE' });
-        seen.add(candidate.id);
-      }
+      for (const candidate of candidates) picks.push({ id: candidate.id, source: 'RULE' });
     }
 
     if (picks.length === 0) return [];
@@ -110,12 +119,13 @@ export class CrossSellService {
       include: { brand: true, media: { where: { colourId: null }, orderBy: { sortOrder: 'asc' }, take: 1 } },
     });
     const byId = new Map(styles.map((s) => [s.id, s]));
+    const prices = await this.catalog.getActivePricesByStyleIds(picks.map((p) => p.id), atDate);
 
     const output = [];
     for (const pick of picks) {
       const s = byId.get(pick.id);
       if (!s) continue;
-      const activePrice = await this.catalog.getActivePrice(s.id);
+      const activePrice = prices.get(s.id);
       if (!activePrice) continue;
       output.push({
         id: s.id,

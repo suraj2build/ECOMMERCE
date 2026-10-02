@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ActionMessage, Can, DataState, DataTable, DateText, PageHeader, Section, StatusBadge, TextField } from '@/components/ui';
-import { apiSend } from '@/lib/api';
+import { ActionMessage, Can, DataState, DataTable, DateText, PageHeader, Pagination, Section, StatusBadge, TextField } from '@/components/ui';
+import { apiSend, qs, type Page } from '@/lib/api';
 import { useAction, useApi } from '@/lib/session';
 
 interface CollectionRow {
@@ -17,7 +17,9 @@ interface CollectionRow {
 }
 
 export default function CollectionsPage() {
-  const collections = useApi<CollectionRow[]>('/admin/catalog/collections');
+  const [skip, setSkip] = useState(0);
+  const take = 50;
+  const collections = useApi<Page<CollectionRow>>(`/admin/catalog/collections${qs({ take, skip })}`);
   const action = useAction();
   const [form, setForm] = useState({ name: '', slug: '', description: '' });
 
@@ -56,10 +58,11 @@ export default function CollectionsPage() {
         </Section>
       </Can>
       <DataState state={collections}>
-        {(rows) => (
+        {(data) => (
+          <>
           <DataTable
             caption="Collections"
-            rows={rows}
+            rows={data.items}
             rowKey={(r) => r.id}
             empty="No collections yet."
             columns={[
@@ -70,6 +73,8 @@ export default function CollectionsPage() {
               { header: 'Created', cell: (r) => <DateText value={r.createdAt} /> },
             ]}
           />
+          <Pagination total={data.total} take={take} skip={skip} onChange={setSkip} />
+          </>
         )}
       </DataState>
     </div>

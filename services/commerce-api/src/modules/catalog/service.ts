@@ -345,10 +345,14 @@ export class CatalogService {
     const take = Math.min(params.take ?? 24, 60);
     const skip = params.skip ?? 0;
 
+    const atDate = new Date();
     const candidates = await this.prisma.style.findMany({
-      where: { lifecycleState: 'PUBLISHED' },
-      orderBy: { publishedAt: 'desc' },
-      take: take * 2, // over-fetch since some published styles may lack an active price
+      where: {
+        lifecycleState: 'PUBLISHED',
+        prices: { some: { colourId: null, effectiveFrom: { lte: atDate }, OR: [{ effectiveTo: null }, { effectiveTo: { gte: atDate } }] } },
+      },
+      orderBy: [{ publishedAt: 'desc' }, { id: 'asc' }],
+      take,
       skip,
       include: {
         media: { where: { colourId: null }, orderBy: { sortOrder: 'asc' }, take: 1 },
@@ -359,7 +363,7 @@ export class CatalogService {
     // M32 Performance/Scale finding: previously one getActivePrice() call
     // PER style via Promise.all - a genuine N+1 on this route's own hot
     // path (every home/PLP page load). One batched query instead.
-    const priceByStyleId = await this.getActivePricesByStyleIds(candidates.map((s) => s.id));
+    const priceByStyleId = await this.getActivePricesByStyleIds(candidates.map((s) => s.id), atDate);
 
     return candidates
       .map((style) => ({ style, activePrice: priceByStyleId.get(style.id) ?? null }))

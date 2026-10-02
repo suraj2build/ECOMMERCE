@@ -68,7 +68,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Wait for Meilisearch
@@ -132,10 +132,20 @@ jobs:
         run: npm run typecheck
 
       - name: Build
-        run: npm run build
+        env:
+          # Next uses this value when deciding whether unbuilt dynamic
+          # paths may be generated at runtime. NODE_ENV=test produces a
+          # missing fallback and 404s for every future product ID.
+          NODE_ENV: production
+        run: |
+          npm run build
+          node -e "const manifest = require('./apps/storefront/.next/prerender-manifest.json'); if (manifest.dynamicRoutes['/product/[styleId]']?.fallback !== null) throw new Error('PDP must permit blocking generation for every future style');"
 
       - name: Unit tests
         run: npm run test --workspace=services/commerce-api
+
+      - name: Read-load transport regression tests
+        run: node --test test/read-load/measure.test.mjs
 
       - name: Integration tests (real Postgres + Redis)
         run: npm run test:integration --workspace=services/commerce-api
@@ -151,30 +161,38 @@ jobs:
           SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
           SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      - name: Provision Chromium for real browser tests
+        timeout-minutes: 6
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+            google-chrome --version
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       # API-level smoke check (playwright.config.ts project "api-smoke")
       # plus real-browser storefront checks (project "storefront", M09+)
       # against the production builds of both services.
       - name: E2E smoke (start API + storefront, run Playwright)
         run: |
-          PORT=4000 npm run dev:api &
+          PORT=4000 npm run start --workspace=services/commerce-api &
           for i in $(seq 1 30); do
             curl -sf http://localhost:4000/health && break
             sleep 1
           done
-          PORT=3000 npm run start --workspace=apps/storefront &
+          NODE_ENV=production PORT=3000 npm run start --workspace=apps/storefront &
           for i in $(seq 1 30); do
             curl -sf http://localhost:3000/ && break
             sleep 1
           done
-          PORT=3001 npm run start --workspace=apps/admin &
+          NODE_ENV=production PORT=3001 npm run start --workspace=apps/admin &
           for i in $(seq 1 30); do
             curl -sf http://localhost:3001/login && break
             sleep 1
           done
           npm run test:e2e
+          LOAD_TEST_ALLOWED=test-environment LOAD_TEST_API_URL=http://localhost:4000 LOAD_TEST_STOREFRONT_URL=http://localhost:3000 node scripts/go-live-read-load.mjs
         env:
           NEXT_PUBLIC_API_URL: 'http://localhost:4000'
           # M11: the PDP E2E spec logs in as the seeded super admin to
@@ -203,3 +221,125 @@ jobs:
           # lint-typecheck-build-test job above, so rate-limiting.test.ts
           # still proves the real, tighter limits.
           AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: '1000'
+
+      - name: Upload read-load measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: read-load-results
+          path: read-load-results.json
+          if-no-files-found: ignore
+
+  commerce-api-image:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fcp_app
+          POSTGRES_PASSWORD: fcp_dev_password
+          POSTGRES_DB: fcp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fcp_app -d fcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production API container from a clean context
+        run: docker build --file infra/commerce-api.Dockerfile --tag fcp-api:ci .
+      - name: Verify non-root entrypoint, imports and native Prisma database query
+        run: |
+          docker run --rm --network host --env DATABASE_URL --entrypoint node fcp-api:ci --input-type=module -e 'import { existsSync, readdirSync } from "node:fs"; if (!existsSync("dist/index.js")) throw new Error("Missing API entrypoint"); if (!readdirSync("../../packages/db/generated/client").some(name => name.endsWith(".so.node"))) throw new Error("Missing Prisma engine"); const { PrismaClient } = await import("@fcp/db"); await import("@fcp/config"); await import("@fcp/shared"); if (process.getuid() === 0) throw new Error("Runtime must not be root"); const client = new PrismaClient(); try { const [row] = await client.$queryRawUnsafe("SELECT 1 AS healthy"); if (row.healthy !== 1) throw new Error("Native Prisma query failed"); } finally { await client.$disconnect(); }'
+
+  read-load-investigation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fcp_app
+          POSTGRES_PASSWORD: fcp_dev_password
+          POSTGRES_DB: fcp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fcp_app -d fcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # M10 search/discovery (ADR-0006). No --health-cmd: the distroless
+      # Meilisearch image has no shell/curl to exec a healthcheck with, so
+      # readiness is polled from the host instead (see "Wait for
+      # Meilisearch" step below), matching how the E2E step already waits
+      # on the API/storefront ports.
+      meilisearch:
+        image: getmeili/meilisearch:v1.10
+        env:
+          MEILI_NO_ANALYTICS: 'true'
+          MEILI_ENV: development
+        ports:
+          - 7700:7700
+
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply migrations to a clean database
+        run: npm run db:migrate:deploy
+      - name: Build production apps
+        env:
+          NODE_ENV: production
+        run: npm run build
+      - name: Read-load transport regression tests
+        run: node --test test/read-load/measure.test.mjs
+      - name: Seed test-relevant reference data
+        run: npm run db:seed
+        env:
+          SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
+          SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
+      - name: Native read load against compiled API and production storefront
+        run: |
+          PORT=4000 npm run start --workspace=services/commerce-api &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4000/health && break
+            sleep 1
+          done
+          curl -sf http://localhost:4000/health
+          LOAD_TEST_ALLOWED=test-environment LOAD_TEST_API_URL=http://localhost:4000 node scripts/provision-read-load-product.mjs
+          NODE_ENV=production PORT=3000 npm run start --workspace=apps/storefront &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/ && break
+            sleep 1
+          done
+          curl -sf http://localhost:3000/ >/dev/null
+          LOAD_TEST_ALLOWED=test-environment LOAD_TEST_API_URL=http://localhost:4000 LOAD_TEST_STOREFRONT_URL=http://localhost:3000 node scripts/go-live-read-load.mjs
+        env:
+          NEXT_PUBLIC_API_URL: 'http://localhost:4000'
+          SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
+          SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
+
+      - name: Upload targeted read-load measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: read-load-investigation-results
+          path: read-load-results.json
+          if-no-files-found: ignore

@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { StylePicker, type StyleOption } from '@/components/pickers';
-import { ActionMessage, Can, DataState, DataTable, Ident, PageHeader, Section, StatusBadge } from '@/components/ui';
-import { apiSend } from '@/lib/api';
+import { ActionMessage, Can, DataState, DataTable, Ident, PageHeader, Pagination, Section, StatusBadge } from '@/components/ui';
+import { apiSend, qs } from '@/lib/api';
 import { useAction, useApi } from '@/lib/session';
 
 interface CollectionDetail {
@@ -14,12 +14,15 @@ interface CollectionDetail {
   slug: string;
   description: string | null;
   isActive: boolean;
+  _count: { styles: number };
   styles: Array<{ style: { id: string; styleCode: string; name: string; lifecycleState: string } }>;
 }
 
 export default function CollectionDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const collection = useApi<CollectionDetail>(`/admin/catalog/collections/${id}`);
+  const [skip, setSkip] = useState(0);
+  const take = 50;
+  const collection = useApi<CollectionDetail>(`/admin/catalog/collections/${id}${qs({ take, skip })}`);
   const action = useAction();
   const [style, setStyle] = useState<StyleOption | null>(null);
 
@@ -107,6 +110,7 @@ export default function CollectionDetailPage() {
               },
             ]}
           />
+          <Pagination total={c._count.styles} take={take} skip={skip} onChange={setSkip} />
         </div>
       )}
     </DataState>

@@ -395,8 +395,10 @@ export class OrderService {
       // invoiceStatus/invoiceAttempts and reconcilePendingInvoices()
       // will pick it up again on its next sweep - never silently lost.
       await this.prisma.order
-        .update({
-          where: { id: orderId },
+        .updateMany({
+          // A failed replica must not overwrite another replica's
+          // already-successful durable invoice link/status.
+          where: { id: orderId, invoiceId: null },
           data: { invoiceStatus: 'FAILED', invoiceFailureReason: message, invoiceAttempts: { increment: 1 } },
         })
         .catch((updateErr) => this.fastify.log.error({ updateErr, orderId }, 'Failed to durably record invoice failure'));
@@ -405,7 +407,7 @@ export class OrderService {
   }
 
   /**
-   * Callable directly or by a future scheduler (same shape as
+   * Called by server maintenance or directly (same shape as
    * InventoryService.expireStaleReservations()) - driven entirely by
    * durable database state (`invoiceId IS NULL AND invoiceStatus IN
    * (PENDING, FAILED)`), so recovery survives a process restart with no
@@ -413,21 +415,28 @@ export class OrderService {
    * one order's failure never blocks another's recovery.
    */
   async reconcilePendingInvoices(): Promise<{ attempted: number; succeeded: number; failed: number }> {
-    const pending = await this.prisma.order.findMany({
-      where: { invoiceId: null, invoiceStatus: { in: ['PENDING', 'FAILED'] } },
-    });
-
+    let cursor: string | undefined;
+    let attempted = 0;
     let succeeded = 0;
     let failed = 0;
-    for (const order of pending) {
-      try {
-        await this.retryOrderInvoice(order.id);
-        succeeded += 1;
-      } catch {
-        failed += 1;
+    for (;;) {
+      const pending = await this.prisma.order.findMany({
+        where: { invoiceId: null, invoiceStatus: { in: ['PENDING', 'FAILED'] }, ...(cursor ? { id: { gt: cursor } } : {}) },
+        orderBy: { id: 'asc' }, take: 100,
+      });
+      if (pending.length === 0) break;
+      attempted += pending.length;
+      for (const order of pending) {
+        try {
+          await this.retryOrderInvoice(order.id);
+          succeeded += 1;
+        } catch {
+          failed += 1;
+        }
       }
+      cursor = pending[pending.length - 1]!.id;
     }
-    return { attempted: pending.length, succeeded, failed };
+    return { attempted, succeeded, failed };
   }
 
   /**

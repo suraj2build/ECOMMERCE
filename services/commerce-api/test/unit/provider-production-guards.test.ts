@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { enterProductionEnv } from '../helpers/production-env.js';
 import { resolveShippingProvider } from '../../src/modules/shipping/provider.js';
 import { getMarketingProvider } from '../../src/modules/marketing/provider.js';
+import { ConsoleOtpProvider } from '../../src/modules/auth/otp-provider.js';
 
 /**
  * M31 Security Hardening (5I) - proves resolveShippingProvider and
@@ -25,6 +26,14 @@ describe('Provider production guards (M31)', () => {
   function asProduction() {
     restoreEnv = enterProductionEnv();
   }
+
+  it('never reports console-only OTP delivery as successful in production', async () => {
+    asProduction();
+    let logged = false;
+    const provider = new ConsoleOtpProvider({ info: () => { logged = true; } });
+    await expect(provider.send('9999999999', '123456')).rejects.toThrow('configure a real SMS provider');
+    expect(logged).toBe(false);
+  });
 
   describe('resolveShippingProvider', () => {
     it('refuses to resolve MOCK in production', () => {

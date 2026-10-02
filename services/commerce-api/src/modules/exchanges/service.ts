@@ -822,15 +822,16 @@ export class ExchangeService {
     return this.prisma.exchange.findMany({ where: { orderId: { in: orderIds } }, orderBy: { createdAt: 'desc' } });
   }
 
-  async listPendingWarehouseWork(status?: ExchangeStatus): Promise<Exchange[]> {
+  async listPendingWarehouseWork(status?: ExchangeStatus, page: { take?: number; skip?: number } = {}): Promise<Exchange[]> {
     return this.prisma.exchange.findMany({
       // REPLACEMENT_ALLOCATED still needs staff action (an explicit
       // markReplacementFulfilled confirmation - finding 3), so it stays
       // in the default "pending work" set alongside the warehouse-floor
       // statuses.
       where: status ? { status } : { status: { in: ['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'REPLACEMENT_ALLOCATED'] } },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: Math.min(page.take ?? 100, 200),
+      skip: page.skip ?? 0,
     });
   }
 }

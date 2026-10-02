@@ -12,18 +12,19 @@ const ENTRY_LABEL: Record<LoyaltyLedgerEntry['type'], string> = {
 };
 
 export default function LoyaltyPage() {
+  const [skip, setSkip] = useState(0);
   const [balance, setBalance] = useState<LoyaltyBalance | null>(null);
   const [ledger, setLedger] = useState<LoyaltyLedgerEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([getLoyaltyBalance(), getLoyaltyLedger()])
+    Promise.all([getLoyaltyBalance(), getLoyaltyLedger(skip)])
       .then(([balanceData, ledgerData]) => {
         setBalance(balanceData);
         setLedger(ledgerData);
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Could not load your loyalty points.'));
-  }, []);
+  }, [skip]);
 
   return (
     <section>
@@ -75,6 +76,7 @@ export default function LoyaltyPage() {
               ))}
             </ul>
           )}
+          <nav aria-label="Loyalty history pages" className="mt-4 flex gap-4"><button disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - 200))}>Previous</button><button disabled={!ledger || ledger.length < 200} onClick={() => setSkip(skip + 200)}>Next</button></nav>
         </>
       )}
     </section>

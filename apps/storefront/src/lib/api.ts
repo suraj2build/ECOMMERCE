@@ -311,10 +311,8 @@ export async function searchStorefrontLive(params: {
 // publish/unpublish, so it pages through the SAME public/publish-gated
 // `getPublicStyles` read every other public page uses (never a second,
 // divergent "all styles" query) rather than duplicating catalog logic.
-// SITEMAP_MAX_STYLES bounds worst-case generation cost - an engineering
-// default (50 pages x 60 = 3000 published SKUs), not a business limit.
+// Fetch bounded pages until exhausted; catalog size is not a cutoff.
 const SITEMAP_PAGE_SIZE = 60;
-const SITEMAP_MAX_STYLES = 3000;
 
 // Deliberately bypasses the shared `apiGet` cache (used by
 // `getPublicStyles` for ordinary page rendering, where a short cache is
@@ -331,11 +329,12 @@ async function fetchStylesPageUncached(take: number, skip: number): Promise<Publ
 export async function getAllPublicStylesForSitemap(): Promise<PublicStyleSummary[]> {
   const all: PublicStyleSummary[] = [];
   let skip = 0;
-  while (all.length < SITEMAP_MAX_STYLES) {
+  let hasMore = true;
+  while (hasMore) {
     const page = await fetchStylesPageUncached(SITEMAP_PAGE_SIZE, skip);
     if (page.length === 0) break;
     all.push(...page);
-    if (page.length < SITEMAP_PAGE_SIZE) break;
+    hasMore = page.length === SITEMAP_PAGE_SIZE;
     skip += SITEMAP_PAGE_SIZE;
   }
   return all;

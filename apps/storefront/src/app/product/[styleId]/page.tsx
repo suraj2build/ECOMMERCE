@@ -9,6 +9,13 @@ import { CrossSellStrip } from '@/components/pdp/CrossSellStrip';
 import { Breadcrumbs } from '@/components/pdp/Breadcrumbs';
 import { safeJsonLd } from '@/lib/json-ld';
 
+// Cache the public render on demand using the existing 30-second product
+// snapshot lifetime. An empty build-time list admits every future style;
+// it never imposes a catalog-size cutoff. The client refreshes live stock
+// and price, while checkout always validates them independently.
+export const revalidate = 30;
+export function generateStaticParams() { return []; }
+
 // Server-rendered/indexable per specs/26-seo.md's architectural requirement -
 // no client-side data fetching for the initial render.
 export async function generateMetadata({

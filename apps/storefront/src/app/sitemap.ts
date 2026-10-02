@@ -23,7 +23,7 @@ import { getAllPublicStylesForSitemap, SITE_URL } from '@/lib/api';
 export const revalidate = 0;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const styles = await getAllPublicStylesForSitemap().catch(() => []);
+  const styles = await getAllPublicStylesForSitemap();
 
   const staticEntries: MetadataRoute.Sitemap = [{ url: SITE_URL, changeFrequency: 'daily', priority: 1 }];
 

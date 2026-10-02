@@ -20,6 +20,9 @@ import { CrossSellService } from './cross-sell-service.js';
  * genuinely unknown one.
  */
 export class PdpService {
+  // Share only work already in flight for this public, identity-free read.
+  // Settled results are removed immediately: no stale price/stock cache.
+  private readonly inFlight = new Map<string, Promise<Awaited<ReturnType<PdpService['readProductDetail']>>>>();
   private readonly catalog: CatalogService;
   private readonly inventory: InventoryService;
   private readonly reviews: ReviewService;
@@ -37,6 +40,18 @@ export class PdpService {
   }
 
   async getProductDetail(styleId: string) {
+    const existing = this.inFlight.get(styleId);
+    if (existing) return existing;
+    const pending = this.readProductDetail(styleId);
+    this.inFlight.set(styleId, pending);
+    try {
+      return await pending;
+    } finally {
+      this.inFlight.delete(styleId);
+    }
+  }
+
+  private async readProductDetail(styleId: string) {
     const style = await this.prisma.style.findUnique({
       where: { id: styleId },
       include: {
@@ -55,15 +70,19 @@ export class PdpService {
     const isPublishable = style.lifecycleState === 'PUBLISHED' && activePrice !== null;
     if (!isPublishable) throw new NotFoundError('Style', styleId);
 
-    const badges = await this.catalog.listBadges(styleId);
-
     const skuIds = style.skus.map((s) => s.id);
     // M26 independent-review certification repair (2026-09-28): this
     // cross-location sellable-quantity computation now lives in
     // InventoryService.getAvailableToSellBySku - the single canonical
     // implementation both PDP and Channel Publishing share. Output is
     // byte-for-byte identical to the formula this method inlined before.
-    const availabilityBySkuId = await this.inventory.getAvailableToSellBySku(skuIds);
+    const [badges, availabilityBySkuId, ratingSummary, reviewsPage, crossSell] = await Promise.all([
+      this.catalog.listBadges(styleId),
+      this.inventory.getAvailableToSellBySku(skuIds),
+      this.reviews.getRatingSummary(styleId),
+      this.reviews.listPublishedReviews(styleId, { take: 10 }),
+      this.crossSell.listCrossSell(styleId),
+    ]);
 
     const variants = style.skus.map((sku) => {
       const availableQuantity = availabilityBySkuId.get(sku.id) ?? 0;
@@ -96,12 +115,6 @@ export class PdpService {
           })),
         }
       : null;
-
-    const [ratingSummary, reviewsPage, crossSell] = await Promise.all([
-      this.reviews.getRatingSummary(styleId),
-      this.reviews.listPublishedReviews(styleId, { take: 10 }),
-      this.crossSell.listCrossSell(styleId),
-    ]);
 
     return {
       id: style.id,

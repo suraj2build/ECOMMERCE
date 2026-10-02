@@ -173,7 +173,7 @@ export class AdminQueryService {
 
   /** The PromotionType reference table (seeded; POST /promotions takes its key). */
   async listPromotionTypes() {
-    return this.prisma.promotionType.findMany({ select: { id: true, key: true, name: true }, orderBy: { name: 'asc' }, take: 100 });
+    return this.prisma.promotionType.findMany({ select: { id: true, key: true, name: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
   }
 
   /** Order search by order number. Contact details stay on the detail route (GET /orders/:id). */
@@ -460,16 +460,17 @@ export class AdminQueryService {
     return { items: rows.map((r) => ({ ...r, initialValue: money(r.initialValue), balance: money(r.balance) })), total };
   }
 
-  async listCollections() {
+  async listCollections(params: { take?: number; skip?: number } = {}) {
     const rows = await this.prisma.collection.findMany({
       select: { id: true, name: true, slug: true, description: true, isActive: true, createdAt: true, _count: { select: { styles: true } } },
-      orderBy: { name: 'asc' },
-      take: 200,
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      take: boundedTake(params.take, MAX_PAGE, 50),
+      skip: params.skip ?? 0,
     });
-    return rows;
+    return { items: rows, total: await this.prisma.collection.count() };
   }
 
-  async getCollection(id: string) {
+  async getCollection(id: string, params: { take?: number; skip?: number } = {}) {
     return this.prisma.collection.findUnique({
       where: { id },
       select: {
@@ -479,7 +480,8 @@ export class AdminQueryService {
         description: true,
         isActive: true,
         createdAt: true,
-        styles: { select: { style: { select: { id: true, styleCode: true, name: true, lifecycleState: true } } }, take: 500 },
+        _count: { select: { styles: true } },
+        styles: { select: { style: { select: { id: true, styleCode: true, name: true, lifecycleState: true } } }, orderBy: { styleId: 'asc' }, take: boundedTake(params.take, MAX_PAGE, 50), skip: params.skip ?? 0 },
       },
     });
   }

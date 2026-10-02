@@ -770,12 +770,13 @@ export class ReturnService {
     return this.prisma.return.findMany({ where: { orderId: { in: orderIds } }, include: { lines: true, pickup: true }, orderBy: { createdAt: 'desc' } });
   }
 
-  async listPendingWarehouseWork(status?: ReturnStatus) {
+  async listPendingWarehouseWork(status?: ReturnStatus, page: { take?: number; skip?: number } = {}) {
     return this.prisma.return.findMany({
       where: status ? { status } : { status: { in: ['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED'] } },
       include: { lines: true, pickup: true },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: Math.min(page.take ?? 100, 200),
+      skip: page.skip ?? 0,
     });
   }
 }

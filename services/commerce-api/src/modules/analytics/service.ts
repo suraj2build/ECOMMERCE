@@ -46,25 +46,24 @@ export class AnalyticsService {
   async getCommerceReport(range: DateRange = {}) {
     const createdAt = dateRangeFilter(range);
 
-    const orders = await this.prisma.order.findMany({
-      where: { createdAt },
-      select: { id: true, status: true, grandTotal: true, customerId: true, createdAt: true },
+    // Aggregate at the database instead of loading every order/refund or
+    // handing a growing order-id IN list to PostgreSQL.
+    const orderTotals = await this.prisma.order.groupBy({
+      by: ['status'], where: { createdAt },
+      _sum: { grandTotal: true }, _count: { _all: true },
     });
-    const nonCancelledOrders = orders.filter((o) => o.status !== 'CANCELLED');
-    const grossSales = sumDecimal(nonCancelledOrders.map((o) => o.grandTotal));
-    const orderIds = nonCancelledOrders.map((o) => o.id);
-
-    const refunds = orderIds.length
-      ? await this.prisma.refund.findMany({
-          where: { orderId: { in: orderIds }, status: 'COMPLETED' },
-          select: { amount: true, method: true },
-        })
-      : [];
-    const refundedAmount = sumDecimal(refunds.map((r) => r.amount));
+    const cancelledOrderCount = orderTotals.find((o) => o.status === 'CANCELLED')?._count._all ?? 0;
+    const included = orderTotals.filter((o) => o.status !== 'CANCELLED');
+    const orderCount = included.reduce((sum, o) => sum + o._count._all, 0);
+    const grossSales = included.reduce((sum, o) => sum + Number(o._sum.grandTotal ?? 0), 0);
+    const refundTotals = await this.prisma.refund.groupBy({
+      by: ['method'],
+      where: { status: 'COMPLETED', order: { createdAt, status: { not: 'CANCELLED' } } },
+      _sum: { amount: true },
+    });
+    const refundedAmount = refundTotals.reduce((sum, r) => sum + Number(r._sum.amount ?? 0), 0);
     const netSales = grossSales - refundedAmount;
-
-    const refundsByMethod: Record<string, number> = {};
-    for (const r of refunds) refundsByMethod[r.method] = (refundsByMethod[r.method] ?? 0) + Number(r.amount);
+    const refundsByMethod = Object.fromEntries(refundTotals.map((r) => [r.method, Number(r._sum.amount ?? 0)]));
 
     const returns = await this.prisma.return.groupBy({
       by: ['status'],
@@ -72,7 +71,11 @@ export class AnalyticsService {
       _count: { _all: true },
     });
 
-    const customerIds = new Set(nonCancelledOrders.map((o) => o.customerId).filter((id): id is string => !!id));
+    const customersInRange = await this.prisma.order.groupBy({
+      by: ['customerId'],
+      where: { createdAt, customerId: { not: null }, status: { not: 'CANCELLED' } },
+    });
+    const totalCustomers = customersInRange.length;
     const ordersByCustomer = await this.prisma.order.groupBy({
       by: ['customerId'],
       where: { customerId: { not: null }, status: { not: 'CANCELLED' } },
@@ -84,16 +87,16 @@ export class AnalyticsService {
       _sum: { onHand: true, reserved: true, damaged: true },
     });
 
-    const margin = await this.computeMargin(orderIds);
+    const margin = await this.computeMargin(createdAt);
 
     return {
       sales: {
         grossSales,
         netSales,
         refundedAmount,
-        orderCount: nonCancelledOrders.length,
-        cancelledOrderCount: orders.length - nonCancelledOrders.length,
-        avgOrderValue: nonCancelledOrders.length > 0 ? grossSales / nonCancelledOrders.length : 0,
+        orderCount,
+        cancelledOrderCount,
+        avgOrderValue: orderCount > 0 ? grossSales / orderCount : 0,
       },
       returns: {
         totalReturns: returns.reduce((sum, r) => sum + r._count._all, 0),
@@ -106,9 +109,9 @@ export class AnalyticsService {
         totalDamaged: inventoryTotals._sum.damaged ?? 0,
       },
       customers: {
-        totalCustomers: customerIds.size,
+        totalCustomers,
         repeatCustomerCount,
-        repeatCustomerRate: customerIds.size > 0 ? repeatCustomerCount / customerIds.size : 0,
+        repeatCustomerRate: totalCustomers > 0 ? repeatCustomerCount / totalCustomers : 0,
       },
       margin,
     };
@@ -124,34 +127,30 @@ export class AnalyticsService {
    * `skusWithoutCost`, never silently assumed zero-cost inside the
    * margin figure itself.
    */
-  private async computeMargin(orderIds: string[]) {
-    if (orderIds.length === 0) {
-      return { revenue: 0, cost: 0, margin: 0, marginPercent: 0, skusWithoutCost: 0 };
-    }
-    const lines = await this.prisma.orderLine.findMany({
-      where: { orderId: { in: orderIds }, status: { not: 'CANCELLED' } },
-      select: { skuId: true, quantity: true, taxableValueSnapshot: true },
+  private async computeMargin(createdAt: ReturnType<typeof dateRangeFilter>) {
+    const orderFilter = { createdAt, status: { not: 'CANCELLED' as const } };
+    const lines = await this.prisma.orderLine.groupBy({
+      by: ['skuId'],
+      where: { order: orderFilter, status: { not: 'CANCELLED' } },
+      _sum: { quantity: true, taxableValueSnapshot: true }, _count: { _all: true },
     });
-    const skuIds = [...new Set(lines.map((l) => l.skuId))];
-    const avgCosts = skuIds.length
-      ? await this.prisma.purchaseOrderLine.groupBy({
-          by: ['skuId'],
-          where: { skuId: { in: skuIds } },
-          _avg: { unitCost: true },
-        })
-      : [];
+    const avgCosts = await this.prisma.purchaseOrderLine.groupBy({
+      by: ['skuId'],
+      where: { sku: { orderLines: { some: { order: orderFilter, status: { not: 'CANCELLED' } } } } },
+      _avg: { unitCost: true },
+    });
     const costBySku = new Map(avgCosts.map((c) => [c.skuId, Number(c._avg.unitCost ?? 0)]));
-
-    const revenue = sumDecimal(lines.map((l) => l.taxableValueSnapshot));
+    const revenue = lines.reduce((sum, l) => sum + Number(l._sum.taxableValueSnapshot ?? 0), 0);
     let cost = 0;
     let skusWithoutCost = 0;
     for (const line of lines) {
       const unitCost = costBySku.get(line.skuId);
       if (unitCost === undefined) {
-        skusWithoutCost += 1;
+        // Preserve the existing count of affected lines, not unique SKUs.
+        skusWithoutCost += line._count._all;
         continue;
       }
-      cost += unitCost * line.quantity;
+      cost += unitCost * (line._sum.quantity ?? 0);
     }
     const margin = revenue - cost;
     return { revenue, cost, margin, marginPercent: revenue > 0 ? margin / revenue : 0, skusWithoutCost };
@@ -162,10 +161,12 @@ export class AnalyticsService {
   // ---------------------------------------------------------------------
 
   async getFashionReport() {
-    const soldLines = await this.prisma.orderLine.findMany({
-      where: { status: { not: 'CANCELLED' } },
-      select: { skuId: true, quantity: true, taxableValueSnapshot: true },
+    const soldGroups = await this.prisma.orderLine.groupBy({
+      by: ['skuId'], where: { status: { not: 'CANCELLED' } },
+      _sum: { quantity: true, taxableValueSnapshot: true },
     });
+    const soldLines = soldGroups.map((line) => ({ skuId: line.skuId,
+      quantity: line._sum.quantity ?? 0, taxableValueSnapshot: line._sum.taxableValueSnapshot ?? 0 }));
 
     // M28 independent-review certification repair (2026-09-29, Blocker
     // 2): sell-through and availability need the FULL SKU universe this
@@ -194,7 +195,7 @@ export class AnalyticsService {
 
     const skus = allSkuIds.size
       ? await this.prisma.sku.findMany({
-          where: { id: { in: [...allSkuIds] } },
+          where: { OR: [{ inventoryBalances: { some: {} } }, { orderLines: { some: { status: { not: 'CANCELLED' } } } }] },
           select: { id: true, styleId: true, colourId: true, sizeId: true, style: { select: { name: true } } },
         })
       : [];
@@ -264,12 +265,13 @@ export class AnalyticsService {
       daysSinceLastReceipt: r._max.createdAt ? Math.floor((now - r._max.createdAt.getTime()) / 86_400_000) : null,
     }));
 
-    const returnLines = await this.prisma.returnLine.findMany({ select: { reason: true } });
+    const returnReasons = await this.prisma.returnLine.groupBy({ by: ['reason'], _count: { _all: true } });
+    const totalReturnLines = returnReasons.reduce((sum, r) => sum + r._count._all, 0);
     const reasonCounts = new Map<string, number>();
     let sizeRelatedCount = 0;
-    for (const { reason } of returnLines) {
-      reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1);
-      if (SIZE_RELATED_KEYWORDS.some((kw) => reason.toLowerCase().includes(kw))) sizeRelatedCount += 1;
+    for (const { reason, _count } of returnReasons) {
+      reasonCounts.set(reason, _count._all);
+      if (SIZE_RELATED_KEYWORDS.some((kw) => reason.toLowerCase().includes(kw))) sizeRelatedCount += _count._all;
     }
 
     return {
@@ -291,7 +293,7 @@ export class AnalyticsService {
       returnReasons: [...reasonCounts.entries()].map(([reason, count]) => ({ reason, count })),
       sizeRelatedReturns: {
         count: sizeRelatedCount,
-        rate: returnLines.length > 0 ? sizeRelatedCount / returnLines.length : 0,
+        rate: totalReturnLines > 0 ? sizeRelatedCount / totalReturnLines : 0,
       },
     };
   }

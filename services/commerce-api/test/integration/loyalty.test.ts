@@ -263,6 +263,23 @@ describe('Loyalty (M23) - vesting lifecycle (LOY-006)', () => {
     return res.json() as { balance: number; pendingPoints: number; lifetimeEarnedPoints: number; tier: { id: string; name: string } | null };
   }
 
+  it('customer ledger remains accessible beyond 200 entries with stable pages', async () => {
+    const { customerId, token } = await createAuthenticatedCustomer(app);
+    const account = await testPrisma.loyaltyAccount.create({ data: { customerId } });
+    await testPrisma.loyaltyLedgerEntry.createMany({ data: Array.from({ length: 205 }, (_, i) => ({
+      accountId: account.id, type: 'ADJUST', pointsDelta: 0, reason: `Boundary ${i}`,
+      idempotencyKey: `ledger-boundary-${counter}-${i}`,
+    })) });
+    const headers = { authorization: `Bearer ${token}` };
+    const first = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty/ledger?take=200', headers });
+    const last = await app.inject({ method: 'GET', url: '/api/v1/storefront/account/loyalty/ledger?take=200&skip=200', headers });
+    expect(first.statusCode).toBe(200);
+    expect(last.statusCode).toBe(200);
+    expect(first.json()).toHaveLength(200);
+    expect(last.json()).toHaveLength(5);
+    expect(new Set([...first.json(), ...last.json()].map((e: { id: string }) => e.id)).size).toBe(205);
+  });
+
   // --- Matrix item 1 ---
 
   describe('1. Order confirmed -> points calculated -> PENDING -> available balance unchanged', () => {

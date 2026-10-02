@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
@@ -126,6 +127,36 @@ describe('Analytics / Reporting (M28)', () => {
     });
     return { order, line };
   }
+
+  it('commerce and fashion reports include all 1005 orders and reconcile to SQL totals', async () => {
+    const { sku, location } = await fixtureSku();
+    const rows = Array.from({ length: 1005 }, () => ({ sessionId: randomUUID(), orderId: randomUUID() }));
+    await testPrisma.checkoutSession.createMany({ data: rows.map((r) => ({
+      id: r.sessionId, guestSessionId: r.sessionId, contactName: 'Report boundary', contactMobile: '9876543210',
+      billingAddress: {}, shippingAddress: {}, shippingStateCode: 'DL', shippingCost: 0, subtotal: 100,
+      taxAmount: 0, grandTotal: 100, paymentMethod: 'COD', idempotencyKey: r.sessionId,
+    })) });
+    await testPrisma.order.createMany({ data: rows.map((r) => ({
+      id: r.orderId, orderNumber: r.orderId, checkoutSessionId: r.sessionId, guestSessionId: r.sessionId,
+      contactName: 'Report boundary', contactMobile: '9876543210', billingAddress: {}, shippingAddress: {},
+      shippingCost: 0, subtotal: 100, taxAmount: 0, grandTotal: 100, paymentMethod: 'COD', status: 'CONFIRMED',
+    })) });
+    await testPrisma.orderLine.createMany({ data: rows.map((r) => ({
+      orderId: r.orderId, skuId: sku.id, locationId: location.id, quantity: 1, unitPriceInclusive: 100,
+      taxableValueSnapshot: 100, gstRatePercent: 0, taxAmountSnapshot: 0, lineTotalInclusive: 100, status: 'ALLOCATED',
+    })) });
+    const [sql] = await testPrisma.$queryRaw<Array<{ count: number; gross: { toString(): string } }>>`SELECT COUNT(*)::int AS count, SUM("grandTotal") AS gross FROM orders WHERE status != 'CANCELLED'`;
+    const service = new AnalyticsService(app);
+    const commerce = await service.getCommerceReport();
+    expect(commerce.sales.orderCount).toBe(1005);
+    expect(commerce.sales.orderCount).toBe(sql!.count);
+    expect(commerce.sales.grossSales).toBe(Number(sql!.gross));
+    expect(commerce.sales.netSales).toBe(100500);
+    expect(commerce.margin.revenue).toBe(100500);
+    const fashion = await service.getFashionReport();
+    expect(fashion.stylePerformance[0]!.unitsSold).toBe(1005);
+    expect(fashion.stylePerformance[0]!.revenue).toBe(100500);
+  }, 120_000);
 
   describe('Commerce category', () => {
     it('computes gross/net sales, order counts, and margin correctly against known seed data', async () => {

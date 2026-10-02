@@ -197,4 +197,4 @@ export interface LoyaltyLedgerEntry {
 // M23 Loyalty (specs/22-loyalty.md) - real balance/tier/ledger, replacing
 // the earlier DEPENDENCY_DEFERRED "Coming soon" placeholder.
 export const getLoyaltyBalance = () => accountFetch<LoyaltyBalance>('/api/v1/storefront/account/loyalty');
-export const getLoyaltyLedger = () => accountFetch<LoyaltyLedgerEntry[]>('/api/v1/storefront/account/loyalty/ledger');
+export const getLoyaltyLedger = (skip = 0) => accountFetch<LoyaltyLedgerEntry[]>(`/api/v1/storefront/account/loyalty/ledger?take=200&skip=${skip}`);

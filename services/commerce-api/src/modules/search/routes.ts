@@ -59,19 +59,32 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
   const pinAuth = [fastify.requireStaffAuth, fastify.requirePermission('catalog:search:pin')];
   const reindexAuth = [fastify.requireStaffAuth, fastify.requirePermission('search:reindex')];
 
+  async function readSearch(params: z.infer<typeof searchQuerySchema>) {
+    const filter = buildFilter(params);
+    await fastify.searchIndex.ensureCompletePagination(false, params.page * params.pageSize);
+    return fastify.meilisearch.index<StyleSearchDocument>(STYLES_INDEX_UID).search(params.q ?? '', {
+      filter: filter.length ? filter : undefined,
+      sort: buildSort(params.sort),
+      facets: ['brandName', 'categorySlug', 'colours', 'sizes'],
+      page: params.page,
+      hitsPerPage: params.pageSize,
+    });
+  }
+  // Share identical concurrent public reads only. Settled results are never
+  // retained, so the next request observes current index state.
+  const inFlight = new Map<string, ReturnType<typeof readSearch>>();
+
   fastify.get('/storefront/search', async (request, reply) => {
     const params = searchQuerySchema.parse(request.query);
-    const filter = buildFilter(params);
-    const sort = buildSort(params.sort);
-
+    const key = JSON.stringify(params);
     try {
-      const results = await fastify.meilisearch.index<StyleSearchDocument>(STYLES_INDEX_UID).search(params.q ?? '', {
-        filter: filter.length ? filter : undefined,
-        sort,
-        facets: ['brandName', 'categorySlug', 'colours', 'sizes'],
-        page: params.page,
-        hitsPerPage: params.pageSize,
-      });
+      let pending = inFlight.get(key);
+      if (!pending) {
+        pending = readSearch(params);
+        inFlight.set(key, pending);
+        void pending.then(() => inFlight.delete(key), () => inFlight.delete(key));
+      }
+      const results = await pending;
 
       reply.status(200).send({
         hits: results.hits,

@@ -290,7 +290,7 @@ export class CheckoutService {
 
   async startCheckout(identity: CartOwnerIdentity, input: StartCheckoutInput) {
     const existing = await this.prisma.checkoutSession.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
-    if (existing) return this.toView(existing.id);
+    if (existing) return this.getCheckoutSession(existing.id, identity);
 
     if (input.paymentMethod === 'COD') {
       const env = loadEnv();
@@ -586,6 +586,7 @@ export class CheckoutService {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const winner = await this.prisma.checkoutSession.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
         if (winner) {
+          await this.loadOwnedSession(winner.id, identity);
           sessionId = winner.id;
         } else {
           throw err;
