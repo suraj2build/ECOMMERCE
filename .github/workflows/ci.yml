@@ -159,7 +159,7 @@ jobs:
       # against the production builds of both services.
       - name: E2E smoke (start API + storefront, run Playwright)
         run: |
-          PORT=4000 npm run dev:api &
+          PORT=4000 npm run start --workspace=services/commerce-api &
           for i in $(seq 1 30); do
             curl -sf http://localhost:4000/health && break
             sleep 1

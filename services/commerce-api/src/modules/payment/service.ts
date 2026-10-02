@@ -535,12 +535,15 @@ export class PaymentService {
     const env = loadEnv();
     const cutoff = new Date(Date.now() - env.PAYMENT_TIMEOUT_SECONDS * 1000);
 
-    const stale = await this.prisma.payment.findMany({
-      where: { status: 'INITIATED', createdAt: { lt: cutoff } },
-    });
-
+    let cursor: string | undefined;
     let expiredCount = 0;
-    for (const payment of stale) {
+    for (;;) {
+      const stale = await this.prisma.payment.findMany({
+        where: { status: 'INITIATED', createdAt: { lt: cutoff }, ...(cursor ? { id: { gt: cursor } } : {}) },
+        orderBy: { id: 'asc' }, take: 100,
+      });
+      if (stale.length === 0) break;
+      for (const payment of stale) {
       const didExpire = await this.prisma.$transaction(async (tx) => {
         const fresh = await this.lockPayment(tx, payment.id);
         if (!fresh || fresh.status !== 'INITIATED') return false;
@@ -592,6 +595,8 @@ export class PaymentService {
       });
 
       if (didExpire) expiredCount += 1;
+      }
+      cursor = stale[stale.length - 1]!.id;
     }
 
     return expiredCount;

@@ -26,6 +26,9 @@ export class ConsoleOtpProvider implements OtpProvider {
   constructor(private readonly logger: MinimalLogger) {}
 
   async send(mobile: string, code: string): Promise<void> {
+    if (loadEnv().NODE_ENV === 'production') {
+      throw new Error('Console OTP delivery is unavailable in production; configure a real SMS provider before launch');
+    }
     // Deliberately NOT logging the code itself in production-shaped logs
     // (logger redaction also covers this) - only a delivery confirmation.
     this.logger.info({ mobile: maskMobile(mobile) }, 'OTP dispatched (console provider)');

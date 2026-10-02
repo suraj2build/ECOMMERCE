@@ -593,12 +593,17 @@ export class InventoryService {
 
   /** Releases every ACTIVE reservation past its expiresAt. Callable directly or by a future scheduler. */
   async expireStaleReservations(): Promise<number> {
-    const stale = await this.prisma.inventoryReservation.findMany({
-      where: { status: 'ACTIVE', expiresAt: { lt: new Date() } },
-    });
-
-    for (const reservation of stale) {
-      await this.prisma.$transaction(async (tx) => {
+    const cutoff = new Date();
+    let cursor: string | undefined;
+    let expiredCount = 0;
+    for (;;) {
+      const stale = await this.prisma.inventoryReservation.findMany({
+        where: { status: 'ACTIVE', expiresAt: { lt: cutoff }, ...(cursor ? { id: { gt: cursor } } : {}) },
+        orderBy: { id: 'asc' }, take: 100,
+      });
+      if (stale.length === 0) break;
+      for (const reservation of stale) {
+        const expired = await this.prisma.$transaction(async (tx) => {
         // Locked read (independent-review finding #3): serializes this
         // TTL-driven release against a concurrent convertReservation()
         // call (e.g. a Razorpay capture that is, at this same instant,
@@ -608,7 +613,7 @@ export class InventoryService {
         // ACTIVE) and correctly skips - never releasing inventory out
         // from under a legitimately-completed capture.
         const fresh = await this.lockReservation(tx, reservation.id);
-        if (!fresh || fresh.status !== 'ACTIVE') return;
+        if (!fresh || fresh.status !== 'ACTIVE') return false;
 
         const balance = await this.lockBalance(tx, fresh.skuId, fresh.locationId);
         await tx.inventoryBalance.update({
@@ -625,10 +630,14 @@ export class InventoryService {
           reason: 'expired',
         });
         await tx.inventoryReservation.update({ where: { id: fresh.id }, data: { status: 'EXPIRED' } });
-      });
+        return true;
+        });
+        if (expired) expiredCount += 1;
+      }
+      cursor = stale[stale.length - 1]!.id;
     }
 
-    return stale.length;
+    return expiredCount;
   }
 
   /**

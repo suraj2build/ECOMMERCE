@@ -1,6 +1,6 @@
 # Go-live verification — 2026-10-02
 
-Status: IN PROGRESS. No production readiness, capacity certification or deployment approval.
+Status: IN PROGRESS. The owner authorized completing the remaining work and production go-live on 2026-10-02. Deployment still depends on passing verification and having real infrastructure/providers; authorization alone does not make those available.
 Baseline: 304e009 (merged VANYA storefront).
 
 ## Repair and test scope
@@ -34,3 +34,13 @@ Lint, all-workspace typecheck, 52 unit tests, and production builds passed for t
 - Final business UAT, migration reconciliation and explicit production deployment authorization.
 
 No external-provider business rule, legal retention policy or production infrastructure choice is invented by this repair.
+
+## Continuous completion pass
+
+- Latest inherited head 0978aa4: 55 unit, 798 integration and 58 browser/API/admin tests passed. Read load failed: rendered PDP at 200 connections reported 52 timeouts. This is a genuine open failure, not a green run.
+- Repair: public PDP requests share only concurrent in-flight work and immediately discard settled results; independent product queries run concurrently. Cross-sell batches price reads and filters active prices before limiting candidates, removing N+1 lookups and unpriced-candidate gaps. Checkout remains authoritative for price/stock acceptance.
+- Server startup now schedules payment expiry, inventory reservation expiry and pending invoice recovery immediately and every 60 seconds after the previous sweep completes. Errors are logged per job and retried on the next sweep. Shutdown drains the running job before disconnecting infrastructure. Existing domain row locks and invoice uniqueness protect multiple replicas. Each sweep keyset-pages batches of 100 without a total-record cutoff.
+- CI uses the compiled API alongside production Next builds. Added regression coverage for 200 concurrent PDP reads followed by changed price/stock, failed-read recovery, maintenance overlap/shutdown/failure recovery, and two real-service sweeps across 205 expired reservations.
+- Additional launch blocker found: AuthService hard-wires ConsoleOtpProvider; there is no real SMS delivery adapter. Console-only delivery now refuses production use instead of reporting a fake successful dispatch. A real provider must be selected, wired and verified.
+- Deployment discovery: no production hosting descriptor, production runtime credentials or configured production target is available in this checkout/session. Shipping adapters remain test doubles; return evidence uses local disk, requiring durable shared storage or a verified object-storage adapter. No production deployment has been performed.
+- Final-head full CI, load measurement, staging mixed load, real provider delivery/payment/shipping, production backup/restore and business/legal launch requirements remain evidence gates. They must not be marked complete solely to satisfy a launch request.
