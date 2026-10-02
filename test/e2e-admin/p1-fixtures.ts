@@ -19,6 +19,7 @@ const ADMIN_PASSWORD = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe123!';
 export const STAFF_PASSWORD = 'E2eP1ConsolePassword123!';
 export const RUN = Date.now().toString(36).toUpperCase();
 const PINCODE = '110048';
+let stockSequence = 0;
 
 export const prisma = new PrismaClient();
 
@@ -157,7 +158,16 @@ export async function provisionStyle(fx: Fixture, name: string, price = 999): Pr
 /** Stock arrives through the ledger (an audited adjustment), never by writing the balance table. */
 export async function stock(fx: Fixture, skuId: string, locationId: string, qty: number) {
   await expectOk(
-    await fx.api.post('/api/v1/inventory/adjustments', { headers: fx.auth, data: { skuId, locationId, quantityDelta: qty, reason: 'E2E P1 stock load' } }),
+    await fx.api.post('/api/v1/inventory/adjustments', {
+      headers: fx.auth,
+      data: {
+        skuId,
+        locationId,
+        quantityDelta: qty,
+        reason: 'E2E P1 stock load',
+        idempotencyKey: `p1-stock-${RUN}-${++stockSequence}-${skuId}`,
+      },
+    }),
     'Stock load',
   );
 }
