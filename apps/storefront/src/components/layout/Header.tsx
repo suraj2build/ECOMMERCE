@@ -17,13 +17,17 @@ export function Header() {
       try {
         const cart = await getCart();
         if (!cancelled) setCartCount(cart.itemCount);
-      } catch {}
+      } catch {
+        // Navigation remains usable if cart state cannot be refreshed.
+      }
     }
     async function refreshWishlist() {
       try {
         const items = await getWishlist();
         if (!cancelled) setWishlistCount(items.length);
-      } catch {}
+      } catch {
+        // Navigation remains usable if wishlist state cannot be refreshed.
+      }
     }
     void refreshCart();
     void refreshWishlist();
