@@ -24,11 +24,15 @@ export default async function WatchAndShopPage() {
         <section key={item.id} className="min-h-[calc(100svh-96px)] snap-start border-b border-border bg-[#151210] text-white md:min-h-0 md:bg-canvas md:text-ink">
           <Container className="grid min-h-[calc(100svh-96px)] items-center gap-0 px-0 md:min-h-0 md:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)] md:gap-12 md:px-gutter md:py-12">
             <div className="relative min-h-[calc(100svh-96px)] overflow-hidden bg-black md:min-h-0 md:aspect-[4/5] md:rounded-[24px]">
-              {item.mediaUrl.match(/\.(mp4|webm|mov)(\?|$)/i) ? (
-                <video src={item.mediaUrl} poster={item.thumbnailUrl ?? undefined} controls playsInline preload={index === 0 ? 'metadata' : 'none'} className="absolute inset-0 h-full w-full object-cover" />
-              ) : item.thumbnailUrl || item.mediaUrl ? (
-                <Image src={item.thumbnailUrl ?? item.mediaUrl} alt={item.title} fill priority={index === 0} sizes="(max-width: 768px) 100vw, 60vw" className="object-cover" />
-              ) : null}
+              {item.thumbnailUrl ? (
+                <Image src={item.thumbnailUrl} alt={item.title} fill priority={index === 0} sizes="(max-width: 768px) 100vw, 60vw" className="object-cover" />
+              ) : item.mediaUrl && !item.mediaUrl.match(/\.(mp4|webm|mov)(\?|$)/i) ? (
+                <Image src={item.mediaUrl} alt={item.title} fill priority={index === 0} sizes="(max-width: 768px) 100vw, 60vw" className="object-cover" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-[0.18em] text-white/60">
+                  Video story
+                </div>
+              )}
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-6 pt-24 md:hidden">
                 <p className="text-[9px] uppercase tracking-[0.18em] text-white/70">{item.creatorAttribution ?? 'VANYA edit'}</p>
                 <h1 className="mt-2 font-display text-3xl leading-tight">{item.title}</h1>
