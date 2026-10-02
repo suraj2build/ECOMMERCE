@@ -61,14 +61,14 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
 
   async function readSearch(params: z.infer<typeof searchQuerySchema>) {
     const filter = buildFilter(params);
-    await fastify.searchIndex.ensureCompletePagination(false, params.page * params.pageSize);
-    return fastify.meilisearch.index<StyleSearchDocument>(STYLES_INDEX_UID).search(params.q ?? '', {
-      filter: filter.length ? filter : undefined,
-      sort: buildSort(params.sort),
-      facets: ['brandName', 'categorySlug', 'colours', 'sizes'],
-      page: params.page,
-      hitsPerPage: params.pageSize,
-    });
+    return fastify.searchIndex.searchComplete(params.page * params.pageSize, () =>
+      fastify.meilisearch.index<StyleSearchDocument>(STYLES_INDEX_UID).search(params.q ?? '', {
+        filter: filter.length ? filter : undefined,
+        sort: buildSort(params.sort),
+        facets: ['brandName', 'categorySlug', 'colours', 'sizes'],
+        page: params.page,
+        hitsPerPage: params.pageSize,
+      }));
   }
   // Share identical concurrent public reads only. Settled results are never
   // retained, so the next request observes current index state.

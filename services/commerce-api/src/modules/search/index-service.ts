@@ -66,6 +66,9 @@ export interface StyleSearchDocument {
  * than guessing a number, and makes catalog-change-to-index propagation
  * deterministically testable without sleep/retry loops.
  */
+/** Attempts before a search that may be truncated is reported unavailable. */
+const COMPLETE_SEARCH_ATTEMPTS = 3;
+
 export class SearchIndexService {
   private readonly catalog: CatalogService;
   private paginationUpdate: Promise<void> | undefined;
@@ -74,6 +77,8 @@ export class SearchIndexService {
 
   /** Synchronize on index writes/startup, not on every public read. Deep
    * pages also refresh the window, covering restored/bulk-loaded indexes.
+   * The window is kept above the document count, so a complete result's
+   * totalHits is always below it (see searchComplete).
    * Failed refreshes invalidate readiness so the next read retries safely.
    */
   async ensureCompletePagination(force = false, minimumCapacity = 0): Promise<void> {
@@ -86,8 +91,9 @@ export class SearchIndexService {
     const update = (async () => {
       const index = this.index();
       const [stats, pagination] = await Promise.all([index.getStats(), index.getPagination()]);
-      const capacity = Math.max(pagination.maxTotalHits ?? 1000, stats.numberOfDocuments);
-      if ((pagination.maxTotalHits ?? 1000) < capacity) {
+      const window = pagination.maxTotalHits ?? 1000;
+      const capacity = Math.max(window, stats.numberOfDocuments + 1);
+      if (window < capacity) {
         await index.updatePagination({ maxTotalHits: capacity }).waitTask();
       }
       this.paginationCapacity = capacity;
@@ -95,6 +101,30 @@ export class SearchIndexService {
     })();
     this.paginationUpdate = update;
     try { await update; } finally { this.paginationUpdate = undefined; }
+  }
+
+  /** Runs a search and returns it only when it cannot have been cut off.
+   * Meilisearch caps totalHits at the index's live maxTotalHits, and the
+   * window is otherwise kept above the document count, so a result is
+   * complete exactly when totalHits is below the window in force. The live
+   * window is read before and after the search (a change in between - an
+   * outside reset, or another request growing it - is caught by taking the
+   * lower value). A possibly truncated result forces a resync and reruns;
+   * if that keeps failing the search throws rather than return a capped list.
+   */
+  async searchComplete<T extends { totalHits?: number }>(minimumCapacity: number, run: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < COMPLETE_SEARCH_ATTEMPTS; attempt += 1) {
+      await this.ensureCompletePagination(attempt > 0, minimumCapacity);
+      const before = await this.liveWindow();
+      const result = await run();
+      const after = await this.liveWindow();
+      if ((result.totalHits ?? 0) < Math.min(before, after)) return result;
+    }
+    throw new Error('Search result window could not be confirmed complete');
+  }
+
+  private async liveWindow(): Promise<number> {
+    return (await this.index().getPagination()).maxTotalHits ?? 1000;
   }
 
   constructor(private readonly fastify: FastifyInstance) {

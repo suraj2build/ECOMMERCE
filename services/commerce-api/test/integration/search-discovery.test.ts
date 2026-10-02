@@ -539,6 +539,11 @@ describe('Search / Discovery (M10)', () => {
   it('exposes every result beyond the default 1000-hit window', async () => {
     const index = app.meilisearch.index(STYLES_INDEX_UID);
     await index.updatePagination({ maxTotalHits: 1000 }).waitTask();
+    // Synchronize the API's window with the emptied, reset index. It is read
+    // at app start from whatever the shared index held then (earlier runs
+    // leave 1,005 boundary documents), which would otherwise already cover
+    // page 17 and skip the deep-page refresh this test exercises.
+    await app.searchIndex.ensureCompletePagination(true);
     // Isolate the search-engine boundary: the existing tests separately verify
     // that real published/priced catalog data produces these documents.
     await index.addDocuments(Array.from({ length: 1005 }, (_, i) => ({
@@ -551,6 +556,23 @@ describe('Search / Discovery (M10)', () => {
     expect(res.json().totalHits).toBe(1005);
     expect(res.json().hits).toHaveLength(45);
     expect((await index.getPagination()).maxTotalHits).toBeGreaterThanOrEqual(1005);
+  });
+
+  it('never caps the first search after the result window is reset outside the API', async () => {
+    const index = app.meilisearch.index(STYLES_INDEX_UID);
+    await index.addDocuments(Array.from({ length: 1005 }, (_, i) => ({
+      id: `reset-${i}`, name: 'Reset catalog', styleCode: `R-${i}`,
+      searchPinned: false, inStock: true, publishedAt: i,
+    }))).waitTask();
+    await app.searchIndex.ensureCompletePagination(true);
+    // e.g. Meilisearch restored with its default window while this API keeps running.
+    await index.updatePagination({ maxTotalHits: 1000 }).waitTask();
+    const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Reset&pageSize=24&page=1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().unavailable).toBeUndefined();
+    expect(res.json().totalHits).toBe(1005);
+    expect(res.json().totalPages).toBe(42);
+    expect((await index.getPagination()).maxTotalHits).toBeGreaterThan(1005);
   });
 
 });
