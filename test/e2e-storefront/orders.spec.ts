@@ -172,7 +172,7 @@ test.describe('Order history', () => {
 
     // Before ever ordering: an empty order history, not an error.
     await page.goto('/orders');
-    await expect(page.getByText('You have no orders yet.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No orders yet' })).toBeVisible();
 
     await page.goto(`/product/${styleId}`);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
@@ -180,7 +180,7 @@ test.describe('Order history', () => {
     await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });
 
     await page.goto('/bag');
-    await page.getByRole('link', { name: 'Checkout' }).click();
+    await page.getByRole('link', { name: /Checkout/ }).click();
     await expect(page).toHaveURL(/\/checkout$/);
 
     await page.getByPlaceholder('Full name').fill('E2E Order History Buyer');
@@ -196,7 +196,7 @@ test.describe('Order history', () => {
     await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible();
 
     // Now the order genuinely appears in this same browser's order history.
-    await page.getByRole('link', { name: 'Orders' }).click();
+    await page.getByRole('link', { name: 'Track order' }).click();
     await expect(page).toHaveURL(/\/orders$/);
     await expect(page.getByText(/^ORD-\d{4}-\d{6}$/)).toBeVisible();
     await expect(page.getByText('Confirmed')).toBeVisible();
