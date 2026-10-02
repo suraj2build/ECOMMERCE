@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+.git
+.env*
+**/.env*
+**/dist
+**/.next
+**/*.tsbuildinfo
+packages/db/generated
+**/*.log
+coverage
+playwright-report
+test-results
+read-load-results.json
+infra/.data
+services/commerce-api/var

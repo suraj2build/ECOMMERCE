@@ -212,3 +212,13 @@ jobs:
           name: read-load-results
           path: read-load-results.json
           if-no-files-found: ignore
+
+  commerce-api-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production API container from a clean context
+        run: docker build --file infra/commerce-api.Dockerfile --tag fcp-api:ci .
+      - name: Verify compiled entrypoint, Prisma engine and runtime imports
+        run: |
+          docker run --rm --entrypoint node fcp-api:ci --input-type=module -e "import { existsSync, readdirSync } from 'node:fs'; if (!existsSync('dist/index.js')) throw new Error('Missing API entrypoint'); if (!readdirSync('../../packages/db/generated/client').some(name => name.endsWith('.so.node'))) throw new Error('Missing Prisma engine'); await import('@fcp/db'); await import('@fcp/config'); await import('@fcp/shared'); if (process.getuid() === 0) throw new Error('Runtime must not be root');"
