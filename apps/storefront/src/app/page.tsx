@@ -1,6 +1,5 @@
 import { getPublicCollections, getWatchAndShopFeed, searchStorefront } from '@/lib/api';
-import { VanyaGateway } from '@/components/home/VanyaGateway';
-import { VanyaHome } from '@/components/home/VanyaHome';
+import { VanyaHomeExperience } from '@/components/home/VanyaHomeExperience';
 
 async function safeFetch<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try {
@@ -11,7 +10,7 @@ async function safeFetch<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 export default async function HomePage() {
-  const [menResult, womenResult, collections, watch] = await Promise.all([
+  const [menResult, womenResult, collections, watchAndShop] = await Promise.all([
     safeFetch(() => searchStorefront({ gender: 'men', sort: 'newest', pageSize: 12 }), null),
     safeFetch(() => searchStorefront({ gender: 'women', sort: 'newest', pageSize: 12 }), null),
     safeFetch(() => getPublicCollections(), []),
@@ -19,14 +18,11 @@ export default async function HomePage() {
   ]);
 
   return (
-    <>
-      <VanyaGateway />
-      <VanyaHome
-        men={menResult?.hits ?? []}
-        women={womenResult?.hits ?? []}
-        collections={collections}
-        watch={watch}
-      />
-    </>
+    <VanyaHomeExperience
+      menProducts={menResult?.hits ?? []}
+      womenProducts={womenResult?.hits ?? []}
+      collections={collections}
+      watchAndShop={watchAndShop}
+    />
   );
 }
