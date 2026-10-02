@@ -863,6 +863,12 @@ model InventoryReservation {
   skuId          String
   locationId     String
   quantity       Int
+  // Units from a CONVERTED allocation that were explicitly released
+  // before dispatch (for example, a warehouse pick shortfall or line
+  // cancellation). The original reservation quantity stays immutable so
+  // its idempotency request remains meaningful; available committed units
+  // are quantity - allocationReleasedQuantity.
+  allocationReleasedQuantity Int   @default(0)
   status         ReservationStatus @default(ACTIVE)
   expiresAt      DateTime
   referenceType  String? // e.g. "CHECKOUT_SESSION", "COD_ORDER" (future)

@@ -480,6 +480,13 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
 
     const exchange = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchangeId } });
     expect(exchange.status).toBe('REPLACEMENT_UNAVAILABLE');
+    const replacementReservation = await testPrisma.inventoryReservation.findUniqueOrThrow({
+      where: { id: exchange.replacementReservationId! },
+    });
+    expect(replacementReservation).toMatchObject({
+      status: 'RELEASED',
+      allocationReleasedQuantity: task.allocatedQuantity,
+    });
     const unavailableAudit = await testPrisma.auditLog.findFirst({ where: { action: 'exchange.replacement.unavailable', entityId: exchangeId } });
     expect(unavailableAudit).toBeTruthy();
 

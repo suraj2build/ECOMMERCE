@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type PrismaClient, type OrderStatus, type OrderLineStatus, type FulfilmentStatus } from '@fcp/db';
-import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
+import { NotFoundError, ValidationError, ConflictError, InventoryIntegrityError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { InvoiceService } from '../tax/invoice-service.js';
 import { WarehouseService } from '../warehouse/service.js';
@@ -1336,11 +1336,36 @@ export class OrderService {
           await tx.order.update({ where: { id: orderId }, data: { refundRequired: true } });
         }
       } else {
+        const pickTask = await tx.pickTask.findUnique({ where: { orderLineId: lineId } });
+        if (pickTask && (pickTask.status === 'SHORT_PICKED' || pickTask.status === 'EXCEPTION')) {
+          const releasedByPick = pickTask.allocatedQuantity - pickTask.pickedQuantity;
+          if (releasedByPick > 0) {
+            if (!line.reservationId) {
+              throw new InventoryIntegrityError(
+                `Cannot reinstate order line '${lineId}' because its pick shortfall has no backing reservation`,
+              );
+            }
+            await this.inventory.restoreReleasedAllocationQuantity(
+              {
+                reservationId: line.reservationId,
+                quantity: releasedByPick,
+                reason: `Reinstate warehouse exception on pick task '${pickTask.id}': ${reason}`,
+                referenceType: 'PICK_TASK',
+                referenceId: pickTask.id,
+                idempotencyKey: `pick-restore:${pickTask.id}:${pickTask.idempotencyKey ?? 'legacy'}`,
+                actorStaffId: staffId,
+              },
+              tx,
+            );
+          }
+        }
+
         await tx.orderLine.update({ where: { id: lineId }, data: { status: 'ALLOCATED', exceptionReason: null } });
         // M16: reinstating (e.g. stock replenished, or a manually-flagged
         // exception unrelated to picking) resets this line's PickTask
         // back to PENDING for a fresh pick attempt - the SAME task row,
-        // never a second one (orderLineId stays unique).
+        // never a second one (orderLineId stays unique). Any released
+        // allocation is restored above first, in this SAME transaction.
         await tx.pickTask.updateMany({
           where: { orderLineId: lineId },
           data: {

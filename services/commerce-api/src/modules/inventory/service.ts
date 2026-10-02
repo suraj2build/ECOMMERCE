@@ -101,12 +101,13 @@ export class InventoryService {
     skuId: string;
     locationId: string;
     quantity: number;
+    allocationReleasedQuantity: number;
     status: 'ACTIVE' | 'CONVERTED' | 'RELEASED' | 'EXPIRED';
     expiresAt: Date;
   } | null> {
     const rows = await tx.$queryRaw<
-      { id: string; skuId: string; locationId: string; quantity: number; status: 'ACTIVE' | 'CONVERTED' | 'RELEASED' | 'EXPIRED'; expiresAt: Date }[]
-    >`SELECT "id", "skuId", "locationId", "quantity", "status", "expiresAt"
+      { id: string; skuId: string; locationId: string; quantity: number; allocationReleasedQuantity: number; status: 'ACTIVE' | 'CONVERTED' | 'RELEASED' | 'EXPIRED'; expiresAt: Date }[]
+    >`SELECT "id", "skuId", "locationId", "quantity", "allocationReleasedQuantity", "status", "expiresAt"
       FROM "inventory_reservations"
       WHERE "id" = ${reservationId}
       FOR UPDATE`;
@@ -673,6 +674,215 @@ export class InventoryService {
   }
 
   /**
+   * Releases only part (or all) of an already-CONVERTED allocation while
+   * preserving the reservation's original quantity. Used by M16 pick
+   * shortfalls: the physical correction decreases onHand, so the matching
+   * committed hold must decrease by the same amount in the SAME transaction
+   * or the DB invariant reserved <= onHand can be violated.
+   *
+   * The CANCELLATION ledger row is the reserved-balance effect. A full
+   * release moves the reservation to RELEASED; a partial release keeps it
+   * CONVERTED with allocationReleasedQuantity tracking the missing backing.
+   */
+  async releaseConvertedAllocationQuantity(
+    params: {
+      reservationId: string;
+      quantity: number;
+      reason: string;
+      referenceType: string;
+      referenceId: string;
+      idempotencyKey: string;
+      actorStaffId: string;
+    },
+    externalTx?: Prisma.TransactionClient,
+  ) {
+    if (params.quantity <= 0) throw new ValidationError('Allocation release quantity must be positive');
+    if (!params.idempotencyKey?.trim()) throw new ValidationError('Allocation release idempotency key is required');
+
+    const run = async (tx: Prisma.TransactionClient) => {
+      const existing = await tx.inventoryTransaction.findUnique({ where: { idempotencyKey: params.idempotencyKey } });
+      if (existing) {
+        if (
+          existing.type !== 'CANCELLATION' ||
+          existing.quantity !== params.quantity ||
+          existing.referenceType !== params.referenceType ||
+          existing.referenceId !== params.referenceId ||
+          existing.reason !== params.reason ||
+          existing.actorStaffId !== params.actorStaffId
+        ) {
+          throw new ConflictError(
+            `Idempotency key '${params.idempotencyKey}' was already used for a different allocation-release request`,
+          );
+        }
+        const replayReservation = await this.lockReservation(tx, params.reservationId);
+        if (!replayReservation) throw new NotFoundError('InventoryReservation', params.reservationId);
+        if (existing.skuId !== replayReservation.skuId || existing.locationId !== replayReservation.locationId) {
+          throw new ConflictError(
+            `Idempotency key '${params.idempotencyKey}' was already used for a different allocation-release request`,
+          );
+        }
+        return replayReservation;
+      }
+
+      const reservation = await this.lockReservation(tx, params.reservationId);
+      if (!reservation) throw new NotFoundError('InventoryReservation', params.reservationId);
+      if (reservation.status !== 'CONVERTED') {
+        throw new InventoryIntegrityError(
+          `Cannot release allocation quantity from reservation '${params.reservationId}' in status '${reservation.status}'`,
+        );
+      }
+
+      const remainingAllocation = reservation.quantity - reservation.allocationReleasedQuantity;
+      if (params.quantity > remainingAllocation) {
+        throw new InventoryIntegrityError(
+          `Cannot release ${params.quantity} unit(s) from reservation '${params.reservationId}' - only ${remainingAllocation} allocated unit(s) remain`,
+        );
+      }
+
+      const balance = await this.lockBalance(tx, reservation.skuId, reservation.locationId);
+      if (balance.reserved < params.quantity) {
+        throw new InventoryIntegrityError(
+          `Cannot release ${params.quantity} reserved unit(s) for reservation '${params.reservationId}' - only ${balance.reserved} are reserved at the location`,
+        );
+      }
+
+      await tx.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: reservation.skuId, locationId: reservation.locationId } },
+        data: { reserved: balance.reserved - params.quantity },
+      });
+
+      await this.writeLedgerRow(tx, {
+        skuId: reservation.skuId,
+        locationId: reservation.locationId,
+        type: 'CANCELLATION',
+        quantity: params.quantity,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
+        reason: params.reason,
+        idempotencyKey: params.idempotencyKey,
+        actorType: 'STAFF',
+        actorStaffId: params.actorStaffId,
+      });
+
+      const allocationReleasedQuantity = reservation.allocationReleasedQuantity + params.quantity;
+      return tx.inventoryReservation.update({
+        where: { id: reservation.id },
+        data: {
+          allocationReleasedQuantity,
+          status: allocationReleasedQuantity === reservation.quantity ? 'RELEASED' : 'CONVERTED',
+        },
+      });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
+   * Re-reserves stock previously released by releaseConvertedAllocationQuantity
+   * before a warehouse exception is reinstated. It never manufactures stock:
+   * availability is checked under the same balance lock, so at the exact
+   * onHand==reserved boundary a REINSTATE fails until replenishment arrives.
+   *
+   * Historical pre-hardening short-pick rows migrated with
+   * allocationReleasedQuantity=0 already retained their full reservation;
+   * for those rows this is intentionally a no-op rather than double-reserving.
+   */
+  async restoreReleasedAllocationQuantity(
+    params: {
+      reservationId: string;
+      quantity: number;
+      reason: string;
+      referenceType: string;
+      referenceId: string;
+      idempotencyKey: string;
+      actorStaffId: string;
+    },
+    externalTx?: Prisma.TransactionClient,
+  ) {
+    if (params.quantity <= 0) throw new ValidationError('Allocation restore quantity must be positive');
+    if (!params.idempotencyKey?.trim()) throw new ValidationError('Allocation restore idempotency key is required');
+
+    const run = async (tx: Prisma.TransactionClient) => {
+      const existing = await tx.inventoryTransaction.findUnique({ where: { idempotencyKey: params.idempotencyKey } });
+      if (existing) {
+        if (
+          existing.type !== 'RESERVATION' ||
+          existing.quantity !== params.quantity ||
+          existing.referenceType !== params.referenceType ||
+          existing.referenceId !== params.referenceId ||
+          existing.reason !== params.reason ||
+          existing.actorStaffId !== params.actorStaffId
+        ) {
+          throw new ConflictError(
+            `Idempotency key '${params.idempotencyKey}' was already used for a different allocation-restore request`,
+          );
+        }
+        const replayReservation = await this.lockReservation(tx, params.reservationId);
+        if (!replayReservation) throw new NotFoundError('InventoryReservation', params.reservationId);
+        if (existing.skuId !== replayReservation.skuId || existing.locationId !== replayReservation.locationId) {
+          throw new ConflictError(
+            `Idempotency key '${params.idempotencyKey}' was already used for a different allocation-restore request`,
+          );
+        }
+        return replayReservation;
+      }
+
+      const reservation = await this.lockReservation(tx, params.reservationId);
+      if (!reservation) throw new NotFoundError('InventoryReservation', params.reservationId);
+
+      // Backward compatibility for exception rows created before this
+      // hardening migration: they never released reserved quantity, so
+      // there is nothing to restore.
+      if (reservation.allocationReleasedQuantity === 0) return reservation;
+
+      if (reservation.status !== 'CONVERTED' && reservation.status !== 'RELEASED') {
+        throw new InventoryIntegrityError(
+          `Cannot restore allocation quantity to reservation '${params.reservationId}' in status '${reservation.status}'`,
+        );
+      }
+      if (params.quantity > reservation.allocationReleasedQuantity) {
+        throw new InventoryIntegrityError(
+          `Cannot restore ${params.quantity} unit(s) to reservation '${params.reservationId}' - only ${reservation.allocationReleasedQuantity} unit(s) were released`,
+        );
+      }
+
+      const balance = await this.lockBalance(tx, reservation.skuId, reservation.locationId);
+      const available = availableAtLocation(balance);
+      if (params.quantity > available) {
+        throw new InsufficientStockError(reservation.skuId, params.quantity, available);
+      }
+
+      await tx.inventoryBalance.update({
+        where: { skuId_locationId: { skuId: reservation.skuId, locationId: reservation.locationId } },
+        data: { reserved: balance.reserved + params.quantity },
+      });
+
+      await this.writeLedgerRow(tx, {
+        skuId: reservation.skuId,
+        locationId: reservation.locationId,
+        type: 'RESERVATION',
+        quantity: params.quantity,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
+        reason: params.reason,
+        idempotencyKey: params.idempotencyKey,
+        actorType: 'STAFF',
+        actorStaffId: params.actorStaffId,
+      });
+
+      return tx.inventoryReservation.update({
+        where: { id: reservation.id },
+        data: {
+          allocationReleasedQuantity: reservation.allocationReleasedQuantity - params.quantity,
+          status: 'CONVERTED',
+        },
+      });
+    };
+
+    return externalTx ? run(externalTx) : this.prisma.$transaction(run);
+  }
+
+  /**
    * CANCELLATION (M15, ORD-001 partial cancellation): releases a
    * CONVERTED allocation before it ships - distinct from
    * releaseReservation's RESERVATION_RELEASE (a checkout-time hold being
@@ -686,23 +896,39 @@ export class InventoryService {
       if (!reservation) throw new NotFoundError('InventoryReservation', reservationId);
       if (reservation.status !== 'CONVERTED') return reservation;
 
+      const remainingAllocation = reservation.quantity - reservation.allocationReleasedQuantity;
+      if (remainingAllocation <= 0) {
+        return tx.inventoryReservation.update({
+          where: { id: reservationId },
+          data: { status: 'RELEASED', allocationReleasedQuantity: reservation.quantity },
+        });
+      }
+
       const balance = await this.lockBalance(tx, reservation.skuId, reservation.locationId);
+      if (balance.reserved < remainingAllocation) {
+        throw new InventoryIntegrityError(
+          `Cannot cancel reservation '${reservationId}' - it still allocates ${remainingAllocation} unit(s) but only ${balance.reserved} are reserved at the location`,
+        );
+      }
       await tx.inventoryBalance.update({
         where: { skuId_locationId: { skuId: reservation.skuId, locationId: reservation.locationId } },
-        data: { reserved: Math.max(0, balance.reserved - reservation.quantity) },
+        data: { reserved: balance.reserved - remainingAllocation },
       });
 
       await this.writeLedgerRow(tx, {
         skuId: reservation.skuId,
         locationId: reservation.locationId,
         type: 'CANCELLATION',
-        quantity: reservation.quantity,
+        quantity: remainingAllocation,
         referenceType: 'RESERVATION',
         referenceId: reservation.id,
         reason,
       });
 
-      return tx.inventoryReservation.update({ where: { id: reservationId }, data: { status: 'RELEASED' } });
+      return tx.inventoryReservation.update({
+        where: { id: reservationId },
+        data: { status: 'RELEASED', allocationReleasedQuantity: reservation.quantity },
+      });
     };
     return externalTx ? run(externalTx) : this.prisma.$transaction(run);
   }
@@ -770,9 +996,10 @@ export class InventoryService {
             `Cannot record a sale against reservation '${params.reservationId}' in status '${reservation.status}' - a sale requires an already-converted (firm order) allocation`,
           );
         }
-        if (reservation.quantity < params.quantity) {
+        const remainingAllocation = reservation.quantity - reservation.allocationReleasedQuantity;
+        if (remainingAllocation < params.quantity) {
           throw new InventoryIntegrityError(
-            `Cannot record a sale of ${params.quantity} units against reservation '${params.reservationId}', which only allocated ${reservation.quantity}`,
+            `Cannot record a sale of ${params.quantity} units against reservation '${params.reservationId}', which only has ${remainingAllocation} still allocated after prior releases`,
           );
         }
       }
@@ -892,9 +1119,10 @@ export class InventoryService {
             `Cannot record an exchange dispatch against reservation '${params.reservationId}' in status '${reservation.status}' - it requires an already-converted (firm) allocation`,
           );
         }
-        if (reservation.quantity < params.quantity) {
+        const remainingAllocation = reservation.quantity - reservation.allocationReleasedQuantity;
+        if (remainingAllocation < params.quantity) {
           throw new InventoryIntegrityError(
-            `Cannot record an exchange dispatch of ${params.quantity} units against reservation '${params.reservationId}', which only allocated ${reservation.quantity}`,
+            `Cannot record an exchange dispatch of ${params.quantity} units against reservation '${params.reservationId}', which only has ${remainingAllocation} still allocated after prior releases`,
           );
         }
       }
