@@ -74,3 +74,5 @@ The targeted HTTP load job provisions its own published, priced, stocked product
 ### Supported deployment runtime
 
 The earlier Node 20 build/test baseline is not a supported production runtime in October 2026: Node's official release table marks v20 EOL and v24 LTS (https://nodejs.org/en/about/previous-releases). Production API build/runtime images, full/targeted CI and the root engine requirement now use Node 24 LTS, with the same major selected for developer tooling. No dependency graph or business behavior is changed by this platform maintenance update. Earlier local unit tests and all-workspace production builds already passed on Node 24.19.0; full real-service, browser, image and load verification is required on the new runtime before merging.
+
+The supported-runtime image check now starts an isolated PostgreSQL service and executes a real SELECT 1 through Prisma inside the built, non-root Alpine API image. This verifies native engine loading, OpenSSL/runtime compatibility and connectivity in the actual container, in addition to entrypoint/import checks. It is a test-database probe, not production configuration or deployment.
