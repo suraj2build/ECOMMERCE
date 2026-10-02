@@ -290,6 +290,16 @@ const envSchema = z.object({
   // campaign send, hence the same 5-minute default rather than
   // MARKETING_SENDING_STALE_SECONDS's longer window.
   CHANNEL_PUBLISH_STALE_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
+
+  // --- Storefront product-page cache ---
+  // The storefront caches each public product page for up to 30 seconds.
+  // After a publish, unpublish, archive, media or price change the API
+  // asks the storefront to drop that page (apps/storefront
+  // /api/revalidate/product) so the change shows on the next request.
+  // Unset: no call is made and pages refresh within 30 seconds instead.
+  // The secret must match the storefront's STOREFRONT_REVALIDATE_SECRET.
+  STOREFRONT_REVALIDATE_URL: z.string().url().optional(),
+  STOREFRONT_REVALIDATE_SECRET: z.string().min(32, 'STOREFRONT_REVALIDATE_SECRET must be at least 32 characters').optional(),
 });
 
 const PLACEHOLDER_SECRET_MARKERS = ['change-me', 'changeme', 'ci-only', 'test-only', 'dev-only', 'placeholder', 'example', 'replace-me'];
@@ -317,8 +327,17 @@ function looksLikeLowEntropyHexKey(value: string): boolean {
  */
 const validatedEnvSchema = envSchema
   .superRefine((env, ctx) => {
-    if (env.NODE_ENV !== 'production') return;
     const fail = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
+    if (env.STOREFRONT_REVALIDATE_URL && !env.STOREFRONT_REVALIDATE_SECRET) {
+      fail('STOREFRONT_REVALIDATE_SECRET', 'is required when STOREFRONT_REVALIDATE_URL is set');
+    }
+
+    if (env.NODE_ENV !== 'production') return;
+
+    if (env.STOREFRONT_REVALIDATE_SECRET && looksLikePlaceholderSecret(env.STOREFRONT_REVALIDATE_SECRET)) {
+      fail('STOREFRONT_REVALIDATE_SECRET', 'must be a real secret in production, not a placeholder');
+    }
 
     if (looksLikePlaceholderSecret(env.JWT_ACCESS_SECRET)) {
       fail('JWT_ACCESS_SECRET', 'must be a real secret in production, not a placeholder');

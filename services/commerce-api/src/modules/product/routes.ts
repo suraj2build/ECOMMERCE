@@ -113,6 +113,7 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = addMediaSchema.parse(request.body);
     const media = await service.addMedia({ styleId: id, ...body }, request.staffUser!.id);
+    await fastify.storefrontCache.invalidateProduct(id);
     reply.status(201).send(media);
   });
 
@@ -140,6 +141,7 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const result = await service.publish(id, request.staffUser!.id);
     await fastify.searchIndex.indexStyle(id); // M10: newly-publishable styles must be searchable immediately
+    await fastify.storefrontCache.invalidateProduct(id);
     reply.status(200).send(result);
   });
 
@@ -147,6 +149,7 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const result = await service.unpublish(id, request.staffUser!.id);
     await fastify.searchIndex.removeStyle(id); // M10: unpublished styles must disappear from search immediately
+    await fastify.storefrontCache.invalidateProduct(id);
     reply.status(200).send(result);
   });
 
@@ -154,6 +157,7 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const result = await service.archive(id, request.staffUser!.id);
     await fastify.searchIndex.removeStyle(id); // M10
+    await fastify.storefrontCache.invalidateProduct(id);
     reply.status(200).send(result);
   });
 };
