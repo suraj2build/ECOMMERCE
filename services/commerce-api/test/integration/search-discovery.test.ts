@@ -536,4 +536,21 @@ describe('Search / Discovery (M10)', () => {
     const recoveredRes = await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Reindex' });
     expect(recoveredRes.json().hits.map((h: { id: string }) => h.id)).toContain(styleId);
   });
+  it('exposes every result beyond the default 1000-hit window', async () => {
+    const index = app.meilisearch.index(STYLES_INDEX_UID);
+    await index.updatePagination({ maxTotalHits: 1000 }).waitTask();
+    // Isolate the search-engine boundary: the existing tests separately verify
+    // that real published/priced catalog data produces these documents.
+    await index.addDocuments(Array.from({ length: 1005 }, (_, i) => ({
+      id: `boundary-${i}`, name: 'Boundary catalog', styleCode: `B-${i}`,
+      searchPinned: false, inStock: true, publishedAt: i,
+    }))).waitTask();
+    const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Boundary&pageSize=60&page=17' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().unavailable).toBeUndefined();
+    expect(res.json().totalHits).toBe(1005);
+    expect(res.json().hits).toHaveLength(45);
+    expect((await index.getPagination()).maxTotalHits).toBeGreaterThanOrEqual(1005);
+  });
+
 });

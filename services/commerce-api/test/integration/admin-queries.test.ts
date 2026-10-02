@@ -524,11 +524,32 @@ describe('Admin query endpoints (P1)', () => {
     await app.inject({ method: 'POST', url: `/api/v1/catalog/collections/${created.json().id}/styles`, headers: h, payload: { styleId: sku.styleId } });
 
     const list = (await get('/admin/catalog/collections', merch.token)).json();
-    expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ name: 'Summer Edit', _count: { styles: 1 } });
+    expect(list.total).toBe(1);
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0]).toMatchObject({ name: 'Summer Edit', _count: { styles: 1 } });
     const detail = (await get(`/admin/catalog/collections/${created.json().id}`, merch.token)).json();
     expect(detail.styles.map((s: { style: { name: string } }) => s.style.name)).toEqual(['Collection Tee']);
     expect((await get('/admin/catalog/collections/00000000-0000-4000-8000-000000000000', merch.token)).statusCode).toBe(404);
+  });
+
+  it('pages beyond 200 collections and 500 collection styles without truncation', async () => {
+    const ctx = await seedContext();
+    const sku = await checkoutableSku(ctx, `BOUND-${counter}`, 'Boundary Tee');
+    const merch = await staff('MERCHANDISING', ['product:read']);
+    await testPrisma.collection.createMany({ data: Array.from({ length: 205 }, (_, i) => ({ name: `Boundary ${String(i).padStart(3, '0')}`, slug: `boundary-${counter}-${i}` })) });
+    const first = (await get('/admin/catalog/collections?take=100', merch.token)).json();
+    const last = (await get('/admin/catalog/collections?take=100&skip=200', merch.token)).json();
+    expect(first.total).toBe(205);
+    expect(first.items).toHaveLength(100);
+    expect(last.items).toHaveLength(5);
+    expect(last.items[4].name).toBe('Boundary 204');
+    const source = await testPrisma.style.findUniqueOrThrow({ where: { id: sku.styleId } });
+    await testPrisma.style.createMany({ data: Array.from({ length: 505 }, (_, i) => ({ styleCode: `BOUND-${counter}-${i}`, name: `Style ${i}`, brandId: source.brandId, categoryId: source.categoryId, season: source.season, collection: source.collection })) });
+    const styles = await testPrisma.style.findMany({ where: { styleCode: { startsWith: `BOUND-${counter}-` } }, select: { id: true } });
+    await testPrisma.collectionStyle.createMany({ data: styles.map((s) => ({ collectionId: first.items[0].id, styleId: s.id })) });
+    const detail = (await get(`/admin/catalog/collections/${first.items[0].id}?take=100&skip=500`, merch.token)).json();
+    expect(detail._count.styles).toBe(505);
+    expect(detail.styles).toHaveLength(5);
   });
 
   // -------------------------------------------------------------- dashboard

@@ -68,6 +68,25 @@ export interface StyleSearchDocument {
  */
 export class SearchIndexService {
   private readonly catalog: CatalogService;
+  private paginationUpdate: Promise<void> | undefined;
+
+  /** Grow the result window with the actual index, rather than hiding result 1001.
+   * Read live settings so restored/recreated indexes are handled as well. Updates
+   * are serialized in this service; the window is never deliberately lowered.
+   */
+  async ensureCompletePagination(): Promise<void> {
+    if (this.paginationUpdate) return this.paginationUpdate;
+    const update = (async () => {
+      const index = this.index();
+      const [stats, pagination] = await Promise.all([index.getStats(), index.getPagination()]);
+      if ((pagination.maxTotalHits ?? 1000) < stats.numberOfDocuments) {
+        await index.updatePagination({ maxTotalHits: stats.numberOfDocuments }).waitTask();
+      }
+    })();
+    this.paginationUpdate = update;
+    try { await update; } finally { this.paginationUpdate = undefined; }
+  }
+
 
   constructor(private readonly fastify: FastifyInstance) {
     this.catalog = new CatalogService(fastify);

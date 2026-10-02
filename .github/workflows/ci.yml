@@ -175,6 +175,7 @@ jobs:
             sleep 1
           done
           npm run test:e2e
+          LOAD_TEST_ALLOWED=test-environment LOAD_TEST_API_URL=http://localhost:4000 node scripts/go-live-read-load.mjs
         env:
           NEXT_PUBLIC_API_URL: 'http://localhost:4000'
           # M11: the PDP E2E spec logs in as the seeded super admin to
@@ -203,3 +204,11 @@ jobs:
           # lint-typecheck-build-test job above, so rate-limiting.test.ts
           # still proves the real, tighter limits.
           AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: '1000'
+
+      - name: Upload read-load measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: read-load-results
+          path: read-load-results.json
+          if-no-files-found: ignore
