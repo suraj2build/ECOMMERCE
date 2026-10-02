@@ -344,3 +344,66 @@ export async function getAllPublicStylesForSitemap(): Promise<PublicStyleSummary
 export async function getWatchAndShopFeed(): Promise<ShoppableMediaSummary[]> {
   return apiGet<ShoppableMediaSummary[]>('/api/v1/content/watch-and-shop/feed', 30);
 }
+
+
+export interface StorefrontSearchHit {
+  id: string;
+  styleCode: string;
+  name: string;
+  brandName: string;
+  categoryName: string;
+  categorySlug: string;
+  gender: string | null;
+  colours: string[];
+  sizes: string[];
+  mrp: number;
+  sellingPrice: number;
+  currency: string;
+  isMarkdown: boolean;
+  availableQuantity: number;
+  inStock: boolean;
+  publishedAt: number;
+  thumbnailUrl: string | null;
+}
+
+export interface StorefrontSearchResult {
+  hits: StorefrontSearchHit[];
+  page: number;
+  pageSize: number;
+  totalHits: number;
+  totalPages: number;
+  facetDistribution: Record<string, Record<string, number>>;
+  unavailable?: boolean;
+}
+
+export interface StorefrontSearchParams {
+  q?: string;
+  category?: string;
+  brand?: string;
+  gender?: string;
+  markdown?: boolean;
+  color?: string;
+  size?: string;
+  priceMin?: number;
+  priceMax?: number;
+  sort?: 'relevance' | 'price_asc' | 'price_desc' | 'newest';
+  page?: number;
+  pageSize?: number;
+}
+
+export async function searchStorefront(params: StorefrontSearchParams = {}): Promise<StorefrontSearchResult> {
+  const query = new URLSearchParams();
+  if (params.q) query.set('q', params.q);
+  if (params.category) query.set('category', params.category);
+  if (params.brand) query.set('brand', params.brand);
+  if (params.gender) query.set('gender', params.gender);
+  if (params.markdown !== undefined) query.set('markdown', String(params.markdown));
+  if (params.color) query.set('color', params.color);
+  if (params.size) query.set('size', params.size);
+  if (params.priceMin !== undefined) query.set('priceMin', String(params.priceMin));
+  if (params.priceMax !== undefined) query.set('priceMax', String(params.priceMax));
+  if (params.sort) query.set('sort', params.sort);
+  if (params.page) query.set('page', String(params.page));
+  if (params.pageSize) query.set('pageSize', String(params.pageSize));
+  return apiGet<StorefrontSearchResult>(`/api/v1/storefront/search?${query.toString()}`, 30);
+}
