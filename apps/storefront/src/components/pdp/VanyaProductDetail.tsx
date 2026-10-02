@@ -2,13 +2,25 @@
 
 import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ProductDetail } from '@/lib/api';
+import { getProductDetailLive, type ProductDetail } from '@/lib/api';
 import { addToCart, addToWishlist } from '@/lib/cart';
 import { getStoredSession } from '@/lib/customer-auth';
 import { recordProductView } from '@/lib/account';
 import { useModalFocus } from '@/components/layout/useModalFocus';
 
-export function VanyaProductDetail({ product }: { product: ProductDetail }) {
+export function VanyaProductDetail({ product: initialProduct }: { product: ProductDetail }) {
+  const [product, setProduct] = useState(initialProduct);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setRefreshFailed(false);
+    void getProductDetailLive(initialProduct.id).then((fresh) => {
+      if (active) setProduct(fresh);
+    }).catch(() => {
+      if (active) setRefreshFailed(true);
+    });
+    return () => { active = false; };
+  }, [initialProduct.id]);
   // Restore Customer 360's authenticated-only history in the new PDP.
   // An expired session or failed history request must not block shopping.
   useEffect(() => {
@@ -52,6 +64,10 @@ export function VanyaProductDetail({ product }: { product: ProductDetail }) {
   const selectedColour = colours.find((colour) => colour.id === selectedColourId);
 
   async function handleAddToBag() {
+    if (refreshFailed) {
+      setMessage('Unable to confirm availability. Please refresh this page.');
+      return;
+    }
     if (!selectedSizeId) {
       setMessage('Please select a size before adding to bag.');
       return;

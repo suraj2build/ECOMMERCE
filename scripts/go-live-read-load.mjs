@@ -15,6 +15,7 @@ const product = `${base}/api/v1/storefront/products/${styles[0].id}`;
 const storefront = process.env.LOAD_TEST_STOREFRONT_URL;
 if (!storefront) throw new Error('LOAD_TEST_STOREFRONT_URL is required to test the rendered product route.');
 const reports = [];
+let shopper = 0;
 for (const connections of [100, 200]) {
   for (const [name, url] of [
     ['same-product', product],
@@ -24,9 +25,17 @@ for (const connections of [100, 200]) {
   ]) {
     const result = await new Promise((resolve, reject) => {
       autocannon({ url, connections, duration: connections === 100 ? 30 : 15,
+        // Explicitly authorized test target only. Each connection models
+        // an independent shopper through the trusted proxy hop, rather
+        // than turning every shopper into one abusive shared-IP bucket.
+        // Production guards are unchanged and tested separately.
+        setupClient(client) {
+          const id = shopper++;
+          client.setHeaders({ 'x-forwarded-for': `198.18.${Math.floor(id / 250) % 250}.${id % 250 + 1}` });
+        },
         verifyBody(body) {
           try {
-            if (name === 'product-page') return body.includes('<html') && body.includes(styles[0].id);
+            if (name === 'product-page') return body.includes('<html') && body.includes(styles[0].id) && body.includes('"@type":"Product"');
             const value = JSON.parse(body); return value.unavailable !== true && !value.error;
           }
           catch { return false; }

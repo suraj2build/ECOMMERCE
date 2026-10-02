@@ -43,6 +43,9 @@ async function expectOk(res: APIResponse, label: string): Promise<unknown> {
  */
 test.describe('Product Detail Page', () => {
   let styleId: string;
+  let skuId: string;
+  let locationId: string;
+  let authHeaders: Record<string, string>;
   let api: APIRequestContext;
   const prisma = new PrismaClient();
 
@@ -53,7 +56,7 @@ test.describe('Product Detail Page', () => {
       data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
     });
     const { token } = (await expectOk(loginRes, 'Staff login')) as { token: string };
-    const authHeaders = { authorization: `Bearer ${token}` };
+    authHeaders = { authorization: `Bearer ${token}` };
 
     const category = await prisma.category.upsert({
       where: { slug: 'e2e-pdp-category' },
@@ -77,6 +80,7 @@ test.describe('Product Detail Page', () => {
       data: { code: `E2ELOC${Date.now() % 100000}`, name: 'E2E Location', type: 'WAREHOUSE' },
     });
     const location = (await expectOk(locationRes, 'Create location')) as { id: string };
+    locationId = location.id;
 
     const styleRes = await api.post('/api/v1/products/styles', {
       headers: authHeaders,
@@ -110,6 +114,7 @@ test.describe('Product Detail Page', () => {
       );
     }
     const sku = skus[0]!;
+    skuId = sku.skuId;
 
     await expectOk(
       await api.post(`/api/v1/products/styles/${styleId}/media`, {
@@ -212,4 +217,27 @@ test.describe('Product Detail Page', () => {
     const blocking = results.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
     expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
   });
+
+  test('serves cached public HTML while refreshing current price and availability in the browser', async ({ page, request }) => {
+    await request.get(`/product/${styleId}`);
+    await expect.poll(async () => {
+      const cached = await request.get(`/product/${styleId}`);
+      expect(cached.status()).toBe(200);
+      return cached.headers()['x-nextjs-cache'];
+    }).toBe('HIT');
+
+    await expectOk(await api.post('/api/v1/catalog/prices', {
+      headers: authHeaders,
+      data: { styleId, mrp: 1999, sellingPrice: 1499 },
+    }), 'Update live price');
+    await expectOk(await api.post('/api/v1/inventory/adjustments', {
+      headers: authHeaders,
+      data: { skuId, locationId, quantityDelta: -10, reason: 'E2E live refresh', idempotencyKey: `e2e-pdp-empty-${skuId}` },
+    }), 'Remove live stock');
+
+    await page.goto(`/product/${styleId}`);
+    await expect(page.getByText('₹1499').first()).toBeVisible();
+    await expect(page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first()).toBeDisabled();
+  });
+
 });

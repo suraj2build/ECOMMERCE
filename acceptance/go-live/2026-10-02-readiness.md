@@ -31,7 +31,7 @@ Lint, all-workspace typecheck, 52 unit tests, and production builds passed for t
 - Monitoring/alert destination and failure escalation; logs/request IDs/audit trails already exist.
 - Scheduled offsite backups, restoration rehearsal and rollback on the selected topology.
 - Legal/privacy content and unresolved data-retention/export/erasure decisions recorded in security/DPDP_READINESS.md.
-- Final business UAT, migration reconciliation and explicit production deployment authorization.
+- Final business UAT, migration reconciliation and deployment against the selected production target (owner authorization is already recorded).
 
 No external-provider business rule, legal retention policy or production infrastructure choice is invented by this repair.
 
@@ -50,3 +50,9 @@ No external-provider business rule, legal retention policy or production infrast
 Commerce sales/refunds and margin now use PostgreSQL grouped aggregates and relational filters instead of materializing every order/refund/line or building unbounded order-ID lists. Fashion sales aggregate by SKU and return reasons by reason; SKU metadata uses relational eligibility instead of a growing IN list. The canonical available-stock helper traverses bounded 1,000-ID batches without any total-SKU cutoff (33,001-SKU regression). Existing date, cancellation, refund, average-cost and missing-cost-line semantics are preserved. Full real-database regression and performance verification remain required; procurement reports and large per-SKU response payloads still need production-scale memory/latency assessment.
 
 Invoice recovery failure recording is conditional on invoiceId remaining null, so a failed replica cannot overwrite another replica's successfully issued invoice.
+
+### Final read-load repair
+
+The second full run passed 61 unit, 800 integration and 58 browser tests, but load remained red: the shared-IP harness triggered 429s, and dynamic PDP rendering at 200 connections had 23 timeouts (1,255ms median). Same-product API median improved to 21ms at 100 connections and 34ms at 200. This is test-environment evidence, not production capacity certification.
+
+PDP now uses on-demand 30-second public HTML revalidation, with no finite build-time product list. Browser hydration fetches uncached live price/stock; failed refresh prevents add-to-bag and checkout still independently validates current values. Browser coverage verifies cached HTML plus an API price change and real inventory removal. Identical concurrent public search reads share only pending work; settled or failed reads are discarded and differing filters stay separate. Load clients model distinct shopper IPs on the explicit test target; production throttling remains unchanged. HTML load validation requires real Product structured data, preventing a streaming error page from counting as success. Final-head full CI remains required.
