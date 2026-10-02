@@ -110,7 +110,7 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     // Priced so a single unit already triggers the automatic promotion's
     // minCartValue - real numbers, never hardcoded in the assertions below.
     await expectOk(await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId, mrp: 3000, sellingPrice: 3000 } }), 'Set price');
-    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: skus[0]!.skuId, locationId: location.id, quantityDelta: 20, reason: 'E2E stock load' } }), 'Inventory adjustment');
+    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: skus[0]!.skuId, locationId: location.id, quantityDelta: 20, reason: 'E2E stock load', idempotencyKey: `e2e-promotions-stock-${skus[0]!.skuId}` } }), 'Inventory adjustment');
 
     const promotionType = await prisma.promotionType.upsert({ where: { key: 'PROMOTIONAL' }, update: {}, create: { key: 'PROMOTIONAL', name: 'Promotional coupon' } });
     // Automatic promotion (no code) - a different stackGroup from the
@@ -183,7 +183,7 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await expectOk(await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/qa-check`, { headers: authHeaders }), 'Loyalty-seed QA check');
     await expectOk(await api.post(`/api/v1/products/styles/${loyaltySeedStyleId}/publish`, { headers: authHeaders }), 'Publish loyalty-seed style');
     await expectOk(await api.post('/api/v1/catalog/prices', { headers: authHeaders, data: { styleId: loyaltySeedStyleId, mrp: 12000, sellingPrice: 12000 } }), 'Set loyalty-seed price');
-    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: loyaltySeedSkus[0]!.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }), 'Loyalty-seed inventory adjustment');
+    await expectOk(await api.post('/api/v1/inventory/adjustments', { headers: authHeaders, data: { skuId: loyaltySeedSkus[0]!.skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-promotions-loyalty-stock-${loyaltySeedSkus[0]!.skuId}` } }), 'Loyalty-seed inventory adjustment');
   });
 
   test.afterAll(async () => {
