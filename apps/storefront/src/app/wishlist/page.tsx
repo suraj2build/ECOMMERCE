@@ -3,128 +3,77 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Container } from '@/components/ui/Container';
-import { buttonClassName } from '@/components/ui/Button';
 import { getWishlist, removeFromWishlist, moveWishlistItemToCart, type WishlistItemView } from '@/lib/cart';
 
-/**
- * Wishlist (M12, specs/11-wishlist-cart.md, CART-001/003). Client-
- * rendered for the same reason as /bag - per-visitor state. Sharing
- * (CART-003) is explicitly FUTURE_CONSIDERATION and not built here.
- */
 export default function WishlistPage() {
   const [items, setItems] = useState<WishlistItemView[] | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingSkuId, setPendingSkuId] = useState<string | null>(null);
-  const [movedMessage, setMovedMessage] = useState<string | null>(null);
-
-  async function refresh() {
-    try {
-      setItems(await getWishlist());
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load your wishlist.');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    void refresh();
+    getWishlist().then(setItems).catch((err) => setError(err instanceof Error ? err.message : 'Could not load your wishlist.'));
   }, []);
 
-  async function handleRemove(skuId: string) {
+  async function remove(skuId: string) {
     setPendingSkuId(skuId);
     try {
       setItems(await removeFromWishlist(skuId));
       window.dispatchEvent(new Event('fcp:wishlist-updated'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove this item.');
-    } finally {
-      setPendingSkuId(null);
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not remove this item.'); }
+    finally { setPendingSkuId(null); }
   }
 
-  async function handleMoveToCart(skuId: string) {
+  async function move(skuId: string) {
     setPendingSkuId(skuId);
-    setMovedMessage(null);
+    setMessage(null);
     try {
       await moveWishlistItemToCart(skuId, 1);
       window.dispatchEvent(new Event('fcp:cart-updated'));
       window.dispatchEvent(new Event('fcp:wishlist-updated'));
-      setItems((prev) => prev?.filter((i) => i.skuId !== skuId) ?? null);
-      setMovedMessage('Moved to bag.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not move this item to your bag.');
-    } finally {
-      setPendingSkuId(null);
-    }
+      setItems((current) => current?.filter((item) => item.skuId !== skuId) ?? null);
+      setMessage('Moved to bag.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not move this item to your bag.'); }
+    finally { setPendingSkuId(null); }
   }
 
   return (
-    <Container className="py-8">
-      <h1 className="font-display text-2xl text-ink">Your Wishlist</h1>
+    <div className="mx-auto max-w-[1440px] px-gutter py-10 sm:py-14">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Saved for later</p>
+      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Wishlist</h1>
+      {error ? <p role="alert" className="mt-4 text-sm text-danger">{error}</p> : null}
+      {message ? <p role="status" className="mt-4 text-sm text-[#5f554c]">{message}</p> : null}
+      {items === null && !error ? <p className="mt-8 text-sm text-[#6e6359]">Loading wishlist…</p> : null}
 
-      {loading && <p className="mt-6 text-sm text-ink-muted">Loading...</p>}
-      {error && (
-        <p role="alert" className="mt-4 text-sm text-danger">
-          {error}
-        </p>
-      )}
-      {movedMessage && (
-        <p role="status" className="mt-4 text-sm text-ink-muted">
-          {movedMessage}
-        </p>
-      )}
-
-      {!loading && items && items.length === 0 && (
-        <div className="mt-8">
-          <p className="text-sm text-ink-muted">Nothing saved yet.</p>
-          <Link href="/" className={buttonClassName('primary', 'mt-4')}>
-            Continue shopping
-          </Link>
+      {items && items.length === 0 ? (
+        <div className="mt-10 rounded-[24px] border border-[#e6ddd0] bg-white p-8 text-center">
+          <h2 className="font-display text-2xl text-[#181716]">Nothing saved yet</h2>
+          <Link href="/" className="mt-6 inline-flex min-h-[46px] items-center rounded-full bg-[#181716] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white">Explore VANYA</Link>
         </div>
-      )}
+      ) : null}
 
-      {!loading && items && items.length > 0 && (
-        <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+      {items && items.length > 0 ? (
+        <ul className="mt-8 grid grid-cols-2 gap-3 gap-y-8 sm:gap-5 md:grid-cols-3 lg:grid-cols-4">
           {items.map((item) => (
-            <li key={item.skuId} className="flex flex-col">
-              <Link href={`/product/${item.styleId}`} className="relative aspect-[3/4] overflow-hidden rounded-sm bg-surface">
-                {item.imageUrl && <Image src={item.imageUrl} alt={item.styleName} fill sizes="25vw" className="object-cover" />}
+            <li key={item.skuId} className="overflow-hidden rounded-[18px] border border-[#e9e2d8] bg-white">
+              <Link href={'/product/' + item.styleId} className="relative block aspect-[3/4] bg-[var(--color-surface-soft)]">
+                {item.imageUrl ? <Image src={item.imageUrl} alt={item.styleName} fill sizes="(max-width: 640px) 50vw, 25vw" className="object-cover" /> : null}
               </Link>
-              <p className="mt-2 text-sm text-ink">{item.styleName}</p>
-              <p className="text-xs text-ink-muted">
-                {item.colourName} &middot; {item.sizeLabel}
-              </p>
-              <p className="mt-1 text-sm text-ink">&#8377;{item.currentPrice ?? '—'}</p>
-              {!item.isPurchasable && <p className="mt-1 text-xs text-danger">No longer available</p>}
-              {item.isPurchasable && !item.inStock && <p className="mt-1 text-xs text-danger">Out of stock</p>}
-
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={pendingSkuId === item.skuId || !item.isPurchasable || !item.inStock}
-                  onClick={() => handleMoveToCart(item.skuId)}
-                  className={buttonClassName('secondary', 'flex-1 px-2 text-xs')}
-                >
-                  Move to Bag
-                </button>
-                <button
-                  type="button"
-                  disabled={pendingSkuId === item.skuId}
-                  onClick={() => handleRemove(item.skuId)}
-                  aria-label={`Remove ${item.styleName} from wishlist`}
-                  className="min-h-[44px] min-w-[44px] px-2 text-xs text-ink underline"
-                >
-                  Remove
-                </button>
+              <div className="p-3.5">
+                <p className="line-clamp-2 text-sm font-medium text-[#181716]">{item.styleName}</p>
+                <p className="mt-1 text-xs text-[#6e6359]">{item.colourName} · {item.sizeLabel}</p>
+                <p className="mt-2 text-sm font-semibold">&#8377;{item.currentPrice ?? '—'}</p>
+                {!item.isPurchasable ? <p className="mt-2 text-xs text-danger">No longer available</p> : null}
+                {item.isPurchasable && !item.inStock ? <p className="mt-2 text-xs text-danger">Out of stock</p> : null}
+                <div className="mt-4 grid gap-2">
+                  <button type="button" disabled={pendingSkuId === item.skuId || !item.isPurchasable || !item.inStock} onClick={() => void move(item.skuId)} className="min-h-[44px] rounded-full bg-[var(--color-primary)] px-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-50">Move to Bag</button>
+                  <button type="button" disabled={pendingSkuId === item.skuId} onClick={() => void remove(item.skuId)} className="min-h-[40px] text-[10px] font-semibold uppercase tracking-[0.12em] text-[#5f554c] underline underline-offset-4">Remove</button>
+                </div>
               </div>
             </li>
           ))}
         </ul>
-      )}
-    </Container>
+      ) : null}
+    </div>
   );
 }

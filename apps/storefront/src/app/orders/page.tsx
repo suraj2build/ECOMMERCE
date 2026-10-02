@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Container } from '@/components/ui/Container';
-import { buttonClassName } from '@/components/ui/Button';
 import { listMyOrders, type OrderView } from '@/lib/orders';
 
 const STATUS_LABEL: Record<OrderView['status'], string> = {
@@ -15,78 +13,53 @@ const STATUS_LABEL: Record<OrderView['status'], string> = {
   EXCEPTION: 'Needs attention',
 };
 
-/**
- * Order history (M15, specs/14-order-management.md - "Full order
- * history MUST be retained and queryable for the customer's account").
- * Same guest-or-customer identity as Bag/Wishlist - a guest who never
- * created an account still sees their own order history in this
- * browser, no login required.
- */
 export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const hasIdentity =
-      (() => {
-        try {
-          return !!(localStorage.getItem('fcp_guest_session_id') || localStorage.getItem('fcp_customer_session'));
-        } catch {
-          return false;
-        }
-      })();
-
-    if (!hasIdentity) {
-      setOrders([]);
-      return;
-    }
-
-    listMyOrders()
-      .then(setOrders)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load your orders.'));
+    let hasIdentity = false;
+    try { hasIdentity = !!(localStorage.getItem('fcp_guest_session_id') || localStorage.getItem('fcp_customer_session')); } catch {}
+    if (!hasIdentity) { setOrders([]); return; }
+    listMyOrders().then(setOrders).catch((err) => setError(err instanceof Error ? err.message : 'Could not load your orders.'));
   }, []);
 
   return (
-    <Container className="py-8">
-      <h1 className="font-display text-2xl text-ink">Your Orders</h1>
+    <div className="mx-auto max-w-[1100px] px-gutter py-10 sm:py-14">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">After purchase</p>
+      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Your Orders</h1>
+      {error ? <p role="alert" className="mt-4 text-sm text-danger">{error}</p> : null}
+      {orders === null && !error ? <p className="mt-8 text-sm text-[#6e6359]">Loading orders…</p> : null}
 
-      {error && (
-        <p role="alert" className="mt-4 text-sm text-danger">
-          {error}
-        </p>
-      )}
-
-      {orders === null && !error && <p className="mt-6 text-sm text-ink-muted">Loading...</p>}
-
-      {orders !== null && orders.length === 0 && (
-        <div className="mt-8">
-          <p className="text-sm text-ink-muted">You have no orders yet.</p>
-          <Link href="/" className={buttonClassName('primary', 'mt-4')}>
-            Start shopping
-          </Link>
+      {orders && orders.length === 0 ? (
+        <div className="mt-10 rounded-[24px] border border-[#e6ddd0] bg-white p-8 text-center">
+          <h2 className="font-display text-2xl text-[#181716]">No orders yet</h2>
+          <p className="mt-2 text-sm text-[#6e6359]">Your VANYA order history will appear here.</p>
+          <Link href="/" className="mt-6 inline-flex min-h-[46px] items-center rounded-full bg-[#181716] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white">Start shopping</Link>
         </div>
-      )}
+      ) : null}
 
-      {orders && orders.length > 0 && (
-        <ul className="mt-6 space-y-4">
+      {orders && orders.length > 0 ? (
+        <ul className="mt-8 space-y-4">
           {orders.map((order) => (
-            <li key={order.id} className="rounded-sm border border-border p-4">
-              <Link href={`/orders/${order.id}`} className="block">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-ink">{order.orderNumber}</span>
-                  <span className="text-sm text-ink-muted">{STATUS_LABEL[order.status]}</span>
+            <li key={order.id}>
+              <Link href={'/orders/' + order.id} className="block rounded-[20px] border border-[#e6ddd0] bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-subtle sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6e6359]">Order</p>
+                    <p className="mt-1 font-display text-xl text-[#181716]">{order.orderNumber}</p>
+                  </div>
+                  <span className="rounded-full bg-[var(--color-badge-bg)] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--color-badge-text)]">{STATUS_LABEL[order.status]}</span>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-sm text-ink-muted">
-                  <span>
-                    {order.lines.length} item{order.lines.length === 1 ? '' : 's'}
-                  </span>
-                  <span>&#8377;{order.grandTotal}</span>
+                <div className="mt-5 flex items-center justify-between border-t border-[#eee7de] pt-4 text-sm">
+                  <span className="text-[#6e6359]">{order.lines.length} item{order.lines.length === 1 ? '' : 's'}</span>
+                  <span className="font-semibold text-[#181716]">&#8377;{order.grandTotal}</span>
                 </div>
               </Link>
             </li>
           ))}
         </ul>
-      )}
-    </Container>
+      ) : null}
+    </div>
   );
 }

@@ -3,21 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Container } from '@/components/ui/Container';
-import { buttonClassName } from '@/components/ui/Button';
 import { getCart, updateCartItemQuantity, removeCartItem, type CartView } from '@/lib/cart';
 
-/**
- * Bag / Cart (M12, specs/11-wishlist-cart.md). Client-rendered - cart
- * state is per-visitor (guest session or logged-in customer), never
- * something Next.js should cache or render server-side. Re-validates
- * price/availability on every load (the GET /storefront/cart response
- * already does this server-side) and surfaces price/stock changes
- * clearly rather than silently proceeding - spec requirement. Checkout
- * itself is now wired up (M13, /checkout) - blocked here whenever
- * hasBlockingChanges is true, so the customer resolves cart issues
- * before checkout ever re-validates them again.
- */
 export default function BagPage() {
   const [cart, setCart] = useState<CartView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,154 +12,76 @@ export default function BagPage() {
   const [pendingSkuId, setPendingSkuId] = useState<string | null>(null);
 
   async function refresh() {
-    try {
-      setCart(await getCart());
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load your bag.');
-    } finally {
-      setLoading(false);
-    }
+    try { setCart(await getCart()); setError(null); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not load your bag.'); }
+    finally { setLoading(false); }
   }
 
-  useEffect(() => {
-    void refresh();
-  }, []);
+  useEffect(() => { void refresh(); }, []);
 
   async function handleQuantityChange(skuId: string, quantity: number) {
     setPendingSkuId(skuId);
     try {
-      setCart(await updateCartItemQuantity(skuId, quantity));
+      setCart(quantity <= 0 ? await removeCartItem(skuId) : await updateCartItemQuantity(skuId, quantity));
       window.dispatchEvent(new Event('fcp:cart-updated'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update quantity.');
-    } finally {
-      setPendingSkuId(null);
-    }
-  }
-
-  async function handleRemove(skuId: string) {
-    setPendingSkuId(skuId);
-    try {
-      setCart(await removeCartItem(skuId));
-      window.dispatchEvent(new Event('fcp:cart-updated'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove this item.');
-    } finally {
-      setPendingSkuId(null);
-    }
+    } finally { setPendingSkuId(null); }
   }
 
   return (
-    <Container className="py-8">
-      <h1 className="font-display text-2xl text-ink">Your Bag</h1>
+    <div className="mx-auto max-w-[1440px] px-gutter py-10 sm:py-14">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Your selection</p>
+      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Shopping Bag</h1>
 
-      {loading && <p className="mt-6 text-sm text-ink-muted">Loading...</p>}
-      {error && (
-        <p role="alert" className="mt-4 text-sm text-danger">
-          {error}
-        </p>
-      )}
+      {loading ? <p className="mt-8 text-sm text-[#6e6359]">Loading bag…</p> : null}
+      {error ? <p role="alert" className="mt-4 text-sm text-danger">{error}</p> : null}
 
-      {!loading && cart && cart.items.length === 0 && (
-        <div className="mt-8">
-          <p className="text-sm text-ink-muted">Your bag is empty.</p>
-          <Link href="/" className={buttonClassName('primary', 'mt-4')}>
-            Continue shopping
-          </Link>
+      {!loading && cart && cart.items.length === 0 ? (
+        <div className="mt-10 rounded-[24px] border border-[#e6ddd0] bg-white p-8 text-center">
+          <h2 className="font-display text-2xl text-[#181716]">Your bag is empty</h2>
+          <p className="mt-2 text-sm text-[#6e6359]">Explore the latest VANYA edit when you’re ready.</p>
+          <Link href="/" className="mt-6 inline-flex min-h-[46px] items-center rounded-full bg-[#181716] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white">Continue shopping</Link>
         </div>
-      )}
+      ) : null}
 
-      {!loading && cart && cart.items.length > 0 && (
-        <div className="mt-6 grid gap-8 md:grid-cols-[1fr_320px]">
-          <ul className="space-y-6">
+      {!loading && cart && cart.items.length > 0 ? (
+        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
+          <ul className="divide-y divide-[#e8dfd3] rounded-[24px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
             {cart.items.map((item) => (
-              <li key={item.skuId} className="flex gap-4 border-b border-border pb-6">
-                <div className="relative h-28 w-20 shrink-0 overflow-hidden rounded-sm bg-surface">
-                  {item.imageUrl && (
-                    <Image src={item.imageUrl} alt={item.styleName} fill sizes="80px" className="object-cover" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm text-ink">{item.styleName}</p>
-                  <p className="mt-1 text-xs text-ink-muted">
-                    {item.colourName} &middot; {item.sizeLabel}
-                  </p>
-                  <p className="mt-2 text-sm text-ink">&#8377;{item.currentPrice ?? item.priceAtAdd}</p>
-
-                  {!item.isPurchasable && (
-                    <p role="alert" className="mt-2 text-xs text-danger">
-                      This item is no longer available and won&apos;t be included at checkout.
-                    </p>
-                  )}
-                  {item.isPurchasable && !item.inStock && (
-                    <p role="alert" className="mt-2 text-xs text-danger">
-                      Only {item.availableQuantity} left - reduce the quantity to continue.
-                    </p>
-                  )}
-                  {item.priceChanged && (
-                    <p role="status" className="mt-2 text-xs text-ink-muted">
-                      Price changed since you added this item (was &#8377;{item.priceAtAdd}).
-                    </p>
-                  )}
-
-                  <div className="mt-3 flex items-center gap-3">
-                    <label htmlFor={`qty-${item.skuId}`} className="sr-only">
-                      Quantity for {item.styleName}
-                    </label>
-                    <select
-                      id={`qty-${item.skuId}`}
-                      value={item.quantity}
-                      disabled={pendingSkuId === item.skuId}
-                      onChange={(e) => handleQuantityChange(item.skuId, Number(e.target.value))}
-                      className="min-h-[44px] rounded-sm border border-border px-2 text-sm text-ink"
-                    >
-                      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(item.skuId)}
-                      disabled={pendingSkuId === item.skuId}
-                      className="min-h-[44px] text-sm text-ink underline"
-                    >
-                      Remove
-                    </button>
+              <li key={item.skuId} className="flex gap-4 py-5 first:pt-0 last:pb-0">
+                <Link href={'/product/' + item.styleId} className="relative h-36 w-28 shrink-0 overflow-hidden rounded-[16px] bg-[var(--color-surface-soft)]">
+                  {item.imageUrl ? <Image src={item.imageUrl} alt={item.styleName} fill sizes="112px" className="object-cover" /> : null}
+                </Link>
+                <div className="min-w-0 flex-1">
+                  <Link href={'/product/' + item.styleId} className="line-clamp-2 text-sm font-medium text-[#181716] hover:text-[var(--color-primary)]">{item.styleName}</Link>
+                  <p className="mt-1 text-xs text-[#6e6359]">{item.colourName} · {item.sizeLabel}</p>
+                  <p className="mt-2 text-sm font-semibold text-[#181716]">&#8377;{item.currentPrice ?? item.priceAtAdd}</p>
+                  {!item.isPurchasable ? <p role="alert" className="mt-2 text-xs text-danger">This style is no longer purchasable.</p> : null}
+                  {item.isPurchasable && !item.inStock ? <p role="alert" className="mt-2 text-xs text-danger">Only {item.availableQuantity} available.</p> : null}
+                  {item.priceChanged ? <p role="status" className="mt-2 text-xs text-[#5f554c]">Price changed from &#8377;{item.priceAtAdd}.</p> : null}
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <div className="inline-flex overflow-hidden rounded-full border border-[#d8d0c6]">
+                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity - 1)} disabled={pendingSkuId === item.skuId} className="min-h-[40px] min-w-[40px]" aria-label={'Decrease quantity for ' + item.styleName}>−</button>
+                      <span className="min-w-[36px] self-center text-center text-xs font-semibold">{item.quantity}</span>
+                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity + 1)} disabled={pendingSkuId === item.skuId} className="min-h-[40px] min-w-[40px]" aria-label={'Increase quantity for ' + item.styleName}>+</button>
+                    </div>
+                    <button type="button" onClick={() => void handleQuantityChange(item.skuId, 0)} disabled={pendingSkuId === item.skuId} className="min-h-[40px] text-xs text-[#5f554c] underline underline-offset-4">Remove</button>
                   </div>
                 </div>
               </li>
             ))}
           </ul>
 
-          <div className="h-fit rounded-sm border border-border p-6">
-            <div className="flex justify-between text-sm">
-              <span className="text-ink-muted">Subtotal ({cart.itemCount} item{cart.itemCount === 1 ? '' : 's'})</span>
-              <span className="text-ink">&#8377;{cart.subtotal}</span>
-            </div>
-            {cart.hasBlockingChanges && (
-              <p role="alert" className="mt-3 text-xs text-danger">
-                Some items need your attention before you can check out.
-              </p>
-            )}
-            <Link
-              href="/checkout"
-              aria-disabled={cart.hasBlockingChanges}
-              className={buttonClassName(
-                'primary',
-                `mt-4 w-full${cart.hasBlockingChanges ? ' pointer-events-none opacity-50' : ''}`,
-              )}
-              onClick={(e) => {
-                if (cart.hasBlockingChanges) e.preventDefault();
-              }}
-            >
-              Checkout
-            </Link>
-          </div>
+          <aside className="h-fit rounded-[24px] border border-[#e6ddd0] bg-white p-6 lg:sticky lg:top-28">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6e6359]">Order summary</p>
+            <div className="mt-4 flex justify-between text-sm"><span className="text-[#5f554c]">Subtotal ({cart.itemCount} items)</span><span className="font-semibold text-[#181716]">&#8377;{cart.subtotal}</span></div>
+            <p className="mt-4 text-xs leading-5 text-[#6e6359]">Shipping, promotions, loyalty and store credit are calculated by the live checkout service.</p>
+            {cart.hasBlockingChanges ? <p role="alert" className="mt-3 text-xs text-danger">Some items need attention before checkout.</p> : null}
+            <Link href="/checkout" aria-disabled={cart.hasBlockingChanges} className={'mt-6 flex min-h-[50px] items-center justify-center rounded-full bg-[var(--color-primary)] px-6 text-xs font-semibold uppercase tracking-[0.15em] text-white ' + (cart.hasBlockingChanges ? 'pointer-events-none opacity-50' : 'hover:bg-[var(--color-primary-hover)]')}>Proceed to Checkout</Link>
+          </aside>
         </div>
-      )}
-    </Container>
+      ) : null}
+    </div>
   );
 }

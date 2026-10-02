@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { getCart, getWishlist } from '@/lib/cart';
 import { useDepartment } from './DepartmentContext';
 import { VanyaBagDrawer } from './VanyaBagDrawer';
+import { VanyaSearchOverlay } from './VanyaSearchOverlay';
 
 export function Header() {
   const { department, clearDepartment } = useDepartment();
@@ -12,6 +13,7 @@ export function Header() {
   const [cartCount, setCartCount] = useState(0);
   const [wishlistCount, setWishlistCount] = useState(0);
   const [bagOpen, setBagOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +92,7 @@ export function Header() {
 
         <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
           <Link href="/watch-and-shop" className="hidden py-3 text-[11px] font-medium uppercase tracking-[0.15em] hover:text-[var(--color-primary)] xl:block">Watch &amp; Shop</Link>
-          <Link href="/search" className="hidden min-h-[36px] min-w-[150px] items-center rounded-full border border-[#e5dfd5] bg-[#f6f4f0] px-4 text-[11px] text-[#7e7468] hover:bg-[#efece5] lg:flex">Search garments…</Link>
+          <button type="button" onClick={() => setSearchOpen(true)} className="hidden min-h-[36px] min-w-[150px] items-center rounded-full border border-[#e5dfd5] bg-[#f6f4f0] px-4 text-left text-[11px] text-[#6e6359] hover:bg-[#efece5] lg:flex">Search garments…</button>
           <Link href="/account" className="hidden min-h-[44px] items-center px-2 text-xs hover:text-[var(--color-primary)] sm:flex">Account</Link>
           <Link href="/wishlist" className="relative flex min-h-[44px] items-center px-2 text-xs hover:text-[var(--color-primary)]" aria-label={`Wishlist, ${wishlistCount} item${wishlistCount === 1 ? '' : 's'}`}>
             ♡<span className="ml-1 hidden sm:inline">Wishlist</span>{wishlistCount > 0 ? <span className="ml-1">({wishlistCount})</span> : null}
@@ -104,11 +106,12 @@ export function Header() {
       <div className={`h-[1.5px] w-full bg-gradient-to-r from-transparent via-[var(--color-primary)] to-transparent transition-opacity ${department ? 'opacity-80' : 'opacity-30'}`} />
 
       <VanyaBagDrawer open={bagOpen} onClose={() => setBagOpen(false)} />
+      <VanyaSearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {mobileOpen && (
         <nav id="vanya-mobile-nav" aria-label="Primary mobile" className="border-t border-[#efece6] bg-white lg:hidden">
           <div className="border-b border-[#efece6] px-gutter py-3">
-            <Link href="/search" onClick={() => setMobileOpen(false)} className="flex min-h-[44px] items-center rounded-full bg-[#f6f4f0] px-4 text-sm text-[#7e7468]">Search garments…</Link>
+            <button type="button" onClick={() => { setMobileOpen(false); setSearchOpen(true); }} className="flex min-h-[44px] w-full items-center rounded-full bg-[#f6f4f0] px-4 text-left text-sm text-[#6e6359]">Search garments…</button>
           </div>
           <ul className="divide-y divide-[#f4f1ea] px-gutter">
             <li><Link href={departmentHref} onClick={() => setMobileOpen(false)} className="block py-4 text-sm uppercase tracking-[0.14em]">Shop {department ?? 'VANYA'}</Link></li>

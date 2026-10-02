@@ -293,6 +293,20 @@ export async function searchStorefront(params: {
   return apiGet<StorefrontSearchResult>(`/api/v1/storefront/search?${query.toString()}`, 30);
 }
 
+export async function searchStorefrontLive(params: {
+  q?: string;
+  gender?: string;
+  pageSize?: number;
+} = {}): Promise<StorefrontSearchResult> {
+  const query = new URLSearchParams();
+  if (params.q) query.set('q', params.q);
+  if (params.gender) query.set('gender', params.gender);
+  query.set('pageSize', String(params.pageSize ?? 8));
+  const res = await fetch(`${API_URL}/api/v1/storefront/search?${query.toString()}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Search failed (${res.status})`);
+  return res.json() as Promise<StorefrontSearchResult>;
+}
+
 // M27 (specs/26-seo.md): sitemap.xml must stay current as products
 // publish/unpublish, so it pages through the SAME public/publish-gated
 // `getPublicStyles` read every other public page uses (never a second,
