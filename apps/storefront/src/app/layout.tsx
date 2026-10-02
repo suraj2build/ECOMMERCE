@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter, Playfair_Display } from 'next/font/google';
-import { DepartmentProvider } from '@/components/layout/DepartmentProvider';
+import { DepartmentProvider } from '@/components/layout/DepartmentContext';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import './globals.css';
