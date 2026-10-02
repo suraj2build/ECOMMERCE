@@ -35,7 +35,9 @@ export function Header() {
       try {
         const cart = await getCart();
         if (!cancelled) setCartCount(cart.itemCount);
-      } catch {}
+      } catch {
+        // Navigation remains usable if cart count cannot be refreshed.
+      }
     }
     void refresh();
     window.addEventListener('fcp:cart-updated', refresh);
@@ -127,7 +129,6 @@ export function Header() {
               <input
                 id="vanya-search-input"
                 name="q"
-                autoFocus
                 placeholder="Search kurtas, bandhgalas, sarees, colours..."
                 className="min-h-[48px] flex-1 border-b border-ink bg-transparent px-1 text-sm text-ink outline-none placeholder:text-ink-muted"
               />
