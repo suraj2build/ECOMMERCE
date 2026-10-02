@@ -396,10 +396,19 @@ export class WarehouseService {
         }
 
         const adjustmentReason = `${reasonPrefix} on pick task '${task.id}' (${sourceLabel})`;
+        // An order-line exception can be reinstated, so only the missing
+        // units lose their committed backing; the units actually found stay
+        // reserved for that line. An exchange short-pick is different:
+        // REPLACEMENT_UNAVAILABLE is terminal for this warehouse flow and
+        // has no reinstate path, so release the ENTIRE replacement
+        // allocation. The found units remain physically onHand and become
+        // available to other demand; only the genuinely missing shortfall
+        // is written off below.
+        const allocationReleaseQuantity = orderLineId ? shortfall : task.allocatedQuantity;
         await this.inventory.releaseConvertedAllocationQuantity(
           {
             reservationId,
-            quantity: shortfall,
+            quantity: allocationReleaseQuantity,
             reason: adjustmentReason,
             referenceType: 'PICK_TASK',
             referenceId: task.id,
