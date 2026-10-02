@@ -126,7 +126,14 @@ describe('Audit certification', () => {
 
     const adjustRes = await app.inject({
       method: 'POST', url: '/api/v1/inventory/adjustments', headers: { authorization: `Bearer ${warehouse.token}` },
-      payload: { skuId: sku.id, locationId: location.id, quantityDelta: 60, reason: 'audit test large adjustment', coApproverStaffId: finance.staffUserId },
+      payload: {
+        skuId: sku.id,
+        locationId: location.id,
+        quantityDelta: 60,
+        reason: 'audit test large adjustment',
+        coApproverStaffId: finance.staffUserId,
+        idempotencyKey: 'audit-inventory-adjustment',
+      },
     });
     expect(adjustRes.statusCode).toBe(201);
 
