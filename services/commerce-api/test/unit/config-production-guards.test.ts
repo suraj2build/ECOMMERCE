@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { describe, it, expect, afterEach } from 'vitest';
 import { loadEnv, __resetEnvCacheForTests } from '@fcp/config';
 import { PRODUCTION_TEST_SECRETS } from '../helpers/production-env.js';
@@ -60,5 +61,20 @@ describe('Production configuration guards', () => {
     const env = parse({ ...BASE, NODE_ENV: 'test', JWT_ACCESS_SECRET: 'ci-only-secret-ci-only-secret-not-for-prod', MFA_SECRET_ENCRYPTION_KEY: 'c1'.repeat(32) });
     expect(env.GUEST_SESSION_ALLOW_UNSIGNED).toBe(true);
     expect(env.GUEST_SESSION_SIGNING_SECRET).toBeUndefined();
+  });
+
+  it('requires the storefront revalidation secret whenever its URL is set, in any environment', () => {
+    const test = { ...BASE, NODE_ENV: 'test', JWT_ACCESS_SECRET: 'ci-only-secret-ci-only-secret-not-for-prod', MFA_SECRET_ENCRYPTION_KEY: 'c1'.repeat(32) };
+    const url = 'http://storefront:3000/api/revalidate/product';
+    expect(() => parse({ ...test, STOREFRONT_REVALIDATE_URL: url })).toThrow(/STOREFRONT_REVALIDATE_SECRET: is required when STOREFRONT_REVALIDATE_URL is set/);
+    expect(() => parse({ ...test, STOREFRONT_REVALIDATE_URL: url, STOREFRONT_REVALIDATE_SECRET: 'short' })).toThrow(/at least 32 characters/);
+    expect(() => parse({ ...test, STOREFRONT_REVALIDATE_URL: 'not a url', STOREFRONT_REVALIDATE_SECRET: 'x'.repeat(40) })).toThrow(/STOREFRONT_REVALIDATE_URL/);
+    expect(parse({ ...test }).STOREFRONT_REVALIDATE_URL).toBeUndefined();
+  });
+
+  it('refuses a placeholder storefront revalidation secret in production', () => {
+    const url = 'http://storefront:3000/api/revalidate/product';
+    expect(() => parse({ ...PROD, STOREFRONT_REVALIDATE_URL: url, STOREFRONT_REVALIDATE_SECRET: 'ci-only-storefront-revalidate-secret-0001' })).toThrow(/STOREFRONT_REVALIDATE_SECRET: must be a real secret in production/);
+    expect(parse({ ...PROD, STOREFRONT_REVALIDATE_URL: url, STOREFRONT_REVALIDATE_SECRET: randomBytes(24).toString('hex') }).STOREFRONT_REVALIDATE_URL).toBe(url);
   });
 });

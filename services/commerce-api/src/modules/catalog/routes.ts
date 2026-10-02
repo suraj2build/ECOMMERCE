@@ -41,6 +41,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     const body = priceSchema.parse(request.body);
     const result = await service.setBasePrice(body, request.staffUser!.id);
     await fastify.searchIndex.indexStyle(body.styleId); // M10: price affects sort/facet/eligibility
+    await fastify.storefrontCache.invalidateProduct(body.styleId);
     reply.status(201).send(result);
   });
 
@@ -48,6 +49,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     const body = priceSchema.parse(request.body);
     const result = await service.setMarkdownPrice(body, request.staffUser!.id);
     await fastify.searchIndex.indexStyle(body.styleId); // M10
+    await fastify.storefrontCache.invalidateProduct(body.styleId);
     reply.status(201).send(result);
   });
 

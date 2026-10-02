@@ -25,6 +25,7 @@ import taxRoutes from './modules/tax/routes.js';
 import contentRoutes from './modules/content/routes.js';
 import searchRoutes from './modules/search/routes.js';
 import { SearchIndexService } from './modules/search/index-service.js';
+import { StorefrontCacheService } from './modules/pdp/storefront-cache.js';
 import pdpRoutes from './modules/pdp/routes.js';
 import cartRoutes from './modules/cart/routes.js';
 import checkoutRoutes from './modules/checkout/routes.js';
@@ -147,6 +148,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // Fire-and-forget: index settings converge eventually even if
   // Meilisearch isn't up yet at boot (see SearchIndexService.configureIndex).
   void app.searchIndex.configureIndex();
+  // Drops the storefront's cached product page after a publish-state,
+  // media or price change (modules/pdp/storefront-cache.ts).
+  app.decorate('storefrontCache', new StorefrontCacheService(app.log));
 
   // Health & readiness (M00 requirement). Excluded from the M31 global
   // rate limiter (plugins/rate-limit.ts) - these are unauthenticated

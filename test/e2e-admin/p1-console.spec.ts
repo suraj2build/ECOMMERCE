@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type Page } from '@playwright/test';
 import {
   RUN,
   chooseSku,
@@ -27,6 +27,8 @@ import {
 // Fixture prices stay below ₹1000: test/e2e-storefront/promotions.spec.ts leaves an
 // automatic 10% promotion active for carts of ₹1000+, which would otherwise turn
 // the P1-08 exchange into a customer-pays settlement.
+const STOREFRONT_URL = process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000';
+
 let fx: Fixture;
 let tee: ProvisionedStyle;
 let mobileSeq = 0;
@@ -66,6 +68,11 @@ test.describe('P1 Commerce Operations Console', () => {
     await page.getByRole('button', { name: 'Create style' }).click();
     await expect(page.getByText('Style created in DRAFT')).toBeVisible();
 
+    // The shop page is opened before publication, so the storefront caches a 404.
+    const storefront = await playwrightRequest.newContext({ baseURL: STOREFRONT_URL });
+    const draft = await prisma.style.findUniqueOrThrow({ where: { styleCode: code } });
+    expect((await storefront.get(`/product/${draft.id}`)).status()).toBe(404);
+
     await page.getByLabel('Colour name').fill('Navy');
     await page.getByLabel('Colour code').fill('NVY');
     await page.getByRole('button', { name: 'Add colour' }).click();
@@ -103,6 +110,14 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(style.media).toHaveLength(1);
     expect(style.prices.map((p) => Number(p.sellingPrice))).toEqual([1499]);
     await expect(page.getByRole('heading', { name: `${code} · P1 Workbench Shirt` })).toBeVisible();
+
+    // Publishing and pricing in the console reach the shop at once, not after
+    // the storefront's 30-second page cache expires.
+    await expect.poll(async () => (await storefront.get(`/product/${style.id}`)).status(), { timeout: 5_000 }).toBe(200);
+    const shopPage = await (await storefront.get(`/product/${style.id}`)).text();
+    expect(shopPage).toContain('P1 Workbench Shirt');
+    expect(shopPage).toContain('1499');
+    await storefront.dispose();
   });
 
   test('P1-02 supplier, purchase order, submit, approve and goods receipt with QC', async ({ page }) => {

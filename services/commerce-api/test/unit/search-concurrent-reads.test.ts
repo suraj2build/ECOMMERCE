@@ -7,7 +7,8 @@ async function fixture() {
   const search = vi.fn();
   app.decorate('requireStaffAuth', async () => {});
   app.decorate('requirePermission', () => async () => {});
-  app.decorate('searchIndex', { ensureCompletePagination: vi.fn(async () => {}) });
+  // Window completeness is covered by search-pagination.test.ts; here it passes through.
+  app.decorate('searchIndex', { searchComplete: vi.fn((_minimum: number, run: () => Promise<unknown>) => run()) });
   app.decorate('meilisearch', { index: () => ({ search }) });
   await app.register(searchRoutes);
   await app.ready();

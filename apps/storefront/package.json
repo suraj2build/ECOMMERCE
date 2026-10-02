@@ -5,7 +5,7 @@
   "description": "Production customer-facing storefront (M09+, specs/08-storefront.md) - Next.js/React/TypeScript per ADR-0008. Distinct from the suraj2build/stitch-spark-cart Lovable prototype, which remains UX-reference only (see specs/08-storefront.md).",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "next lint"
