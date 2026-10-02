@@ -134,7 +134,7 @@ test.describe('Refunds & Store Credit', () => {
     await expectOk(await api.post(`/api/v1/products/styles/${styleId}/publish`, { headers: staffAuthHeaders }), 'Publish');
     await expectOk(await api.post('/api/v1/catalog/prices', { headers: staffAuthHeaders, data: { styleId, mrp: 2499, sellingPrice: 2499 } }), 'Set price');
     await expectOk(
-      await api.post('/api/v1/inventory/adjustments', { headers: staffAuthHeaders, data: { skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load' } }),
+      await api.post('/api/v1/inventory/adjustments', { headers: staffAuthHeaders, data: { skuId, locationId: location.id, quantityDelta: 10, reason: 'E2E stock load', idempotencyKey: `e2e-refunds-stock-${skuId}` } }),
       'Inventory adjustment',
     );
   });
