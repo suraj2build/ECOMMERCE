@@ -6,8 +6,10 @@ const searchQuerySchema = z.object({
   q: z.string().optional(),
   category: z.string().optional(),
   brand: z.string().optional(),
-  color: z.string().optional(), // comma-separated
-  size: z.string().optional(), // comma-separated
+  gender: z.string().optional(),
+  markdown: z.enum(['true', 'false']).optional(),
+  color: z.string().optional(),
+  size: z.string().optional(),
   priceMin: z.coerce.number().nonnegative().optional(),
   priceMax: z.coerce.number().nonnegative().optional(),
   sort: z.enum(['relevance', 'price_asc', 'price_desc', 'newest']).default('relevance'),
@@ -15,7 +17,6 @@ const searchQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(60).default(24),
 });
 
-/** Wraps a facet value in a quoted, escaped Meilisearch filter literal. */
 function quote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
@@ -24,6 +25,8 @@ function buildFilter(params: z.infer<typeof searchQuerySchema>): string[] {
   const filters: string[] = [];
   if (params.category) filters.push(`categorySlug = ${quote(params.category)}`);
   if (params.brand) filters.push(`brandName = ${quote(params.brand)}`);
+  if (params.gender) filters.push(`gender = ${quote(params.gender)}`);
+  if (params.markdown !== undefined) filters.push(`isMarkdown = ${params.markdown}`);
   if (params.color) {
     const values = params.color.split(',').map((v) => v.trim()).filter(Boolean);
     if (values.length) filters.push(`colours IN [${values.map(quote).join(', ')}]`);
@@ -39,14 +42,10 @@ function buildFilter(params: z.infer<typeof searchQuerySchema>): string[] {
 
 function buildSort(sort: z.infer<typeof searchQuerySchema>['sort']): string[] | undefined {
   switch (sort) {
-    case 'price_asc':
-      return ['sellingPrice:asc'];
-    case 'price_desc':
-      return ['sellingPrice:desc'];
-    case 'newest':
-      return ['publishedAt:desc'];
-    default:
-      return undefined; // relevance - let the index's own ranking rules decide
+    case 'price_asc': return ['sellingPrice:asc'];
+    case 'price_desc': return ['sellingPrice:desc'];
+    case 'newest': return ['publishedAt:desc'];
+    default: return undefined;
   }
 }
 
@@ -55,12 +54,6 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
   const pinAuth = [fastify.requireStaffAuth, fastify.requirePermission('catalog:search:pin')];
   const reindexAuth = [fastify.requireStaffAuth, fastify.requirePermission('search:reindex')];
 
-  /**
-   * Public search/PLP endpoint (SRCH-001/002). Never authoritative for
-   * price/inventory availability itself - PDP/cart re-resolve those from
-   * PostgreSQL at add-to-bag/checkout time. This is a read of the derived
-   * Meilisearch index only.
-   */
   fastify.get('/storefront/search', async (request, reply) => {
     const params = searchQuerySchema.parse(request.query);
     const filter = buildFilter(params);
@@ -84,9 +77,6 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         facetDistribution: results.facetDistribution ?? {},
       });
     } catch (err) {
-      // A Meilisearch outage degrades search - the customer gets an
-      // explicit "temporarily unavailable" empty result rather than a
-      // 500, and never a silently-wrong result set.
       fastify.log.error({ err }, 'storefront search failed');
       reply.status(200).send({
         hits: [],
@@ -112,7 +102,6 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send({ styleId: id, searchPinned: false });
   });
 
-  /** Operational recovery tool - full rebuild from PostgreSQL, never the primary indexing path. */
   fastify.post('/search/reindex', { preHandler: reindexAuth }, async (_request, reply) => {
     reply.status(200).send(await service.reindexAll());
   });

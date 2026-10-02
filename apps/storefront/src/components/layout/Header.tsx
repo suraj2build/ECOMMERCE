@@ -2,110 +2,115 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Container } from '../ui/Container';
-import { getCart } from '@/lib/cart';
+import { getCart, getWishlist } from '@/lib/cart';
+import { useDepartment } from './DepartmentContext';
 
-const PRIMARY_NAV = [
-  { label: 'Shop Women', href: '/category/women' },
-  { label: 'Shop Men', href: '/category/men' },
-  { label: 'New & Trending', href: '/category/new' },
-  { label: 'Collections', href: '/collections' },
-  { label: 'Watch & Shop', href: '/watch-and-shop' },
-];
-
-/**
- * Global navigation (M09, specs/08-storefront.md). Mobile collapses to a
- * disclosure menu with no horizontal overflow; desktop shows the full
- * nav inline and is fully keyboard-operable (NFR-004/NFR-005).
- */
 export function Header() {
-  const [open, setOpen] = useState(false);
+  const { department, clearDepartment } = useDepartment();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [cartCount, setCartCount] = useState(0);
+  const [wishlistCount, setWishlistCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    async function refresh() {
+    async function refreshCart() {
       try {
         const cart = await getCart();
         if (!cancelled) setCartCount(cart.itemCount);
-      } catch {
-        // Not fatal to navigation rendering - the badge just stays at its last known value.
-      }
+      } catch {}
     }
-    void refresh();
-    window.addEventListener('fcp:cart-updated', refresh);
+    async function refreshWishlist() {
+      try {
+        const items = await getWishlist();
+        if (!cancelled) setWishlistCount(items.length);
+      } catch {}
+    }
+    void refreshCart();
+    void refreshWishlist();
+    window.addEventListener('fcp:cart-updated', refreshCart);
+    window.addEventListener('fcp:wishlist-updated', refreshWishlist);
     return () => {
       cancelled = true;
-      window.removeEventListener('fcp:cart-updated', refresh);
+      window.removeEventListener('fcp:cart-updated', refreshCart);
+      window.removeEventListener('fcp:wishlist-updated', refreshWishlist);
     };
   }, []);
 
+  const isMen = department === 'men';
+  const departmentHref = department ? `/category/${department}` : '/';
+
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-canvas/95 backdrop-blur">
-      <a href="#main-content" className="sr-only-focusable absolute left-2 top-2 z-50 rounded-sm bg-accent px-3 py-2 text-sm text-accent-ink">
-        Skip to content
-      </a>
-      <div className="border-b border-border py-2 text-center text-xs text-ink-muted">
-        Free shipping over &#8377;1,999 &middot; Easy 15-day returns
-      </div>
-      <Container className="flex h-16 items-center justify-between">
-        <Link href="/" className="font-display text-xl tracking-tight text-ink" aria-label="Home">
-          HOUSE
-        </Link>
+    <header className="sticky top-0 z-40 border-b border-[#f0ece4] bg-white/95 text-[#181716] backdrop-blur-md">
+      <a href="#main-content" className="sr-only-focusable absolute left-2 top-2 z-50 rounded-full bg-[#181716] px-4 py-2 text-sm text-white">Skip to content</a>
 
-        <nav aria-label="Primary" className="hidden md:block">
-          <ul className="flex items-center gap-8">
-            {PRIMARY_NAV.map((item) => (
-              <li key={item.href}>
-                <Link href={item.href} className="text-sm text-ink transition-colors hover:text-ink-muted">
-                  {item.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="flex items-center gap-4">
-          <Link href="/account" className="hidden text-sm text-ink md:inline" aria-label="Your account">
-            Account
-          </Link>
-          <Link href="/orders" className="hidden text-sm text-ink md:inline" aria-label="Your orders">
-            Orders
-          </Link>
-          <Link href="/wishlist" className="hidden text-sm text-ink md:inline" aria-label="Wishlist">
-            Wishlist
-          </Link>
-          <Link href="/bag" className="text-sm text-ink" aria-label={`Shopping bag, ${cartCount} item${cartCount === 1 ? '' : 's'}`}>
-            Bag{cartCount > 0 ? ` (${cartCount})` : ''}
-          </Link>
+      <div className="hidden border-b border-[#f4efe6] bg-[#faf8f5]/90 py-1.5 text-[10px] uppercase tracking-[0.15em] text-[#7a7065] lg:block">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-8">
           <button
             type="button"
-            className="inline-flex h-11 w-11 items-center justify-center md:hidden"
-            aria-expanded={open}
-            aria-controls="mobile-nav"
-            aria-label={open ? 'Close menu' : 'Open menu'}
-            onClick={() => setOpen((v) => !v)}
+            onClick={clearDepartment}
+            className="min-h-[32px] transition-colors hover:text-[#181716]"
           >
-            <span aria-hidden className="block h-0.5 w-6 bg-ink" />
+            ← Choose department
           </button>
+          <p>Indian roots · modern form · delivery across India</p>
+          <Link href="/orders" className="min-h-[32px] py-2 hover:text-[#181716]">Track order</Link>
         </div>
-      </Container>
+      </div>
 
-      {open && (
-        <nav id="mobile-nav" aria-label="Primary mobile" className="border-t border-border md:hidden">
-          <ul className="flex flex-col">
-            {PRIMARY_NAV.map((item) => (
-              <li key={item.href} className="border-b border-border">
-                <Link
-                  href={item.href}
-                  className="block min-h-[44px] px-gutter py-3 text-sm text-ink"
-                  onClick={() => setOpen(false)}
-                >
-                  {item.label}
-                </Link>
-              </li>
-            ))}
+      <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-3 px-gutter sm:h-20">
+        <button
+          type="button"
+          onClick={() => setMobileOpen((value) => !value)}
+          className="flex h-11 w-11 flex-col items-center justify-center gap-1.5 lg:hidden"
+          aria-expanded={mobileOpen}
+          aria-controls="vanya-mobile-nav"
+          aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+        >
+          <span className="h-px w-5 bg-[#181716]" />
+          <span className="h-px w-5 bg-[#181716]" />
+        </button>
+
+        <nav aria-label="Primary" className="hidden flex-1 items-center gap-5 text-[11px] font-medium uppercase tracking-[0.15em] lg:flex xl:gap-6">
+          <Link href={departmentHref} className="py-3 hover:text-[var(--color-primary)]">{isMen ? 'Men' : department === 'women' ? 'Women' : 'Shop'}</Link>
+          <Link href="/category/new" className="py-3 hover:text-[var(--color-primary)]">New In</Link>
+          <Link href="/category/sale" className="py-3 hover:text-[var(--color-primary)]">Sale</Link>
+          <Link href="/collections" className="py-3 hover:text-[var(--color-primary)]">Collections</Link>
+        </nav>
+
+        <Link href="/" aria-label="VANYA home" className="shrink-0 text-center">
+          <span className="block font-display text-2xl uppercase leading-none tracking-[0.28em] text-[#181716] sm:text-3xl lg:text-[34px]">VANYA</span>
+          <span className="mt-1 hidden text-[8px] font-light uppercase tracking-[0.26em] text-[#73685c] sm:block">Indian roots · modern today</span>
+        </Link>
+
+        <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
+          <Link href="/watch-and-shop" className="hidden py-3 text-[11px] font-medium uppercase tracking-[0.15em] hover:text-[var(--color-primary)] xl:block">Watch &amp; Shop</Link>
+          <Link href="/search" className="hidden min-h-[36px] min-w-[150px] items-center rounded-full border border-[#e5dfd5] bg-[#f6f4f0] px-4 text-[11px] text-[#7e7468] hover:bg-[#efece5] lg:flex">Search garments…</Link>
+          <Link href="/account" className="hidden min-h-[44px] items-center px-2 text-xs hover:text-[var(--color-primary)] sm:flex">Account</Link>
+          <Link href="/wishlist" className="relative flex min-h-[44px] items-center px-2 text-xs hover:text-[var(--color-primary)]" aria-label={`Wishlist, ${wishlistCount} item${wishlistCount === 1 ? '' : 's'}`}>
+            ♡<span className="ml-1 hidden sm:inline">Wishlist</span>{wishlistCount > 0 ? <span className="ml-1">({wishlistCount})</span> : null}
+          </Link>
+          <Link href="/bag" className="relative flex min-h-[44px] items-center px-2 text-xs font-medium hover:text-[var(--color-primary)]" aria-label={`Shopping bag, ${cartCount} item${cartCount === 1 ? '' : 's'}`}>
+            Bag{cartCount > 0 ? ` (${cartCount})` : ''}
+          </Link>
+        </div>
+      </div>
+
+      <div className={`h-[1.5px] w-full bg-gradient-to-r from-transparent via-[var(--color-primary)] to-transparent transition-opacity ${department ? 'opacity-80' : 'opacity-30'}`} />
+
+      {mobileOpen && (
+        <nav id="vanya-mobile-nav" aria-label="Primary mobile" className="border-t border-[#efece6] bg-white lg:hidden">
+          <div className="border-b border-[#efece6] px-gutter py-3">
+            <Link href="/search" onClick={() => setMobileOpen(false)} className="flex min-h-[44px] items-center rounded-full bg-[#f6f4f0] px-4 text-sm text-[#7e7468]">Search garments…</Link>
+          </div>
+          <ul className="divide-y divide-[#f4f1ea] px-gutter">
+            <li><Link href={departmentHref} onClick={() => setMobileOpen(false)} className="block py-4 text-sm uppercase tracking-[0.14em]">Shop {department ?? 'VANYA'}</Link></li>
+            <li><Link href="/category/new" onClick={() => setMobileOpen(false)} className="block py-4 text-sm uppercase tracking-[0.14em]">New In</Link></li>
+            <li><Link href="/category/sale" onClick={() => setMobileOpen(false)} className="block py-4 text-sm uppercase tracking-[0.14em]">Sale</Link></li>
+            <li><Link href="/collections" onClick={() => setMobileOpen(false)} className="block py-4 text-sm uppercase tracking-[0.14em]">Collections</Link></li>
+            <li><Link href="/watch-and-shop" onClick={() => setMobileOpen(false)} className="block py-4 text-sm uppercase tracking-[0.14em]">Watch &amp; Shop</Link></li>
+            <li><Link href="/orders" onClick={() => setMobileOpen(false)} className="block py-4 text-sm uppercase tracking-[0.14em]">Track Order</Link></li>
           </ul>
+          <button type="button" onClick={() => { clearDepartment(); setMobileOpen(false); }} className="mx-gutter my-5 min-h-[44px] rounded-full border border-[#ddd3c5] px-5 text-xs uppercase tracking-[0.12em]">Choose Men / Women</button>
         </nav>
       )}
     </header>
