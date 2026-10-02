@@ -124,7 +124,16 @@ export function ProductDetailInteractive({ product }: { product: ProductDetail }
                     className="object-cover"
                   />
                 ) : (
-                  <video src={media.url} controls playsInline preload="metadata" className="h-full w-full object-cover" />
+                  <div className="flex h-full w-full items-center justify-center bg-[#181716] p-6 text-center text-white">
+                    <a
+                      href={media.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-full border border-white/70 px-6 py-3 text-xs font-semibold uppercase tracking-[0.14em] hover:bg-white hover:text-black"
+                    >
+                      View product video
+                    </a>
+                  </div>
                 )}
               </div>
             ))
