@@ -99,7 +99,7 @@ const exchangeRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/exchanges', { preHandler: readAuth }, async (request, reply) => {
     const query = z
       .object({
-        take: z.coerce.number().int().positive().max(200).optional(), skip: z.coerce.number().int().nonnegative().optional(), 
+        take: z.coerce.number().int().positive().max(200).optional(), skip: z.coerce.number().int().nonnegative().optional(),
         status: z
           .enum(['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'RECEIVED', 'REPLACEMENT_ALLOCATED', 'COMPLETED', 'QC_FAILED', 'REPLACEMENT_UNAVAILABLE', 'CANCELLED'])
           .optional(),

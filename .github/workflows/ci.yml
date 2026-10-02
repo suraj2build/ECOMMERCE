@@ -132,7 +132,14 @@ jobs:
         run: npm run typecheck
 
       - name: Build
-        run: npm run build
+        env:
+          # Next uses this value when deciding whether unbuilt dynamic
+          # paths may be generated at runtime. NODE_ENV=test produces a
+          # missing fallback and 404s for every future product ID.
+          NODE_ENV: production
+        run: |
+          npm run build
+          node -e "const manifest = require('./apps/storefront/.next/prerender-manifest.json'); if (manifest.dynamicRoutes['/product/[styleId]']?.fallback !== null) throw new Error('PDP must permit blocking generation for every future style');"
 
       - name: Unit tests
         run: npm run test --workspace=services/commerce-api
@@ -164,12 +171,12 @@ jobs:
             curl -sf http://localhost:4000/health && break
             sleep 1
           done
-          PORT=3000 npm run start --workspace=apps/storefront &
+          NODE_ENV=production PORT=3000 npm run start --workspace=apps/storefront &
           for i in $(seq 1 30); do
             curl -sf http://localhost:3000/ && break
             sleep 1
           done
-          PORT=3001 npm run start --workspace=apps/admin &
+          NODE_ENV=production PORT=3001 npm run start --workspace=apps/admin &
           for i in $(seq 1 30); do
             curl -sf http://localhost:3001/login && break
             sleep 1
