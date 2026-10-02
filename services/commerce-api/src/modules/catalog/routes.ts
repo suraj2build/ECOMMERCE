@@ -149,15 +149,6 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(collection);
   });
 
-  fastify.get('/storefront/collections/:slug', async (request, reply) => {
-    const { slug } = z.object({ slug: z.string().min(1) }).parse(request.params);
-    const collection = await service.getPublicCollection(slug);
-    if (!collection) {
-      reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Collection not found' } });
-      return;
-    }
-    reply.status(200).send(collection);
-  });
 };
 
 export default catalogRoutes;
