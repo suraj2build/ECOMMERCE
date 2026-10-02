@@ -110,7 +110,25 @@ export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] })
             <div className="mx-auto grid min-h-[calc(100svh-80px)] max-w-[1440px] items-center gap-0 lg:min-h-0 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,.8fr)] lg:gap-12 lg:px-gutter lg:py-12">
               <div className="relative min-h-[68svh] overflow-hidden bg-black lg:min-h-0 lg:aspect-[4/5] lg:rounded-[24px]">
                 {item.mediaUrl.match(/\.(mp4|webm|mov)(\?|$)/i) ? (
-                  <video src={item.mediaUrl} poster={item.thumbnailUrl ?? undefined} controls playsInline preload={index === 0 ? 'metadata' : 'none'} className="absolute inset-0 h-full w-full object-cover" />
+                  <>
+                    <video
+                      src={item.mediaUrl}
+                      poster={item.thumbnailUrl ?? undefined}
+                      muted
+                      autoPlay={index === 0}
+                      loop
+                      playsInline
+                      preload={index === 0 ? 'metadata' : 'none'}
+                      aria-hidden="true"
+                      tabIndex={-1}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    >
+                      <track kind="captions" src="data:text/vtt,WEBVTT%0A%0A" srcLang="en" label="Decorative muted video" />
+                    </video>
+                    <a href={item.mediaUrl} target="_blank" rel="noreferrer" className="absolute right-4 top-4 z-10 rounded-full bg-black/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                      Open media
+                    </a>
+                  </>
                 ) : item.thumbnailUrl || item.mediaUrl ? (
                   <Image src={item.thumbnailUrl ?? item.mediaUrl} alt={item.title} fill priority={index === 0} sizes="(max-width: 1024px) 100vw, 60vw" className="object-cover" />
                 ) : null}
@@ -147,8 +165,9 @@ export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] })
       </div>
 
       {preview ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Product preview" onClick={() => setPreview(null)}>
-          <div className="h-full w-full max-w-lg overflow-y-auto bg-[#faf8f5] p-5 shadow-2xl sm:p-7" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <button type="button" aria-label="Close product preview" onClick={() => setPreview(null)} className="absolute inset-0 bg-black/45 backdrop-blur-sm" />
+          <section role="dialog" aria-modal="true" aria-label="Product preview" className="relative z-10 h-full w-full max-w-lg overflow-y-auto bg-[#faf8f5] p-5 shadow-2xl sm:p-7">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-primary)]">Shop the story</p>
@@ -208,7 +227,7 @@ export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] })
               <button type="button" onClick={() => void handleWishlist()} className="min-h-[50px] rounded-full border border-[#d8d0c6] px-5 text-xs font-semibold uppercase tracking-[0.10em]">Save</button>
             </div>
             <Link href={'/product/' + preview.id} className="mt-4 inline-flex min-h-[44px] items-center text-xs font-semibold uppercase tracking-[0.12em] underline underline-offset-4">View full details &rarr;</Link>
-          </div>
+          </section>
         </div>
       ) : null}
     </>
