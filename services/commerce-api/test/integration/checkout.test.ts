@@ -158,6 +158,37 @@ describe('Checkout (M13)', () => {
     expect(res.statusCode).toBe(201);
   }
 
+  it('100 independent HTTP checkout requests for one SKU accept only available stock and retry without duplicates', async () => {
+    const { skuId, locationId } = await setupCheckoutableSku({ sellingPrice: 500, onHand: 15 });
+    const shoppers = Array.from({ length: 100 }, (_, i) => ({
+      headers: { [GUEST_HEADER]: `hundred-checkout-${i}` },
+      payload: {
+        contactName: `Load shopper ${i}`, contactMobile: '9876543210',
+        billingAddress: validAddress(), shippingAddress: validAddress(),
+        paymentMethod: 'COD', idempotencyKey: `hundred-checkout-${i}`,
+      },
+    }));
+    await Promise.all(shoppers.map((s) => addToCart(skuId, s.headers)));
+    const results = await Promise.all(shoppers.map((s) => app.inject({ method: 'POST', url: '/api/v1/storefront/checkout', ...s })));
+    const accepted = results.flatMap((r, i) => r.statusCode === 201 ? [i] : []);
+    expect(accepted).toHaveLength(15);
+    expect(results.filter((r) => r.statusCode !== 201)).toHaveLength(85);
+    for (const r of results.filter((r) => r.statusCode !== 201)) {
+      expect([400, 409]).toContain(r.statusCode);
+      expect(['VALIDATION_ERROR', 'INSUFFICIENT_STOCK']).toContain(r.json().error.code);
+    }
+    const retries = await Promise.all(accepted.map((i) => app.inject({ method: 'POST', url: '/api/v1/storefront/checkout', ...shoppers[i]! })));
+    retries.forEach((r, i) => {
+      expect(r.statusCode).toBe(201);
+      expect(r.json().id).toBe(results[accepted[i]!]!.json().id);
+    });
+    const balance = await testPrisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId, locationId } } });
+    expect(balance.onHand).toBe(15);
+    expect(balance.reserved).toBe(15);
+    expect(await testPrisma.inventoryReservation.count({ where: { skuId, status: 'CONVERTED' } })).toBe(15);
+    expect(await testPrisma.order.count()).toBe(15);
+  }, 120_000);
+
   describe('Preview', () => {
     it('rejects preview with an empty bag', async () => {
       const res = await app.inject({
@@ -509,6 +540,19 @@ describe('Checkout (M13)', () => {
         },
       });
       const sessionId = createRes.json().id as string;
+      expect(createRes.statusCode).toBe(201);
+      const stolenRetry = await app.inject({
+        method: 'POST', url: '/api/v1/storefront/checkout',
+        headers: { [GUEST_HEADER]: 'guest-not-owner' },
+        payload: {
+          contactName: 'Other shopper', contactMobile: '9876543210',
+          billingAddress: validAddress(), shippingAddress: validAddress(),
+          paymentMethod: 'COD', idempotencyKey: 'idem-owner-read',
+        },
+      });
+      expect(stolenRetry.statusCode).toBe(404);
+      expect(stolenRetry.json().contactMobile).toBeUndefined();
+      expect(await testPrisma.checkoutSession.count()).toBe(1);
 
       const otherGuestRes = await app.inject({
         method: 'GET',
