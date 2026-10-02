@@ -110,6 +110,10 @@ jobs:
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
+          # gitleaks-action requires the workflow token for pull_request
+          # scans so it can resolve the PR commit range. Contents remains
+          # read-only; this grants no repository write capability.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
       - name: Lint
