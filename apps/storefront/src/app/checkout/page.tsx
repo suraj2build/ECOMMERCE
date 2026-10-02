@@ -193,28 +193,28 @@ export default function CheckoutPage() {
 
   if (cart && cart.items.length === 0) {
     return (
-      <Container className="py-8">
-        <h1 className="font-display text-2xl text-ink">Checkout</h1>
-        <p className="mt-4 text-sm text-ink-muted">Your bag is empty.</p>
+      <Container className="py-10 sm:py-14">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Secure checkout</p>\n      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Complete your order</h1>
+        <p className="mt-4 text-sm text-[#6e6359]">Your bag is empty.</p>
       </Container>
     );
   }
 
   return (
-    <Container className="py-8">
-      <h1 className="font-display text-2xl text-ink">Checkout</h1>
+    <Container className="py-10 sm:py-14">
+      <h1 className="font-display text-2xl text-[#181716]">Checkout</h1>
 
-      <form onSubmit={handlePlaceOrder} className="mt-6 grid gap-8 md:grid-cols-[1fr_360px]">
+      <form onSubmit={handlePlaceOrder} className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="space-y-8">
-          <fieldset className="space-y-3">
-            <legend className="font-display text-lg text-ink">Contact</legend>
+          <fieldset className="space-y-4 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
+            <legend className="font-display text-2xl text-[#181716]">Contact</legend>
             <input
               type="text"
               required
               placeholder="Full name"
               value={contactName}
               onChange={(e) => setContactName(e.target.value)}
-              className="block min-h-[44px] w-full rounded-sm border border-border px-3 text-sm text-ink"
+              className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
             />
             <input
               type="tel"
@@ -222,20 +222,20 @@ export default function CheckoutPage() {
               placeholder="10-digit mobile number"
               value={contactMobile}
               onChange={(e) => setContactMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
-              className="block min-h-[44px] w-full rounded-sm border border-border px-3 text-sm text-ink"
+              className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
             />
             <input
               type="email"
               placeholder="Email (optional)"
               value={contactEmail}
               onChange={(e) => setContactEmail(e.target.value)}
-              className="block min-h-[44px] w-full rounded-sm border border-border px-3 text-sm text-ink"
+              className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
             />
           </fieldset>
 
           <AddressFields legend="Shipping address" address={shippingAddress} onChange={setShippingAddress} />
 
-          <label className="flex items-center gap-2 text-sm text-ink">
+          <label className="flex items-center gap-2 text-sm text-[#181716]">
             <input
               type="checkbox"
               checked={billingSameAsShipping}
@@ -249,19 +249,19 @@ export default function CheckoutPage() {
             <AddressFields legend="Billing address" address={billingAddress} onChange={setBillingAddress} />
           )}
 
-          <fieldset className="space-y-2">
-            <legend className="font-display text-lg text-ink">Payment method</legend>
-            <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
+          <fieldset className="space-y-3 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
+            <legend className="font-display text-2xl text-[#181716]">Payment method</legend>
+            <label className="flex min-h-[44px] items-center gap-2 text-sm text-[#181716]">
               <input type="radio" name="paymentMethod" checked={paymentMethod === 'COD'} onChange={() => setPaymentMethod('COD')} className="h-5 w-5" />
               Cash on Delivery
             </label>
-            <label className="flex min-h-[44px] items-center gap-2 text-sm text-ink">
+            <label className="flex min-h-[44px] items-center gap-2 text-sm text-[#181716]">
               <input type="radio" name="paymentMethod" checked={paymentMethod === 'PREPAID'} onChange={() => setPaymentMethod('PREPAID')} className="h-5 w-5" />
               Pay online (UPI / Card / Net Banking)
             </label>
             {paymentMethod === 'PREPAID' && (
-              <p role="status" className="text-xs text-ink-muted">
-                Online payment is coming soon - you can place the order, but completing payment isn&apos;t available yet.
+              <p role="status" className="text-xs text-[#6e6359]">
+                Secure online payment opens after you place the order. Confirmation is based on the payment provider&apos;s verified server notification.
               </p>
             )}
             {paymentMethod === 'COD' && preview && !preview.codAvailable && (
@@ -272,9 +272,9 @@ export default function CheckoutPage() {
           </fieldset>
 
           {loyaltyBalance && loyaltyBalance.balance > 0 && (
-            <fieldset className="space-y-2">
-              <legend className="font-display text-lg text-ink">Loyalty points</legend>
-              <p className="text-sm text-ink-muted">
+            <fieldset className="space-y-3 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
+              <legend className="font-display text-2xl text-[#181716]">Loyalty points</legend>
+              <p className="text-sm text-[#6e6359]">
                 You have {loyaltyBalance.balance} points available to redeem.
                 {loyaltyBalance.pendingPoints > 0
                   ? ` (${loyaltyBalance.pendingPoints} more points are pending and not yet redeemable.)`
@@ -291,20 +291,20 @@ export default function CheckoutPage() {
                 placeholder="Points to redeem"
                 value={redeemPointsInput}
                 onChange={(e) => setRedeemPointsInput(e.target.value.replace(/\D/g, ''))}
-                className="block min-h-[44px] w-full max-w-[200px] rounded-sm border border-border px-3 text-sm text-ink"
+                className="block min-h-[44px] w-full max-w-[200px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
               />
             </fieldset>
           )}
 
-          <fieldset className="space-y-2">
-            <legend className="font-display text-lg text-ink">Coupon code</legend>
+          <fieldset className="space-y-3 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
+            <legend className="font-display text-2xl text-[#181716]">Coupon code</legend>
             {appliedCouponCode ? (
-              <div className="flex min-h-[44px] items-center justify-between rounded-sm border border-border px-3">
-                <span className="text-sm text-ink">
+              <div className="flex min-h-[46px] items-center justify-between rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4">
+                <span className="text-sm text-[#181716]">
                   {appliedCouponCode} applied
                   {preview && preview.promotionDiscountTotal > 0 ? ` - you saved ₹${preview.promotionDiscountTotal}` : ''}
                 </span>
-                <button type="button" onClick={handleRemoveCoupon} className="text-xs font-medium text-ink underline underline-offset-2">
+                <button type="button" onClick={handleRemoveCoupon} className="text-xs font-medium text-[#181716] underline underline-offset-2">
                   Remove
                 </button>
               </div>
@@ -319,7 +319,7 @@ export default function CheckoutPage() {
                   placeholder="Coupon code"
                   value={couponCodeInput}
                   onChange={(e) => setCouponCodeInput(e.target.value.toUpperCase())}
-                  className="block min-h-[44px] w-full max-w-[200px] rounded-sm border border-border px-3 text-sm text-ink"
+                  className="block min-h-[44px] w-full max-w-[200px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
                 />
                 <button type="button" onClick={handleApplyCoupon} className={buttonClassName('secondary', 'min-h-[44px]')}>
                   Apply
@@ -334,9 +334,9 @@ export default function CheckoutPage() {
           </fieldset>
 
           {storeCreditBalance && storeCreditBalance.balance > 0 && (
-            <fieldset className="space-y-2">
-              <legend className="font-display text-lg text-ink">Store credit</legend>
-              <p className="text-sm text-ink-muted">You have ₹{storeCreditBalance.balance} of store credit available.</p>
+            <fieldset className="space-y-3 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
+              <legend className="font-display text-2xl text-[#181716]">Store credit</legend>
+              <p className="text-sm text-[#6e6359]">You have ₹{storeCreditBalance.balance} of store credit available.</p>
               <label htmlFor="store-credit-amount" className="sr-only">
                 Store credit to apply
               </label>
@@ -348,21 +348,21 @@ export default function CheckoutPage() {
                 placeholder="Amount to apply"
                 value={storeCreditInput}
                 onChange={(e) => setStoreCreditInput(e.target.value.replace(/[^0-9.]/g, ''))}
-                className="block min-h-[44px] w-full max-w-[200px] rounded-sm border border-border px-3 text-sm text-ink"
+                className="block min-h-[44px] w-full max-w-[200px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
               />
             </fieldset>
           )}
         </div>
 
-        <div className="h-fit rounded-sm border border-border p-6">
-          <h2 className="font-display text-lg text-ink">Order review</h2>
+        <div className="h-fit rounded-[22px] border border-[#e6ddd0] bg-white p-6 lg:sticky lg:top-28">
+          <h2 className="font-display text-2xl text-[#181716]">Order review</h2>
           {previewError && (
             <p role="alert" className="mt-2 text-sm text-danger">
               {previewError}
             </p>
           )}
           {!preview && !previewError && (
-            <p className="mt-2 text-sm text-ink-muted">Enter your shipping address to see your order total.</p>
+            <p className="mt-2 text-sm text-[#6e6359]">Enter your shipping address to see your order total.</p>
           )}
           {preview && (
             <div className="mt-3 space-y-2 text-sm">
@@ -373,30 +373,30 @@ export default function CheckoutPage() {
               )}
               {preview.promotionDiscountTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-ink-muted">Discount ({preview.appliedPromotions.map((p) => p.name).join(', ')})</span>
-                  <span className="text-ink">-&#8377;{preview.promotionDiscountTotal}</span>
+                  <span className="text-[#6e6359]">Discount ({preview.appliedPromotions.map((p) => p.name).join(', ')})</span>
+                  <span className="text-[#181716]">-&#8377;{preview.promotionDiscountTotal}</span>
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-ink-muted">Subtotal</span>
-                <span className="text-ink">&#8377;{preview.subtotal}</span>
+                <span className="text-[#6e6359]">Subtotal</span>
+                <span className="text-[#181716]">&#8377;{preview.subtotal}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-ink-muted">Shipping</span>
-                <span className="text-ink">{preview.shippingCost === 0 ? 'Free' : `₹${preview.shippingCost}`}</span>
+                <span className="text-[#6e6359]">Shipping</span>
+                <span className="text-[#181716]">{preview.shippingCost === 0 ? 'Free' : `₹${preview.shippingCost}`}</span>
               </div>
               <div className="flex justify-between border-t border-border pt-2 font-medium">
-                <span className="text-ink">Total (tax incl.)</span>
-                <span className="text-ink">&#8377;{preview.grandTotal}</span>
+                <span className="text-[#181716]">Total (tax incl.)</span>
+                <span className="text-[#181716]">&#8377;{preview.grandTotal}</span>
               </div>
               {loyaltyBalance && parseInt(redeemPointsInput, 10) > 0 && (
-                <p className="text-xs text-ink-muted">
+                <p className="text-xs text-[#6e6359]">
                   {parseInt(redeemPointsInput, 10)} loyalty points will be applied at checkout - the final amount payable is
                   shown on your order confirmation.
                 </p>
               )}
               {storeCreditBalance && parseFloat(storeCreditInput) > 0 && (
-                <p className="text-xs text-ink-muted">
+                <p className="text-xs text-[#6e6359]">
                   ₹{storeCreditInput} of store credit will be applied at checkout - the final amount payable is shown on
                   your order confirmation.
                 </p>
@@ -441,29 +441,29 @@ function AddressFields({
   }
 
   return (
-    <fieldset className="space-y-3">
-      <legend className="font-display text-lg text-ink">{legend}</legend>
+    <fieldset className="space-y-4 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
+      <legend className="font-display text-2xl text-[#181716]">{legend}</legend>
       <input
         type="text"
         required
         placeholder="House / Flat, Building, Street"
         value={address.line1}
         onChange={(e) => update('line1', e.target.value)}
-        className="block min-h-[44px] w-full rounded-sm border border-border px-3 text-sm text-ink"
+        className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
       />
       <input
         type="text"
         placeholder="Locality / Area (optional)"
         value={address.line2 ?? ''}
         onChange={(e) => update('line2', e.target.value)}
-        className="block min-h-[44px] w-full rounded-sm border border-border px-3 text-sm text-ink"
+        className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
       />
       <input
         type="text"
         placeholder="Landmark (optional)"
         value={address.landmark ?? ''}
         onChange={(e) => update('landmark', e.target.value)}
-        className="block min-h-[44px] w-full rounded-sm border border-border px-3 text-sm text-ink"
+        className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
       />
       <div className="grid grid-cols-2 gap-3">
         <input
@@ -472,7 +472,7 @@ function AddressFields({
           placeholder="City"
           value={address.city}
           onChange={(e) => update('city', e.target.value)}
-          className="min-h-[44px] rounded-sm border border-border px-3 text-sm text-ink"
+          className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
         />
         <input
           type="text"
@@ -482,14 +482,14 @@ function AddressFields({
           placeholder="PIN code"
           value={address.pincode}
           onChange={(e) => update('pincode', e.target.value.replace(/\D/g, ''))}
-          className="min-h-[44px] rounded-sm border border-border px-3 text-sm text-ink"
+          className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
         />
       </div>
       <select
         required
         value={address.state}
         onChange={(e) => update('state', e.target.value)}
-        className="block min-h-[44px] w-full rounded-sm border border-border px-3 text-sm text-ink"
+        className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
       >
         <option value="">Select state</option>
         {INDIAN_STATES.map((s) => (
