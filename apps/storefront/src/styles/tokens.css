@@ -9,6 +9,10 @@
   --color-accent: #866791;
   --color-accent-hover: #72527d;
   --color-accent-ink: #ffffff;
+  --color-primary: #866791;
+  --color-primary-hover: #72527d;
+  --color-badge-bg: #f1e6f3;
+  --color-badge-text: #5f4268;
   --color-secondary: #d49da6;
   --color-success: #2f5d3a;
   --color-danger: #962e3b;
@@ -33,6 +37,10 @@
   --color-accent: #8f6b4e;
   --color-accent-hover: #78563a;
   --color-accent-ink: #ffffff;
+  --color-primary: #8f6b4e;
+  --color-primary-hover: #78563a;
+  --color-badge-bg: #f1e7dc;
+  --color-badge-text: #66482f;
   --color-secondary: #a88365;
   --color-success: #2f5d3a;
   --color-danger: #962e3b;

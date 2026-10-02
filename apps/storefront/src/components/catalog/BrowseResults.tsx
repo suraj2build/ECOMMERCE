@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { StorefrontSearchResult } from '@/lib/api';
-import { ProductCard } from './ProductCard';
+import { VanyaProductCard } from './VanyaProductCard';
 
 type Query = Record<string, string | undefined>;
 
@@ -75,7 +75,7 @@ export function BrowseResults({
           <Empty title="No styles found" body="Try clearing a filter or using a broader search." />
         ) : (
           <ul className="grid grid-cols-2 gap-x-3 gap-y-10 pt-8 sm:gap-x-5 md:grid-cols-3 lg:grid-cols-4">
-            {result.hits.map((product) => <li key={product.id}><ProductCard product={product} /></li>)}
+            {result.hits.map((product) => <li key={product.id}><VanyaProductCard product={product} /></li>)}
           </ul>
         )}
 

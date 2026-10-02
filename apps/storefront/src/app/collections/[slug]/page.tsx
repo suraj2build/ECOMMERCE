@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { notFound } from 'next/navigation';
 import { Container } from '@/components/ui/Container';
-import { ProductCard } from '@/components/catalog/ProductCard';
+import { VanyaProductCard } from '@/components/catalog/VanyaProductCard';
 import { getPublicCollection } from '@/lib/api';
 
 export default async function CollectionPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -24,7 +24,7 @@ export default async function CollectionPage({ params }: { params: Promise<{ slu
           <p className="text-sm text-ink-muted">No published styles in this collection right now.</p>
         ) : (
           <ul className="grid grid-cols-2 gap-x-3 gap-y-10 sm:gap-x-5 md:grid-cols-3 lg:grid-cols-4">
-            {collection.styles.map((style) => <li key={style.id}><ProductCard product={style} /></li>)}
+            {collection.styles.map((style) => <li key={style.id}><VanyaProductCard product={style} /></li>)}
           </ul>
         )}
       </Container>
