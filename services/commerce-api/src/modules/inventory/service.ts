@@ -161,12 +161,17 @@ export class InventoryService {
    */
   async getAvailableToSellBySku(skuIds: string[]): Promise<Map<string, number>> {
     if (skuIds.length === 0) return new Map();
-    const balances = await this.prisma.inventoryBalance.groupBy({
-      by: ['skuId'],
-      where: { skuId: { in: skuIds } },
-      _sum: { onHand: true, reserved: true },
-    });
-    return new Map(balances.map((b) => [b.skuId, Math.max(0, (b._sum.onHand ?? 0) - (b._sum.reserved ?? 0))]));
+    const result = new Map<string, number>();
+    const uniqueIds = [...new Set(skuIds)];
+    // Bound query parameters without limiting the number of reported SKUs.
+    for (let offset = 0; offset < uniqueIds.length; offset += 1000) {
+      const balances = await this.prisma.inventoryBalance.groupBy({
+        by: ['skuId'], where: { skuId: { in: uniqueIds.slice(offset, offset + 1000) } },
+        _sum: { onHand: true, reserved: true },
+      });
+      for (const b of balances) result.set(b.skuId, Math.max(0, (b._sum.onHand ?? 0) - (b._sum.reserved ?? 0)));
+    }
+    return result;
   }
 
   private async writeLedgerRow(

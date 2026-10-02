@@ -395,8 +395,10 @@ export class OrderService {
       // invoiceStatus/invoiceAttempts and reconcilePendingInvoices()
       // will pick it up again on its next sweep - never silently lost.
       await this.prisma.order
-        .update({
-          where: { id: orderId },
+        .updateMany({
+          // A failed replica must not overwrite another replica's
+          // already-successful durable invoice link/status.
+          where: { id: orderId, invoiceId: null },
           data: { invoiceStatus: 'FAILED', invoiceFailureReason: message, invoiceAttempts: { increment: 1 } },
         })
         .catch((updateErr) => this.fastify.log.error({ updateErr, orderId }, 'Failed to durably record invoice failure'));

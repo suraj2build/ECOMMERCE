@@ -44,3 +44,9 @@ No external-provider business rule, legal retention policy or production infrast
 - Additional launch blocker found: AuthService hard-wires ConsoleOtpProvider; there is no real SMS delivery adapter. Console-only delivery now refuses production use instead of reporting a fake successful dispatch. A real provider must be selected, wired and verified.
 - Deployment discovery: no production hosting descriptor, production runtime credentials or configured production target is available in this checkout/session. Shipping adapters remain test doubles; return evidence uses local disk, requiring durable shared storage or a verified object-storage adapter. No production deployment has been performed.
 - Final-head full CI, load measurement, staging mixed load, real provider delivery/payment/shipping, production backup/restore and business/legal launch requirements remain evidence gates. They must not be marked complete solely to satisfy a launch request.
+
+### Reporting scale repair
+
+Commerce sales/refunds and margin now use PostgreSQL grouped aggregates and relational filters instead of materializing every order/refund/line or building unbounded order-ID lists. Fashion sales aggregate by SKU and return reasons by reason; SKU metadata uses relational eligibility instead of a growing IN list. The canonical available-stock helper traverses bounded 1,000-ID batches without any total-SKU cutoff (33,001-SKU regression). Existing date, cancellation, refund, average-cost and missing-cost-line semantics are preserved. Full real-database regression and performance verification remain required; procurement reports and large per-SKU response payloads still need production-scale memory/latency assessment.
+
+Invoice recovery failure recording is conditional on invoiceId remaining null, so a failed replica cannot overwrite another replica's successfully issued invoice.
