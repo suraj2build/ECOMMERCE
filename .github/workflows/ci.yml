@@ -144,6 +144,9 @@ jobs:
       - name: Unit tests
         run: npm run test --workspace=services/commerce-api
 
+      - name: Read-load transport regression tests
+        run: node --test test/read-load/measure.test.mjs
+
       - name: Integration tests (real Postgres + Redis)
         run: npm run test:integration --workspace=services/commerce-api
 
@@ -229,3 +232,122 @@ jobs:
       - name: Verify compiled entrypoint, Prisma engine and runtime imports
         run: |
           docker run --rm --entrypoint node fcp-api:ci --input-type=module -e "import { existsSync, readdirSync } from 'node:fs'; if (!existsSync('dist/index.js')) throw new Error('Missing API entrypoint'); if (!readdirSync('../../packages/db/generated/client').some(name => name.endsWith('.so.node'))) throw new Error('Missing Prisma engine'); await import('@fcp/db'); await import('@fcp/config'); await import('@fcp/shared'); if (process.getuid() === 0) throw new Error('Runtime must not be root');"
+
+  read-load-investigation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fcp_app
+          POSTGRES_PASSWORD: fcp_dev_password
+          POSTGRES_DB: fcp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fcp_app -d fcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # M10 search/discovery (ADR-0006). No --health-cmd: the distroless
+      # Meilisearch image has no shell/curl to exec a healthcheck with, so
+      # readiness is polled from the host instead (see "Wait for
+      # Meilisearch" step below), matching how the E2E step already waits
+      # on the API/storefront ports.
+      meilisearch:
+        image: getmeili/meilisearch:v1.10
+        env:
+          MEILI_NO_ANALYTICS: 'true'
+          MEILI_ENV: development
+        ports:
+          - 7700:7700
+
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply migrations to a clean database
+        run: npm run db:migrate:deploy
+      - name: Build production apps
+        env:
+          NODE_ENV: production
+        run: npm run build
+      - name: Read-load transport regression tests
+        run: node --test test/read-load/measure.test.mjs
+      - name: Seed test-relevant reference data
+        run: npm run db:seed
+        env:
+          SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
+          SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: E2E smoke (start API + storefront, run Playwright)
+        run: |
+          PORT=4000 npm run start --workspace=services/commerce-api &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4000/health && break
+            sleep 1
+          done
+          NODE_ENV=production PORT=3000 npm run start --workspace=apps/storefront &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/ && break
+            sleep 1
+          done
+          NODE_ENV=production PORT=3001 npm run start --workspace=apps/admin &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3001/login && break
+            sleep 1
+          done
+          npx playwright test --project=storefront test/e2e-storefront/pdp.spec.ts
+          LOAD_TEST_ALLOWED=test-environment LOAD_TEST_API_URL=http://localhost:4000 LOAD_TEST_STOREFRONT_URL=http://localhost:3000 node scripts/go-live-read-load.mjs
+        env:
+          NEXT_PUBLIC_API_URL: 'http://localhost:4000'
+          # M11: the PDP E2E spec logs in as the seeded super admin to
+          # provision its own test product - must match the "Seed
+          # test-relevant reference data" step's values above.
+          SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
+          SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!
+          # test/e2e-storefront/loyalty.spec.ts places a real ₹12,000 COD
+          # order (well above the ₹5,000 default) specifically to earn
+          # more than the 100-point minimum redemption threshold at the
+          # default 1-point-per-₹100 earn rate - a genuine, documented,
+          # test-environment-only relaxation of this business threshold
+          # (never a production value), the same one local development's
+          # gitignored .env already applies. Its absence here was a real
+          # gap: this E2E step failed on every CI run since M23 first
+          # introduced this test, undetected because this workflow's own
+          # run result was never actually checked until this fix.
+          COD_MAX_ORDER_VALUE_INR: '50000'
+          # M33: this E2E step runs ~10 independent storefront specs that
+          # each independently log in as the SAME shared seeded super
+          # admin (ci-admin@example.com above) from this ONE runner - the
+          # staff-login/OTP rate limits (auth/routes.ts, keyed by
+          # IP+identity) would otherwise collapse every spec's login into
+          # one bucket and 429 real, legitimate E2E traffic. Never set
+          # outside this one E2E-only step; unset (the default) in the
+          # lint-typecheck-build-test job above, so rate-limiting.test.ts
+          # still proves the real, tighter limits.
+          AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: '1000'
+
+
+      - name: Upload targeted read-load measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: read-load-investigation-results
+          path: read-load-results.json
+          if-no-files-found: ignore

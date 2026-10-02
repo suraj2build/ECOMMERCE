@@ -1,8 +1,8 @@
-import autocannon from 'autocannon';
 import { writeFile } from 'node:fs/promises';
+import { measureReadLoad } from './lib/read-load.mjs';
 
-// Run only against an explicitly supplied test environment. This harness is
-// read-only; checkout contention remains a separate integration/staging gate.
+// Explicit test environment only; production capacity still requires the
+// selected topology, real network/CDN and a sustained mixed workload.
 const base = process.env.LOAD_TEST_API_URL;
 if (!base || process.env.LOAD_TEST_ALLOWED !== 'test-environment') {
   throw new Error('Set LOAD_TEST_API_URL and LOAD_TEST_ALLOWED=test-environment explicitly.');
@@ -23,29 +23,28 @@ for (const connections of [100, 200]) {
     ['catalog', `${base}/api/v1/storefront/styles?take=24`],
     ['search', `${base}/api/v1/storefront/search?pageSize=24`],
   ]) {
-    const result = await new Promise((resolve, reject) => {
-      autocannon({ url, connections, duration: connections === 100 ? 30 : 15,
-        // Explicitly authorized test target only. Each connection models
-        // an independent shopper through the trusted proxy hop, rather
-        // than turning every shopper into one abusive shared-IP bucket.
-        // Production guards are unchanged and tested separately.
-        setupClient(client) {
-          const id = shopper++;
-          client.setHeaders({ 'x-forwarded-for': `198.18.${Math.floor(id / 250) % 250}.${id % 250 + 1}` });
-        },
-        verifyBody(body) {
-          try {
-            if (name === 'product-page') return body.includes('<html') && body.includes(styles[0].id) && body.includes('"@type":"Product"');
-            const value = JSON.parse(body); return value.unavailable !== true && !value.error;
-          }
-          catch { return false; }
-        },
-      }, (error, metrics) => error ? reject(error) : resolve(metrics));
+    const result = await measureReadLoad({
+      url, connections, duration: connections === 100 ? 30 : 15,
+      headerFactory() {
+        const id = shopper++;
+        return { 'x-forwarded-for': `198.18.${Math.floor(id / 250) % 250}.${id % 250 + 1}` };
+      },
+      verifyBody(body) {
+        if (name === 'product-page') return body.includes('<html') && body.includes(styles[0].id) && body.includes('"@type":"Product"');
+        const value = JSON.parse(body);
+        return value.unavailable !== true && !value.error;
+      },
     });
-    const report = { name, connections, requests: result.requests, latency: result.latency, errors: result.errors, timeouts: result.timeouts, non2xx: result.non2xx, mismatches: result.mismatches };
+    const report = { name, connections, ...result };
     reports.push(report);
     console.log(JSON.stringify(report));
   }
 }
-await writeFile(process.env.LOAD_TEST_REPORT ?? 'read-load-results.json', JSON.stringify({ environment: 'supplied test target; production capacity not certified', reports }, null, 2));
-if (reports.some((r) => r.errors || r.timeouts || r.non2xx || r.mismatches)) throw new Error('Read-load gate failed: errors, timeouts or non-2xx responses.');
+await writeFile(process.env.LOAD_TEST_REPORT ?? 'read-load-results.json', JSON.stringify({
+  environment: 'supplied test target; production capacity not certified',
+  method: 'connection admission and warmed steady-state read load; both phases fail on errors',
+  reports,
+}, null, 2));
+if (reports.some((r) => r.errors || r.timeouts || r.non2xx || r.mismatches)) {
+  throw new Error('Read-load gate failed: errors, timeouts, non-2xx or invalid responses (including admission).');
+}
