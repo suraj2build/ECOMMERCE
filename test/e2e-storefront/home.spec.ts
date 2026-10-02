@@ -2,53 +2,74 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 /**
- * Home page browser E2E (M09, acceptance/m09-storefront-foundation.md):
- * layout at mobile and desktop breakpoints, no horizontal overflow, an
- * automated accessibility scan, and keyboard-operable navigation.
+ * P2 VANYA storefront shell E2E. The first visit deliberately opens the
+ * Men/Women gateway; after a choice it is remembered in localStorage and
+ * the production storefront shell takes over.
  */
 test.describe('Storefront Home', () => {
-  test('renders correctly at a mobile breakpoint with no horizontal overflow', async ({ page }) => {
+  async function chooseWomen(page: import('@playwright/test').Page) {
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: 'Enter WOMEN store' })).toBeVisible();
+    await page.getByRole('button', { name: 'Enter WOMEN store' }).click();
+    await expect(page.getByRole('link', { name: 'VANYA home' })).toBeVisible();
+  }
+
+  test('first visit presents the VANYA department gateway and remains mobile-safe', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
-    await expect(page.getByRole('link', { name: 'Home' })).toBeVisible();
+
+    await expect(page.getByRole('heading', { name: 'VANYA' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enter MEN store' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enter WOMEN store' })).toBeVisible();
 
     const [scrollWidth, clientWidth] = await page.evaluate(() => [
       document.documentElement.scrollWidth,
       document.documentElement.clientWidth,
     ]);
-    expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1); // +1 for sub-pixel rounding
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
   });
 
-  test('renders correctly at a desktop breakpoint with full nav visible', async ({ page }) => {
+  test('desktop department choice reveals the full production navigation', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/');
+    await chooseWomen(page);
+
     const nav = page.getByRole('navigation', { name: 'Primary' });
     await expect(nav).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Shop Women' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Shop Men' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Women' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'New In' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Collections' })).toBeVisible();
   });
 
-  test('mobile nav opens via the menu button and closes after selecting a link', async ({ page }) => {
+  test('mobile nav opens after department selection and reaches the real PLP', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/');
+    await chooseWomen(page);
+
     const menuButton = page.getByRole('button', { name: 'Open menu' });
     await menuButton.click();
     const mobileNav = page.getByRole('navigation', { name: 'Primary mobile' });
     await expect(mobileNav).toBeVisible();
-    await mobileNav.getByRole('link', { name: 'Shop Women' }).click();
+    await mobileNav.getByRole('link', { name: 'Shop women' }).click();
     await expect(page).toHaveURL(/\/category\/women$/);
+    await expect(page.getByRole('heading', { name: 'Women' })).toBeVisible();
   });
 
-  test('the skip-to-content link is the first focusable element', async ({ page }) => {
-    await page.goto('/');
+  test('the chosen department persists and the skip-to-content link remains first focusable', async ({ page }) => {
+    await chooseWomen(page);
+    await page.reload();
     await page.keyboard.press('Tab');
     await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
   });
 
-  test('has no critical or serious automated accessibility violations', async ({ page }) => {
-    await page.goto('/');
+  test('new browse routes resolve and chosen Home has no serious accessibility violations', async ({ page }) => {
+    await chooseWomen(page);
     const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
-    const blocking = results.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+    const blocking = results.violations.filter((violation) => violation.impact === 'critical' || violation.impact === 'serious');
     expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
+
+    for (const route of ['/search', '/category/women', '/collections', '/watch-and-shop']) {
+      const response = await page.goto(route);
+      expect(response?.ok(), `${route} should resolve successfully`).toBeTruthy();
+      await expect(page.locator('body')).not.toContainText('404');
+    }
   });
 });
