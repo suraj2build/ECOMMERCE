@@ -36,6 +36,7 @@ export interface TrackingInput {
   analyticsClientId?: string;
   metaBrowserId?: string;
   metaClickId?: string;
+  consentSubjectId?: string;
 }
 
 export interface StartCheckoutInput {
@@ -519,6 +520,7 @@ export class CheckoutService {
             analyticsClientId: input.tracking?.analytics ? (input.tracking.analyticsClientId ?? null) : null,
             metaBrowserId: input.tracking?.marketing ? (input.tracking.metaBrowserId ?? null) : null,
             metaClickId: input.tracking?.marketing ? (input.tracking.metaClickId ?? null) : null,
+            consentSubjectId: input.tracking?.analytics || input.tracking?.marketing ? (input.tracking.consentSubjectId ?? null) : null,
             status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'RESERVED',
             idempotencyKey: input.idempotencyKey,
             confirmedAt: paymentResult.status === 'CONFIRMED' ? new Date() : null,

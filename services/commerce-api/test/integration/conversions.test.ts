@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { __resetEnvCacheForTests } from '@fcp/config';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
-import { createAuthenticatedStaff } from '../helpers/auth.js';
+import { createAuthenticatedCustomer, createAuthenticatedStaff } from '../helpers/auth.js';
 import { ConversionService } from '../../src/modules/conversions/service.js';
 
 /**
@@ -174,6 +174,9 @@ describe('Server-side conversion events (LR-003)', () => {
     expect(meta.user_data.em).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)]);
     expect(meta.user_data.ph).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)]);
     expect(meta.user_data).toMatchObject({ fbp: BOTH.metaBrowserId, fbc: BOTH.metaClickId });
+    // A COD order is confirmed before any money is collected; both events say so.
+    expect(ga4.events[0]!.params.payment_type).toBe('cod');
+    expect(meta.custom_data.payment_type).toBe('cod');
   });
 
   it('never puts a name, email, phone or address in any payload; Meta gets only hashes', async () => {
@@ -212,7 +215,10 @@ describe('Server-side conversion events (LR-003)', () => {
     expect(await testPrisma.conversionEvent.count()).toBe(0);
     await capture(res.json().id, `pay_conv_${counter}`);
     const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id } });
-    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id } })).toBe(2);
+    const queued = await testPrisma.conversionEvent.findMany({ where: { orderId: order.id }, orderBy: { provider: 'asc' } });
+    expect(queued).toHaveLength(2);
+    expect((queued[0]!.payload as { events: { params: { payment_type: string } }[] }).events[0]!.params.payment_type).toBe('prepaid');
+    expect((queued[1]!.payload as { custom_data: { payment_type: string } }).custom_data.payment_type).toBe('prepaid');
     // A duplicate capture webhook does not queue the purchase again.
     await capture(res.json().id, `pay_conv_${counter}`);
     expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id } })).toBe(2);
@@ -228,7 +234,7 @@ describe('Server-side conversion events (LR-003)', () => {
     setIntegrations(false);
     const { order } = await codOrder(BOTH);
     expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id } })).toBe(0);
-    expect(await service().dispatchDue()).toEqual({ sent: 0, failed: 0, retrying: 0, ambiguous: 0 });
+    expect(await service().dispatchDue()).toEqual({ sent: 0, failed: 0, retrying: 0, ambiguous: 0, withdrawn: 0 });
     expect(calls).toHaveLength(0);
   });
 
@@ -330,6 +336,106 @@ describe('Server-side conversion events (LR-003)', () => {
     const sentBefore = calls.length;
     await service().dispatchDue();
     expect(calls.length).toBe(sentBefore);
+  });
+
+  // --- Consent withdrawal (LR-003 review) ---
+
+  const SUBJECT = () => crypto.randomUUID();
+  const withdraw = (payload: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    app.inject({ method: 'POST', url: '/api/v1/storefront/consent/withdrawal', headers, payload });
+
+  it('withdrawal suppresses every queued event and clears the stored consent and identifiers', async () => {
+    const subjectId = SUBJECT();
+    const { order, sku } = await codOrder({ ...BOTH, consentSubjectId: subjectId });
+    expect(order.consentSubjectId).toBe(subjectId);
+    const other = await codOrder({ ...BOTH, consentSubjectId: SUBJECT() }, sku);
+
+    const res = await withdraw({ subjectId, analytics: false, marketing: false });
+    expect(res.statusCode).toBe(204);
+    expect(await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ analyticsConsent: false, marketingConsent: false, analyticsClientId: null, metaBrowserId: null, metaClickId: null });
+    expect((await testPrisma.conversionEvent.findMany({ where: { orderId: order.id } })).map((e) => [e.status, e.lastError])).toEqual([['WITHDRAWN', 'consent withdrawn'], ['WITHDRAWN', 'consent withdrawn']]);
+
+    // Only the other browser's order is sent.
+    expect(await service().dispatchDue()).toMatchObject({ sent: 2 });
+    expect(calls.every((c) => JSON.stringify(c.body).includes(other.order.orderNumber))).toBe(true);
+    expect(await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: order.checkoutSessionId } })).toMatchObject({ analyticsConsent: false, marketingConsent: false });
+  });
+
+  it('withdrawal also stops an event waiting for a retry', async () => {
+    const subjectId = SUBJECT();
+    const { order } = await codOrder({ ...BOTH, analytics: false, consentSubjectId: subjectId });
+    metaReplies = [{ status: 503, body: { error: 'unavailable' } }];
+    expect(await service().dispatchDue()).toMatchObject({ retrying: 1 });
+    expect((await withdraw({ subjectId, analytics: false, marketing: false })).statusCode).toBe(204);
+    await testPrisma.conversionEvent.updateMany({ where: { orderId: order.id }, data: { nextAttemptAt: new Date() } });
+    expect(await service().dispatchDue()).toMatchObject({ sent: 0, retrying: 0 });
+    expect(calls).toHaveLength(1);
+    expect((await testPrisma.conversionEvent.findFirstOrThrow({ where: { orderId: order.id } })).status).toBe('WITHDRAWN');
+  });
+
+  it('a claim in flight is re-checked at send time: withdrawn consent is never sent after a reclaim', async () => {
+    const subjectId = SUBJECT();
+    const { order } = await codOrder({ ...BOTH, analytics: false, consentSubjectId: subjectId });
+    await testPrisma.conversionEvent.updateMany({ where: { orderId: order.id }, data: { status: 'SENDING', claimedAt: new Date(Date.now() - 3_600_000) } });
+    expect((await withdraw({ subjectId, analytics: true, marketing: false })).statusCode).toBe(204);
+    // The withdrawal cannot touch a SENDING claim; the dispatcher's own check stops it.
+    expect(await service().dispatchDue()).toMatchObject({ sent: 0, withdrawn: 1 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('a GA4 claim in flight when marketing is withdrawn is sent with the ad purposes denied, and its Meta twin is not sent', async () => {
+    const subjectId = SUBJECT();
+    const { order } = await codOrder({ ...BOTH, consentSubjectId: subjectId });
+    await testPrisma.conversionEvent.updateMany({ where: { orderId: order.id }, data: { status: 'SENDING', claimedAt: new Date(Date.now() - 3_600_000) } });
+    expect((await withdraw({ subjectId, analytics: true, marketing: false })).statusCode).toBe(204);
+    expect(await service().dispatchDue()).toMatchObject({ sent: 1, withdrawn: 1 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url.startsWith(GA4_URL)).toBe(true);
+    expect(calls[0]!.body.consent).toEqual({ ad_user_data: 'DENIED', ad_personalization: 'DENIED' });
+  });
+
+  it('withdrawing marketing only stops Meta and downgrades the queued GA4 event to ad purposes denied', async () => {
+    const subjectId = SUBJECT();
+    const { order } = await codOrder({ ...BOTH, consentSubjectId: subjectId });
+    expect((await withdraw({ subjectId, analytics: true, marketing: false })).statusCode).toBe(204);
+    const after = await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(after).toMatchObject({ analyticsConsent: true, analyticsClientId: BOTH.analyticsClientId, marketingConsent: false, metaBrowserId: null, metaClickId: null });
+    expect(await service().dispatchDue()).toMatchObject({ sent: 1 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url.startsWith(GA4_URL)).toBe(true);
+    expect(calls[0]!.body.consent).toEqual({ ad_user_data: 'DENIED', ad_personalization: 'DENIED' });
+    expect((await testPrisma.conversionEvent.findFirstOrThrow({ where: { orderId: order.id, provider: 'META' } })).status).toBe('WITHDRAWN');
+  });
+
+  it('withdrawal before a prepaid payment is captured means the order is created without consent and nothing is queued', async () => {
+    const sku = await setupSku();
+    const subjectId = SUBJECT();
+    const res = await checkout(sku.skuId, 'PREPAID', { ...BOTH, consentSubjectId: subjectId });
+    expect((await withdraw({ subjectId, analytics: false, marketing: false })).statusCode).toBe(204);
+    await capture(res.json().id, `pay_conv_withdrawn_${counter}`);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id } });
+    expect(order).toMatchObject({ analyticsConsent: false, marketingConsent: false, analyticsClientId: null, metaBrowserId: null });
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id } })).toBe(0);
+  });
+
+  it('a signed-in customer\'s withdrawal covers their own orders from any browser', async () => {
+    const { customerId, token } = await createAuthenticatedCustomer(app);
+    const { order, sku } = await codOrder({ ...BOTH, consentSubjectId: SUBJECT() });
+    await testPrisma.order.update({ where: { id: order.id }, data: { customerId, guestSessionId: null } });
+    const stranger = await codOrder({ ...BOTH, consentSubjectId: SUBJECT() }, sku);
+    expect((await withdraw({ analytics: false, marketing: false }, { authorization: `Bearer ${token}` })).statusCode).toBe(204);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, status: 'WITHDRAWN' } })).toBe(2);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: stranger.order.id, status: 'PENDING' } })).toBe(2);
+  });
+
+  it('withdrawal never grants consent, reveals nothing, and rejects a malformed subject', async () => {
+    const subjectId = SUBJECT();
+    const { order } = await codOrder({ ...BOTH, marketing: false, consentSubjectId: subjectId });
+    expect((await withdraw({ subjectId, analytics: true, marketing: true })).statusCode).toBe(204);
+    expect(await testPrisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ analyticsConsent: true, marketingConsent: false });
+    expect((await withdraw({ subjectId: SUBJECT(), analytics: false, marketing: false })).statusCode).toBe(204);
+    expect((await withdraw({ subjectId: 'not-a-uuid', analytics: false, marketing: false })).statusCode).toBe(400);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, status: 'PENDING' } })).toBe(1);
   });
 
   // --- Staff routes ---

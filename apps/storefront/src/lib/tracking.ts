@@ -6,7 +6,11 @@
  * - Nothing is loaded and nothing is sent until the visitor consents:
  *   `analytics` enables GA4, `marketing` enables the Meta Pixel.
  * - Withdrawing consent stops every further call at once, revokes the tags'
- *   consent state and deletes their cookies.
+ *   consent state and deletes their cookies, and tells the server, which
+ *   stops every server-side event for that purpose not yet sent (orders
+ *   placed in this browser are found by the random consent-subject ID that
+ *   travelled with their checkout). An unsent withdrawal is retried on the
+ *   next page load.
  * - Item IDs are SKU codes; style-level views use the style code as
  *   item_group_id (GA4) / product_group (Meta). Currency is INR.
  * - No name, email, phone or address is ever passed to either tag.
@@ -16,15 +20,19 @@
  *   deduplicates.
  */
 
+import { getStoredSession } from './customer-auth';
+
 export const GA4_ID = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID ?? '';
 export const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID ?? '';
 export const trackingConfigured = () => Boolean(GA4_ID || META_PIXEL_ID);
 
 const CONSENT_KEY = 'vanya_consent_v1';
+const PENDING_WITHDRAWAL_ITEM = 'vanya_consent_withdrawal_pending';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const CONSENT_EVENT = 'vanya:consent-changed';
 export const OPEN_CHOICES_EVENT = 'vanya:open-privacy-choices';
 
-export interface Consent { analytics: boolean; marketing: boolean; decidedAt: string }
+export interface Consent { analytics: boolean; marketing: boolean; decidedAt: string; subjectId?: string }
 
 export function readConsent(): Consent | null {
   try {
@@ -132,15 +140,67 @@ function stopPixel() {
 export function applyConsent(consent: Consent | null = readConsent()) {
   if (consent?.analytics) startGa4(consent); else if (ga4Loaded) stopGa4();
   if (consent?.marketing) startPixel(); else if (pixelLoaded) stopPixel();
+  void retryPendingWithdrawal();
+}
+
+function newSubjectId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+interface Withdrawal { subjectId?: string; analytics: boolean; marketing: boolean }
+
+async function sendWithdrawal(body: Withdrawal, signedIn = true): Promise<boolean> {
+  // A signed-in customer's withdrawal also covers their orders from other browsers.
+  const token = signedIn ? getStoredSession()?.accessToken : undefined;
+  try {
+    const res = await fetch(`${API_URL}/api/v1/storefront/consent/withdrawal`, {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    });
+    // An expired sign-in: still withdraw for this browser's own orders.
+    if (res.status === 401 && token) return sendWithdrawal(body, false);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function rememberPending(body: Withdrawal | null) {
+  try {
+    if (body) localStorage.setItem(PENDING_WITHDRAWAL_ITEM, JSON.stringify(body));
+    else localStorage.removeItem(PENDING_WITHDRAWAL_ITEM);
+  } catch { /* storage blocked: nothing more can be kept */ }
+}
+
+async function retryPendingWithdrawal() {
+  let pending: Withdrawal | null = null;
+  try { pending = JSON.parse(localStorage.getItem(PENDING_WITHDRAWAL_ITEM) ?? 'null') as Withdrawal | null; } catch { return; }
+  if (pending && (await sendWithdrawal(pending))) rememberPending(null);
+}
+
+/** Server side of a withdrawal; kept and retried until the server confirms it. */
+async function withdrawOnServer(body: Withdrawal) {
+  rememberPending(body);
+  if (await sendWithdrawal(body)) rememberPending(null);
 }
 
 export function saveConsent(choice: { analytics: boolean; marketing: boolean }) {
-  const consent: Consent = { ...choice, decidedAt: new Date().toISOString() };
+  const previous = readConsent();
+  const consent: Consent = { ...choice, decidedAt: new Date().toISOString(), subjectId: previous?.subjectId ?? newSubjectId() };
   try { localStorage.setItem(CONSENT_KEY, JSON.stringify(consent)); } catch { /* the choice still applies to this page */ }
   if (!choice.analytics) stopGa4();
   if (!choice.marketing) stopPixel();
   applyConsent(consent);
   window.dispatchEvent(new Event(CONSENT_EVENT));
+  const withdrawn = (previous?.analytics && !choice.analytics) || (previous?.marketing && !choice.marketing);
+  if (withdrawn) void withdrawOnServer({ subjectId: previous?.subjectId, analytics: choice.analytics, marketing: choice.marketing });
 }
 
 /** Consent and identifiers sent with the order so server events honour them. */
@@ -154,6 +214,7 @@ export function checkoutTracking() {
     analyticsClientId: consent?.analytics && ga ? ga : undefined,
     metaBrowserId: consent?.marketing ? cookie('_fbp') : undefined,
     metaClickId: consent?.marketing ? cookie('_fbc') : undefined,
+    consentSubjectId: consent?.analytics || consent?.marketing ? consent.subjectId : undefined,
   };
 }
 

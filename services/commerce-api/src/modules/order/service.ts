@@ -225,6 +225,7 @@ export class OrderService {
           analyticsClientId: session.analyticsClientId,
           metaBrowserId: session.metaBrowserId,
           metaClickId: session.metaClickId,
+          consentSubjectId: session.consentSubjectId,
           lines: {
             create: session.lines.map((l) => ({
               skuId: l.skuId,

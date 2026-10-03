@@ -119,6 +119,7 @@ function toOrder(order: Prisma.OrderGetPayload<object>): ConversionOrder {
     contactMobile: order.contactMobile,
     metaBrowserId: order.metaBrowserId,
     metaClickId: order.metaClickId,
+    paymentMethod: order.paymentMethod,
   };
 }
 
@@ -185,10 +186,10 @@ export class ConversionService {
 
   /** Claims due events (row locks, SKIP LOCKED: replicas never share one),
    * sends each once, records the outcome. Disabled providers' events wait. */
-  async dispatchDue(limit = 50): Promise<{ sent: number; failed: number; retrying: number; ambiguous: number }> {
+  async dispatchDue(limit = 50): Promise<{ sent: number; failed: number; retrying: number; ambiguous: number; withdrawn: number }> {
     const env = loadEnv();
     const providers = enabledProviders(env);
-    const result = { sent: 0, failed: 0, retrying: 0, ambiguous: 0 };
+    const result = { sent: 0, failed: 0, retrying: 0, ambiguous: 0, withdrawn: 0 };
     if (providers.length === 0) return result;
     await this.reclaimStale();
     const claimed = await this.prisma.$queryRaw<{ id: string }[]>`
@@ -200,9 +201,20 @@ export class ConversionService {
       )
       RETURNING id`;
     for (const { id } of claimed) {
-      const event = await this.prisma.conversionEvent.findUniqueOrThrow({ where: { id } });
-      const outcome = await this.sender.send(event).catch((err: Error): SendOutcome => ({ kind: 'UNKNOWN', error: `sender error: ${err.name}` }));
+      const event = await this.prisma.conversionEvent.findUniqueOrThrow({ where: { id }, include: { order: { select: { analyticsConsent: true, marketingConsent: true } } } });
       const owned = { id, status: 'SENDING' as const };
+      // Consent is checked again at send time: a withdrawal that arrived
+      // after this event was queued (or claimed) stops it here.
+      if (!(event.provider === 'GA4' ? event.order.analyticsConsent : event.order.marketingConsent)) {
+        await this.prisma.conversionEvent.updateMany({ where: owned, data: { status: 'WITHDRAWN', lastError: 'consent withdrawn' } });
+        result.withdrawn++;
+        continue;
+      }
+      // GA4 events also state the ad purposes; send them as they are now.
+      const payload = event.provider === 'GA4' && !event.order.marketingConsent
+        ? { ...(event.payload as object), consent: { ad_user_data: 'DENIED', ad_personalization: 'DENIED' } }
+        : event.payload;
+      const outcome = await this.sender.send({ provider: event.provider, payload: payload as Prisma.JsonValue }).catch((err: Error): SendOutcome => ({ kind: 'UNKNOWN', error: `sender error: ${err.name}` }));
       if (outcome.kind === 'SENT') {
         await this.prisma.conversionEvent.updateMany({ where: owned, data: { status: 'SENT', sentAt: new Date(), lastError: null } });
         result.sent++;
@@ -223,6 +235,56 @@ export class ConversionService {
       }
     }
     return result;
+  }
+
+  /**
+   * Consent withdrawal (LR-003 review). Called by the browser when the
+   * shopper turns a purpose off, with the random consent-subject ID that
+   * travelled with their checkouts; a signed-in customer's own orders are
+   * covered too. For each purpose now off, every matching checkout and
+   * order loses the consent flag and the identifiers kept for it, and
+   * every event for that purpose that has not been sent yet is marked
+   * WITHDRAWN, so neither the dispatcher nor a retry sends it. Sent events
+   * cannot be recalled. Withdrawal never grants anything.
+   */
+  async withdrawConsent(who: { subjectId?: string; customerId?: string }, now: { analytics: boolean; marketing: boolean }): Promise<{ orders: number; withdrawnEvents: number }> {
+    const scopes: Prisma.OrderWhereInput[] = [];
+    if (who.subjectId) scopes.push({ consentSubjectId: who.subjectId });
+    if (who.customerId) scopes.push({ customerId: who.customerId });
+    if (scopes.length === 0 || (now.analytics && now.marketing)) return { orders: 0, withdrawnEvents: 0 };
+    const sessionScopes = scopes as Prisma.CheckoutSessionWhereInput[];
+    const analyticsOff = !now.analytics;
+    const marketingOff = !now.marketing;
+
+    const sessionData = {
+      ...(analyticsOff ? { analyticsConsent: false, analyticsClientId: null } : {}),
+      ...(marketingOff ? { marketingConsent: false, metaBrowserId: null, metaClickId: null } : {}),
+    };
+    return this.prisma.$transaction(async (tx) => {
+      // Sessions first: a prepaid capture creating an order holds its
+      // session's row lock, so this waits for it and the order lookup
+      // below (a fresh snapshot) then sees that order; a capture that
+      // starts later reads the session with consent already removed.
+      await tx.checkoutSession.updateMany({ where: { OR: sessionScopes }, data: sessionData });
+      const orders = await tx.order.findMany({ where: { OR: scopes }, select: { id: true } });
+      const orderIds = orders.map((o) => o.id);
+      await tx.order.updateMany({ where: { id: { in: orderIds } }, data: sessionData });
+      const providers: ConversionProvider[] = [...(analyticsOff ? ['GA4' as const] : []), ...(marketingOff ? ['META' as const] : [])];
+      // PENDING covers first attempts and scheduled retries. A SENDING event
+      // is re-checked by the dispatcher before it is sent.
+      const withdrawn = await tx.conversionEvent.updateMany({
+        where: { orderId: { in: orderIds }, provider: { in: providers }, status: 'PENDING' },
+        data: { status: 'WITHDRAWN', lastError: 'consent withdrawn', claimedAt: null },
+      });
+      if (marketingOff && !analyticsOff && orderIds.length) {
+        // GA4 events still queued must no longer tell Google the ad purposes are granted.
+        await tx.$executeRaw`
+          UPDATE conversion_events
+          SET payload = jsonb_set(payload::jsonb, '{consent}', '{"ad_user_data":"DENIED","ad_personalization":"DENIED"}'::jsonb), "updatedAt" = now()
+          WHERE provider = 'GA4' AND status = 'PENDING' AND "orderId" = ANY(${orderIds})`;
+      }
+      return { orders: orderIds.length, withdrawnEvents: withdrawn.count };
+    });
   }
 
   /** Staff view: which integrations are on, and counts per provider/status. */

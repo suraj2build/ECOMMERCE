@@ -27,6 +27,9 @@ const trackingSchema = z.object({
   analyticsClientId: z.string().regex(/^[0-9]{1,20}\.[0-9]{1,20}$/).optional(),
   metaBrowserId: z.string().regex(/^fb\.[0-9]\.[0-9]{10,16}\.[0-9]{1,20}$/).optional(),
   metaClickId: z.string().regex(/^fb\.[0-9]\.[0-9]{10,16}\.[A-Za-z0-9_-]{1,500}$/).optional(),
+  // Random ID of the browser's consent record, used to find this checkout
+  // again if the shopper later withdraws consent in that browser.
+  consentSubjectId: z.string().uuid().optional(),
 });
 
 const startCheckoutSchema = z.object({

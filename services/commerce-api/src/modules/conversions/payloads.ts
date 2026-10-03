@@ -36,7 +36,13 @@ export interface ConversionOrder {
   contactMobile: string;
   metaBrowserId: string | null;
   metaClickId: string | null;
+  paymentMethod: 'PREPAID' | 'COD';
 }
+
+/** COD orders are confirmed when placed, before any money is collected;
+ * prepaid orders only after the payment is captured. The tag lets reports
+ * separate "COD placed" from "paid" revenue. */
+export const paymentType = (order: Pick<ConversionOrder, 'paymentMethod'>) => (order.paymentMethod === 'COD' ? 'cod' : 'prepaid');
 
 const money = (value: number) => Math.round(value * 100) / 100;
 
@@ -79,6 +85,8 @@ export function ga4Purchase(order: ConversionOrder, lines: ConversionLine[]) {
         value: money(order.grandTotal),
         tax: money(order.taxAmount),
         shipping: money(order.shippingCost),
+        // Custom parameter: register it as an event-scoped custom dimension in GA4.
+        payment_type: paymentType(order),
         items: ga4Items(lines),
       },
     }],
@@ -144,6 +152,7 @@ export function metaPurchase(order: ConversionOrder, lines: ConversionLine[], st
       content_ids: lines.map((line) => line.skuCode),
       contents: lines.map((line) => ({ id: line.skuCode, quantity: line.quantity, item_price: money(line.unitPriceInclusive) })),
       num_items: lines.reduce((sum, line) => sum + line.quantity, 0),
+      payment_type: paymentType(order),
     },
   };
 }

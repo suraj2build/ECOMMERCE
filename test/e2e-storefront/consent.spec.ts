@@ -10,7 +10,8 @@ import { PrismaClient } from '@fcp/db';
  * - Before a choice, and after refusal, no tag script loads and no event is queued.
  * - After consent, discovery-to-purchase events carry SKU codes, INR and the
  *   order number; no name, email, phone or address.
- * - Withdrawal stops further events and deletes the tag cookies.
+ * - Withdrawal stops further events and deletes the tag cookies, and the
+ *   server clears the order's consent (a lost request is retried).
  * - The choice travels with the order (server-side events honour it), and
  *   the browser Meta Purchase fires once, with event ID purchase:<orderNumber>,
  *   only for a confirmed order.
@@ -187,6 +188,7 @@ test.describe('Consent-aware analytics (LR-003)', () => {
     const sessionId = page.url().split('/').pop()!;
     const order = await prisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
     expect(order).toMatchObject({ analyticsConsent: true, marketingConsent: true, analyticsClientId: '555666777.1700000000', metaBrowserId: 'fb.1.1700000000000.424242' });
+    expect(order.consentSubjectId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
     await expect.poll(async () => (await tagCalls(page)).fbq.filter((c) => c.name === 'Purchase').length).toBe(1);
     const purchase = (await tagCalls(page)).fbq.find((c) => c.name === 'Purchase')!;
@@ -203,5 +205,20 @@ test.describe('Consent-aware analytics (LR-003)', () => {
     await page.waitForLoadState('networkidle');
     expect((await tagCalls(page)).fbq.filter((c) => c.name === 'Purchase')).toHaveLength(0);
     expect(requests.length).toBeGreaterThan(0);
+
+    // Withdrawal reaches the server even if the first attempt is lost: the
+    // browser keeps it and sends it again on the next page load.
+    await page.route('**/api/v1/storefront/consent/withdrawal', (route) => route.abort());
+    await page.getByRole('button', { name: 'Privacy choices' }).click();
+    for (const box of await page.getByTestId('consent-banner').getByRole('checkbox').all()) await box.uncheck();
+    await page.getByRole('button', { name: 'Save choices' }).click();
+    await page.waitForTimeout(500);
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ analyticsConsent: true, marketingConsent: true });
+    await page.unroute('**/api/v1/storefront/consent/withdrawal');
+    const sent = page.waitForRequest((req) => req.url().endsWith('/api/v1/storefront/consent/withdrawal') && req.method() === 'POST');
+    await page.reload();
+    expect(JSON.parse((await sent).postData() ?? '{}')).toEqual({ subjectId: order.consentSubjectId, analytics: false, marketing: false });
+    await expect.poll(async () => prisma.order.findUniqueOrThrow({ where: { id: order.id } }).then((o) => [o.analyticsConsent, o.marketingConsent, o.analyticsClientId, o.metaBrowserId])).toEqual([false, false, null, null]);
+    expect(await page.evaluate(() => localStorage.getItem('vanya_consent_withdrawal_pending'))).toBeNull();
   });
 });
