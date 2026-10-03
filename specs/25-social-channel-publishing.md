@@ -130,7 +130,7 @@ scope only).
 Depends on: `specs/02-product-master.md`, `specs/07-catalog-merchandising.md`.
 Related: `specs/24-marketing.md`, `specs/26-seo.md`.
 
-## Launch readiness addendum (2026-10-03) — IMPLEMENTING
+## Launch readiness addendum (2026-10-03) — IMPLEMENTED (awaiting independent review; external accounts not configured)
 
 Google Merchant and Meta catalogue providers are authorized and built on the existing ChannelProvider contract (`LR-004`): one item per SKU grouped by style, image, product URL, INR price, live availability; publish/unpublish/price/stock resync; rejection is FAILED, transport uncertainty is AMBIGUOUS. Watch & Shop is internal and is not an Instagram integration; Instagram product tagging is not promised.
 

@@ -44,7 +44,7 @@ See `acceptance/m28-analytics-reporting.md`.
 Depends on nearly every other domain as a data source. Feeds:
 `specs/28-admin.md`.
 
-## Launch readiness addendum (2026-10-03) — IMPLEMENTING
+## Launch readiness addendum (2026-10-03) — IMPLEMENTED (awaiting independent review; external accounts not configured)
 
 Consent-aware GA4 ecommerce events and Meta Pixel + Conversions API with stable event IDs, a durable server-side outbox, COD vs prepaid purchase semantics, refunds via GA4 Measurement Protocol, server-only credentials and no PII in general analytics payloads (`LR-003`).
 

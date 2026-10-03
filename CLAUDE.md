@@ -6,6 +6,30 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-03: `VANYA DEMO AND LAUNCH-READINESS BUILD
+IMPLEMENTED — AWAITING ACCOUNT CONFIGURATION, VENDOR DECISION AND
+INDEPENDENT REVIEW.`** Authorized by the Product Owner ("START BUILD —
+VANYA remaining demo and launch readiness", base `3228586`); decisions
+`LR-001`..`LR-008` in `blueprint/DECISION_REGISTER.md`. Built: legal page
+routes that show only approved CMS text (pending notice otherwise);
+category/collection SEO, sitemap index without a product cap, runtime
+`SITE_INDEXING` (previews never indexed), truthful ProductGroup structured
+data; listing page validation by live result count (LR-007); consent-aware
+GA4 + Meta Pixel + Conversions API with a durable `conversion_events`
+outbox (purchase = confirmed order; COD at placement, prepaid after
+capture); `GOOGLE_MERCHANT` and `META_CATALOG` channel providers with
+price/stock/unpublish resync; S3 return-evidence storage (production
+refuses local disk); every sweep scheduled with run history and
+`GET /maintenance/jobs` alerting. Bugs found and fixed on the way: Next's
+fetch cache kept serving deactivated categories/unpublished collections
+and legal pages; `/product/<malformed id>` returned 500; search reindex
+never removed orphaned documents. **Open:** `LR-008` SMS/OTP and carrier
+vendors are `DECISION_REQUIRED` (no adapter built speculatively; mocks are
+still refused in production); no GA4/Meta/Merchant/S3 accounts are
+configured, so delivery into the providers' own tools is unverified;
+public preview tunnels are blocked by this environment's network policy.
+Not self-certified; not production-ready; no go-live claimed.
+
 **Status as of 2026-10-01 (later): `D-1 / D-2 / D-3 / D-4 IMPLEMENTATION
 COMPLETE — AWAITING INDEPENDENT REVIEW.`** The Product Owner authorized
 "P1 Product-Owner Decision Implementation, D-1/D-2/D-3/D-4 only" on

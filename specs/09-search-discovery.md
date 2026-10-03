@@ -41,6 +41,6 @@ See `acceptance/m10-search-discovery.md`.
 Depends on: `specs/07-catalog-merchandising.md`, `specs/08-storefront.md`.
 Feeds: `specs/10-pdp.md`, `specs/26-seo.md`.
 
-## Launch readiness addendum (2026-10-03) — IMPLEMENTING
+## Launch readiness addendum (2026-10-03) — IMPLEMENTED (awaiting independent review; external accounts not configured)
 
 A page number beyond the live last page redirects to the last populated page; every populated page stays reachable, tested by reaching the final item beyond 1,000 matches (`LR-007`). Search result pages are `noindex, follow` (`LR-002`).

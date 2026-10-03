@@ -56,7 +56,7 @@ Depends on: `specs/06-inventory.md`, `specs/22-loyalty.md`,
 `specs/33-store-credit-gift-cards.md`, `specs/28-admin.md`,
 `specs/21-customer-profile.md`.
 
-## Launch readiness addendum (2026-10-03) — IMPLEMENTING
+## Launch readiness addendum (2026-10-03) — IMPLEMENTED (awaiting independent review; external accounts not configured)
 
 Legal pages publish only approved text (`LR-001`). Scheduled sweeps record every run and surface consecutive failures for alerting (`LR-006`). Analytics consent and its withdrawal are honoured before any third-party collection (`LR-003`).
 

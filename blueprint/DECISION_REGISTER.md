@@ -2659,3 +2659,8 @@ so and nothing is invented.
 - **Engineering status:** provider interfaces (`OtpProvider`,
   `MarketingProvider`, `ShippingProvider`) and production guards exist;
   mocks are refused in production.
+- **Choice needed (2026-10-03):** one SMS/OTP vendor with DLT-registered
+  sender ID and templates, and one carrier or aggregator with API
+  credentials and webhook access. Once named, the adapter is built behind
+  the existing interface; until then OTP sign-in and shipment booking
+  cannot run in production (the mocks are refused there by design).

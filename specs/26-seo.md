@@ -42,6 +42,6 @@ Depends on: `specs/08-storefront.md`, `specs/10-pdp.md`,
 `specs/09-search-discovery.md`, `specs/02-product-master.md`,
 `specs/07-catalog-merchandising.md`.
 
-## Launch readiness addendum (2026-10-03) — IMPLEMENTING
+## Launch readiness addendum (2026-10-03) — IMPLEMENTED (awaiting independent review; external accounts not configured)
 
 Indexing rules, category/collection metadata, sitemap index beyond 1,000 (and 10,000) products, staging noindex and truthful structured data per `LR-002`.

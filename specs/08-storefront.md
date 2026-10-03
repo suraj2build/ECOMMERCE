@@ -116,6 +116,6 @@ Watch & Shop is the existing implemented M25 feature under
 `specs/24-marketing.md`; the earlier M09-era unresolved-feature note is historical.
 See `acceptance/p2-vanya-storefront.md` for the implementation/verification record.
 
-## Launch readiness addendum (2026-10-03) — IMPLEMENTING
+## Launch readiness addendum (2026-10-03) — IMPLEMENTED (awaiting independent review; external accounts not configured)
 
 Authorized by the 2026-10-03 START BUILD instruction. Adds `/legal/privacy` and `/legal/terms` (`LR-001`: CMS-approved text only, plain-text rendering, an explicit pending notice listing missing business details), a consent banner with a persistent "Privacy choices" control (`LR-003`), and a checked navigation/CTA/asset inventory. The approved VANYA UI is unchanged apart from these additions.

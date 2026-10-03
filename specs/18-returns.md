@@ -63,7 +63,7 @@ See `acceptance/m19-returns.md`.
 Depends on: `specs/14-order-management.md`, `specs/16-shipping-tracking.md`,
 `specs/06-inventory.md`. Feeds: `specs/19-refunds.md`, `specs/20-exchanges.md`.
 
-## Launch readiness addendum (2026-10-03) — IMPLEMENTING
+## Launch readiness addendum (2026-10-03) — IMPLEMENTED (awaiting independent review; external accounts not configured)
 
 Return-condition photos can be stored in S3-compatible object storage (`RETURN_EVIDENCE_STORAGE=s3`, SigV4, private objects, reads only through the ownership-checked route). Production refuses local-disk storage (`LR-005`).
 
