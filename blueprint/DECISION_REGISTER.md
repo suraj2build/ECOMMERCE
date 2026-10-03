@@ -118,7 +118,8 @@ of what is still needed from anyone, and from whom.
 | TAX | India Tax / GST | 6 | 1 | 5 |
 | IND | Other India-specific commerce | 5 | 5 | 0 |
 | NFR | Non-functional requirements | 6 | 6 | 0 |
-| **Total** | | **112** | **105** | **7** |
+| LR | Launch readiness (2026-10-03) | 8 | 7 | 1 decision required |
+| **Total** | | **120** | **112** | **7 + 1 decision required** |
 
 ---
 
@@ -2519,3 +2520,142 @@ self-certify.
   `specs/01-auth-rbac.md`, `specs/21-customer-profile.md`,
   `specs/30-audit-compliance.md`, and every milestone spec touching
   customer or payment data.
+
+---
+
+## LR — Launch readiness (2026-10-03)
+
+Recorded before implementation under the Product Owner's **"START BUILD —
+VANYA remaining demo and launch readiness"** instruction of 2026-10-03
+(base `3228586`). That instruction is the authorization for every item
+below; where it leaves a vendor or business fact open, the record says
+so and nothing is invented.
+
+#### LR-001 — Legal pages (Privacy, Terms) · **P0**
+- **Status:** DECIDED · **Decision date:** 2026-10-03
+- **Final decision:** `/legal/privacy` and `/legal/terms` exist and render
+  staff-approved text published through the existing CMS (landing pages
+  `legal-privacy` / `legal-terms`, composed of content blocks). Blocks
+  render as plain-text paragraphs, never HTML. Until approved text is
+  published, each page states that the policy is awaiting approval and
+  lists the business details still missing (legal entity name,
+  registered address, grievance officer and contact, governing law and
+  jurisdiction, effective date, data-retention periods (`CUST-001`),
+  processors used). No legal wording is written by engineering.
+- **Affected specs:** `specs/08-storefront.md`, `specs/30-audit-compliance.md`
+
+#### LR-002 — Indexing rules, category/collection SEO, sitemap scope · **P1**
+- **Status:** DECIDED (engineering, under the 2026-10-03 instruction)
+- **Final decision:**
+  - Indexable: home, `/category/<slug>`, `/collections`, `/collections/<slug>`,
+    `/product/<id>`, `/watch-and-shop`, `/legal/*` once approved text is
+    published. Each has unique title/description, a self canonical URL
+    without query parameters, and Open Graph/Twitter previews.
+  - Not indexable (`noindex, follow`): `/search`, any category or
+    collection URL carrying filter or sort parameters. Pagination
+    (`?page=N` alone) stays indexable with a self canonical. An unknown
+    category or collection is a real 404. Private pages
+    (account, bag, checkout, orders, wishlist) are disallowed in robots
+    and `noindex`.
+  - Staging and preview: unless `SITE_INDEXING=enabled`, every response
+    carries `X-Robots-Tag: noindex, nofollow` and robots.txt disallows
+    all. Production must set it explicitly.
+  - Sitemap: every published product (no row cap; split into files of at
+    most 10,000 URLs via a sitemap index), every category with published
+    products, every published collection, the static public pages.
+  - Structured data: Product with one Offer per in-stock or out-of-stock
+    SKU (SKU code, size/colour, INR price, availability). Ratings only
+    from real approved reviews. No GTIN/MPN unless stored. Return policy
+    from the resolved `ReturnPolicy` (`RET-001`). Shipping details only
+    when `SHIPPING_RATES_CONFIRMED=true` (the configured amounts are
+    otherwise unconfirmed defaults, `CHK-003`); delivery times are not
+    published (no carrier SLA exists).
+- **Affected specs:** `specs/26-seo.md`
+
+#### LR-003 — Consent-aware GA4 and Meta (Pixel + Conversions API) · **P1**
+- **Status:** DECIDED (architecture and semantics); accounts not provided
+- **Final decision:**
+  - Consent: a first-visit banner with Accept / Reject and a persistent
+    "Privacy choices" control to change or withdraw. Two purposes:
+    `analytics` (GA4) and `marketing` (Meta). Nothing is loaded or sent
+    before consent; withdrawal stops further collection immediately.
+    Consent given at checkout is stored on the order so server-side
+    events honour it.
+  - IDs and units: item IDs are SKU codes, `item_group_id` the style
+    code, currency INR, transaction ID the order number.
+  - Purchase semantics: a Purchase is recorded only when an order is
+    confirmed — COD at order placement (an order, not cash collected),
+    prepaid only after payment capture is confirmed by Razorpay. Clicking
+    a payment button is never a purchase. Refund events are sent when a
+    refund completes (GA4 `refund` via Measurement Protocol); Meta has no
+    refund event and none is sent.
+  - Meta deduplication: browser Pixel and Conversions API send the same
+    `event_id` (`purchase:<orderNumber>`); server events go through a
+    durable outbox (unique on provider + event ID), retried with backoff;
+    a retry after an ambiguous outcome is safe because the provider
+    deduplicates on the event ID.
+  - Data: no names, emails, phone numbers or addresses in GA4 or Pixel
+    payloads. Conversions API sends SHA-256-hashed email/phone only with
+    `marketing` consent. Secrets (GA4 API secret, Meta access token) are
+    server-only environment variables; disabled when unset.
+- **Affected specs:** `specs/27-analytics-reporting.md`
+
+#### LR-004 — Google Merchant and Meta catalogue integrations · **P1**
+- **Status:** DECIDED (integration authorized); accounts not provided
+- **Final decision:** supersedes `CHAN-001`'s "none launch now" for these
+  two channels only. Implemented as `ChannelProvider`s on the existing
+  channel architecture: one item per SKU, grouped by style
+  (`item_group_id`), with title, description, image, product URL, INR
+  price and live availability. Publish, unpublish, price and stock
+  changes resync through the existing claim/attempt model; a provider
+  rejection is a definite FAILED, a timeout or transport error is
+  AMBIGUOUS. Watch & Shop is an internal shoppable-video feature; it is
+  not an Instagram integration, and Instagram product tagging is not
+  promised (it needs a Meta Commerce account, catalogue approval and
+  eligibility checks on the account).
+- **Affected specs:** `specs/25-social-channel-publishing.md`
+
+#### LR-005 — Return-evidence storage on S3-compatible object storage · **P1**
+- **Status:** DECIDED (protocol per ADR-0007); bucket/vendor not provided
+- **Final decision:** an S3 API (SigV4) evidence-storage provider
+  alongside local disk, selected by `RETURN_EVIDENCE_STORAGE=s3`.
+  Objects are private (no public ACL, no public URL); reads go through
+  the existing ownership-checked route. Production refuses local disk.
+- **Affected specs:** `specs/18-returns.md`
+
+#### LR-006 — Scheduled sweeps and job monitoring · **P1**
+- **Status:** DECIDED (engineering)
+- **Final decision:** every existing recovery/expiry sweep runs on the
+  in-process maintenance scheduler (payment/reservation expiry, invoice
+  recovery, loyalty vest/expire/hold release, due campaigns, stale
+  channel claims, channel stock resync, refund stale claims, server
+  conversion events). Each run is recorded (`MaintenanceJobRun`:
+  start, end, outcome, error); a staff route reports last success,
+  last failure and consecutive failures per job, and a job failing
+  three times in a row logs at error level with `alert: true` for log
+  alerting. Multiple replicas are safe because every sweep claims rows
+  under locks.
+- **Affected specs:** `specs/30-audit-compliance.md`, `DEPLOYMENT.md`
+
+#### LR-007 — Search page validation · **P1**
+- **Status:** DECIDED (agreed with Product Owner 2026-10-02)
+- **Final decision:** a page number beyond the live last page (from the
+  search result count) redirects to the last populated page; every
+  populated page stays reachable; tested by reaching the final item
+  beyond 1,000 matches.
+- **Affected specs:** `specs/09-search-discovery.md`
+
+#### LR-008 — SMS/OTP and carrier providers · **P0**
+- **Status:** **DECISION_REQUIRED** (vendor choice)
+- **Question:** which SMS/OTP provider (India DLT-registered) and which
+  carrier/aggregator are used at launch?
+- **Why it matters:** OTP sign-in cannot work in production and orders
+  cannot be shipped without them; each vendor has a different API,
+  authentication and webhook format, so an adapter cannot be built
+  speculatively.
+- **Options considered:** SMS — MSG91, Gupshup, Twilio, Kaleyra, AWS SNS
+  (all need DLT sender ID and template registration in India). Carrier —
+  Shiprocket (aggregator), Delhivery, Blue Dart, Ecom Express, Xpressbees.
+- **Engineering status:** provider interfaces (`OtpProvider`,
+  `MarketingProvider`, `ShippingProvider`) and production guards exist;
+  mocks are refused in production.
