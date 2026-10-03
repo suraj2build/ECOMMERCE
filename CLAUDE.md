@@ -6,6 +6,31 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-03 (later): `LAUNCH-READINESS REVIEW RISKS
+ADDRESSED — AWAITING INDEPENDENT REVIEW.`** The Product Owner's review
+of the build above named six risks. Changes:
+
+- **Scheduler.** A Postgres lease per job (`maintenance_job_states`)
+  means one instance runs a job at a time. Intervals hold across
+  instances, and a job whose instance died is recovered when the lease
+  expires.
+- **Alerts.** `MAINTENANCE_ALERT_WEBHOOK_URL` gets one alert per failure
+  streak plus a recovery message; an undelivered alert is retried.
+  Production refuses to start without it unless
+  `MAINTENANCE_ALERT_LOG_ONLY=true`.
+- **Consent.** Withdrawal reaches the server: a consent-subject ID links
+  the browser to its checkouts, queued and retrying events become
+  `WITHDRAWN`, and the dispatcher re-checks consent before sending.
+- **Analytics.** Purchase events carry `payment_type` (`cod`/`prepaid`).
+  Reversing unpaid COD orders is `LR-009`, `DECISION_REQUIRED`.
+- **S3.** `scripts/verify-s3-bucket.mjs` checks a real bucket's private
+  access; it has not been run against a real bucket because none exists.
+- **Dependencies.** The production postcss advisory is fixed with an npm
+  override (CSS byte-identical), and CI gates on high.
+
+See `LR-003`/`LR-006`/`LR-009`, `security/DEPENDENCY_AUDIT.md` and
+DEPLOYMENT.md. Not self-certified; no go-live claimed.
+
 **Status as of 2026-10-03: `VANYA DEMO AND LAUNCH-READINESS BUILD
 IMPLEMENTED — AWAITING ACCOUNT CONFIGURATION, VENDOR DECISION AND
 INDEPENDENT REVIEW.`** Authorized by the Product Owner ("START BUILD —

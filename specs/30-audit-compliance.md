@@ -79,3 +79,56 @@ flag. Tests: `test/unit/maintenance.test.ts` (intervals, alert after three
 failures and clearing on success), `test/integration/maintenance-jobs.test.ts`
 (all 14 jobs run successfully as the system and are recorded, status route
 and RBAC, pruning).
+
+### Review follow-up (2026-10-03) — one instance per job, alerts to a person
+
+- **Lease.** `maintenance_job_states` holds one row per job. Before a run,
+  an instance takes the job's lease with a single
+  `INSERT … ON CONFLICT … DO UPDATE … WHERE` in Postgres. The lease is
+  granted only when no live lease exists and the job is due: its interval
+  has passed since the last start on any instance, by the database clock.
+  A job without its own interval runs once per sweep across all
+  instances: it is spaced by 80% of the sweep interval.
+  It is renewed every third of `MAINTENANCE_LEASE_SECONDS` while the job
+  runs and released when the run is recorded. An instance that dies
+  mid-run holds an expired lease with a holder still set, so the job runs
+  again on another instance as soon as the lease expires, without waiting
+  for its interval. A dead instance cannot renew or release a lease that
+  someone else has taken over. `GET /maintenance/jobs` also shows
+  `running` and `alertNotifiedAt`.
+- **Alerts.** At three consecutive failures the job posts one `FAILING`
+  alert to `MAINTENANCE_ALERT_WEBHOOK_URL`. The body is JSON:
+  `{ text, kind, job, consecutiveFailures, error, environment, at }`.
+  When the job next succeeds it posts one `RECOVERED` message. Delivery is
+  recorded in `alertedAt`. An undelivered alert (non-2xx response or
+  network error) is retried on the next failure, never lost or
+  duplicated, even when the failures happen on different instances.
+  Production refuses to start without a webhook unless
+  `MAINTENANCE_ALERT_LOG_ONLY=true`.
+- **Tests.** `test/unit/maintenance.test.ts` (7):
+  - one alert per streak, recovery, a new streak;
+  - delivery retried after the receiver was down;
+  - message format.
+
+  `test/integration/maintenance-jobs.test.ts` (10, real Postgres):
+  - 12 instances racing for one lease, exactly one wins;
+  - two instances sweeping at once run a slow job once and record one run;
+  - two running schedulers run a per-sweep job once per sweep between
+    them, never back to back (this test fails without the cross-instance
+    spacing: 11 runs instead of at most 7);
+  - the interval holds across instances;
+  - a crashed instance's job is recovered after lease expiry, and the dead
+    instance cannot renew or release the lease;
+  - heartbeats keep a long job's lease past its length;
+  - a real HTTP webhook receiver gets one alert per streak across two
+    instances, the delivery is retried after a 503, and the recovery is
+    posted.
+
+  `test/unit/config-production-guards.test.ts`: production refuses to
+  start without an alert destination.
+- **Runtime check (2026-10-03, local).** Two real API processes ran on one
+  database for 2.6 minutes. Every per-sweep job ran exactly once per
+  minute (3 runs each, minimum gap 60.0 s, 0 failures); the 30 runs split
+  13/17 between the instances, and no lease stayed held. One instance was
+  then killed with SIGKILL. The survivor ran the next sweep's jobs (16
+  runs, 0 failures) with no stuck lease.

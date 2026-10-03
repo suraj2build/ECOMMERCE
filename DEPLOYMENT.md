@@ -172,6 +172,12 @@ published keeps showing "not found" for up to 30 seconds after publish.
   per second in CI-class testing before newly arriving visitors queued
   for seconds; size instances or CDN offload to expected traffic
   (`acceptance/go-live/2026-10-02-readiness.md`).
+- Reseeding a preview: the storefront keeps fetched listings in
+  `apps/storefront/.next/cache` across restarts. After resetting or
+  reseeding the database behind an existing build, delete that folder (or
+  redeploy) before starting the storefront. Otherwise listings can still
+  link to products from the old data until they are revalidated. A
+  normal deploy starts from a fresh build and is not affected.
 
 ### Analytics and Meta (LR-003)
 
@@ -192,6 +198,11 @@ queued in `conversion_events` and sent by `POST /analytics/sweep/conversions`
 (and the maintenance scheduler, LR-006); check
 `GET /analytics/conversions` for failures. `SITE_INDEXING=enabled` must be
 set only on the real production storefront (LR-002).
+
+Purchase events carry `payment_type` (`cod` / `prepaid`). In GA4, register it
+under Admin → Custom definitions as an event-scoped dimension, so COD orders
+placed can be separated from paid revenue. Withdrawing consent in "Privacy
+choices" stops that purpose's queued server events (status `WITHDRAWN`).
 
 ### Product feeds: Google Merchant and Meta catalogue (LR-004)
 
@@ -217,11 +228,43 @@ Production must set `RETURN_EVIDENCE_STORAGE=s3` with a private bucket
 access) and real `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`,
 `S3_SECRET_KEY` (secrets). Local disk is refused in production.
 
+Before switching an environment to S3, verify the bucket with its real
+settings and credentials:
+
+```
+npm run build -w @fcp/commerce-api
+S3_VERIFY_ALLOWED=yes node scripts/verify-s3-bucket.mjs
+```
+
+The script must end with "All required checks passed". It proves:
+
+- a signed upload/download round-trip;
+- anonymous read, list and upload are all refused;
+- no public ACL grant exists.
+
+It also reports encryption and Block Public Access. The API credentials
+need only `s3:PutObject` and `s3:GetObject` on `<bucket>/<prefix>*`; the
+script reports, without failing, when DELETE is not allowed.
+
 ### Scheduled jobs and monitoring (LR-006)
 
-Each API instance runs the maintenance scheduler; running several replicas
-is safe. Alert on log lines with `alert: true` (a job failing three runs in
-a row) and check `GET /api/v1/maintenance/jobs` (`audit:read`).
+Each API instance runs the maintenance scheduler. A per-job lease in
+Postgres (`maintenance_job_states`) lets only one instance run a given job
+at a time and spaces runs across instances. A job whose instance died
+mid-run is picked up by another instance once the lease expires.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MAINTENANCE_LEASE_SECONDS` | 120 | Lease length; renewed every third of it while a job runs |
+| `MAINTENANCE_ALERT_WEBHOOK_URL` | — | Secret URL; receives a JSON `{ text, kind, job, consecutiveFailures, error, environment, at }` when a job fails three runs in a row, and again when it recovers (Slack/Google Chat incoming webhooks accept it as is) |
+| `MAINTENANCE_ALERT_LOG_ONLY` | false | Set `true` only when the host's log alerting pages on `alert: true` lines instead |
+
+**Production refuses to start** without `MAINTENANCE_ALERT_WEBHOOK_URL`
+unless `MAINTENANCE_ALERT_LOG_ONLY=true`. Check per-job status at
+`GET /api/v1/maintenance/jobs` (`audit:read`): last run, success and failure,
+consecutive failures, whether it is running, and when the alert was sent.
+The scheduler cannot report its own absence, so also point an external
+uptime check at `/health` and alert if no job has run recently.
 
 ### Upgrading an existing database: MFA secret backfill
 

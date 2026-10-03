@@ -85,3 +85,20 @@ instances, private, server-generated keys only, missing object, production
 refusal of local disk) and `test/unit/s3-signing.test.ts` (the signer
 reproduces AWS's published SigV4 example signature). Not yet verified
 against the production bucket: none is configured.
+
+Real-bucket check (2026-10-03): `scripts/verify-s3-bucket.mjs` runs with
+the same S3_* / RETURN_EVIDENCE_* settings the API will use (and
+`S3_VERIFY_ALLOWED=yes`). It writes one test object under
+`<prefix>verify/` and requires:
+
+- a signed upload/download round-trip of the exact bytes and content type;
+- an anonymous object GET, bucket LIST and PUT all refused (401/403);
+- no AllUsers/AuthenticatedUsers grant in the object ACL.
+
+It reports, without requiring them, server-side encryption and the
+bucket's Block Public Access settings, then deletes the test object. Run
+locally against moto, it passes the signed checks and correctly fails the
+anonymous LIST and PUT checks, because moto enforces no authentication.
+That run shows the script detects open access. It has not been run
+against a real bucket: none is configured. Run it before setting
+`RETURN_EVIDENCE_STORAGE=s3` in any environment.

@@ -2598,7 +2598,42 @@ so and nothing is invented.
     payloads. Conversions API sends SHA-256-hashed email/phone only with
     `marketing` consent. Secrets (GA4 API secret, Meta access token) are
     server-only environment variables; disabled when unset.
+  - Withdrawal (2026-10-03 review): turning a purpose off in "Privacy
+    choices" also reaches the server. Each browser's consent record has
+    a random consent-subject ID that travels with its checkouts; the
+    withdrawal call clears the consent flag and the stored identifiers on
+    every checkout and order with that ID (and, for a signed-in customer,
+    on all their orders), and marks every not-yet-sent event for that
+    purpose WITHDRAWN, including events waiting for a retry. The
+    dispatcher re-checks the order's consent before every send. Events
+    already sent cannot be recalled. A lost withdrawal request is kept in
+    the browser and sent again on the next page load.
+  - COD vs paid (2026-10-03 review): every purchase event carries
+    `payment_type` = `cod` | `prepaid` (GA4 event parameter, register it
+    as a custom dimension; Meta `custom_data`), so "COD orders placed" can
+    be reported separately from paid revenue. Collected/delivered revenue
+    is reported from the order ledger (M28 analytics), not from GA4/Meta.
 - **Affected specs:** `specs/27-analytics-reporting.md`
+
+#### LR-009 — Ad-platform reversal of COD orders that are never paid · **P1**
+- **Status:** **DECISION_REQUIRED** (marketing/finance)
+- **Question:** when a COD order is cancelled before dispatch, refused at
+  the door or returned to origin (RTO) — so no money is ever collected —
+  should GA4 receive a `refund` event for it (and, if so, at which point),
+  or should COD purchases instead be sent to GA4/Meta only at delivery?
+- **Why it matters:** today a COD purchase is reported at placement (the
+  decided LR-003 semantics) and nothing reverses it, so GA4/Meta revenue
+  over-counts by the COD cancellation/RTO rate and ad bidding optimises
+  toward orders that may never pay. Each option changes campaign
+  reporting and optimisation, which is a business choice.
+- **Options considered:** (a) keep placement semantics and send a GA4
+  `refund` for COD orders cancelled or RTO'd (Meta has no refund event);
+  (b) report COD purchases at delivery instead (accurate revenue, but
+  delayed by days, which weakens Meta optimisation); (c) leave as is and
+  segment on `payment_type`.
+- **Engineering status:** `payment_type` tagging is implemented, so (c)
+  works today and (a)/(b) can be added on the existing outbox. Nothing
+  is reversed until this is decided.
 
 #### LR-004 — Google Merchant and Meta catalogue integrations · **P1**
 - **Status:** DECIDED (integration authorized); accounts not provided
@@ -2635,7 +2670,25 @@ so and nothing is invented.
   three times in a row logs at error level with `alert: true` for log
   alerting. Multiple replicas are safe because every sweep claims rows
   under locks.
-- **Affected specs:** `specs/30-audit-compliance.md`, `DEPLOYMENT.md`
+- **Review addendum (2026-10-03):**
+  - One instance per job: each job has a lease row
+    (`maintenance_job_states`) taken atomically in Postgres before it
+    runs, renewed while it runs, and released when it finishes. Another
+    instance cannot start the same job while the lease is live, and a
+    job's interval is measured from its last start on any instance (the
+    database clock, not each instance's); a job without its own interval
+    runs once per sweep across all instances. An instance that dies mid-run
+    loses the lease after `MAINTENANCE_LEASE_SECONDS` (default 120) and
+    the job runs again at once on another instance. Row locks and claims
+    inside each sweep remain the second line of defence.
+  - Alerts reach a person: at three consecutive failures the job's alert
+    is POSTed once to `MAINTENANCE_ALERT_WEBHOOK_URL` (JSON with a `text`
+    field, accepted by Slack, Google Chat and most incident tools), and a
+    recovery message is posted when it next succeeds. Delivery is
+    recorded per job; an undelivered alert is retried on the next
+    failure. Production refuses to start without the webhook unless
+    `MAINTENANCE_ALERT_LOG_ONLY=true` acknowledges that host log alerting
+    picks up the `alert: true` lines instead.
 
 #### LR-007 — Search page validation · **P1**
 - **Status:** DECIDED (agreed with Product Owner 2026-10-02)

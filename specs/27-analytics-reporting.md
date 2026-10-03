@@ -106,6 +106,48 @@ Consent-aware GA4 ecommerce events and Meta Pixel + Conversions API with stable 
   nothing before consent or after refusal, events after consent and
   withdrawal deleting cookies, a consented COD order carrying consent to
   the server and the Meta purchase once with the order-number event ID).
+- **Review follow-up (2026-10-03).**
+  - *Withdrawal reaches queued server events.* Each browser consent
+    record carries a random `subjectId` (UUID). It is sent with checkout
+    and stored as `consentSubjectId` on the checkout session and order.
+    Turning a purpose off calls `POST /storefront/consent/withdrawal`
+    (guest-accessible; the bearer token, when present, adds the signed-in
+    customer's own orders). The call clears that purpose's consent flag
+    and identifiers on every matching session and order, and marks the
+    purpose's not-yet-sent events (first attempt or waiting for retry)
+    `WITHDRAWN`. Withdrawing marketing only rewrites queued GA4 events to
+    `ad_user_data`/`ad_personalization: DENIED`. The dispatcher re-checks
+    the order's consent after claiming each event, so an in-flight claim
+    reclaimed after a withdrawal is not sent. A withdrawal before a
+    prepaid capture means the order is created without consent. The
+    route always answers 204 and never grants consent. If the request is
+    lost, the browser keeps it (`vanya_consent_withdrawal_pending`) and
+    resends it on the next page load. Limit: an event already accepted by
+    Google/Meta cannot be recalled, and one being sent at the exact
+    moment of withdrawal may still go out.
+  - *COD vs paid.* Purchase events carry `payment_type` (`cod` |
+    `prepaid`) in GA4 params and Meta `custom_data`. Register
+    `payment_type` as an event-scoped custom dimension in GA4 to report
+    on it. Collected and delivered revenue comes from the order ledger
+    (M28), not the ad platforms. Whether to reverse unpaid COD orders in
+    GA4 is `LR-009` (DECISION_REQUIRED); nothing is reversed today.
+  - *Tests.* `conversions.test.ts` now has 21 tests (+ withdrawal of all
+    queued events, during retry backoff, of an in-flight claim,
+    marketing-only, before prepaid capture, signed-in customer across
+    browsers, never-grants/400; payment_type on COD and prepaid).
+    `consent.spec.ts` now withdraws after a real COD order with the first
+    request dropped, and proves the retry clears the order's consent.
+
+## DECISION_REQUIRED
+
+Question: when a COD order is never paid (cancelled before dispatch,
+refused, RTO), should GA4 get a `refund` for it, or should COD purchases
+be sent only at delivery? See `LR-009`.
+Why it matters: placement-time COD purchases over-count ad-platform
+revenue by the COD cancellation/RTO rate.
+Options considered: GA4 refund on cancel/RTO; purchase at delivery; keep
+and segment by `payment_type` (works today).
+
 - **Not yet verified:** delivery into GA4 DebugView / Meta Events Manager
   test events. No GA4 property or Meta dataset is configured for this
   project; set the variables in DEPLOYMENT.md §5 and `META_TEST_EVENT_CODE`
