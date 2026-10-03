@@ -133,3 +133,49 @@ Related: `specs/24-marketing.md`, `specs/26-seo.md`.
 ## Launch readiness addendum (2026-10-03) — IMPLEMENTING
 
 Google Merchant and Meta catalogue providers are authorized and built on the existing ChannelProvider contract (`LR-004`): one item per SKU grouped by style, image, product URL, INR price, live availability; publish/unpublish/price/stock resync; rejection is FAILED, transport uncertainty is AMBIGUOUS. Watch & Shop is internal and is not an Instagram integration; Instagram product tagging is not promised.
+
+### Implementation (2026-10-03)
+
+- **Providers.** `services/commerce-api/src/modules/channels/feed-providers.ts`:
+  `GOOGLE_MERCHANT` writes `productInputs:insert` / deletes `productInputs`
+  on the Merchant API (`products/v1`) into one API data source, authorised
+  with a service-account JWT (RS256, `auth/content` scope) exchanged for an
+  OAuth token and cached; `META_CATALOG` sends Graph `items_batch`
+  (`PRODUCT_ITEM`, `allow_upsert`, `UPDATE`/`DELETE`) with the access token
+  in the body. Both are selected per channel (`providerName`) and are the
+  only non-mock providers; production still refuses `MOCK*`.
+- **Feed item.** One item per SKU (`offerId`/`id` = SKU code), grouped by
+  style code (`itemGroupId`/`item_group_id`), title/description from the
+  channel template, absolute product link (`STOREFRONT_PUBLIC_URL`) and
+  image, brand, colour, size, gender, INR price; when marked down, the MRP
+  is the price and the selling price the sale price. Availability comes from
+  the inventory ledger (unchanged since M26). No GTIN/MPN is sent
+  (Google `identifierExists=false`).
+- **Outcomes.** Missing credentials, a missing link/image/brand, a 4xx or
+  Meta item validation errors → definite FAILED, no provider call where
+  avoidable; timeout, network error, 429 or 5xx → AMBIGUOUS (re-issuing the
+  same publish is safe: both providers upsert by SKU code). Meta processes
+  batches asynchronously: a success means accepted, and later ingestion
+  errors appear in Commerce Manager.
+- **Resync.** `POST /channels/sweep/resync-stale` now: republishes any
+  published listing whose title, description, image, link, price, sale
+  price or availability changed; unpublishes listings whose style is no
+  longer published/priced or whose SKU is inactive; and, for channels with
+  config `publishAll: true`, publishes newly published SKUs (up to 200 per
+  channel per run).
+- **Watch & Shop is not Instagram.** Watch & Shop is the storefront's own
+  shoppable-video page. Nothing here connects to Instagram, and Instagram
+  product tagging is not promised: it needs a Meta Commerce Account, an
+  approved catalogue (the `META_CATALOG` channel can supply it) and the
+  Instagram account's shopping eligibility, all checked in Meta's tools.
+- **Tests.** `test/integration/channel-feeds.test.ts` (5): Google payload
+  and verified JWT signature, Meta payload/token placement and DELETE,
+  definite vs ambiguous outcomes and the safe retry, missing configuration,
+  and the resync sweep (price change, sell-out, unpublished style,
+  publish-all). `channels.test.ts` (42) unchanged except the sweep result
+  now also reports `unpublished`/`published`.
+- **Not yet verified against the real services:** no Merchant Center
+  account, data source, service account or Meta catalogue is configured.
+  The request shapes follow the published Merchant API v1 and Graph API
+  documentation; the first real publish must be checked in Merchant
+  Center diagnostics and Commerce Manager.

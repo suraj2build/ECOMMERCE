@@ -193,6 +193,23 @@ queued in `conversion_events` and sent by `POST /analytics/sweep/conversions`
 `GET /analytics/conversions` for failures. `SITE_INDEXING=enabled` must be
 set only on the real production storefront (LR-002).
 
+### Product feeds: Google Merchant and Meta catalogue (LR-004)
+
+Create a channel with `providerName` `GOOGLE_MERCHANT` or `META_CATALOG`
+(admin Channels screen or `POST /channels`); add `"publishAll": true` to its
+config to list every published product. Requires `STOREFRONT_PUBLIC_URL`.
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_MERCHANT_ACCOUNT_ID` | Merchant Center account |
+| `GOOGLE_MERCHANT_DATA_SOURCE_ID` | API data source products are written to |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Service account with access to the account (secret; `\n` escapes accepted) |
+| `META_CATALOG_ID` + `META_CATALOG_ACCESS_TOKEN` | Catalogue and a token with `catalog_management` (secret) |
+
+Price, stock, publish and unpublish changes reach the channels through
+`POST /channels/sweep/resync-stale` (scheduled by the maintenance runner,
+LR-006). Check failures per listing in the admin Channels screen.
+
 ### Upgrading an existing database: MFA secret backfill
 
 Staff MFA seeds written before M31 are plaintext; the application only

@@ -308,7 +308,7 @@ function NewChannel({ onCreated }: { onCreated: () => void }) {
           required
           value={f.providerName}
           onChange={(v) => setF((x) => ({ ...x, providerName: v }))}
-          hint="Only test providers exist today; production refuses any MOCK provider."
+          hint="GOOGLE_MERCHANT or META_CATALOG (credentials are set on the server), or MOCK for testing; production refuses MOCK providers. Add config {&quot;publishAll&quot;: true} via the API to list every published product automatically."
         />
         <button className="primary" type="submit" disabled={action.busy}>
           Create channel

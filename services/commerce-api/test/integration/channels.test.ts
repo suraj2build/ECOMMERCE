@@ -595,7 +595,7 @@ describe('Channel Publishing (M26)', () => {
         expect(reclaimRes.json()).toEqual({ reclaimed: 0 });
         const resyncRes = await app.inject({ method: 'POST', url: '/api/v1/channels/sweep/resync-stale', headers: auth(token) });
         expect(resyncRes.statusCode).toBe(200);
-        expect(resyncRes.json()).toEqual({ resynced: 0, listingIds: [] });
+        expect(resyncRes.json()).toEqual({ resynced: 0, listingIds: [], unpublished: 0, published: 0 });
       });
 
       it('never resolves a MOCK_* provider in production - the smallest explicit guard against a mock silently acting as a real channel integration', async () => {

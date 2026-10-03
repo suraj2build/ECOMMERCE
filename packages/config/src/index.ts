@@ -321,6 +321,20 @@ const envSchema = z.object({
   META_GRAPH_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   // Public storefront origin, used as Meta's event_source_url and for feed product links.
   STOREFRONT_PUBLIC_URL: z.string().url().optional(),
+  // --- Product feeds (LR-004). A channel using a real provider fails with a
+  // clear error until its credentials are set. ---
+  GOOGLE_MERCHANT_ACCOUNT_ID: z.string().regex(/^[0-9]+$/).optional(),
+  // The Merchant API data source the products are written to (an API data source).
+  GOOGLE_MERCHANT_DATA_SOURCE_ID: z.string().regex(/^[0-9]+$/).optional(),
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().email().optional(),
+  // PEM private key of the service account; literal \n sequences are accepted.
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z.string().min(1).optional(),
+  GOOGLE_MERCHANT_API_URL: z.string().url().default('https://merchantapi.googleapis.com'),
+  GOOGLE_OAUTH_TOKEN_URL: z.string().url().default('https://oauth2.googleapis.com/token'),
+  META_CATALOG_ID: z.string().regex(/^[0-9]+$/).optional(),
+  // Needs catalog_management on the catalogue; separate from the Conversions API token.
+  META_CATALOG_ACCESS_TOKEN: z.string().min(20).optional(),
+  CHANNEL_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   CONVERSION_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
   // A SENDING claim older than this belongs to a crashed dispatcher.
   CONVERSION_SENDING_STALE_SECONDS: z.coerce.number().int().positive().default(300),
@@ -359,10 +373,10 @@ const validatedEnvSchema = envSchema
     }
 
     if (Boolean(env.GA4_MEASUREMENT_ID) !== Boolean(env.GA4_API_SECRET)) {
-      fail('GA4_API_SECRET', 'GA4_MEASUREMENT_ID and GA4_API_SECRET must be set together');
+      fail('GA4_API_SECRET', 'is required whenever GA4_MEASUREMENT_ID is set, and the other way round');
     }
     if (Boolean(env.META_PIXEL_ID) !== Boolean(env.META_CAPI_ACCESS_TOKEN)) {
-      fail('META_CAPI_ACCESS_TOKEN', 'META_PIXEL_ID and META_CAPI_ACCESS_TOKEN must be set together');
+      fail('META_CAPI_ACCESS_TOKEN', 'is required whenever META_PIXEL_ID is set, and the other way round');
     }
     if (env.META_PIXEL_ID && !env.STOREFRONT_PUBLIC_URL) {
       fail('STOREFRONT_PUBLIC_URL', 'is required for the Meta Conversions API (event_source_url)');

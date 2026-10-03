@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { loadEnv } from '@fcp/config';
+import { GoogleMerchantProvider, MetaCatalogProvider } from './feed-providers.js';
 
 /**
  * Channel adapter/publishing provider abstraction (M26,
@@ -16,7 +17,7 @@ import { loadEnv } from '@fcp/config';
  * implementing this same interface - `ChannelService` never changes for
  * that.
  */
-export type ChannelProviderName = 'MOCK' | 'MOCK_UNRELIABLE' | 'MOCK_ALWAYS_FAILS';
+export type ChannelProviderName = 'MOCK' | 'MOCK_UNRELIABLE' | 'MOCK_ALWAYS_FAILS' | 'GOOGLE_MERCHANT' | 'META_CATALOG';
 
 export interface ChannelFeedItem {
   /** Channel-mapped external identifier for this SKU - stable across resyncs. */
@@ -28,6 +29,17 @@ export interface ChannelFeedItem {
   availability: 'in_stock' | 'out_of_stock';
   /** From the existing ProductMedia model (M02/M11) - null when the style/colour has no image yet. */
   imageUrl: string | null;
+  // LR-004 feed fields (real Google/Meta providers require link, image and brand).
+  /** Style code: groups the colour/size variants of one product. */
+  itemGroupId?: string;
+  /** Public product page; null when STOREFRONT_PUBLIC_URL is not configured. */
+  link?: string | null;
+  /** MRP when above the selling price (the item is then on sale). */
+  regularPrice?: number;
+  brand?: string;
+  color?: string;
+  size?: string;
+  gender?: string | null;
 }
 
 export interface ChannelPublishInput {
@@ -117,6 +129,9 @@ const CHANNEL_PROVIDERS: Record<ChannelProviderName, ChannelProvider> = {
   MOCK: new MockChannelProvider(),
   MOCK_UNRELIABLE: new UnreliableChannelProvider(),
   MOCK_ALWAYS_FAILS: new AlwaysFailsChannelProvider(),
+  // LR-004: real integrations, configured by environment (DEPLOYMENT.md).
+  GOOGLE_MERCHANT: new GoogleMerchantProvider(),
+  META_CATALOG: new MetaCatalogProvider(),
 };
 
 /**

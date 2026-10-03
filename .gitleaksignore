@@ -6,3 +6,8 @@
 # label was renamed in a later commit; the historical commit cannot be
 # rewritten (pushed history).
 4887a8d7622c6c7ee1a199953324c1459df06490:services/commerce-api/test/integration/warehouse.test.ts:generic-api-key:390
+
+# packages/config/src/index.ts:362 in cb00397 is a validation message naming
+# two environment variables ("GA4_MEASUREMENT_ID and GA4_API_SECRET must be
+# set together"), not a credential. Reworded in the next commit.
+cb0039747cf63a020cdd388aed1140b6ae7a99fa:packages/config/src/index.ts:generic-api-key:362

@@ -105,7 +105,7 @@ export class ChannelService {
   async buildFeedItem(skuId: string, config: ChannelFieldMapConfig): Promise<ChannelFeedItem> {
     const sku = await this.prisma.sku.findUnique({
       where: { id: skuId },
-      include: { style: true, colour: true, size: true },
+      include: { style: { include: { brand: true } }, colour: true, size: true },
     });
     if (!sku) throw new NotFoundError('Sku not found');
 
@@ -142,6 +142,10 @@ export class ChannelService {
     // approved spec.
     const availableQty = (await this.inventory.getAvailableToSellBySku([sku.id])).get(sku.id) ?? 0;
 
+    // LR-004: absolute public URLs for the product page and image.
+    const site = loadEnv().STOREFRONT_PUBLIC_URL?.replace(/\/$/, '') ?? null;
+    const absolute = (url: string | null | undefined) => (!url ? null : /^https?:\/\//.test(url) ? url : site ? `${site}${url.startsWith('/') ? '' : '/'}${url}` : null);
+
     return {
       externalId: sku.skuCode,
       title: resolveTemplate(config.titleTemplate ?? DEFAULT_TITLE_TEMPLATE, templateValues),
@@ -149,7 +153,14 @@ export class ChannelService {
       price: Number(activePrice!.sellingPrice),
       currency: 'INR',
       availability: availableQty > 0 ? 'in_stock' : 'out_of_stock',
-      imageUrl: image?.url ?? null,
+      imageUrl: absolute(image?.url),
+      itemGroupId: sku.style.styleCode,
+      link: site ? `${site}/product/${sku.styleId}` : null,
+      regularPrice: Number(activePrice!.mrp),
+      brand: sku.style.brand.name,
+      color: sku.colour.name,
+      size: sku.size.label,
+      gender: sku.style.gender ?? null,
     };
   }
 
@@ -540,21 +551,58 @@ export class ChannelService {
    * this sweep is the only thing that couples the two, and only when
    * explicitly invoked.
    */
-  async resyncStaleListings(actorStaffId: string): Promise<{ resynced: number; listingIds: string[] }> {
-    const published = await this.prisma.channelListing.findMany({ where: { status: 'PUBLISHED' } });
-    const skuIds = published.map((l) => l.skuId);
-    const availabilityBySkuId = await this.inventory.getAvailableToSellBySku(skuIds);
-
+  async resyncStaleListings(actorStaffId: string): Promise<{ resynced: number; listingIds: string[]; unpublished: number; published: number }> {
+    const published = await this.prisma.channelListing.findMany({ where: { status: 'PUBLISHED' }, include: { channel: true } });
     const resyncedIds: string[] = [];
+    let unpublished = 0;
     for (const listing of published) {
-      const snapshot = listing.payloadSnapshot as { availability?: string } | null;
-      const currentAvailability = (availabilityBySkuId.get(listing.skuId) ?? 0) > 0 ? 'in_stock' : 'out_of_stock';
-      if (snapshot?.availability !== currentAvailability) {
+      let current: ChannelFeedItem;
+      try {
+        current = await this.buildFeedItem(listing.skuId, (listing.channel.config as ChannelFieldMapConfig) ?? {});
+      } catch {
+        // LR-004: the style was unpublished/archived, lost its price or the
+        // SKU was deactivated - take it off the channel.
+        await this.unpublishSku(listing.channelId, listing.skuId, actorStaffId);
+        unpublished += 1;
+        continue;
+      }
+      // LR-004: any change the channel shows (stock, price, sale price,
+      // title, image, link) makes the channel's copy stale.
+      const snapshot = (listing.payloadSnapshot ?? {}) as Partial<ChannelFeedItem>;
+      const fields = ['availability', 'price', 'regularPrice', 'title', 'description', 'imageUrl', 'link'] as const;
+      if (fields.some((field) => snapshot[field] !== current[field])) {
         await this.publishSku(listing.channelId, listing.skuId, actorStaffId);
         resyncedIds.push(listing.id);
       }
     }
-    return { resynced: resyncedIds.length, listingIds: resyncedIds };
+    const newlyPublished = await this.publishNewSkus(actorStaffId);
+    return { resynced: resyncedIds.length, listingIds: resyncedIds, unpublished, published: newlyPublished };
+  }
+
+  /** LR-004: channels configured with `publishAll: true` carry every
+   * storefront-visible SKU; newly published ones are added here. */
+  private async publishNewSkus(actorStaffId: string, limitPerChannel = 200): Promise<number> {
+    const channels = await this.prisma.channel.findMany();
+    let count = 0;
+    for (const channel of channels) {
+      if ((channel.config as { publishAll?: unknown } | null)?.publishAll !== true) continue;
+      const skus = await this.prisma.sku.findMany({
+        where: {
+          isActive: true,
+          style: { lifecycleState: 'PUBLISHED' },
+          channelListings: { none: { channelId: channel.id, status: { not: 'NOT_PUBLISHED' } } },
+        },
+        select: { id: true, styleId: true, colourId: true },
+        orderBy: { id: 'asc' },
+        take: limitPerChannel,
+      });
+      for (const sku of skus) {
+        if (!(await this.catalog.getActivePrice(sku.styleId, sku.colourId))) continue;
+        await this.publishSku(channel.id, sku.id, actorStaffId);
+        count += 1;
+      }
+    }
+    return count;
   }
 
   async listAttempts(channelListingId: string) {
