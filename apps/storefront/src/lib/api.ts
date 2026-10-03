@@ -138,6 +138,10 @@ export interface ProductDetail {
   ratingSummary: { averageRating: number | null; reviewCount: number };
   reviews: ProductReview[];
   reviewsTotal: number;
+  policies?: {
+    returns: { returnable: boolean; windowDays: number };
+    shipping: { flatAmount: number; freeAboveAmount: number; currency: string; confirmed: boolean };
+  };
   crossSell: CrossSellItem[];
   publishedAt: string | null;
 }
@@ -214,24 +218,33 @@ export async function getPublicStyles(take = 12, skip = 0): Promise<PublicStyleS
   return apiGet<PublicStyleSummary[]>(`/api/v1/storefront/styles?take=${take}&skip=${skip}`, 60);
 }
 
-export async function getPublicCollections(): Promise<PublicCollectionSummary[]> {
-  return apiGet<PublicCollectionSummary[]>('/api/v1/storefront/collections', 60);
+export async function getPublicCollections(take = 6): Promise<PublicCollectionSummary[]> {
+  return apiGet<PublicCollectionSummary[]>(`/api/v1/storefront/collections?take=${take}`, 60);
 }
+
+/** Every active collection, paged so none is dropped (the route caps a page at 60). */
+export async function getAllPublicCollections(): Promise<PublicCollectionSummary[]> {
+  const all: PublicCollectionSummary[] = [];
+  for (let skip = 0; ; skip += 60) {
+    const page = await apiGet<PublicCollectionSummary[]>(`/api/v1/storefront/collections?take=60&skip=${skip}`, 60);
+    all.push(...page);
+    if (page.length < 60) return all;
+  }
+}
+
+export interface PublicCategory {
+  id: string;
+  name: string;
+  slug: string;
+  publishedStyleCount: number;
+}
+
+/** Null for an unknown or inactive category, so the page can 404 (LR-002). */
 
 export interface PublicCollectionDetail extends PublicCollectionSummary {
   styles: PublicStyleSummary[];
 }
 
-export async function getPublicCollection(slug: string): Promise<PublicCollectionDetail | null> {
-  const res = await fetch(`${API_URL}/api/v1/storefront/collections/${encodeURIComponent(slug)}`, {
-    next: { revalidate: 60 },
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`commerce-api request failed: GET /storefront/collections/${slug} -> ${res.status}`);
-  }
-  return res.json() as Promise<PublicCollectionDetail>;
-}
 
 export interface StorefrontSearchHit {
   id: string;
@@ -307,39 +320,16 @@ export async function searchStorefrontLive(params: {
   return res.json() as Promise<StorefrontSearchResult>;
 }
 
-// M27 (specs/26-seo.md): sitemap.xml must stay current as products
-// publish/unpublish, so it pages through the SAME public/publish-gated
-// `getPublicStyles` read every other public page uses (never a second,
-// divergent "all styles" query) rather than duplicating catalog logic.
-// Fetch bounded pages until exhausted; catalog size is not a cutoff.
-const SITEMAP_PAGE_SIZE = 60;
-
-// Deliberately bypasses the shared `apiGet` cache (used by
-// `getPublicStyles` for ordinary page rendering, where a short cache is
-// the right tradeoff): a sitemap that silently omits a just-published
-// product for up to a whole cache window is a real correctness gap
-// against "kept current with publish state," not an acceptable
-// performance/freshness tradeoff.
-async function fetchStylesPageUncached(take: number, skip: number): Promise<PublicStyleSummary[]> {
-  const res = await fetch(`${API_URL}/api/v1/storefront/styles?take=${take}&skip=${skip}`, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`commerce-api request failed: GET /api/v1/storefront/styles -> ${res.status}`);
-  return res.json() as Promise<PublicStyleSummary[]>;
-}
-
-export async function getAllPublicStylesForSitemap(): Promise<PublicStyleSummary[]> {
-  const all: PublicStyleSummary[] = [];
-  let skip = 0;
-  let hasMore = true;
-  while (hasMore) {
-    const page = await fetchStylesPageUncached(SITEMAP_PAGE_SIZE, skip);
-    if (page.length === 0) break;
-    all.push(...page);
-    hasMore = page.length === SITEMAP_PAGE_SIZE;
-    skip += SITEMAP_PAGE_SIZE;
-  }
-  return all;
-}
-
 export async function getWatchAndShopFeed(): Promise<ShoppableMediaSummary[]> {
   return apiGet<ShoppableMediaSummary[]>('/api/v1/content/watch-and-shop/feed', 30);
 }
+
+export interface LegalPageContent {
+  slug: string;
+  title: string;
+  metaDescription: string | null;
+  publishedAt: string | null;
+  updatedAt: string;
+  blocks: { key: string; title: string; content: string }[];
+}
+

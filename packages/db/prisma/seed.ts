@@ -259,6 +259,19 @@ async function main() {
     create: { name: 'Tops', slug: 'tops', parentId: apparel.id },
   });
 
+  // Storefront navigation categories (the approved VANYA header links to
+  // these slugs). Reference data, so every environment has them: an
+  // unknown category slug is a 404 (LR-002), an empty one is a real page.
+  const navigationCategories: [string, string][] = [
+    ['festive-ceremonial', 'Festive & Ceremonial'], ['bandhgalas-jackets', 'Bandhgalas & Jackets'],
+    ['linen-silk-shirts', 'Linen & Silk Shirts'], ['kurtas', 'Kurtas'], ['trousers', 'Trousers'],
+    ['festive-silk-edit', 'Festive Silk Edit'], ['modern-sarees', 'Modern Sarees'],
+    ['co-ords-sets', 'Co-ords & Sets'], ['dresses', 'Dresses'],
+  ];
+  for (const [slug, name] of navigationCategories) {
+    await prisma.category.upsert({ where: { slug }, update: {}, create: { name, slug, parentId: apparel.id } });
+  }
+
   // --- Sizes ---
   const sizeLabels = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
   for (const [i, label] of sizeLabels.entries()) {

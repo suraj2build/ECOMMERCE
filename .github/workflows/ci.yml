@@ -226,6 +226,11 @@ jobs:
           # lint-typecheck-build-test job above, so rate-limiting.test.ts
           # still proves the real, tighter limits.
           AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: '1000'
+          # LR-002: the storefront blocks indexing unless explicitly enabled.
+          # E2E runs it in the production-indexing mode so seo.spec.ts checks
+          # the real robots.txt and sitemap; the blocked (preview) mode is
+          # covered by apps/storefront/test/seo.test.ts.
+          SITE_INDEXING: enabled
 
       - name: Upload read-load measurements
         if: always()

@@ -5,6 +5,8 @@ import { CatalogService } from '../catalog/service.js';
 import { InventoryService } from '../inventory/service.js';
 import { ReviewService } from './review-service.js';
 import { CrossSellService } from './cross-sell-service.js';
+import { loadEnv } from '@fcp/config';
+import { resolveStyleReturnPolicy } from '../returns/policy.js';
 
 /**
  * Public PDP aggregate read (M11, specs/10-pdp.md). Composes Style/
@@ -33,6 +35,23 @@ export class PdpService {
     this.inventory = new InventoryService(fastify);
     this.reviews = new ReviewService(fastify);
     this.crossSell = new CrossSellService(fastify);
+  }
+
+  /** Return and shipping terms for this style, from configuration only.
+   * Shipping amounts are flagged unconfirmed until the business sets
+   * SHIPPING_RATES_CONFIRMED (CHK-003 leaves the values to the business). */
+  private async storefrontPolicies(styleId: string, categoryId: string) {
+    const env = loadEnv();
+    const returns = await resolveStyleReturnPolicy(this.prisma, styleId, categoryId);
+    return {
+      returns: { returnable: returns.returnable, windowDays: returns.windowDays },
+      shipping: {
+        flatAmount: env.SHIPPING_DEFAULT_FLAT_AMOUNT,
+        freeAboveAmount: env.SHIPPING_DEFAULT_FREE_ABOVE_THRESHOLD,
+        currency: 'INR',
+        confirmed: env.SHIPPING_RATES_CONFIRMED,
+      },
+    };
   }
 
   private get prisma(): PrismaClient {
@@ -76,12 +95,13 @@ export class PdpService {
     // InventoryService.getAvailableToSellBySku - the single canonical
     // implementation both PDP and Channel Publishing share. Output is
     // byte-for-byte identical to the formula this method inlined before.
-    const [badges, availabilityBySkuId, ratingSummary, reviewsPage, crossSell] = await Promise.all([
+    const [badges, availabilityBySkuId, ratingSummary, reviewsPage, crossSell, policies] = await Promise.all([
       this.catalog.listBadges(styleId),
       this.inventory.getAvailableToSellBySku(skuIds),
       this.reviews.getRatingSummary(styleId),
       this.reviews.listPublishedReviews(styleId, { take: 10 }),
       this.crossSell.listCrossSell(styleId),
+      this.storefrontPolicies(style.id, style.categoryId),
     ]);
 
     const variants = style.skus.map((sku) => {
@@ -157,6 +177,8 @@ export class PdpService {
       })),
       reviewsTotal: reviewsPage.total,
       crossSell,
+      // LR-002: published as structured data only from real configuration.
+      policies,
       publishedAt: style.publishedAt,
     };
   }

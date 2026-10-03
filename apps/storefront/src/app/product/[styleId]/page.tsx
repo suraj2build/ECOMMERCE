@@ -8,6 +8,7 @@ import { ReviewsSection } from '@/components/pdp/ReviewsSection';
 import { CrossSellStrip } from '@/components/pdp/CrossSellStrip';
 import { Breadcrumbs } from '@/components/pdp/Breadcrumbs';
 import { safeJsonLd } from '@/lib/json-ld';
+import { sharing } from '@/lib/seo';
 
 // Cache the public render on demand using the existing 30-second product
 // snapshot lifetime. An empty build-time list admits every future style;
@@ -25,15 +26,71 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { styleId } = await params;
   const product = await getProductDetail(styleId);
-  if (!product) return { title: 'Product not found' };
+  if (!product) return { title: 'Product not found', robots: { index: false, follow: false } };
+  const description = `${product.name} by ${product.brandName}. ${product.fabric ?? ''}`.trim();
   return {
     title: product.name,
-    description: `${product.name} by ${product.brandName}. ${product.fabric ?? ''}`.trim(),
-    openGraph: { title: product.name, images: product.media[0] ? [product.media[0].url] : [] },
+    description,
+    ...sharing(`${product.name} | VANYA`, description, `/product/${styleId}`, product.media.find((m) => m.type === 'IMAGE')?.url),
     // M27 (specs/26-seo.md): a single canonical URL per style ID - this
     // codebase has no query-param faceted/filtered PDP variants, so no
     // duplicate-content ambiguity exists to resolve beyond this.
     alternates: { canonical: `${SITE_URL}/product/${styleId}` },
+  };
+}
+
+/** schema.org ProductGroup: one Product per SKU with its own offer and stock
+ * (LR-002). Only real data: ratings from approved reviews, the resolved
+ * return policy, shipping only once the business confirms the rates, and
+ * no GTIN/MPN (none is stored). */
+function productStructuredData(product: NonNullable<Awaited<ReturnType<typeof getProductDetail>>>) {
+  const url = `${SITE_URL}/product/${product.id}`;
+  const returns = product.policies?.returns;
+  const shipping = product.policies?.shipping;
+  const returnPolicy = returns
+    ? returns.returnable
+      ? { '@type': 'MerchantReturnPolicy', applicableCountry: 'IN', returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow', merchantReturnDays: returns.windowDays }
+      : { '@type': 'MerchantReturnPolicy', applicableCountry: 'IN', returnPolicyCategory: 'https://schema.org/MerchantReturnNotPermitted' }
+    : undefined;
+  const shippingDetails = shipping?.confirmed
+    ? {
+        '@type': 'OfferShippingDetails',
+        shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'IN' },
+        shippingRate: { '@type': 'MonetaryAmount', value: product.sellingPrice >= shipping.freeAboveAmount ? 0 : shipping.flatAmount, currency: shipping.currency },
+      }
+    : undefined;
+  const imageFor = (colourId: string) => product.media.find((m) => m.colourId === colourId && m.type === 'IMAGE')?.url ?? product.media[0]?.url;
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ProductGroup',
+    name: product.name,
+    url,
+    productGroupID: product.styleCode,
+    brand: { '@type': 'Brand', name: product.brandName },
+    image: product.media.filter((m) => m.type === 'IMAGE').map((m) => m.url),
+    description: [product.fabric, product.fit, product.occasion].filter(Boolean).join(', ') || product.name,
+    variesBy: ['https://schema.org/color', 'https://schema.org/size'],
+    ...(product.ratingSummary.reviewCount > 0 && product.ratingSummary.averageRating !== null
+      ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: product.ratingSummary.averageRating, reviewCount: product.ratingSummary.reviewCount } }
+      : {}),
+    hasVariant: product.variants.map((variant) => ({
+      '@type': 'Product',
+      sku: variant.skuCode,
+      name: `${product.name} — ${variant.colourName}, ${variant.sizeLabel}`,
+      color: variant.colourName,
+      size: variant.sizeLabel,
+      image: imageFor(variant.colourId),
+      offers: {
+        '@type': 'Offer',
+        url,
+        priceCurrency: product.currency,
+        price: product.sellingPrice,
+        itemCondition: 'https://schema.org/NewCondition',
+        availability: variant.inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        ...(returnPolicy ? { hasMerchantReturnPolicy: returnPolicy } : {}),
+        ...(shippingDetails ? { shippingDetails } : {}),
+      },
+    })),
   };
 }
 
@@ -42,32 +99,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const product = await getProductDetail(styleId);
   if (!product) notFound();
 
-  const structuredData = {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: product.name,
-    brand: { '@type': 'Brand', name: product.brandName },
-    image: product.media.map((m) => m.url),
-    description: [product.fabric, product.fit, product.occasion].filter(Boolean).join(', '),
-    sku: product.styleCode,
-    ...(product.ratingSummary.reviewCount > 0 && product.ratingSummary.averageRating !== null
-      ? {
-          aggregateRating: {
-            '@type': 'AggregateRating',
-            ratingValue: product.ratingSummary.averageRating,
-            reviewCount: product.ratingSummary.reviewCount,
-          },
-        }
-      : {}),
-    offers: {
-      '@type': 'Offer',
-      priceCurrency: product.currency,
-      price: product.sellingPrice,
-      availability: product.variants.some((v) => v.inStock)
-        ? 'https://schema.org/InStock'
-        : 'https://schema.org/OutOfStock',
-    },
-  };
+  const structuredData = productStructuredData(product);
 
   const breadcrumbItems = [
     { name: 'Home', href: '/' },

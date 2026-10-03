@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@fcp/db';
 import { NotFoundError } from '@fcp/shared';
-import { CatalogService } from '../catalog/service.js';
+import { CatalogService, THUMBNAIL_MEDIA } from '../catalog/service.js';
 import { recordAudit } from '../audit/service.js';
 
 declare module 'fastify' {
@@ -196,7 +196,7 @@ export class SearchIndexService {
           brand: true,
           category: true,
           skus: { where: { isActive: true }, include: { colour: true, size: true } },
-          media: { where: { colourId: null }, orderBy: { sortOrder: 'asc' }, take: 1 },
+          media: THUMBNAIL_MEDIA,
         },
       });
       if (!style) {

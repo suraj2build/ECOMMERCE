@@ -1,5 +1,14 @@
 import { getPublicCollections, getWatchAndShopFeed, searchStorefront } from '@/lib/api';
+import type { Metadata } from 'next';
 import { VanyaHomeExperience } from '@/components/home/VanyaHomeExperience';
+import { absoluteUrl, sharing } from '@/lib/seo';
+
+const DESCRIPTION = 'Modern Indian menswear and womenswear. Timeless silhouettes, contemporary craftsmanship.';
+
+export const metadata: Metadata = {
+  alternates: { canonical: absoluteUrl('/') },
+  ...sharing('VANYA — Indian Roots · Modern Form', DESCRIPTION, '/'),
+};
 
 async function safeFetch<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try {

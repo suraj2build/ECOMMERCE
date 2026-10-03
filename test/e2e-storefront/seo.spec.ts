@@ -1,3 +1,4 @@
+import { crawlSitemap } from './sitemap-helpers';
 import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { PrismaClient } from '@fcp/db';
 
@@ -112,13 +113,14 @@ test.describe('SEO', () => {
   });
 
   test('sitemap.xml contains only published products', async ({ request }) => {
-    const res = await request.get(`${STOREFRONT_URL}/sitemap.xml`);
-    expect(res.ok()).toBe(true);
-    const body = await res.text();
-    expect(body).toContain(`/product/${publishedStyleId}`);
-    expect(body).not.toContain(`/product/${unpublishedStyleId}`);
+    const { locs, files } = await crawlSitemap(request, STOREFRONT_URL);
+    expect(locs).toContain(`${STOREFRONT_URL}/product/${publishedStyleId}`);
+    expect(locs).not.toContain(`${STOREFRONT_URL}/product/${unpublishedStyleId}`);
     // The storefront home page itself is always listed.
-    expect(body).toContain(`<loc>${STOREFRONT_URL}</loc>`);
+    expect(locs).toContain(STOREFRONT_URL);
+    // A product file past the listed ones does not exist.
+    const beyond = await request.get(`${STOREFRONT_URL}/sitemaps/products-${files.length + 50}.xml`);
+    expect(beyond.status()).toBe(404);
   });
 
   test('robots.txt references the sitemap and disallows authenticated-only pages', async ({ request }) => {
@@ -128,6 +130,64 @@ test.describe('SEO', () => {
     expect(body).toContain(`Sitemap: ${STOREFRONT_URL}/sitemap.xml`);
     expect(body).toMatch(/Disallow:\s*\/account/);
     expect(body).toMatch(/Disallow:\s*\/checkout/);
+  });
+
+  test('category pages have unique metadata, a self canonical and noindex filtered variants (LR-002)', async ({ page }) => {
+    await page.goto('/category/e2e-seo-category');
+    await expect(page).toHaveTitle(/E2E SEO Category/);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `${STOREFRONT_URL}/category/e2e-seo-category`);
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /E2E SEO Category/);
+    await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
+
+    await page.goto('/category/e2e-seo-category?sort=price_asc');
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `${STOREFRONT_URL}/category/e2e-seo-category`);
+
+    const unknown = await page.goto('/category/e2e-no-such-category');
+    expect(unknown?.status()).toBe(404);
+  });
+
+  test('a deactivated category stops being served within the cache window, not indefinitely', async ({ request }) => {
+    test.setTimeout(150_000);
+    const slug = `e2e-seo-retired-${Date.now()}`;
+    await prisma.category.create({ data: { name: 'E2E Retired Category', slug } });
+    try {
+      expect((await request.get(`${STOREFRONT_URL}/category/${slug}`)).status()).toBe(200);
+      await prisma.category.update({ where: { slug }, data: { isActive: false } });
+      await expect.poll(async () => (await request.get(`${STOREFRONT_URL}/category/${slug}`)).status(), { timeout: 120_000, intervals: [5_000] }).toBe(404);
+    } finally {
+      await prisma.category.delete({ where: { slug } });
+    }
+  });
+
+  test('legal pages render the pending notice without inventing text, and are not indexed until approved', async ({ page }) => {
+    for (const kind of ['privacy', 'terms']) {
+      const res = await page.goto(`/legal/${kind}`);
+      expect(res?.status()).toBe(200);
+      await expect(page.getByTestId('legal-pending')).toBeVisible();
+      await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
+    }
+    expect((await page.goto('/legal/cookies'))?.status()).toBe(404);
+  });
+
+  test('product structured data lists every variant truthfully: no invented rating, identifier or shipping promise', async ({ page }) => {
+    await page.goto(`/product/${publishedStyleId}`);
+    const raw = await page.locator('script[type="application/ld+json"]').allTextContents();
+    const group = raw.map((text) => JSON.parse(text)).find((data) => data['@type'] === 'ProductGroup');
+    expect(group).toBeTruthy();
+    expect(group.variesBy).toEqual(expect.arrayContaining(['https://schema.org/color', 'https://schema.org/size']));
+    expect(group.hasVariant.length).toBeGreaterThan(0);
+    for (const variant of group.hasVariant) {
+      expect(variant.sku).toBeTruthy();
+      expect(variant.offers.priceCurrency).toBe('INR');
+      expect(variant.offers.url).toContain(`/product/${publishedStyleId}`);
+      expect(variant.offers.hasMerchantReturnPolicy).toBeTruthy();
+      expect(variant.gtin ?? variant.gtin13 ?? variant.mpn).toBeUndefined();
+      // Shipping rates are unconfirmed in this environment (SHIPPING_RATES_CONFIRMED unset).
+      expect(variant.offers.shippingDetails).toBeUndefined();
+    }
+    expect(group.aggregateRating).toBeUndefined();
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(1);
   });
 
   test('an unpublished product PDP returns a proper 404, never an empty/broken 200', async ({ page }) => {

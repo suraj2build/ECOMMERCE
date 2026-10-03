@@ -15,7 +15,9 @@ describe('Public PDP concurrent reads', () => {
       skus: [{ id: 'sku', skuCode: 'SKU', colourId: 'c', sizeId: 's', colour: { name: 'Blue', colourCode: 'B', hexSwatch: null }, size: { label: 'M' } }],
     };
     const findUnique = vi.fn(async () => style);
-    const service = new PdpService({ prisma: { style: { findUnique } } } as unknown as FastifyInstance);
+    // No style or category return policy row: the platform default applies.
+    const returnPolicy = { findUnique: vi.fn(async () => null) };
+    const service = new PdpService({ prisma: { style: { findUnique }, returnPolicy } } as unknown as FastifyInstance);
     const price = vi.spyOn(CatalogService.prototype, 'getActivePrice').mockResolvedValue({ mrp: 100, sellingPrice: 90, currency: 'INR', isMarkdown: false } as never);
     vi.spyOn(CatalogService.prototype, 'listBadges').mockResolvedValue([]);
     const stock = vi.spyOn(InventoryService.prototype, 'getAvailableToSellBySku').mockResolvedValue(new Map([['sku', 5]]));
@@ -32,6 +34,8 @@ describe('Public PDP concurrent reads', () => {
     expect(findUnique).toHaveBeenCalledTimes(2);
     expect(fresh.sellingPrice).toBe(80);
     expect(fresh.variants[0]?.inStock).toBe(false);
+    expect(fresh.policies.returns).toEqual({ returnable: true, windowDays: expect.any(Number) });
+    expect(fresh.policies.shipping.confirmed).toBe(false);
   });
 
   it('does not retain failures or share results between different products', async () => {

@@ -1,19 +1,17 @@
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/api';
+import { indexingEnabled, PRIVATE_PATHS } from '@/lib/seo';
 
-/**
- * SEO (M27, specs/26-seo.md). Account/checkout/order pages are
- * customer-authenticated and carry no indexable public content -
- * disallowed so a crawler never wastes crawl budget on pages it can
- * never actually render for an anonymous visitor.
- */
+// Read at request time: the same build serves noindexed previews and an
+// indexed production (LR-002).
+export const dynamic = 'force-dynamic';
+
 export default function robots(): MetadataRoute.Robots {
+  if (!indexingEnabled()) {
+    return { rules: { userAgent: '*', disallow: '/' } };
+  }
   return {
-    rules: {
-      userAgent: '*',
-      allow: '/',
-      disallow: ['/account', '/checkout', '/orders', '/bag'],
-    },
+    rules: { userAgent: '*', allow: '/', disallow: PRIVATE_PATHS },
     sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }

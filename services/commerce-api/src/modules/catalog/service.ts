@@ -4,6 +4,15 @@ import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 
+/** Listing thumbnail: the style-level image if one exists, otherwise the
+ * first colour image. Products whose images are all per colour (the
+ * normal way to load them) otherwise showed blank cards in listings. */
+export const THUMBNAIL_MEDIA = {
+  where: { type: 'IMAGE' as const },
+  orderBy: [{ colourId: { sort: 'asc' as const, nulls: 'first' as const } }, { sortOrder: 'asc' as const }],
+  take: 1,
+};
+
 export interface SetPriceInput {
   styleId: string;
   colourId?: string;
@@ -355,7 +364,7 @@ export class CatalogService {
       take,
       skip,
       include: {
-        media: { where: { colourId: null }, orderBy: { sortOrder: 'asc' }, take: 1 },
+        media: THUMBNAIL_MEDIA,
         brand: true,
       },
     });
@@ -392,7 +401,7 @@ export class CatalogService {
             style: {
               include: {
                 brand: true,
-                media: { where: { colourId: null }, take: 1, orderBy: { sortOrder: 'asc' } },
+                media: THUMBNAIL_MEDIA,
               },
             },
           },
@@ -434,18 +443,68 @@ export class CatalogService {
     };
   }
 
+  /** Storefront visibility: published with an active style-wide price now,
+   * the same rule listPublicStyles applies. */
+  private publicStyleWhere() {
+    const atDate = new Date();
+    return {
+      lifecycleState: 'PUBLISHED' as const,
+      prices: { some: { colourId: null, effectiveFrom: { lte: atDate }, OR: [{ effectiveTo: null }, { effectiveTo: { gte: atDate } }] } },
+    };
+  }
+
+  /** Public: storefront-visible product IDs for sitemap files, in a stable
+   * order, plus the total so the sitemap index can list every file. */
+  async listPublicStyleIdsForSitemap({ take, skip }: { take: number; skip: number }) {
+    const where = this.publicStyleWhere();
+    const [total, rows] = await Promise.all([
+      this.prisma.style.count({ where }),
+      this.prisma.style.findMany({ where, select: { id: true, publishedAt: true, updatedAt: true }, orderBy: { id: 'asc' }, take, skip }),
+    ]);
+    return { total, items: rows.map((row) => ({ id: row.id, lastModified: row.updatedAt ?? row.publishedAt })) };
+  }
+
+  /** Public: one active category by slug, with its count of storefront-visible
+   * styles (published with an active price). Null for an unknown or inactive
+   * slug, so the storefront can answer a real 404 (LR-002). */
+  async getPublicCategory(slug: string) {
+    const category = await this.prisma.category.findUnique({ where: { slug } });
+    if (!category || !category.isActive) return null;
+    const publishedStyleCount = await this.prisma.style.count({ where: { categoryId: category.id, ...this.publicStyleWhere() } });
+    return { id: category.id, name: category.name, slug: category.slug, publishedStyleCount };
+  }
+
+  /** Public: every active category that has at least one storefront-visible
+   * style, for the sitemap. No row cap: the category table is small and
+   * every eligible category must be listed. */
+  async listPublicCategoriesWithProducts() {
+    const categories = await this.prisma.category.findMany({ where: { isActive: true }, orderBy: { slug: 'asc' } });
+    const counts = await this.prisma.style.groupBy({ by: ['categoryId'], where: this.publicStyleWhere(), _count: { _all: true }, _max: { publishedAt: true } });
+    const byCategory = new Map(counts.map((row) => [row.categoryId, row]));
+    return categories
+      .filter((category) => byCategory.has(category.id))
+      .map((category) => ({
+        slug: category.slug,
+        name: category.name,
+        publishedStyleCount: byCategory.get(category.id)!._count._all,
+        lastPublishedAt: byCategory.get(category.id)!._max.publishedAt,
+      }));
+  }
+
   /** Public: active collections with publishable, actively-priced style thumbnails for Home. */
-  async listPublicCollections(take = 6) {
+  async listPublicCollections({ take = 6, skip = 0 }: { take?: number; skip?: number } = {}) {
     const collections = await this.prisma.collection.findMany({
       where: { isActive: true },
       take,
-      orderBy: { createdAt: 'desc' },
+      skip,
+      // id breaks createdAt ties so consecutive pages never skip or repeat a collection.
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       include: {
         styles: {
           include: {
             style: {
               include: {
-                media: { where: { colourId: null }, take: 1, orderBy: { sortOrder: 'asc' } },
+                media: THUMBNAIL_MEDIA,
               },
             },
           },

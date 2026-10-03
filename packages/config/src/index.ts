@@ -90,6 +90,12 @@ const envSchema = z.object({
   // --- Checkout / Payment (M13, CHK-003, PAY-001 COD value cap) ---
   SHIPPING_DEFAULT_FLAT_AMOUNT: z.coerce.number().nonnegative().default(99),
   SHIPPING_DEFAULT_FREE_ABOVE_THRESHOLD: z.coerce.number().nonnegative().default(1999),
+  // The two amounts above are engineering defaults until the business
+  // confirms them; only then are they published as structured data (LR-002).
+  SHIPPING_RATES_CONFIRMED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   COD_MAX_ORDER_VALUE_INR: z.coerce.number().positive().default(5000),
 
   // --- Auth rate limiting (M31 5B/5E) test/E2E override ---

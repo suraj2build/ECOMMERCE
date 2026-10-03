@@ -18,11 +18,20 @@ export async function resolveReturnPolicy(
     select: { styleId: true, style: { select: { categoryId: true } } },
   });
   if (!sku) throw new NotFoundError('Sku', skuId);
+  return resolveStyleReturnPolicy(prisma, sku.styleId, sku.style.categoryId);
+}
 
-  const styleRow = await prisma.returnPolicy.findUnique({ where: { styleId: sku.styleId } });
+/** The same style > category > platform-default resolution, for a style as a
+ * whole (the product page publishes it as structured data, LR-002). */
+export async function resolveStyleReturnPolicy(
+  prisma: PrismaClient,
+  styleId: string,
+  categoryId: string,
+): Promise<{ windowDays: number; returnable: boolean; evidenceRequired: boolean }> {
+  const styleRow = await prisma.returnPolicy.findUnique({ where: { styleId } });
   if (styleRow) return { windowDays: styleRow.windowDays, returnable: styleRow.returnable, evidenceRequired: styleRow.evidenceRequired };
 
-  const categoryRow = await prisma.returnPolicy.findUnique({ where: { categoryId: sku.style.categoryId } });
+  const categoryRow = await prisma.returnPolicy.findUnique({ where: { categoryId } });
   if (categoryRow) return { windowDays: categoryRow.windowDays, returnable: categoryRow.returnable, evidenceRequired: categoryRow.evidenceRequired };
 
   return { windowDays: loadEnv().RETURN_WINDOW_DEFAULT_DAYS, returnable: true, evidenceRequired: false };

@@ -3,12 +3,14 @@ import { Inter, Playfair_Display } from 'next/font/google';
 import { DepartmentProvider } from '@/components/layout/DepartmentContext';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
+import { SITE_URL } from '@/lib/api';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair', display: 'swap' });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'VANYA — Indian Roots · Modern Form',
     template: '%s | VANYA',

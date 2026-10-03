@@ -137,8 +137,37 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await service.listPublicStyles({ take, skip }));
   });
 
-  fastify.get('/storefront/collections', async (_request, reply) => {
-    reply.status(200).send(await service.listPublicCollections());
+  fastify.get('/storefront/collections', async (request, reply) => {
+    const { take, skip } = z
+      .object({
+        take: z.coerce.number().int().positive().max(60).optional(),
+        skip: z.coerce.number().int().nonnegative().optional(),
+      })
+      .parse(request.query);
+    reply.status(200).send(await service.listPublicCollections({ take, skip }));
+  });
+
+  // LR-002: category pages answer a real 404 for an unknown slug, and the
+  // sitemap lists every category that has storefront-visible products.
+  fastify.get('/storefront/categories/:slug', async (request, reply) => {
+    const { slug } = z.object({ slug: z.string().min(1).max(120) }).parse(request.params);
+    const category = await service.getPublicCategory(slug);
+    if (!category) {
+      reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Category not found' } });
+      return;
+    }
+    reply.status(200).send(category);
+  });
+
+  fastify.get('/storefront/seo/products', async (request, reply) => {
+    const { take, skip } = z
+      .object({ take: z.coerce.number().int().positive().max(10_000).default(10_000), skip: z.coerce.number().int().nonnegative().default(0) })
+      .parse(request.query);
+    reply.status(200).send(await service.listPublicStyleIdsForSitemap({ take, skip }));
+  });
+
+  fastify.get('/storefront/seo/categories', async (_request, reply) => {
+    reply.status(200).send(await service.listPublicCategoriesWithProducts());
   });
 
   fastify.get('/storefront/collections/:slug', async (request, reply) => {

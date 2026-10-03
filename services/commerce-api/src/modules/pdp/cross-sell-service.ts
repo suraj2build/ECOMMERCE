@@ -3,6 +3,7 @@ import type { PrismaClient } from '@fcp/db';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { CatalogService } from '../catalog/service.js';
+import { THUMBNAIL_MEDIA } from '../catalog/service.js';
 
 /**
  * Cross-sell (M11, PDP-002): manual overrides always rank first; any
@@ -116,7 +117,7 @@ export class CrossSellService {
 
     const styles = await this.prisma.style.findMany({
       where: { id: { in: picks.map((p) => p.id) } },
-      include: { brand: true, media: { where: { colourId: null }, orderBy: { sortOrder: 'asc' }, take: 1 } },
+      include: { brand: true, media: THUMBNAIL_MEDIA },
     });
     const byId = new Map(styles.map((s) => [s.id, s]));
     const prices = await this.catalog.getActivePricesByStyleIds(picks.map((p) => p.id), atDate);

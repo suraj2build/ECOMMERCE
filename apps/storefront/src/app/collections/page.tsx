@@ -3,10 +3,22 @@ export const dynamic = 'force-dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Container } from '@/components/ui/Container';
-import { getPublicCollections } from '@/lib/api';
+import type { Metadata } from 'next';
+import { getAllPublicCollections } from '@/lib/api';
+import { absoluteUrl, sharing } from '@/lib/seo';
+
+const DESCRIPTION = 'Curated VANYA edits: festive, everyday and occasion collections.';
+
+export const metadata: Metadata = {
+  title: 'Collections',
+  description: DESCRIPTION,
+  alternates: { canonical: absoluteUrl('/collections') },
+  ...sharing('Collections | VANYA', DESCRIPTION, '/collections'),
+};
 
 export default async function CollectionsPage() {
-  const collections = await getPublicCollections();
+  // Every active collection, paged (the API caps one page at 60).
+  const collections = await getAllPublicCollections();
 
   return (
     <Container className="py-10 md:py-14">

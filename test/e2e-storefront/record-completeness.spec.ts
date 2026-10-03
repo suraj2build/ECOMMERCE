@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { PrismaClient } from '@fcp/db';
+import { crawlSitemap } from './sitemap-helpers';
 
 const apiUrl = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
 const storefrontUrl = process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000';
@@ -29,10 +30,8 @@ test('sitemap includes products beyond 3000 and catalog paging skips unpriced st
     expect(b).toHaveLength(60);
     expect(new Set([...a, ...b].map((s) => s.id)).size).toBe(120);
     expect([...a, ...b].some((s) => s.id === unpricedId)).toBe(false);
-    const sitemap = await request.get(`${storefrontUrl}/sitemap.xml`);
-    expect(sitemap.ok()).toBeTruthy();
-    const xml = await sitemap.text();
-    const sitemapIds = new Set([...xml.matchAll(/\/product\/([\w-]+)/g)].map((match) => match[1]));
+    const { locs } = await crawlSitemap(request, storefrontUrl);
+    const sitemapIds = new Set(locs.map((loc) => /\/product\/([\w-]+)$/.exec(loc)?.[1]).filter(Boolean));
     expect(ids.filter((id) => sitemapIds.has(id))).toHaveLength(3005);
     expect(sitemapIds.has(unpricedId)).toBe(false);
   } finally {

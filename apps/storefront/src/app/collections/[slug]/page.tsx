@@ -3,7 +3,22 @@ export const dynamic = 'force-dynamic';
 import { notFound } from 'next/navigation';
 import { Container } from '@/components/ui/Container';
 import { VanyaProductCard } from '@/components/catalog/VanyaProductCard';
-import { getPublicCollection } from '@/lib/api';
+import type { Metadata } from 'next';
+import { getPublicCollection } from '@/lib/lookups';
+import { absoluteUrl, sharing } from '@/lib/seo';
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const collection = await getPublicCollection(slug);
+  if (!collection) return { title: 'Not found', robots: { index: false, follow: false } };
+  const description = collection.description ?? `The ${collection.name} collection from VANYA.`;
+  return {
+    title: collection.name,
+    description,
+    alternates: { canonical: absoluteUrl(`/collections/${slug}`) },
+    ...sharing(`${collection.name} | VANYA`, description, `/collections/${slug}`, collection.styleThumbnails[0]),
+  };
+}
 
 export default async function CollectionPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
