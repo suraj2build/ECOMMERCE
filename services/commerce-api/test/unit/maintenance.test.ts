@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createMaintenanceRunner } from '../../src/maintenance.js';
+import { alertText, createMaintenanceRunner, memoryMaintenanceStore, type AlertSink, type MaintenanceAlert } from '../../src/maintenance.js';
 
 describe('Scheduled maintenance', () => {
   afterEach(() => vi.useRealTimers());
@@ -64,22 +64,57 @@ describe('Scheduled maintenance: intervals and alerting (LR-006)', () => {
   });
 
   it('records every run and raises an alert after three consecutive failures, clearing on success', async () => {
-    const runs: { outcome: string }[] = [];
-    const record = async (run: { outcome: 'SUCCESS' | 'FAILURE' }) => {
-      runs.push(run);
-      if (run.outcome === 'SUCCESS') return 0;
-      let n = 0;
-      for (let i = runs.length - 1; i >= 0 && runs[i]!.outcome === 'FAILURE'; i--) n++;
-      return n;
-    };
+    const store = memoryMaintenanceStore();
     const job = vi.fn().mockRejectedValueOnce(new Error('a')).mockRejectedValueOnce(new Error('b')).mockRejectedValueOnce(new Error('c')).mockResolvedValue({ released: 2 });
     const logger = { info: vi.fn(), error: vi.fn() };
-    const runner = createMaintenanceRunner([{ name: 'flaky-provider', run: job }], logger, 1000, record);
+    const runner = createMaintenanceRunner([{ name: 'flaky-provider', run: job }], logger, 1000, { store });
     for (let i = 0; i < 4; i++) await runner.runAll();
-    expect(runs.map((r) => r.outcome)).toEqual(['FAILURE', 'FAILURE', 'FAILURE', 'SUCCESS']);
+    expect(store.runs.map((r) => r.outcome)).toEqual(['FAILURE', 'FAILURE', 'FAILURE', 'SUCCESS']);
     const alerts = logger.error.mock.calls.filter(([fields]) => (fields as { alert?: boolean }).alert === true);
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]![0]).toMatchObject({ job: 'flaky-provider', consecutiveFailures: 3 });
+    expect(alerts[0]![0]).toMatchObject({ job: 'flaky-provider', consecutiveFailures: 3, alertDestination: 'log-only' });
     expect(logger.info).toHaveBeenLastCalledWith({ job: 'flaky-provider', result: { released: 2 } }, 'Maintenance completed');
+  });
+});
+
+describe('Scheduled maintenance: alert delivery (LR-006)', () => {
+  const sink = (fail: () => boolean = () => false) => {
+    const sent: MaintenanceAlert[] = [];
+    const alerts: AlertSink = { destination: 'webhook', send: async (alert) => { if (fail()) throw new Error('HTTP 503'); sent.push(alert); } };
+    return { sent, alerts };
+  };
+
+  it('notifies once per failure streak and once on recovery, then again for a new streak', async () => {
+    const { sent, alerts } = sink();
+    let failing = true;
+    const runner = createMaintenanceRunner([{ name: 'expire-payments', run: async () => { if (failing) throw new Error('gateway timeout'); return 1; } }], { info: vi.fn(), error: vi.fn() }, 1000, { store: memoryMaintenanceStore(), alerts });
+    for (let i = 0; i < 6; i++) await runner.runAll();
+    expect(sent).toEqual([{ kind: 'FAILING', job: 'expire-payments', consecutiveFailures: 3, error: 'gateway timeout' }]);
+    failing = false;
+    await runner.runAll();
+    await runner.runAll();
+    expect(sent.slice(1)).toEqual([{ kind: 'RECOVERED', job: 'expire-payments', consecutiveFailures: 6 }]);
+    failing = true;
+    for (let i = 0; i < 3; i++) await runner.runAll();
+    expect(sent.map((a) => a.kind)).toEqual(['FAILING', 'RECOVERED', 'FAILING']);
+  });
+
+  it('retries an undelivered alert on the next failure instead of losing it', async () => {
+    let down = true;
+    const { sent, alerts } = sink(() => down);
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const runner = createMaintenanceRunner([{ name: 'recover-invoices', run: async () => { throw new Error('db'); } }], logger, 1000, { store: memoryMaintenanceStore(), alerts });
+    for (let i = 0; i < 3; i++) await runner.runAll();
+    expect(sent).toEqual([]);
+    expect(logger.error.mock.calls.some(([, msg]) => msg === 'Could not deliver the maintenance alert; will retry on the next run')).toBe(true);
+    down = false;
+    await runner.runAll();
+    await runner.runAll();
+    expect(sent).toEqual([{ kind: 'FAILING', job: 'recover-invoices', consecutiveFailures: 4, error: 'db' }]);
+  });
+
+  it('formats a readable, secret-free message', () => {
+    expect(alertText({ kind: 'FAILING', job: 'expire-payments', consecutiveFailures: 3, error: 'timeout' }, 'production'))
+      .toBe('[commerce-api production] Scheduled job "expire-payments" has failed 3 times in a row. Last error: timeout. Status: GET /api/v1/maintenance/jobs');
   });
 });

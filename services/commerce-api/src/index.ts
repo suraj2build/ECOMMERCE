@@ -23,7 +23,10 @@ async function main() {
     await startServer(app, { production: env.NODE_ENV === 'production', port: env.PORT, host: '0.0.0.0' });
     // Integration suites control clock/expiry explicitly; actual dev and
     // production servers always start maintenance without a manual cron.
-    if (env.NODE_ENV !== 'test') void maintenance.start();
+    if (env.NODE_ENV !== 'test') {
+      app.log.info({ alertDestination: maintenance.alertDestination, leaseSeconds: env.MAINTENANCE_LEASE_SECONDS }, 'Scheduled maintenance started');
+      void maintenance.start();
+    }
   } catch (err) {
     await app.close().catch(() => undefined);
     throw err;

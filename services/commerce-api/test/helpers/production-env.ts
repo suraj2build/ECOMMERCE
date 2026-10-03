@@ -12,6 +12,9 @@ export const PRODUCTION_TEST_SECRETS = {
   JWT_ACCESS_SECRET: randomBytes(32).toString('hex'),
   MFA_SECRET_ENCRYPTION_KEY: randomBytes(32).toString('hex'),
   GUEST_SESSION_SIGNING_SECRET: randomBytes(32).toString('hex'),
+  // Production also requires an alert destination for failing jobs
+  // (.invalid never resolves, so nothing is ever sent from a test).
+  MAINTENANCE_ALERT_WEBHOOK_URL: 'https://alerts.invalid/maintenance',
 } as const;
 
 const KEYS = ['NODE_ENV', 'GUEST_SESSION_ALLOW_UNSIGNED', ...Object.keys(PRODUCTION_TEST_SECRETS)] as const;

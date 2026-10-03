@@ -57,6 +57,12 @@ describe('Production configuration guards', () => {
     expect(() => parse({ ...PROD, AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX: '1000' })).toThrow(/AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX/);
   });
 
+  it('LR-006: requires an alert destination for failing scheduled jobs, or an explicit log-only acknowledgement', () => {
+    expect(() => parse({ ...PROD, MAINTENANCE_ALERT_WEBHOOK_URL: undefined })).toThrow(/MAINTENANCE_ALERT_WEBHOOK_URL: is required in production/);
+    expect(parse({ ...PROD, MAINTENANCE_ALERT_WEBHOOK_URL: undefined, MAINTENANCE_ALERT_LOG_ONLY: 'true' }).MAINTENANCE_ALERT_LOG_ONLY).toBe('true');
+    expect(parse({ ...PROD, NODE_ENV: 'development', MAINTENANCE_ALERT_WEBHOOK_URL: undefined }).MAINTENANCE_ALERT_WEBHOOK_URL).toBeUndefined();
+  });
+
   it('outside production the documented placeholders still work and unsigned guests default ON', () => {
     const env = parse({ ...BASE, NODE_ENV: 'test', JWT_ACCESS_SECRET: 'ci-only-secret-ci-only-secret-not-for-prod', MFA_SECRET_ENCRYPTION_KEY: 'c1'.repeat(32) });
     expect(env.GUEST_SESSION_ALLOW_UNSIGNED).toBe(true);

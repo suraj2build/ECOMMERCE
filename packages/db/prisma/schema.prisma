@@ -1634,6 +1634,9 @@ model CheckoutSession {
   analyticsClientId      String?
   metaBrowserId          String?
   metaClickId            String?
+  // Random ID of the browser's consent record: withdrawing consent in that
+  // browser later finds this session (and its order) by it.
+  consentSubjectId       String?
 
   customer                  Customer?                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines                     CheckoutSessionLine[]
@@ -1645,6 +1648,7 @@ model CheckoutSession {
   giftCardRedemptionHold    GiftCardRedemptionHold?
 
   @@index([status])
+  @@index([consentSubjectId])
   @@map("checkout_sessions")
 }
 
@@ -2014,6 +2018,7 @@ model Order {
   analyticsClientId      String?
   metaBrowserId          String?
   metaClickId            String?
+  consentSubjectId       String?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
@@ -2031,6 +2036,7 @@ model Order {
   @@index([customerId])
   @@index([guestSessionId])
   @@index([invoiceStatus, invoiceId])
+  @@index([consentSubjectId])
   @@map("orders")
 }
 
@@ -4160,6 +4166,8 @@ enum ConversionEventStatus {
   // Sent with an unknown outcome, and the provider does not deduplicate
   // this event (GA4 refund), so it is not resent automatically.
   AMBIGUOUS_RECONCILIATION_REQUIRED
+  // The shopper withdrew consent for this purpose before it was sent.
+  WITHDRAWN
 }
 
 model ConversionEvent {
@@ -4211,4 +4219,20 @@ model MaintenanceJobRun {
   @@index([job, startedAt])
   @@index([startedAt])
   @@map("maintenance_job_runs")
+}
+
+// LR-006: per-job scheduler state shared by every API instance. The lease
+// makes sure only one instance runs a job at a time; an instance that
+// dies mid-run loses it when leaseUntil passes and the job runs again
+// straight away. lastStartedAt spaces runs across instances, and
+// alertedAt records that the current failure streak has been notified.
+model MaintenanceJobState {
+  job           String    @id
+  holder        String?
+  leaseUntil    DateTime? @db.Timestamptz(3)
+  lastStartedAt DateTime? @db.Timestamptz(3)
+  alertedAt     DateTime? @db.Timestamptz(3)
+  updatedAt     DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@map("maintenance_job_states")
 }

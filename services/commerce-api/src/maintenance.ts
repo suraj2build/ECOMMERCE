@@ -1,3 +1,5 @@
+import { hostname } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
@@ -15,11 +17,11 @@ import { ConversionService } from './modules/conversions/service.js';
 export interface MaintenanceJob {
   name: string;
   run(): Promise<unknown>;
-  /** Minimum time between runs of this job; defaults to every sweep. */
+  /** Minimum time between runs of this job (across instances); defaults to once per sweep. */
   everyMs?: number;
 }
 
-/** LR-006: a job failing this many times in a row logs at error level with alert: true. */
+/** LR-006: a job failing this many times in a row raises an alert. */
 export const ALERT_AFTER_CONSECUTIVE_FAILURES = 3;
 
 /** Small, loggable summary of a sweep result: counts, never row contents. */
@@ -31,62 +33,264 @@ function summarise(result: unknown): unknown {
   return result ?? null;
 }
 
-type RunRecorder = (run: { job: string; startedAt: Date; finishedAt: Date; outcome: 'SUCCESS' | 'FAILURE'; result?: unknown; error?: string }) => Promise<number>;
+export interface MaintenanceRun {
+  job: string;
+  startedAt: Date;
+  finishedAt: Date;
+  outcome: 'SUCCESS' | 'FAILURE';
+  result?: unknown;
+  error?: string;
+}
 
-/** Records the run and returns the job's current run of consecutive failures. */
-export function prismaRunRecorder(prisma: PrismaClient): RunRecorder {
-  return async (run) => {
-    await prisma.maintenanceJobRun.create({
-      data: { job: run.job, startedAt: run.startedAt, finishedAt: run.finishedAt, outcome: run.outcome, result: (run.result ?? undefined) as never, error: run.error?.slice(0, 2000) },
-    });
-    if (run.outcome === 'SUCCESS') return 0;
-    const recent = await prisma.maintenanceJobRun.findMany({ where: { job: run.job }, orderBy: { startedAt: 'desc' }, take: 50, select: { outcome: true } });
-    const firstSuccess = recent.findIndex((r) => r.outcome === 'SUCCESS');
-    return firstSuccess === -1 ? recent.length : firstSuccess;
+export interface RecordedRun {
+  /** Failures in a row including this run; 0 after a success. */
+  consecutiveFailures: number;
+  /** Failures in a row that this success ended. */
+  endedStreak: number;
+  /** Whether the current failure streak has already been notified. */
+  alerted: boolean;
+}
+
+/**
+ * Scheduler state. The Postgres store is shared by every API instance, so
+ * a job runs on one instance at a time and its interval holds across
+ * instances; the in-memory store covers one process (unit tests).
+ */
+export interface MaintenanceStore {
+  /** Takes the job's lease when nobody holds a live one and the job is
+   * due: `everyMs` has passed since its last start, or its last run died
+   * holding the lease (then it runs again at once). */
+  acquire(job: string, everyMs: number): Promise<boolean>;
+  /** Extends a held lease; false if another instance has taken it. */
+  renew(job: string): Promise<boolean>;
+  release(job: string): Promise<void>;
+  record(run: MaintenanceRun): Promise<RecordedRun>;
+  setAlerted(job: string, alerted: boolean): Promise<void>;
+}
+
+export interface MaintenanceAlert {
+  kind: 'FAILING' | 'RECOVERED';
+  job: string;
+  consecutiveFailures: number;
+  error?: string;
+}
+
+/** Where alerts go. `send` throws when the alert was not delivered. */
+export interface AlertSink {
+  readonly destination: 'webhook' | 'log-only';
+  send(alert: MaintenanceAlert): Promise<void>;
+}
+
+/** No external destination: the error-level `alert: true` log line is the alert. */
+export const logOnlyAlerts: AlertSink = { destination: 'log-only', send: async () => {} };
+
+export function alertText(alert: MaintenanceAlert, environment: string): string {
+  const where = `[commerce-api ${environment}]`;
+  return alert.kind === 'FAILING'
+    ? `${where} Scheduled job "${alert.job}" has failed ${alert.consecutiveFailures} times in a row. Last error: ${alert.error ?? 'unknown'}. Status: GET /api/v1/maintenance/jobs`
+    : `${where} Scheduled job "${alert.job}" is succeeding again after ${alert.consecutiveFailures} failures in a row.`;
+}
+
+/** POSTs `{ text, kind, job, consecutiveFailures, error, environment, at }`. */
+export function webhookAlerts(url: string, environment: string, timeoutMs = 5000): AlertSink {
+  return {
+    destination: 'webhook',
+    async send(alert) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: alertText(alert, environment), ...alert, error: alert.error?.slice(0, 500), environment, at: new Date().toISOString() }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      // The URL is a secret, so only the status is reported.
+      if (!res.ok) throw new Error(`alert webhook answered HTTP ${res.status}`);
+    },
   };
 }
 
-/** Completion-based scheduling prevents overlapping sweeps in one process.
- * Domain row locks and claims make multiple replicas safe.
+/** One process's state; intervals use Date.now() (fake timers in tests). */
+export function memoryMaintenanceStore(): MaintenanceStore & { runs: MaintenanceRun[] } {
+  const lastStarted = new Map<string, number>();
+  const held = new Set<string>();
+  const streak = new Map<string, number>();
+  const alerted = new Set<string>();
+  const runs: MaintenanceRun[] = [];
+  return {
+    runs,
+    async acquire(job, everyMs) {
+      if (held.has(job)) return false;
+      const last = lastStarted.get(job);
+      if (last !== undefined && everyMs > 0 && Date.now() - last < everyMs) return false;
+      held.add(job);
+      lastStarted.set(job, Date.now());
+      return true;
+    },
+    async renew(job) { return held.has(job); },
+    async release(job) { held.delete(job); },
+    async record(run) {
+      runs.push(run);
+      const before = streak.get(run.job) ?? 0;
+      const consecutiveFailures = run.outcome === 'FAILURE' ? before + 1 : 0;
+      streak.set(run.job, consecutiveFailures);
+      return { consecutiveFailures, endedStreak: run.outcome === 'SUCCESS' ? before : 0, alerted: alerted.has(run.job) };
+    },
+    async setAlerted(name, value) { if (value) alerted.add(name); else alerted.delete(name); },
+  };
+}
+
+/** The shared Postgres store (maintenance_job_states / maintenance_job_runs).
+ * Lease checks use the database clock, so instance clock skew does not matter. */
+export function prismaMaintenanceStore(prisma: PrismaClient, options: { leaseMs: number; holder?: string }): MaintenanceStore {
+  const holder = options.holder ?? `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
+  const leaseSeconds = options.leaseMs / 1000;
+  return {
+    async acquire(job, everyMs) {
+      const rows = await prisma.$queryRaw<{ job: string }[]>`
+        INSERT INTO maintenance_job_states (job, holder, "leaseUntil", "lastStartedAt", "updatedAt")
+        VALUES (${job}, ${holder}, now() + make_interval(secs => ${leaseSeconds}::double precision), now(), now())
+        ON CONFLICT (job) DO UPDATE
+          SET holder = EXCLUDED.holder, "leaseUntil" = EXCLUDED."leaseUntil", "lastStartedAt" = EXCLUDED."lastStartedAt", "updatedAt" = now()
+        WHERE (maintenance_job_states."leaseUntil" IS NULL OR maintenance_job_states."leaseUntil" < now())
+          AND (
+            maintenance_job_states.holder IS NOT NULL
+            OR ${everyMs}::double precision <= 0
+            OR maintenance_job_states."lastStartedAt" IS NULL
+            OR maintenance_job_states."lastStartedAt" <= now() - make_interval(secs => ${everyMs / 1000}::double precision)
+          )
+        RETURNING job`;
+      return rows.length === 1;
+    },
+    async renew(job) {
+      const n = await prisma.$executeRaw`
+        UPDATE maintenance_job_states SET "leaseUntil" = now() + make_interval(secs => ${leaseSeconds}::double precision), "updatedAt" = now()
+        WHERE job = ${job} AND holder = ${holder}`;
+      return n === 1;
+    },
+    async release(job) {
+      await prisma.$executeRaw`
+        UPDATE maintenance_job_states SET holder = NULL, "leaseUntil" = NULL, "updatedAt" = now()
+        WHERE job = ${job} AND holder = ${holder}`;
+    },
+    async record(run) {
+      await prisma.maintenanceJobRun.create({
+        data: { job: run.job, startedAt: run.startedAt, finishedAt: run.finishedAt, outcome: run.outcome, result: (run.result ?? undefined) as never, error: run.error?.slice(0, 2000) },
+      });
+      const [recent, state] = await Promise.all([
+        prisma.maintenanceJobRun.findMany({ where: { job: run.job }, orderBy: { startedAt: 'desc' }, take: 51, select: { outcome: true } }),
+        prisma.maintenanceJobState.findUnique({ where: { job: run.job }, select: { alertedAt: true } }),
+      ]);
+      const failuresFrom = (from: number) => {
+        const next = recent.findIndex((r, i) => i >= from && r.outcome === 'SUCCESS');
+        return (next === -1 ? recent.length : next) - from;
+      };
+      return {
+        consecutiveFailures: run.outcome === 'FAILURE' ? Math.min(50, failuresFrom(0)) : 0,
+        endedStreak: run.outcome === 'SUCCESS' ? Math.min(50, failuresFrom(1)) : 0,
+        alerted: Boolean(state?.alertedAt),
+      };
+    },
+    async setAlerted(job, alerted) {
+      await prisma.maintenanceJobState.updateMany({ where: { job }, data: { alertedAt: alerted ? new Date() : null } });
+    },
+  };
+}
+
+type Log = Pick<FastifyInstance['log'], 'info' | 'error'>;
+
+/**
+ * Completion-based scheduling prevents overlapping sweeps in one process;
+ * the store's lease prevents two instances running the same job, and the
+ * domain row locks and claims stay as a second line of defence.
  * Shutdown drains the current sweep before infrastructure is disconnected.
  */
 export function createMaintenanceRunner(
   jobs: MaintenanceJob[],
-  log: Pick<FastifyInstance['log'], 'info' | 'error'>,
+  log: Log,
   intervalMs = 60_000,
-  record?: RunRecorder,
+  options: { store?: MaintenanceStore; alerts?: AlertSink; heartbeatMs?: number } = {},
 ) {
+  const store = options.store ?? memoryMaintenanceStore();
+  const alerts = options.alerts ?? logOnlyAlerts;
+  const heartbeatMs = options.heartbeatMs ?? 40_000;
   let stopped = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let active: Promise<void> | undefined;
-  const lastStarted = new Map<string, number>();
 
-  async function runJob(job: MaintenanceJob) {
-    const startedAt = new Date();
-    lastStarted.set(job.name, startedAt.getTime());
+  async function deliver(alert: MaintenanceAlert): Promise<boolean> {
+    if (alerts.destination === 'log-only') return false;
     try {
-      const result = summarise(await job.run());
-      log.info({ job: job.name, result }, 'Maintenance completed');
-      await record?.({ job: job.name, startedAt, finishedAt: new Date(), outcome: 'SUCCESS', result }).catch((err) => log.error({ err, job: job.name }, 'Could not record maintenance run'));
+      await alerts.send(alert);
+      return true;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const consecutive = record
-        ? await record({ job: job.name, startedAt, finishedAt: new Date(), outcome: 'FAILURE', error: message }).catch(() => 0)
-        : 0;
-      if (consecutive >= ALERT_AFTER_CONSECUTIVE_FAILURES) {
-        log.error({ err, job: job.name, consecutiveFailures: consecutive, alert: true }, 'Maintenance job keeps failing');
-      } else {
-        log.error({ err, job: job.name, consecutiveFailures: consecutive }, 'Maintenance failed; will retry next sweep');
-      }
+      log.error({ err, job: alert.job, alert: true }, 'Could not deliver the maintenance alert; will retry on the next run');
+      return false;
     }
   }
+
+  /** Runs the job if this instance gets its lease; returns whether it ran. */
+  async function runJob(job: MaintenanceJob, everyMs: number): Promise<boolean> {
+    try {
+      if (!(await store.acquire(job.name, everyMs))) return false;
+    } catch (err) {
+      log.error({ err, job: job.name }, 'Could not take the maintenance lease; will retry next sweep');
+      return false;
+    }
+    const heartbeat = setInterval(() => {
+      store.renew(job.name)
+        .then((held) => { if (!held) log.error({ job: job.name, alert: true }, 'Maintenance lease lost while the job was still running'); })
+        .catch((err) => log.error({ err, job: job.name }, 'Could not renew the maintenance lease'));
+    }, heartbeatMs);
+    heartbeat.unref?.();
+
+    const startedAt = new Date();
+    let run: MaintenanceRun;
+    let failure: unknown;
+    try {
+      const result = summarise(await job.run());
+      run = { job: job.name, startedAt, finishedAt: new Date(), outcome: 'SUCCESS', result };
+      log.info({ job: job.name, result }, 'Maintenance completed');
+    } catch (err) {
+      failure = err;
+      run = { job: job.name, startedAt, finishedAt: new Date(), outcome: 'FAILURE', error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      clearInterval(heartbeat);
+    }
+
+    try {
+      const state = await store.record(run).catch((err): RecordedRun | null => {
+        log.error({ err, job: job.name }, 'Could not record maintenance run');
+        return null;
+      });
+      if (run.outcome === 'FAILURE') {
+        const consecutive = state?.consecutiveFailures ?? 0;
+        if (consecutive >= ALERT_AFTER_CONSECUTIVE_FAILURES) {
+          log.error({ err: failure, job: job.name, consecutiveFailures: consecutive, alert: true, alertDestination: alerts.destination }, 'Maintenance job keeps failing');
+          if (state && !state.alerted && (await deliver({ kind: 'FAILING', job: job.name, consecutiveFailures: consecutive, error: run.error }))) {
+            await store.setAlerted(job.name, true);
+          }
+        } else {
+          log.error({ err: failure, job: job.name, consecutiveFailures: consecutive }, 'Maintenance failed; will retry next sweep');
+        }
+      } else if (state?.alerted && (await deliver({ kind: 'RECOVERED', job: job.name, consecutiveFailures: state.endedStreak }))) {
+        await store.setAlerted(job.name, false);
+      }
+    } catch (err) {
+      log.error({ err, job: job.name }, 'Could not update maintenance alert state');
+    } finally {
+      await store.release(job.name).catch((err) => log.error({ err, job: job.name }, 'Could not release the maintenance lease'));
+    }
+    return true;
+  }
+
+  // A job with no interval of its own runs once per sweep across all
+  // instances: the lease's interval check spaces it by most of a sweep, so
+  // a second instance sweeping moments later does not run it again.
+  const perSweepSpacing = Math.floor(intervalMs * 0.8);
 
   async function sweep() {
     for (const job of jobs) {
       if (stopped) break;
-      const last = lastStarted.get(job.name);
-      if (last !== undefined && job.everyMs && Date.now() - last < job.everyMs) continue;
-      await runJob(job);
+      await runJob(job, job.everyMs ?? perSweepSpacing);
     }
   }
 
@@ -102,6 +306,7 @@ export function createMaintenanceRunner(
   }
 
   return {
+    alertDestination: alerts.destination,
     start() {
       if (!stopped) return active;
       stopped = false;
@@ -113,17 +318,22 @@ export function createMaintenanceRunner(
       if (timer) clearTimeout(timer);
       await active;
     },
-    /** One full sweep, ignoring intervals (tests and manual operation). */
-    async runAll() {
-      for (const job of jobs) await runJob(job);
+    /** One full sweep ignoring intervals (tests and manual operation); a
+     * job another instance is running right now is still skipped. */
+    async runAll(): Promise<{ ran: string[]; skipped: string[] }> {
+      const ran: string[] = [];
+      const skipped: string[] = [];
+      for (const job of jobs) (await runJob(job, 0) ? ran : skipped).push(job.name);
+      return { ran, skipped };
     },
   };
 }
 
 const MINUTE = 60_000;
 
-/** Every recovery/expiry sweep in the application (LR-006). Each one claims
- * its rows under locks, so running it on several replicas is safe. */
+/** Every recovery/expiry sweep in the application (LR-006). The scheduler
+ * lease runs each on one instance at a time; each also claims its rows
+ * under locks, so an overlap (a lease lost mid-run) is still safe. */
 export function appMaintenanceJobs(app: FastifyInstance): MaintenanceJob[] {
   const payments = new PaymentService(app);
   const inventory = new InventoryService(app);
@@ -161,19 +371,29 @@ async function pruneRuns(prisma: PrismaClient, days: number) {
 }
 
 export function createAppMaintenance(app: FastifyInstance) {
-  return createMaintenanceRunner(appMaintenanceJobs(app), app.log, 60_000, prismaRunRecorder(app.prisma));
+  const env = loadEnv();
+  const leaseMs = env.MAINTENANCE_LEASE_SECONDS * 1000;
+  return createMaintenanceRunner(appMaintenanceJobs(app), app.log, 60_000, {
+    store: prismaMaintenanceStore(app.prisma, { leaseMs }),
+    alerts: env.MAINTENANCE_ALERT_WEBHOOK_URL ? webhookAlerts(env.MAINTENANCE_ALERT_WEBHOOK_URL, env.NODE_ENV) : logOnlyAlerts,
+    heartbeatMs: Math.floor(leaseMs / 3),
+  });
 }
 
-/** Staff view (LR-006): per job, last run, last success, last failure and
- * the current run of consecutive failures. */
+/** Staff view (LR-006): per job, last run, last success, last failure, the
+ * current run of consecutive failures, whether an instance is running it
+ * now, and when the current failure streak was notified. */
 export async function maintenanceJobStatus(app: FastifyInstance) {
   const names = appMaintenanceJobs(app).map((job) => job.name);
+  const states = new Map((await app.prisma.maintenanceJobState.findMany()).map((state) => [state.job, state]));
+  const now = new Date();
   return Promise.all(names.map(async (job) => {
     const recent = await app.prisma.maintenanceJobRun.findMany({ where: { job }, orderBy: { startedAt: 'desc' }, take: 50 });
     const lastSuccess = recent.find((r) => r.outcome === 'SUCCESS') ?? null;
     const lastFailure = recent.find((r) => r.outcome === 'FAILURE') ?? null;
     const firstSuccess = recent.findIndex((r) => r.outcome === 'SUCCESS');
     const consecutiveFailures = firstSuccess === -1 ? recent.length : firstSuccess;
+    const state = states.get(job);
     return {
       job,
       lastRunAt: recent[0]?.startedAt ?? null,
@@ -183,6 +403,8 @@ export async function maintenanceJobStatus(app: FastifyInstance) {
       lastResult: lastSuccess?.result ?? null,
       consecutiveFailures,
       alert: consecutiveFailures >= ALERT_AFTER_CONSECUTIVE_FAILURES,
+      alertNotifiedAt: state?.alertedAt ?? null,
+      running: Boolean(state?.holder && state.leaseUntil && state.leaseUntil > now),
     };
   }));
 }

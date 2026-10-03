@@ -344,6 +344,18 @@ const envSchema = z.object({
   // LR-006 scheduler: how often feeds are resynced, how long run history is kept.
   CHANNEL_RESYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
   MAINTENANCE_RUN_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  // A running job's lease; renewed every third of it while the job runs.
+  // An instance that dies mid-job loses the lease after this long and
+  // another instance runs the job.
+  MAINTENANCE_LEASE_SECONDS: z.coerce.number().int().min(10).default(120),
+  // Where a failing-job alert (three failures in a row) and its recovery
+  // are POSTed as JSON with a `text` field (Slack, Google Chat and most
+  // incident tools accept this). The URL is a secret: it is never logged.
+  MAINTENANCE_ALERT_WEBHOOK_URL: z.string().url().optional(),
+  // Production refuses to start without MAINTENANCE_ALERT_WEBHOOK_URL
+  // unless this explicitly says alerts are picked up from the logs
+  // (alert: true at error level) by the host's own log alerting.
+  MAINTENANCE_ALERT_LOG_ONLY: z.enum(['true', 'false']).default('false'),
   CHANNEL_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   CONVERSION_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
   // A SENDING claim older than this belongs to a crashed dispatcher.
@@ -419,6 +431,9 @@ const validatedEnvSchema = envSchema
     }
     if (env.AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX !== undefined) {
       fail('AUTH_RATE_LIMIT_E2E_OVERRIDE_MAX', 'is a test-only override and must not be set in production');
+    }
+    if (!env.MAINTENANCE_ALERT_WEBHOOK_URL && env.MAINTENANCE_ALERT_LOG_ONLY !== 'true') {
+      fail('MAINTENANCE_ALERT_WEBHOOK_URL', 'is required in production so failing scheduled jobs reach a person (or set MAINTENANCE_ALERT_LOG_ONLY=true when log-based alerting is configured)');
     }
   })
   .transform((env) => ({
