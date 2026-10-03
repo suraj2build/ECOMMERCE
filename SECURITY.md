@@ -73,12 +73,13 @@ and `30-audit-compliance.md`):
 ## 5. Dependency and supply-chain hygiene
 
 GitHub Actions-based dependency vulnerability scanning
-(`npm audit --omit=dev --audit-level=critical`, gating; a full-tree
+(`npm audit --omit=dev --audit-level=high`, gating; a full-tree
 report-only pass at `--audit-level=moderate`) and secret scanning
-(`gitleaks`) were added in M31 (`.github/workflows/ci.yml`). See
-`security/SECRETS_CONFIG_AUDIT.md` for the current findings and what
-remains an accepted, documented risk (a dev-only vitest/vite/esbuild
-chain, and one build-time-only `postcss` advisory via Next.js).
+(`gitleaks`) were added in M31 (`.github/workflows/ci.yml`). Production
+dependencies currently audit clean; the postcss advisory via Next.js was
+fixed with an npm override on 2026-10-03. See
+`security/DEPENDENCY_AUDIT.md` for the evidence, the remaining dev-only
+findings, and the recommended upgrade order.
 
 ## 6. Reporting
 

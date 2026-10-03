@@ -85,21 +85,16 @@ jobs:
       # above already enforces lockfile integrity (it fails outright on
       # any package.json/package-lock.json mismatch, never silently
       # resolves a different tree). This step is the vulnerability-audit
-      # half: gates on CRITICAL findings in PRODUCTION dependencies only
-      # (--omit=dev, --audit-level=critical) - moderate/high findings
-      # still print to the job log for visibility but do not fail the
-      # build. Two things this pass found and deliberately did NOT
-      # force-fix here, both documented in SECURITY.md's dependency-audit
-      # section: a HIGH postcss advisory reachable only via Next.js's own
-      # bundled build-time CSS tooling (this app never processes
-      # attacker-controlled CSS/source-maps, and no non-major-version fix
-      # exists yet), and a set of CRITICAL/HIGH advisories confined
-      # entirely to vitest's own dev-only dependency chain (vite/esbuild),
-      # never reachable in a running deployment. A genuine CRITICAL/HIGH
-      # finding in a PRODUCTION dependency is the one thing this step is
-      # tuned to actually stop the build for.
+      # half: it fails the build on any HIGH or CRITICAL advisory in a
+      # PRODUCTION dependency. The one production finding (the postcss
+      # copy Next.js 15.5 pins) was fixed on 2026-10-03 with an npm
+      # override to a patched postcss, so the gate is now `high`. The
+      # remaining findings are confined to dev-only test/lint/build
+      # tooling (vitest/vite/esbuild, eslint-config-next, tailwindcss 3's
+      # chokidar/micromatch, autocannon); they print below for visibility
+      # and are tracked in security/DEPENDENCY_AUDIT.md.
       - name: Dependency vulnerability audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=critical
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Dependency vulnerability audit (full tree, report only)
         run: npm audit --audit-level=moderate || true
