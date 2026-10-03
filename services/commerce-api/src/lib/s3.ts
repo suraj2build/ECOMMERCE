@@ -28,7 +28,8 @@ function encodeKey(key: string): string {
 export class S3ObjectStore {
   constructor(private readonly config: S3Config) {}
 
-  private url(key: string): URL {
+  /** Unsigned URL of an object (or of the bucket, for key ''). */
+  url(key: string): URL {
     const base = new URL(this.config.endpoint);
     if (this.config.forcePathStyle) {
       base.pathname = `${base.pathname.replace(/\/$/, '')}/${this.config.bucket}/${encodeKey(key)}`;
@@ -39,9 +40,11 @@ export class S3ObjectStore {
     return base;
   }
 
-  /** Signs and sends one request; returns the raw response. */
-  async request(method: 'PUT' | 'GET' | 'HEAD' | 'DELETE', key: string, body?: Buffer, extraHeaders: Record<string, string> = {}): Promise<Response> {
+  /** Signs and sends one request; returns the raw response. `query` is a
+   * sub-resource such as `acl` (operator checks, never user input). */
+  async request(method: 'PUT' | 'GET' | 'HEAD' | 'DELETE', key: string, body?: Buffer, extraHeaders: Record<string, string> = {}, query = ''): Promise<Response> {
     const url = this.url(key);
+    if (query) url.search = query;
     const payloadHash = sha256Hex(body ?? '');
     const headers: Record<string, string> = {
       host: url.host,
