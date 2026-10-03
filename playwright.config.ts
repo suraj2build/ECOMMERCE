@@ -27,10 +27,12 @@ export default defineConfig({
     {
       name: 'storefront',
       testDir: './test/e2e-storefront',
-      // Runs in its own project after this one (below): it adds 1,005
-      // documents to the shared search index, which would otherwise show
-      // up in listings other specs are auditing at the same moment.
-      testIgnore: /search-deep-pages\.spec\.ts/,
+      // These run in their own project after this one (below): they add
+      // thousands of temporary products (1,005 search documents; 3,001
+      // published styles dated 2090, then deleted), which would otherwise
+      // show up in listings other specs - the link audit above all - are
+      // checking at the same moment.
+      testIgnore: /(search-deep-pages|record-completeness)\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000',
@@ -54,9 +56,9 @@ export default defineConfig({
       },
     },
     {
-      name: 'storefront-deep-search',
+      name: 'storefront-bulk-catalogue',
       testDir: './test/e2e-storefront',
-      testMatch: /search-deep-pages\.spec\.ts/,
+      testMatch: /(search-deep-pages|record-completeness)\.spec\.ts/,
       dependencies: ['storefront'],
       use: {
         ...devices['Desktop Chrome'],
