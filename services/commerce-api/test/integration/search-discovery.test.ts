@@ -536,6 +536,22 @@ describe('Search / Discovery (M10)', () => {
     const recoveredRes = await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Reindex' });
     expect(recoveredRes.json().hits.map((h: { id: string }) => h.id)).toContain(styleId);
   });
+
+  it('a rebuild removes documents for styles that no longer exist, so listings never link to a 404', async () => {
+    await grantPermissions('MERCHANDISING', ['product:read', 'product:write', 'product:publish', 'catalog:price:write', 'search:reindex']);
+    const { token } = await createAuthenticatedStaff(app, ['MERCHANDISING']);
+    const { brand, category, size, location } = await seedBrandAndLocation();
+    const { styleId } = await publishStyle(token, location.id, { styleCode: 'SRCH-ORPHAN-KEEP', name: 'Orphan Survivor', brandId: brand.id, categoryId: category.id, sizeId: size.id, sellingPrice: 100 });
+    // A document left behind for a style that is gone (e.g. removed while the engine was down).
+    await app.meilisearch.index(STYLES_INDEX_UID).addDocuments([{ id: '00000000-0000-4000-8000-0000000000aa', name: 'Orphan Ghost', styleCode: 'GHOST', searchPinned: false, inStock: true, publishedAt: 1 }]).waitTask();
+    expect((await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Orphan' })).json().totalHits).toBe(2);
+
+    const res = await app.inject({ method: 'POST', url: '/api/v1/search/reindex', headers: { authorization: `Bearer ${token}` } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().removed).toBeGreaterThanOrEqual(1);
+    const after = (await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Orphan' })).json();
+    expect(after.hits.map((h: { id: string }) => h.id)).toEqual([styleId]);
+  });
   it('exposes every result beyond the default 1000-hit window', async () => {
     const index = app.meilisearch.index(STYLES_INDEX_UID);
     await index.updatePagination({ maxTotalHits: 1000 }).waitTask();

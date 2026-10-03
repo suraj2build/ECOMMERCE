@@ -89,6 +89,7 @@ export interface StartCheckoutInput {
   // never trusted from a client-side preview computation alone.
   couponCode?: string;
   storeCreditToApply?: number;
+  tracking?: { analytics: boolean; marketing: boolean; analyticsClientId?: string; metaBrowserId?: string; metaClickId?: string };
 }
 
 export interface CheckoutSessionView {
@@ -116,7 +117,8 @@ export interface CheckoutSessionView {
   promotionDiscountTotal: number;
   amountPayable: number;
   currency: string;
-  lines: { skuId: string; styleName: string; colourName: string; sizeLabel: string; quantity: number; unitPriceInclusive: number; lineTotalInclusive: number }[];
+  orderNumber: string | null;
+  lines: { skuId: string; skuCode: string; styleCode: string; styleName: string; colourName: string; sizeLabel: string; quantity: number; unitPriceInclusive: number; lineTotalInclusive: number }[];
   createdAt: string;
   confirmedAt: string | null;
 }

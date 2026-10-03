@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { getCart, updateCartItemQuantity, removeCartItem, type CartView } from '@/lib/cart';
+import { cartItems, track } from '@/lib/tracking';
 
 export default function BagPage() {
   const [cart, setCart] = useState<CartView | null>(null);
@@ -17,7 +18,10 @@ export default function BagPage() {
     finally { setLoading(false); }
   }
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    void getCart().then((loaded) => { if (loaded.items.length > 0) track.viewCart(cartItems(loaded.items)); }).catch(() => {});
+  }, []);
 
   async function handleQuantityChange(skuId: string, quantity: number) {
     setPendingSkuId(skuId);

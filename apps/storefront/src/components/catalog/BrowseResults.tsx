@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { StorefrontSearchResult } from '@/lib/api';
 import { VanyaProductCard } from './VanyaProductCard';
+import { TrackListView } from '../consent/TrackListView';
 
 type Query = Record<string, string | undefined>;
 
@@ -32,6 +33,11 @@ export function BrowseResults({
 }) {
   return (
     <>
+      <TrackListView
+        listName={title}
+        searchTerm={basePath === '/search' ? query.q : undefined}
+        items={result.hits.map((hit) => ({ styleCode: hit.styleCode, name: hit.name, price: hit.sellingPrice }))}
+      />
       <section className="border-b border-border bg-canvas">
         <div className="mx-auto max-w-container px-gutter pb-8 pt-10 md:pb-12 md:pt-14">
           {eyebrow && <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">{eyebrow}</p>}

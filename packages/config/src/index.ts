@@ -306,6 +306,25 @@ const envSchema = z.object({
   // The secret must match the storefront's STOREFRONT_REVALIDATE_SECRET.
   STOREFRONT_REVALIDATE_URL: z.string().url().optional(),
   STOREFRONT_REVALIDATE_SECRET: z.string().min(32, 'STOREFRONT_REVALIDATE_SECRET must be at least 32 characters').optional(),
+
+  // --- Server-side conversion events (LR-003) ---
+  // Each integration is off until its credentials are set. Secrets stay
+  // server-side; the storefront only ever gets the public IDs.
+  GA4_MEASUREMENT_ID: z.string().regex(/^G-[A-Z0-9]+$/, 'GA4_MEASUREMENT_ID must look like G-XXXXXXX').optional(),
+  GA4_API_SECRET: z.string().min(8).optional(),
+  // Measurement Protocol endpoint; /debug/mp/collect validates without recording.
+  GA4_MP_URL: z.string().url().default('https://www.google-analytics.com/mp/collect'),
+  META_PIXEL_ID: z.string().regex(/^[0-9]{5,20}$/, 'META_PIXEL_ID must be the numeric dataset/pixel ID').optional(),
+  META_CAPI_ACCESS_TOKEN: z.string().min(20).optional(),
+  // Routes events to Events Manager's "Test events" view instead of live data.
+  META_TEST_EVENT_CODE: z.string().min(1).max(64).optional(),
+  META_GRAPH_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
+  // Public storefront origin, used as Meta's event_source_url and for feed product links.
+  STOREFRONT_PUBLIC_URL: z.string().url().optional(),
+  CONVERSION_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
+  // A SENDING claim older than this belongs to a crashed dispatcher.
+  CONVERSION_SENDING_STALE_SECONDS: z.coerce.number().int().positive().default(300),
+  CONVERSION_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 });
 
 const PLACEHOLDER_SECRET_MARKERS = ['change-me', 'changeme', 'ci-only', 'test-only', 'dev-only', 'placeholder', 'example', 'replace-me'];
@@ -337,6 +356,16 @@ const validatedEnvSchema = envSchema
 
     if (env.STOREFRONT_REVALIDATE_URL && !env.STOREFRONT_REVALIDATE_SECRET) {
       fail('STOREFRONT_REVALIDATE_SECRET', 'is required when STOREFRONT_REVALIDATE_URL is set');
+    }
+
+    if (Boolean(env.GA4_MEASUREMENT_ID) !== Boolean(env.GA4_API_SECRET)) {
+      fail('GA4_API_SECRET', 'GA4_MEASUREMENT_ID and GA4_API_SECRET must be set together');
+    }
+    if (Boolean(env.META_PIXEL_ID) !== Boolean(env.META_CAPI_ACCESS_TOKEN)) {
+      fail('META_CAPI_ACCESS_TOKEN', 'META_PIXEL_ID and META_CAPI_ACCESS_TOKEN must be set together');
+    }
+    if (env.META_PIXEL_ID && !env.STOREFRONT_PUBLIC_URL) {
+      fail('STOREFRONT_PUBLIC_URL', 'is required for the Meta Conversions API (event_source_url)');
     }
 
     if (env.NODE_ENV !== 'production') return;

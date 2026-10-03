@@ -308,7 +308,7 @@ export class SearchIndexService {
   }
 
   /** Full rebuild from PostgreSQL - operational recovery tool, never the primary indexing path. */
-  async reindexAll(): Promise<{ indexed: number }> {
+  async reindexAll(): Promise<{ indexed: number; removed: number }> {
     const publishedStyleIds = await this.prisma.style.findMany({
       where: { lifecycleState: 'PUBLISHED' },
       select: { id: true },
@@ -316,7 +316,18 @@ export class SearchIndexService {
     for (const { id } of publishedStyleIds) {
       await this.indexStyle(id);
     }
+    // A rebuild also drops documents whose style no longer exists or is no
+    // longer published (e.g. removed while the search engine was down), so
+    // listings never link to a product page that answers 404.
+    const keep = new Set(publishedStyleIds.map(({ id }) => id));
+    const orphans: string[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const page = await this.index().getDocuments<{ id: string }>({ fields: ['id'], limit: 1000, offset });
+      orphans.push(...page.results.map((doc) => doc.id).filter((id) => !keep.has(id)));
+      if (page.results.length < 1000) break;
+    }
+    if (orphans.length > 0) await this.index().deleteDocuments(orphans).waitTask();
     await this.fastify.searchIndex.ensureCompletePagination(true);
-    return { indexed: publishedStyleIds.length };
+    return { indexed: publishedStyleIds.length, removed: orphans.length };
   }
 }

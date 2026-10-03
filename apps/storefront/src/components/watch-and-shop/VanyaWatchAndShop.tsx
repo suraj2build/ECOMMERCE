@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { ProductDetail, ShoppableMediaSummary } from '@/lib/api';
 import { getProductDetailLive, recordWatchAndShopEvent } from '@/lib/api';
 import { addToCart, addToWishlist, getGuestSessionId } from '@/lib/cart';
+import { track } from '@/lib/tracking';
 import { useModalFocus } from '@/components/layout/useModalFocus';
 
 export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] }) {
@@ -69,6 +70,7 @@ export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] })
     try {
       await addToCart(selectedVariant.skuId, 1);
       window.dispatchEvent(new Event('fcp:cart-updated'));
+      track.addToCart({ skuCode: selectedVariant.skuCode, styleCode: preview.styleCode, name: preview.name, variant: `${selectedVariant.colourName} / ${selectedVariant.sizeLabel}`, price: preview.sellingPrice });
       const sessionRef = await getGuestSessionId();
       void recordWatchAndShopEvent(previewMediaId, 'ADD_TO_BAG', sessionRef).catch(() => {});
       setMessage('Added to bag.');
@@ -85,6 +87,7 @@ export function VanyaWatchAndShop({ items }: { items: ShoppableMediaSummary[] })
     try {
       await addToWishlist(selectedVariant.skuId);
       window.dispatchEvent(new Event('fcp:wishlist-updated'));
+      if (preview) track.addToWishlist({ skuCode: selectedVariant.skuCode, styleCode: preview.styleCode, name: preview.name, variant: `${selectedVariant.colourName} / ${selectedVariant.sizeLabel}`, price: preview.sellingPrice });
       setMessage('Saved to wishlist.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not save this item.');

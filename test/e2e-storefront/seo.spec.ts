@@ -199,4 +199,11 @@ test.describe('SEO', () => {
     const response = await page.goto('/product/00000000-0000-0000-0000-000000000000');
     expect(response?.status()).toBe(404);
   });
+
+  test('a malformed product id is a 404, not a server error', async ({ page }) => {
+    for (const id of ['not-a-uuid', 'reset-984', '%27%3B--']) {
+      const response = await page.goto(`/product/${id}`);
+      expect(response?.status(), id).toBe(404);
+    }
+  });
 });

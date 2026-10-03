@@ -137,12 +137,17 @@ jobs:
           # paths may be generated at runtime. NODE_ENV=test produces a
           # missing fallback and 404s for every future product ID.
           NODE_ENV: production
+          # LR-003: test-only tag IDs so the consent banner and consent-gated
+          # tags are exercised by E2E (consent.spec.ts stubs the tag scripts;
+          # nothing reaches Google or Meta). Never real account IDs.
+          NEXT_PUBLIC_GA4_MEASUREMENT_ID: G-E2ETEST01
+          NEXT_PUBLIC_META_PIXEL_ID: '1234567890'
         run: |
           npm run build
           node -e "const manifest = require('./apps/storefront/.next/prerender-manifest.json'); if (manifest.dynamicRoutes['/product/[styleId]']?.fallback !== null) throw new Error('PDP must permit blocking generation for every future style');"
 
       - name: Unit tests
-        run: npm run test --workspace=services/commerce-api
+        run: npm test
 
       - name: Read-load transport regression tests
         run: node --test test/read-load/measure.test.mjs
@@ -156,7 +161,14 @@ jobs:
       # first test file to run, leaving no admin user for the E2E step below
       # (a real bug, not a flake - see BUILD_PLAN.md M11 entry).
       - name: Seed test-relevant reference data
-        run: npm run db:seed
+        # E2E starts from a clean database and search index: the last
+        # integration file's rows (and search documents for rows earlier
+        # files deleted) are not E2E fixtures, and the link/asset audit
+        # would otherwise be judging leftover test data.
+        run: |
+          (cd packages/db && npx prisma migrate reset --force --skip-seed)
+          curl -sf -X DELETE http://localhost:7700/indexes/styles || true
+          npm run db:seed
         env:
           SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com
           SEED_SUPER_ADMIN_PASSWORD: CiOnlyPassword123!

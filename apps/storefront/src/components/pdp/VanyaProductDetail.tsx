@@ -7,6 +7,7 @@ import { addToCart, addToWishlist } from '@/lib/cart';
 import { getStoredSession } from '@/lib/customer-auth';
 import { recordProductView } from '@/lib/account';
 import { useModalFocus } from '@/components/layout/useModalFocus';
+import { track } from '@/lib/tracking';
 
 export function VanyaProductDetail({ product: initialProduct }: { product: ProductDetail }) {
   const [product, setProduct] = useState(initialProduct);
@@ -28,6 +29,9 @@ export function VanyaProductDetail({ product: initialProduct }: { product: Produ
       void recordProductView(product.id).catch(() => {});
     }
   }, [product.id]);
+  useEffect(() => {
+    track.viewItem({ styleCode: initialProduct.styleCode, name: initialProduct.name, price: initialProduct.sellingPrice });
+  }, [initialProduct.styleCode, initialProduct.name, initialProduct.sellingPrice]);
 
   const colours = useMemo(() => {
     const map = new Map<string, { id: string; name: string; hexSwatch: string | null }>();
@@ -82,6 +86,7 @@ export function VanyaProductDetail({ product: initialProduct }: { product: Produ
     try {
       await addToCart(selectedVariant.skuId, 1);
       window.dispatchEvent(new Event('fcp:cart-updated'));
+      track.addToCart({ skuCode: selectedVariant.skuCode, styleCode: product.styleCode, name: product.name, variant: `${selectedVariant.colourName} / ${selectedVariant.sizeLabel}`, price: product.sellingPrice });
       setMessage('Added to bag.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not add this item to your bag.');
@@ -99,6 +104,7 @@ export function VanyaProductDetail({ product: initialProduct }: { product: Produ
     try {
       await addToWishlist(selectedVariant.skuId);
       window.dispatchEvent(new Event('fcp:wishlist-updated'));
+      track.addToWishlist({ skuCode: selectedVariant.skuCode, styleCode: product.styleCode, name: product.name, variant: `${selectedVariant.colourName} / ${selectedVariant.sizeLabel}`, price: product.sellingPrice });
       setWishlistMessage('Saved to wishlist.');
     } catch (error) {
       setWishlistMessage(error instanceof Error ? error.message : 'Could not save this item.');

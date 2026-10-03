@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Container } from '@/components/ui/Container';
 import { buttonClassName } from '@/components/ui/Button';
 import { getCart, type CartView } from '@/lib/cart';
+import { cartItems, checkoutTracking, track } from '@/lib/tracking';
 import { previewCheckout, startCheckout, type Address, type CheckoutPreview } from '@/lib/checkout';
 import { INDIAN_STATES } from '@/lib/indian-states';
 import { getStoredSession } from '@/lib/customer-auth';
@@ -70,7 +71,10 @@ export default function CheckoutPage() {
   const suppressNextCouponErrorClearRef = useRef(false);
 
   useEffect(() => {
-    void getCart().then(setCart);
+    void getCart().then((loaded) => {
+      setCart(loaded);
+      if (loaded.items.length > 0) track.beginCheckout(cartItems(loaded.items));
+    });
     if (getStoredSession()) {
       getLoyaltyBalance()
         .then(setLoyaltyBalance)
@@ -181,6 +185,9 @@ export default function CheckoutPage() {
         loyaltyPointsToRedeem: Number.isFinite(redeemPoints) && redeemPoints > 0 ? redeemPoints : undefined,
         couponCode: appliedCouponCode,
         storeCreditToApply: Number.isFinite(storeCreditToApply) && storeCreditToApply > 0 ? storeCreditToApply : undefined,
+        // LR-003: the visitor's consent travels with the order so server-side
+        // conversion events honour it; identifiers only for consented purposes.
+        tracking: checkoutTracking(),
       });
       window.dispatchEvent(new Event('fcp:cart-updated'));
       router.push(`/checkout/${session.id}`);

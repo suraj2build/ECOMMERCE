@@ -58,6 +58,7 @@ export interface CartItemView {
   skuCode: string;
   styleId: string;
   styleName: string;
+  styleCode: string;
   colourName: string;
   sizeLabel: string;
   imageUrl: string | null;

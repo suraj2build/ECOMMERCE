@@ -9,6 +9,7 @@ import { PromotionService } from '../promotions/service.js';
 import { StoreCreditService } from '../refunds/store-credit-service.js';
 import { GiftCardService } from '../gift-cards/service.js';
 import { NotificationService } from '../notifications/service.js';
+import { ConversionService } from '../conversions/service.js';
 import { recordAudit } from '../audit/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
@@ -139,6 +140,7 @@ export class OrderService {
   private readonly storeCredit: StoreCreditService;
   private readonly giftCard: GiftCardService;
   private readonly notifications: NotificationService;
+  private readonly conversions: ConversionService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.inventory = new InventoryService(fastify);
@@ -149,6 +151,7 @@ export class OrderService {
     this.storeCredit = new StoreCreditService(fastify);
     this.giftCard = new GiftCardService(fastify);
     this.notifications = new NotificationService(fastify);
+    this.conversions = new ConversionService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -217,6 +220,11 @@ export class OrderService {
           currency: session.currency,
           paymentMethod: session.paymentMethod,
           status: 'CONFIRMED',
+          analyticsConsent: session.analyticsConsent,
+          marketingConsent: session.marketingConsent,
+          analyticsClientId: session.analyticsClientId,
+          metaBrowserId: session.metaBrowserId,
+          metaClickId: session.metaClickId,
           lines: {
             create: session.lines.map((l) => ({
               skuId: l.skuId,
@@ -273,6 +281,10 @@ export class OrderService {
       await this.storeCredit.convertRedemptionHold(tx, created);
       // M30: same conversion for a gift-card redemption HOLD.
       await this.giftCard.convertRedemptionHold(tx, created);
+
+      // LR-003: the confirmed order's purchase event, queued atomically with
+      // the order itself (consent-gated; a no-op while no provider is set).
+      await this.conversions.enqueuePurchase(tx, created.id);
 
       await recordAudit(tx, {
         actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',

@@ -27,13 +27,40 @@ export default defineConfig({
     {
       name: 'storefront',
       testDir: './test/e2e-storefront',
+      // Runs in its own project after this one (below): it adds 1,005
+      // documents to the shared search index, which would otherwise show
+      // up in listings other specs are auditing at the same moment.
+      testIgnore: /search-deep-pages\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000',
+        // LR-003: specs run as a visitor who has already declined tracking,
+        // so the first-visit consent banner never covers the controls they
+        // use. consent.spec.ts starts from an empty state to test the banner.
+        storageState: {
+          cookies: [],
+          origins: [{
+            origin: new URL(process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000').origin,
+            localStorage: [{ name: 'vanya_consent_v1', value: JSON.stringify({ analytics: false, marketing: false, decidedAt: '2026-01-01T00:00:00.000Z' }) }],
+          }],
+        },
         // apps/storefront (via Next.js's peer dependency) can resolve a
         // newer @playwright/test than this sandbox's pre-cached browser
         // revision - launch the pre-installed chromium binary directly
         // rather than the version-pinned headless-shell variant.
+        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+          ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+          : {},
+      },
+    },
+    {
+      name: 'storefront-deep-search',
+      testDir: './test/e2e-storefront',
+      testMatch: /search-deep-pages\.spec\.ts/,
+      dependencies: ['storefront'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000',
         launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
           ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
           : {},

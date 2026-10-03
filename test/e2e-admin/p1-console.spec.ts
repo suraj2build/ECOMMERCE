@@ -85,7 +85,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await expect(page.getByRole('tab', { name: 'Colours & SKUs (2)' })).toBeVisible();
 
     await page.getByRole('tab', { name: /Media/ }).click();
-    await page.getByLabel('Media URL').fill('https://example.com/p1-workbench.jpg');
+    await page.getByLabel('Media URL').fill(`${process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000'}/e2e-fixture.png`);
     await page.getByRole('button', { name: 'Add media' }).click();
     await expect(page.getByText('Media added.')).toBeVisible();
 

@@ -46,6 +46,15 @@ async function collect(page: Page, path: string, found: Found, openMenu = false)
     for (let y = 0; y < document.body.scrollHeight; y += 600) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 40)); }
   });
   await page.waitForLoadState('networkidle');
+  // Lazily loaded images scrolled past quickly may not have started; load
+  // every image eagerly and wait for each to finish before judging it.
+  await page.evaluate(async () => {
+    await Promise.all([...document.images].map((img) => {
+      img.loading = 'eager';
+      if (img.complete && img.naturalWidth > 0) return null;
+      return new Promise((resolve) => { img.addEventListener('load', resolve, { once: true }); img.addEventListener('error', resolve, { once: true }); setTimeout(resolve, 15_000); });
+    }));
+  });
   const result = await page.evaluate(() => ({
     links: [...document.querySelectorAll('a[href]')].map((a) => (a as HTMLAnchorElement).href),
     images: [...document.images].map((img) => ({ src: img.currentSrc || img.src, ok: img.complete && img.naturalWidth > 0, loading: img.loading })),

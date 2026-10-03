@@ -144,7 +144,7 @@ export async function provisionStyle(fx: Fixture, name: string, price = 999): Pr
   );
   const colour = await expectOk<{ id: string }>(await api.post(`/api/v1/products/styles/${style.id}/colours`, { headers: auth, data: { name: 'Black', colourCode: 'BLK' } }), 'Colour');
   await expectOk(await api.post(`/api/v1/products/styles/${style.id}/skus/generate`, { headers: auth, data: { sizeIds: fx.sizes.map((s) => s.id) } }), 'SKUs');
-  await expectOk(await api.post(`/api/v1/products/styles/${style.id}/media`, { headers: auth, data: { colourId: colour.id, url: 'https://example.com/p1-e2e.jpg' } }), 'Media');
+  await expectOk(await api.post(`/api/v1/products/styles/${style.id}/media`, { headers: auth, data: { colourId: colour.id, url: `${process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000'}/e2e-fixture.png` } }), 'Media');
   for (const step of ['ready-for-enrichment', 'qa-check', 'publish']) {
     await expectOk(await api.post(`/api/v1/products/styles/${style.id}/${step}`, { headers: auth }), step);
   }

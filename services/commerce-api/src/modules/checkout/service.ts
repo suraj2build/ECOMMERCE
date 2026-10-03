@@ -28,7 +28,18 @@ export interface AddressInput {
   pincode: string;
 }
 
+/** LR-003: the browser's consent choices and the tracking identifiers it
+ * holds for each consented purpose. */
+export interface TrackingInput {
+  analytics: boolean;
+  marketing: boolean;
+  analyticsClientId?: string;
+  metaBrowserId?: string;
+  metaClickId?: string;
+}
+
 export interface StartCheckoutInput {
+  tracking?: TrackingInput;
   contactName: string;
   contactMobile: string;
   contactEmail?: string;
@@ -501,6 +512,13 @@ export class CheckoutService {
             promotionDiscountTotal,
             giftCardApplied,
             paymentMethod: input.paymentMethod,
+            // LR-003: identifiers are kept only for a purpose the customer
+            // consented to; without consent nothing is stored or sent.
+            analyticsConsent: input.tracking?.analytics === true,
+            marketingConsent: input.tracking?.marketing === true,
+            analyticsClientId: input.tracking?.analytics ? (input.tracking.analyticsClientId ?? null) : null,
+            metaBrowserId: input.tracking?.marketing ? (input.tracking.metaBrowserId ?? null) : null,
+            metaClickId: input.tracking?.marketing ? (input.tracking.metaClickId ?? null) : null,
             status: paymentResult.status === 'CONFIRMED' ? 'CONFIRMED' : 'RESERVED',
             idempotencyKey: input.idempotencyKey,
             confirmedAt: paymentResult.status === 'CONFIRMED' ? new Date() : null,
@@ -733,6 +751,7 @@ export class CheckoutService {
         // one - PAY-005) - take(1) ordered by createdAt desc resolves it
         // without pulling the whole retry history into every view.
         payments: { orderBy: { createdAt: 'desc' }, take: 1 },
+        order: { select: { orderNumber: true } },
       },
     });
     const currentPayment = session.payments[0];
@@ -775,8 +794,13 @@ export class CheckoutService {
             100,
         ) / 100,
       currency: session.currency,
+      // Set once the order exists (COD placed / prepaid captured) - the
+      // transaction ID the browser's purchase tag shares with the server (LR-003).
+      orderNumber: session.order?.orderNumber ?? null,
       lines: session.lines.map((l) => ({
         skuId: l.skuId,
+        skuCode: l.sku.skuCode,
+        styleCode: l.sku.style.styleCode,
         styleName: l.sku.style.name,
         colourName: l.sku.colour.name,
         sizeLabel: l.sku.size.label,

@@ -19,7 +19,18 @@ const addressSchema = z.object({
 
 const previewSchema = z.object({ shippingAddress: addressSchema, couponCode: z.string().min(1).max(50).optional() });
 
+// LR-003: formats of the GA4 client ID (_ga cookie) and Meta _fbp/_fbc
+// cookies; anything else is rejected rather than stored.
+const trackingSchema = z.object({
+  analytics: z.boolean(),
+  marketing: z.boolean(),
+  analyticsClientId: z.string().regex(/^[0-9]{1,20}\.[0-9]{1,20}$/).optional(),
+  metaBrowserId: z.string().regex(/^fb\.[0-9]\.[0-9]{10,16}\.[0-9]{1,20}$/).optional(),
+  metaClickId: z.string().regex(/^fb\.[0-9]\.[0-9]{10,16}\.[A-Za-z0-9_-]{1,500}$/).optional(),
+});
+
 const startCheckoutSchema = z.object({
+  tracking: trackingSchema.optional(),
   contactName: z.string().min(1),
   contactMobile: z.string().regex(/^[0-9]{10}$/, 'contactMobile must be a 10-digit number'),
   contactEmail: z.string().email().optional(),

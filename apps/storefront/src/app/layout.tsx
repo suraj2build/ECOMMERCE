@@ -3,6 +3,7 @@ import { Inter, Playfair_Display } from 'next/font/google';
 import { DepartmentProvider } from '@/components/layout/DepartmentContext';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
+import { ConsentBanner } from '@/components/consent/ConsentBanner';
 import { SITE_URL } from '@/lib/api';
 import './globals.css';
 
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Header />
           <main id="main-content">{children}</main>
           <Footer />
+          <ConsentBanner />
         </DepartmentProvider>
       </body>
     </html>

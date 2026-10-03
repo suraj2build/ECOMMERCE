@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Container } from '../ui/Container';
+import { PrivacyChoicesButton } from '../consent/ConsentBanner';
 
 const GROUPS = [
   {
@@ -49,6 +50,11 @@ export function Footer() {
                   <Link href={href} className="text-xs text-[#bdb2a5] transition-colors hover:text-white">{label}</Link>
                 </li>
               ))}
+              {group.title === 'Legal' && (
+                <li>
+                  <PrivacyChoicesButton className="text-xs text-[#bdb2a5] transition-colors hover:text-white" />
+                </li>
+              )}
             </ul>
           </nav>
         ))}

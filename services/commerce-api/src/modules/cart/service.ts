@@ -10,6 +10,7 @@ export interface CartItemView {
   skuCode: string;
   styleId: string;
   styleName: string;
+  styleCode: string;
   colourName: string;
   sizeLabel: string;
   imageUrl: string | null;
@@ -230,6 +231,7 @@ export class CartService {
         skuCode: item.sku.skuCode,
         styleId: item.sku.styleId,
         styleName: item.sku.style.name,
+        styleCode: item.sku.style.styleCode,
         colourName: item.sku.colour.name,
         sizeLabel: item.sku.size.label,
         imageUrl: image?.url ?? null,

@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { AnalyticsService } from './service.js';
+import { ConversionService } from '../conversions/service.js';
 
 const dateRangeSchema = z.object({
   from: z.string().datetime().optional(),
@@ -16,6 +17,21 @@ const dateRangeSchema = z.object({
 const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
   const analytics = new AnalyticsService(fastify);
   const readAuth = [fastify.requireStaffAuth, fastify.requirePermission('analytics:read')];
+  const conversions = new ConversionService(fastify);
+  // Sending conversion events shares customer purchase data with Google and
+  // Meta, so triggering it needs the marketing-campaign permission.
+  const dispatchAuth = [fastify.requireStaffAuth, fastify.requirePermission('campaign:manage')];
+
+  // LR-003: which integrations are on, outbox counts and recent failures.
+  fastify.get('/analytics/conversions', { preHandler: readAuth }, async (_request, reply) => {
+    reply.status(200).send(await conversions.status());
+  });
+
+  // Same shape as the other callable sweeps; the maintenance scheduler
+  // calls the service directly.
+  fastify.post('/analytics/sweep/conversions', { preHandler: dispatchAuth }, async (_request, reply) => {
+    reply.status(200).send(await conversions.dispatchDue());
+  });
 
   fastify.get('/analytics/commerce', { preHandler: readAuth }, async (request, reply) => {
     const { from, to } = dateRangeSchema.parse(request.query);

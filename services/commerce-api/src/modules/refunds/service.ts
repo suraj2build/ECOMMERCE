@@ -7,6 +7,7 @@ import { InvoiceService } from '../tax/invoice-service.js';
 import { resolvePaymentProvider } from '../checkout/payment-provider.js';
 import { StoreCreditService } from './store-credit-service.js';
 import { NotificationService } from '../notifications/service.js';
+import { ConversionService } from '../conversions/service.js';
 
 /**
  * Refunds (M20, specs/19-refunds.md, REF-001-004). Settles the durable
@@ -42,11 +43,13 @@ export class RefundService {
   private readonly invoice: InvoiceService;
   private readonly storeCredit: StoreCreditService;
   private readonly notifications: NotificationService;
+  private readonly conversions: ConversionService;
 
   constructor(private readonly fastify: FastifyInstance) {
     this.invoice = new InvoiceService(fastify);
     this.storeCredit = new StoreCreditService(fastify);
     this.notifications = new NotificationService(fastify);
+    this.conversions = new ConversionService(fastify);
   }
 
   private get prisma(): PrismaClient {
@@ -233,15 +236,20 @@ export class RefundService {
    * replacement for it.
    */
   private async claim(refundId: string, status: 'COMPLETED' | 'FAILED', extra: Partial<Pick<Refund, 'providerRefundId' | 'storeCreditEntryId' | 'failureReason'>>): Promise<Refund> {
-    await this.prisma.refund.updateMany({
-      where: { id: refundId, status: { in: ['PENDING', 'FAILED', 'PROCESSING'] } },
-      data: {
-        status,
-        processedAt: status === 'COMPLETED' ? new Date() : undefined,
-        failureReason: status === 'COMPLETED' ? null : (extra.failureReason ?? null),
-        providerRefundId: extra.providerRefundId,
-        storeCreditEntryId: extra.storeCreditEntryId,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.refund.updateMany({
+        where: { id: refundId, status: { in: ['PENDING', 'FAILED', 'PROCESSING'] } },
+        data: {
+          status,
+          processedAt: status === 'COMPLETED' ? new Date() : undefined,
+          failureReason: status === 'COMPLETED' ? null : (extra.failureReason ?? null),
+          providerRefundId: extra.providerRefundId,
+          storeCreditEntryId: extra.storeCreditEntryId,
+        },
+      });
+      // LR-003: the GA4 refund event is queued only by the claim that
+      // actually completed the refund, in the same transaction.
+      if (count === 1 && status === 'COMPLETED') await this.conversions.enqueueRefund(tx, refundId);
     });
     const refund = await this.prisma.refund.findUniqueOrThrow({ where: { id: refundId } });
     if (status === 'COMPLETED') {

@@ -189,9 +189,15 @@ test.describe('Product Detail Page', () => {
     await page.goto(`/product/${styleId}`);
     const jsonLd = await page.locator('script[type="application/ld+json"]').first().textContent();
     const data = JSON.parse(jsonLd ?? '{}');
-    expect(data['@type']).toBe('Product');
-    expect(data.offers.price).toBe(1999);
-    expect(data.offers.availability).toBe('https://schema.org/InStock');
+    // LR-002: one ProductGroup (the style) with an Offer per SKU variant.
+    expect(data['@type']).toBe('ProductGroup');
+    expect(data.hasVariant.length).toBeGreaterThan(0);
+    for (const variant of data.hasVariant) {
+      expect(variant['@type']).toBe('Product');
+      expect(variant.offers.price).toBe(1999);
+      expect(variant.offers.priceCurrency).toBe('INR');
+    }
+    expect(data.hasVariant.some((v: { offers: { availability: string } }) => v.offers.availability === 'https://schema.org/InStock')).toBe(true);
   });
 
   // M27 (specs/26-seo.md): BreadcrumbList structured data + a canonical

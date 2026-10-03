@@ -173,6 +173,26 @@ published keeps showing "not found" for up to 30 seconds after publish.
   for seconds; size instances or CDN offload to expected traffic
   (`acceptance/go-live/2026-10-02-readiness.md`).
 
+### Analytics and Meta (LR-003)
+
+All off until set; nothing is collected without the visitor's consent.
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_GA4_MEASUREMENT_ID` | storefront build | GA4 browser tag (public ID) |
+| `NEXT_PUBLIC_META_PIXEL_ID` | storefront build | Meta Pixel (public ID) |
+| `GA4_MEASUREMENT_ID` + `GA4_API_SECRET` | commerce-api | Measurement Protocol purchase/refund (secret) |
+| `META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN` | commerce-api | Conversions API (secret) |
+| `STOREFRONT_PUBLIC_URL` | commerce-api | Required with Meta: event_source_url, feed links |
+| `META_TEST_EVENT_CODE` | commerce-api | Optional: route events to Events Manager "Test events" while verifying |
+
+The `NEXT_PUBLIC_` IDs are inlined at build time, so a preview built
+without them shows no consent banner and loads no tags. Server events are
+queued in `conversion_events` and sent by `POST /analytics/sweep/conversions`
+(and the maintenance scheduler, LR-006); check
+`GET /analytics/conversions` for failures. `SITE_INDEXING=enabled` must be
+set only on the real production storefront (LR-002).
+
 ### Upgrading an existing database: MFA secret backfill
 
 Staff MFA seeds written before M31 are plaintext; the application only

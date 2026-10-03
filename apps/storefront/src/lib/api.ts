@@ -148,6 +148,8 @@ export interface ProductDetail {
 
 /** Returns null on a 404 (unpublished/unknown style) so the page can call notFound() itself. */
 export async function getProductDetail(styleId: string): Promise<ProductDetail | null> {
+  // Product IDs are UUIDs: anything else is an unknown product (404), never a server error.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(styleId)) return null;
   const res = await fetch(`${API_URL}/api/v1/storefront/products/${styleId}`, { next: { revalidate: 30 } });
   if (res.status === 404) return null;
   if (!res.ok) {

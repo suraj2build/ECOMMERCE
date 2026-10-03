@@ -859,23 +859,23 @@ enum ReservationStatus {
 }
 
 model InventoryReservation {
-  id             String            @id @default(uuid())
-  skuId          String
-  locationId     String
-  quantity       Int
+  id                         String            @id @default(uuid())
+  skuId                      String
+  locationId                 String
+  quantity                   Int
   // Units from a CONVERTED allocation that were explicitly released
   // before dispatch (for example, a warehouse pick shortfall or line
   // cancellation). The original reservation quantity stays immutable so
   // its idempotency request remains meaningful; available committed units
   // are quantity - allocationReleasedQuantity.
-  allocationReleasedQuantity Int   @default(0)
-  status         ReservationStatus @default(ACTIVE)
-  expiresAt      DateTime
-  referenceType  String? // e.g. "CHECKOUT_SESSION", "COD_ORDER" (future)
-  referenceId    String?
-  idempotencyKey String            @unique
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  allocationReleasedQuantity Int               @default(0)
+  status                     ReservationStatus @default(ACTIVE)
+  expiresAt                  DateTime
+  referenceType              String? // e.g. "CHECKOUT_SESSION", "COD_ORDER" (future)
+  referenceId                String?
+  idempotencyKey             String            @unique
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
 
   sku Sku @relation(fields: [skuId], references: [id])
 
@@ -1626,6 +1626,14 @@ model CheckoutSession {
   // -> gift card), applied last, same amount-actually-reserved-at-
   // application-time discipline as storeCreditApplied above.
   giftCardApplied        Decimal               @default(0) @db.Decimal(10, 2)
+  // LR-003: tracking consent given in the browser at checkout, kept with
+  // the order so server-side conversion events honour it. Identifiers are
+  // stored only when the matching purpose was granted.
+  analyticsConsent       Boolean               @default(false)
+  marketingConsent       Boolean               @default(false)
+  analyticsClientId      String?
+  metaBrowserId          String?
+  metaClickId            String?
 
   customer                  Customer?                  @relation(fields: [customerId], references: [id], onDelete: Restrict)
   lines                     CheckoutSessionLine[]
@@ -2000,18 +2008,25 @@ model Order {
   promotionDiscountTotal Decimal               @default(0) @db.Decimal(10, 2)
   // M30 Gift Cards: frozen copy of CheckoutSession.giftCardApplied.
   giftCardApplied        Decimal               @default(0) @db.Decimal(10, 2)
+  // LR-003: frozen copy of the checkout's tracking consent and identifiers.
+  analyticsConsent       Boolean               @default(false)
+  marketingConsent       Boolean               @default(false)
+  analyticsClientId      String?
+  metaBrowserId          String?
+  metaClickId            String?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
-  customer        Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  checkoutSession CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
-  lines           OrderLine[]
-  fulfilments     OrderFulfilment[]
-  pickTasks       PickTask[]
-  shipments       Shipment[]
-  returns         Return[]
-  refunds         Refund[]
-  exchanges       Exchange[]
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  checkoutSession  CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
+  conversionEvents ConversionEvent[]
+  lines            OrderLine[]
+  fulfilments      OrderFulfilment[]
+  pickTasks        PickTask[]
+  shipments        Shipment[]
+  returns          Return[]
+  refunds          Refund[]
+  exchanges        Exchange[]
 
   @@index([customerId])
   @@index([guestSessionId])
@@ -4125,4 +4140,52 @@ model NotificationDelivery {
   @@unique([event, referenceId, channel])
   @@index([customerId])
   @@map("notification_deliveries")
+}
+
+// LR-003: durable outbox for server-side conversion events (GA4 Measurement
+// Protocol, Meta Conversions API). Written in the same transaction as the
+// state change it reports (order confirmation, refund completion); one row
+// per provider and event ID, so an event can never be queued twice.
+enum ConversionProvider {
+  GA4
+  META
+}
+
+enum ConversionEventStatus {
+  PENDING
+  SENDING
+  SENT
+  // The provider definitively rejected the event, or retries ran out.
+  FAILED
+  // Sent with an unknown outcome, and the provider does not deduplicate
+  // this event (GA4 refund), so it is not resent automatically.
+  AMBIGUOUS_RECONCILIATION_REQUIRED
+}
+
+model ConversionEvent {
+  id            String                @id @default(uuid())
+  provider      ConversionProvider
+  eventName     String
+  eventId       String
+  orderId       String
+  refundId      String?
+  payload       Json
+  // True when the provider deduplicates on the event (Meta event_id, GA4
+  // purchase transaction_id), so resending after an unknown outcome is safe.
+  retrySafe     Boolean
+  status        ConversionEventStatus @default(PENDING)
+  attempts      Int                   @default(0)
+  nextAttemptAt DateTime              @default(now())
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  lastError     String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([orderId])
+  @@map("conversion_events")
 }

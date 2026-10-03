@@ -7,6 +7,7 @@ import { Container } from '@/components/ui/Container';
 import { buttonClassName } from '@/components/ui/Button';
 import { getCheckoutSession, retryPayment, type CheckoutSessionView } from '@/lib/checkout';
 import { openRazorpayCheckout } from '@/lib/razorpay';
+import { track } from '@/lib/tracking';
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_ATTEMPTS = 20; // ~40s - the webhook is typically near-instant; this just bounds the UI wait
@@ -80,6 +81,18 @@ export default function CheckoutConfirmationPage() {
     autoOpenedFor.current = session.payment.providerOrderId;
     openWidget(session);
   }, [session, openWidget]);
+
+  // LR-003: a purchase only once the order is confirmed (COD placed, or
+  // prepaid captured per the webhook-driven status) - never on the payment
+  // button. Same event_id as the server's Conversions API event.
+  useEffect(() => {
+    if (session?.status !== 'CONFIRMED' || !session.orderNumber) return;
+    track.purchase(
+      session.orderNumber,
+      session.grandTotal,
+      session.lines.map((l) => ({ skuCode: l.skuCode, styleCode: l.styleCode, name: l.styleName, price: l.unitPriceInclusive, quantity: l.quantity })),
+    );
+  }, [session]);
 
   async function handleRetry() {
     if (!session) return;
