@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { loadEnv } from '@fcp/config';
+import { S3ObjectStore } from '../../lib/s3.js';
 
 export interface StoredEvidenceObject {
   buffer: Buffer;
@@ -79,7 +80,53 @@ export class LocalDiskEvidenceStorageProvider implements EvidenceStorageProvider
   }
 }
 
+/**
+ * LR-005: S3-compatible storage shared by every API instance, so a photo
+ * uploaded through one replica can be read through another and survives
+ * redeploys. Objects are written without an ACL (private to the bucket's
+ * policy) under a server-generated key; there is no public URL, and reads
+ * still go only through ReturnService's ownership-checked route.
+ */
+export class S3EvidenceStorageProvider implements EvidenceStorageProvider {
+  private static readonly KEY_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  private readonly store: S3ObjectStore;
+  private readonly prefix: string;
+
+  constructor(env = loadEnv()) {
+    this.store = new S3ObjectStore({
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      accessKeyId: env.S3_ACCESS_KEY,
+      secretAccessKey: env.S3_SECRET_KEY,
+      bucket: env.RETURN_EVIDENCE_S3_BUCKET,
+      forcePathStyle: env.S3_FORCE_PATH_STYLE,
+    });
+    this.prefix = env.RETURN_EVIDENCE_S3_PREFIX;
+  }
+
+  private objectKey(key: string): string {
+    if (!S3EvidenceStorageProvider.KEY_PATTERN.test(key)) throw new Error('Invalid evidence object key');
+    return `${this.prefix}${key}`;
+  }
+
+  async putObject(key: string, buffer: Buffer, mimeType: string): Promise<void> {
+    await this.store.put(this.objectKey(key), buffer, mimeType);
+  }
+
+  async getObject(key: string): Promise<StoredEvidenceObject> {
+    const { body, contentType } = await this.store.get(this.objectKey(key));
+    return { buffer: body, mimeType: contentType };
+  }
+}
+
 export function resolveEvidenceStorageProvider(): EvidenceStorageProvider {
+  const env = loadEnv();
+  if (env.RETURN_EVIDENCE_STORAGE === 's3') return new S3EvidenceStorageProvider(env);
+  // LR-005: a local directory is not shared between instances and does not
+  // survive a redeploy, so production refuses it.
+  if (env.NODE_ENV === 'production') {
+    throw new Error('Return evidence storage is local disk, which production refuses: set RETURN_EVIDENCE_STORAGE=s3 (DEPLOYMENT.md)');
+  }
   return new LocalDiskEvidenceStorageProvider();
 }
 

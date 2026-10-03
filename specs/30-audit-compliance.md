@@ -59,3 +59,23 @@ Depends on: `specs/06-inventory.md`, `specs/22-loyalty.md`,
 ## Launch readiness addendum (2026-10-03) — IMPLEMENTING
 
 Legal pages publish only approved text (`LR-001`). Scheduled sweeps record every run and surface consecutive failures for alerting (`LR-006`). Analytics consent and its withdrawal are honoured before any third-party collection (`LR-003`).
+
+### Implementation (2026-10-03) — scheduled sweeps and job monitoring
+
+`services/commerce-api/src/maintenance.ts` schedules every recovery/expiry
+sweep in-process (started by `src/index.ts` outside tests): payment and
+reservation expiry, invoice recovery, loyalty/store-credit/gift-card hold
+release (every minute); refund reconciliation and stale channel claims
+(5 min); loyalty vesting (15 min) and expiry (hourly); due campaigns and
+conversion-event dispatch (every minute); channel feed resync
+(`CHANNEL_RESYNC_INTERVAL_MINUTES`, 15); and run-history pruning
+(`MAINTENANCE_RUN_RETENTION_DAYS`, 30). Scheduled channel and campaign runs
+are audited as `SYSTEM` (no staff actor). Every run is stored in
+`maintenance_job_runs`; a job failing three times in a row logs at error
+level with `alert: true` (route that to paging in the log platform).
+`GET /api/v1/maintenance/jobs` (`audit:read`) shows per job the last run,
+last success, last failure and error, consecutive failures and the alert
+flag. Tests: `test/unit/maintenance.test.ts` (intervals, alert after three
+failures and clearing on success), `test/integration/maintenance-jobs.test.ts`
+(all 14 jobs run successfully as the system and are recorded, status route
+and RBAC, pruning).

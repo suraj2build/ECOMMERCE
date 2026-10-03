@@ -417,7 +417,7 @@ export class MarketingService {
    * processed or currently being processed. Never fabricates a delivery
    * outcome.
    */
-  private async dispatchCampaign(current: MarketingCampaign, actorStaffId: string): Promise<CampaignSendSummary> {
+  private async dispatchCampaign(current: MarketingCampaign, actorStaffId: string | null): Promise<CampaignSendSummary> {
     try {
       const recipientIds = current.segmentId
         ? [...(await this.resolveSegmentCustomerIds(current.segmentId))]
@@ -449,7 +449,7 @@ export class MarketingService {
         data: { status: finalStatus, sentAt: new Date() },
       });
       await recordAudit(this.prisma, {
-        actorType: 'STAFF',
+        actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
         actorStaffId,
         action: 'marketing.campaign.send',
         entityType: 'MarketingCampaign',
@@ -488,7 +488,7 @@ export class MarketingService {
    * per-campaign compare-and-swap claim is identical to
    * `sendCampaign`'s own, just scoped to the due condition.
    */
-  async processDueCampaigns(actorStaffId: string): Promise<{ processedCount: number; results: CampaignSendSummary[] }> {
+  async processDueCampaigns(actorStaffId: string | null): Promise<{ processedCount: number; results: CampaignSendSummary[] }> {
     const due = await this.prisma.marketingCampaign.findMany({
       where: { status: 'SCHEDULED', scheduledAt: { lte: new Date() } },
       select: { id: true },

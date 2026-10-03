@@ -39,7 +39,7 @@ export class ReturnService {
   private readonly inventory: InventoryService;
   private readonly loyalty: LoyaltyService;
   private readonly provider: ShippingProvider;
-  private readonly evidenceStorage: EvidenceStorageProvider;
+  private evidenceStorageProvider: EvidenceStorageProvider | undefined;
   private readonly notifications: NotificationService;
 
   constructor(
@@ -51,8 +51,15 @@ export class ReturnService {
     this.inventory = new InventoryService(fastify);
     this.loyalty = new LoyaltyService(fastify);
     this.provider = provider ?? resolveShippingProvider(loadEnv().SHIPPING_PROVIDER);
-    this.evidenceStorage = evidenceStorage ?? resolveEvidenceStorageProvider();
+    this.evidenceStorageProvider = evidenceStorage;
     this.notifications = new NotificationService(fastify);
+  }
+
+  /** Resolved on first use, so a misconfigured store fails the upload with a
+   * clear error instead of preventing the API from starting. */
+  private get evidenceStorage(): EvidenceStorageProvider {
+    this.evidenceStorageProvider ??= resolveEvidenceStorageProvider();
+    return this.evidenceStorageProvider;
   }
 
   private get prisma(): PrismaClient {

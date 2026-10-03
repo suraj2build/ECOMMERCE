@@ -197,6 +197,13 @@ const envSchema = z.object({
   // provider abstraction this pass actually needs and can test for
   // real), never served directly by any route.
   RETURN_EVIDENCE_STORAGE_DIR: z.string().default('var/return-evidence'),
+  // LR-005: where return-evidence photos are kept. 'local' (the directory
+  // above) is for development and tests only and is refused in production;
+  // 's3' writes private objects to RETURN_EVIDENCE_S3_BUCKET through the
+  // S3_ENDPOINT/S3_REGION/S3_ACCESS_KEY/S3_SECRET_KEY settings above.
+  RETURN_EVIDENCE_STORAGE: z.enum(['local', 's3']).default('local'),
+  RETURN_EVIDENCE_S3_BUCKET: z.string().min(3).default('return-evidence'),
+  RETURN_EVIDENCE_S3_PREFIX: z.string().default('return-evidence/'),
   RETURN_EVIDENCE_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(5_242_880), // 5 MiB
   RETURN_EVIDENCE_ALLOWED_MIME_TYPES: z.string().default('image/jpeg,image/png,image/webp'),
   RETURN_EVIDENCE_MAX_FILES_PER_LINE: z.coerce.number().int().positive().default(6),
@@ -334,6 +341,9 @@ const envSchema = z.object({
   META_CATALOG_ID: z.string().regex(/^[0-9]+$/).optional(),
   // Needs catalog_management on the catalogue; separate from the Conversions API token.
   META_CATALOG_ACCESS_TOKEN: z.string().min(20).optional(),
+  // LR-006 scheduler: how often feeds are resynced, how long run history is kept.
+  CHANNEL_RESYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
+  MAINTENANCE_RUN_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   CHANNEL_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   CONVERSION_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
   // A SENDING claim older than this belongs to a crashed dispatcher.

@@ -210,6 +210,19 @@ Price, stock, publish and unpublish changes reach the channels through
 `POST /channels/sweep/resync-stale` (scheduled by the maintenance runner,
 LR-006). Check failures per listing in the admin Channels screen.
 
+### Return-evidence storage (LR-005)
+
+Production must set `RETURN_EVIDENCE_STORAGE=s3` with a private bucket
+(`RETURN_EVIDENCE_S3_BUCKET`, default `return-evidence`; block all public
+access) and real `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`,
+`S3_SECRET_KEY` (secrets). Local disk is refused in production.
+
+### Scheduled jobs and monitoring (LR-006)
+
+Each API instance runs the maintenance scheduler; running several replicas
+is safe. Alert on log lines with `alert: true` (a job failing three runs in
+a row) and check `GET /api/v1/maintenance/jobs` (`audit:read`).
+
 ### Upgrading an existing database: MFA secret backfill
 
 Staff MFA seeds written before M31 are plaintext; the application only

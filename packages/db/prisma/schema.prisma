@@ -3964,7 +3964,7 @@ model ChannelPublicationAttempt {
   requestPayload   Json?
   responsePayload  Json?
   errorMessage     String?
-  actorStaffId     String
+  actorStaffId     String?
   attemptedAt      DateTime                        @default(now())
   // M26 independent-review certification repair (2026-09-29, Blocker 1):
   // the ChannelListing.currentOperationId this specific attempt was made
@@ -3979,7 +3979,7 @@ model ChannelPublicationAttempt {
   operationId      String?
 
   channelListing ChannelListing @relation(fields: [channelListingId], references: [id], onDelete: Cascade)
-  actorStaff     StaffUser      @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
+  actorStaff     StaffUser?     @relation(fields: [actorStaffId], references: [id], onDelete: Restrict)
 
   @@index([channelListingId])
   @@map("channel_publication_attempts")
@@ -4188,4 +4188,27 @@ model ConversionEvent {
   @@index([status, nextAttemptAt])
   @@index([orderId])
   @@map("conversion_events")
+}
+
+// LR-006: one row per scheduled maintenance-sweep run, for the staff job
+// status view and failure alerting. Pruned after
+// MAINTENANCE_RUN_RETENTION_DAYS.
+enum MaintenanceJobOutcome {
+  SUCCESS
+  FAILURE
+}
+
+model MaintenanceJobRun {
+  id         String                @id @default(uuid())
+  job        String
+  startedAt  DateTime              @default(now())
+  finishedAt DateTime
+  outcome    MaintenanceJobOutcome
+  // Small JSON summary of what the sweep did (counts), never row contents.
+  result     Json?
+  error      String?
+
+  @@index([job, startedAt])
+  @@index([startedAt])
+  @@map("maintenance_job_runs")
 }

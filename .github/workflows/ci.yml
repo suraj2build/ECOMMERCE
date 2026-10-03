@@ -152,8 +152,20 @@ jobs:
       - name: Read-load transport regression tests
         run: node --test test/read-load/measure.test.mjs
 
+      # LR-005: a real S3 API server for the return-evidence storage tests
+      # (S3_TEST_ENDPOINT; the suite fails rather than skips in CI without it).
+      - name: Start S3-compatible test server (moto)
+        run: |
+          python3 -m venv /tmp/moto
+          /tmp/moto/bin/pip install --quiet "moto[server]"
+          (/tmp/moto/bin/moto_server -p 9100 > /tmp/moto.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://localhost:9100/ >/dev/null && break; sleep 1; done
+          curl -sf http://localhost:9100/ >/dev/null
+
       - name: Integration tests (real Postgres + Redis)
         run: npm run test:integration --workspace=services/commerce-api
+        env:
+          S3_TEST_ENDPOINT: http://localhost:9100
 
       # Runs *after* integration tests, not before: every integration test
       # file truncates all tables (test/helpers/db.ts resetDatabase()) in

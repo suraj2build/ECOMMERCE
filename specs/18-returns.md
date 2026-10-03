@@ -66,3 +66,22 @@ Depends on: `specs/14-order-management.md`, `specs/16-shipping-tracking.md`,
 ## Launch readiness addendum (2026-10-03) — IMPLEMENTING
 
 Return-condition photos can be stored in S3-compatible object storage (`RETURN_EVIDENCE_STORAGE=s3`, SigV4, private objects, reads only through the ownership-checked route). Production refuses local-disk storage (`LR-005`).
+
+### Implementation (2026-10-03) — evidence storage
+
+`RETURN_EVIDENCE_STORAGE=s3` selects `S3EvidenceStorageProvider`
+(`services/commerce-api/src/modules/returns/evidence-storage.ts`), which
+writes each photo as a private object (no ACL) under
+`RETURN_EVIDENCE_S3_PREFIX` + a server-generated UUID in
+`RETURN_EVIDENCE_S3_BUCKET`, through the existing `S3_ENDPOINT`/`S3_REGION`/
+`S3_ACCESS_KEY`/`S3_SECRET_KEY` settings (AWS Signature V4, no SDK; works
+with AWS S3 and S3-compatible stores). Reads still go only through the
+ownership-checked evidence route. With `local` (the default for development
+and tests), production refuses to store or read evidence and says why; the
+storage is resolved on first use, so the API still starts.
+Tests: `test/integration/evidence-storage-s3.test.ts` (6, against a real S3
+API server — moto — locally and in CI: round trip, shared between
+instances, private, server-generated keys only, missing object, production
+refusal of local disk) and `test/unit/s3-signing.test.ts` (the signer
+reproduces AWS's published SigV4 example signature). Not yet verified
+against the production bucket: none is configured.

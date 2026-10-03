@@ -2,7 +2,7 @@ import type { PrismaClient, Prisma } from '@fcp/db';
 
 export interface AuditEntry {
   actorType: 'STAFF' | 'CUSTOMER' | 'SYSTEM';
-  actorStaffId?: string;
+  actorStaffId?: string | null;
   // M22: records WHICH customer acted when actorType is CUSTOMER (the
   // column previously didn't exist - see AuditLog's own schema comment).
   actorCustomerId?: string;

@@ -74,7 +74,7 @@ export class ChannelService {
       'Channel',
     );
     await recordAudit(this.prisma, {
-      actorType: 'STAFF',
+      actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
       actorStaffId,
       action: 'channel.create',
       entityType: 'Channel',
@@ -253,7 +253,7 @@ export class ChannelService {
     await this.prisma.channelListing.update({ where: { id: listingId }, data: { status } });
   }
 
-  async publishSku(channelId: string, skuId: string, actorStaffId: string): Promise<ChannelListing> {
+  async publishSku(channelId: string, skuId: string, actorStaffId: string | null): Promise<ChannelListing> {
     const channel = await this.getChannel(channelId);
     // Postgres's own ON CONFLICT (the upsert's implementation) makes
     // first-ever-listing creation safe under real concurrency without
@@ -336,7 +336,7 @@ export class ChannelService {
           },
         });
         await recordAudit(this.prisma, {
-          actorType: 'STAFF',
+          actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
           actorStaffId,
           action: 'channel.listing.publish',
           entityType: 'ChannelListing',
@@ -360,7 +360,7 @@ export class ChannelService {
     }
   }
 
-  async unpublishSku(channelId: string, skuId: string, actorStaffId: string): Promise<ChannelListing> {
+  async unpublishSku(channelId: string, skuId: string, actorStaffId: string | null): Promise<ChannelListing> {
     const channel = await this.getChannel(channelId);
     const existing = await this.prisma.channelListing.findUnique({ where: { channelId_skuId: { channelId, skuId } } });
     if (!existing) throw new NotFoundError('Channel listing not found');
@@ -428,7 +428,7 @@ export class ChannelService {
           },
         });
         await recordAudit(this.prisma, {
-          actorType: 'STAFF',
+          actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
           actorStaffId,
           action: 'channel.listing.unpublish',
           entityType: 'ChannelListing',
@@ -463,7 +463,7 @@ export class ChannelService {
     action: 'PUBLISH' | 'UNPUBLISH',
     outcome: 'FAILED' | 'AMBIGUOUS',
     errorMessage: string,
-    actorStaffId: string,
+    actorStaffId: string | null,
     operationId: string | null,
     requestPayload?: unknown,
     responsePayload?: unknown,
@@ -487,7 +487,7 @@ export class ChannelService {
       },
     });
     await recordAudit(this.prisma, {
-      actorType: 'STAFF',
+      actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
       actorStaffId,
       action: `channel.listing.${action.toLowerCase()}_${outcome.toLowerCase()}`,
       entityType: 'ChannelListing',
@@ -509,7 +509,7 @@ export class ChannelService {
    * this build. A future cron can call this same route a staff operator
    * can call manually today - no general scheduling platform was built.
    */
-  async reclaimStaleProcessing(actorStaffId: string): Promise<{ reclaimed: number }> {
+  async reclaimStaleProcessing(actorStaffId: string | null): Promise<{ reclaimed: number }> {
     const staleCutoff = new Date(Date.now() - loadEnv().CHANNEL_PUBLISH_STALE_SECONDS * 1000);
     const stale = await this.prisma.channelListing.findMany({
       where: { status: 'PROCESSING', updatedAt: { lt: staleCutoff } },
@@ -524,7 +524,7 @@ export class ChannelService {
       if (result.count > 0) {
         reclaimed += 1;
         await recordAudit(this.prisma, {
-          actorType: 'STAFF',
+          actorType: actorStaffId ? 'STAFF' : 'SYSTEM',
           actorStaffId,
           action: 'channel.listing.reclaimed_stale',
           entityType: 'ChannelListing',
@@ -551,7 +551,7 @@ export class ChannelService {
    * this sweep is the only thing that couples the two, and only when
    * explicitly invoked.
    */
-  async resyncStaleListings(actorStaffId: string): Promise<{ resynced: number; listingIds: string[]; unpublished: number; published: number }> {
+  async resyncStaleListings(actorStaffId: string | null): Promise<{ resynced: number; listingIds: string[]; unpublished: number; published: number }> {
     const published = await this.prisma.channelListing.findMany({ where: { status: 'PUBLISHED' }, include: { channel: true } });
     const resyncedIds: string[] = [];
     let unpublished = 0;
@@ -581,7 +581,7 @@ export class ChannelService {
 
   /** LR-004: channels configured with `publishAll: true` carry every
    * storefront-visible SKU; newly published ones are added here. */
-  private async publishNewSkus(actorStaffId: string, limitPerChannel = 200): Promise<number> {
+  private async publishNewSkus(actorStaffId: string | null, limitPerChannel = 200): Promise<number> {
     const channels = await this.prisma.channel.findMany();
     let count = 0;
     for (const channel of channels) {
