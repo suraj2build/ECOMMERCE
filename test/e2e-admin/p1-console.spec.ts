@@ -48,75 +48,83 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+const PNG_FILE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+
 test.describe('P1 Commerce Operations Console', () => {
   test.beforeEach(() => {
     test.setTimeout(120_000);
   });
 
-  test('P1-01 style is created and completed through the product workbench', async ({ page }) => {
+  test('P1-01 product is created and completed through the product workspace', async ({ page }) => {
+    // Admin Ops Phase 1: the workbench became a step-by-step workspace
+    // (Basics -> Colours & sizes -> Photos -> Pricing -> ... -> Publish);
+    // this flow covers the same outcome, now with a photo uploaded from disk.
     const code = `P1-NEW-${RUN}`;
     await loginAs(page, 'MERCHANDISING');
-    await page.getByRole('link', { name: 'Products' }).click();
-    await page.getByRole('link', { name: 'New style' }).click();
+    await page.getByRole('link', { name: 'Products', exact: true }).click();
+    await page.getByRole('link', { name: 'New product' }).click();
 
     await page.getByLabel('Style code').fill(code);
-    await page.getByLabel('Name', { exact: true }).fill('P1 Workbench Shirt');
-    await page.getByLabel('Brand', { exact: true }).selectOption({ label: `${fx.brand.name} (${fx.brand.code})` });
+    await page.getByLabel('Product name').fill('P1 Workbench Shirt');
     await page.getByLabel('Category', { exact: true }).selectOption({ label: 'E2E P1 Category' });
+    await page.getByLabel('Department').selectOption('Men');
+    await page.getByLabel('Brand', { exact: true }).selectOption({ label: fx.brand.name });
     await page.getByLabel('Season', { exact: true }).fill('AW26');
     await page.getByLabel('Collection', { exact: true }).fill('Console');
-    await page.getByRole('button', { name: 'Create style' }).click();
-    await expect(page.getByText('Style created in DRAFT')).toBeVisible();
+    await page.getByRole('button', { name: 'Save draft and continue' }).click();
+    await expect(page.getByText('Draft saved.')).toBeVisible();
 
     // The shop page is opened before publication, so the storefront caches a 404.
     const storefront = await playwrightRequest.newContext({ baseURL: STOREFRONT_URL });
     const draft = await prisma.style.findUniqueOrThrow({ where: { styleCode: code } });
     expect((await storefront.get(`/product/${draft.id}`)).status()).toBe(404);
 
-    await page.getByLabel('Colour name').fill('Navy');
-    await page.getByLabel('Colour code').fill('NVY');
+    await page.getByLabel('New colour').fill('Navy');
+    await page.getByLabel('Code', { exact: true }).fill('NVY');
     await page.getByRole('button', { name: 'Add colour' }).click();
-    await expect(page.getByText('Colour added.')).toBeVisible();
+    await expect(page.getByText('Navy added.')).toBeVisible();
 
+    await page.getByRole('button', { name: 'Show all sizes' }).click();
     await page.getByLabel('P1-S').check();
     await page.getByLabel('P1-M').check();
-    await page.getByRole('button', { name: 'Generate SKUs' }).click();
-    await expect(page.getByText('SKU matrix generated')).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Colours & SKUs (2)' })).toBeVisible();
+    await page.getByRole('button', { name: 'Add 2 sizes (2 SKUs)' }).click();
+    await expect(page.getByText('Added 2 sizes.')).toBeVisible();
 
-    await page.getByRole('tab', { name: /Media/ }).click();
-    await page.getByLabel('Media URL').fill(`${process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000'}/e2e-fixture.png`);
-    await page.getByRole('button', { name: 'Add media' }).click();
-    await expect(page.getByText('Media added.')).toBeVisible();
+    const step = (name: RegExp) => page.getByRole('navigation', { name: 'Product steps' }).getByRole('button', { name });
+    await step(/Photos/).click();
+    await page.getByLabel('Choose photos to upload').setInputFiles({ name: 'front.png', mimeType: 'image/png', buffer: PNG_FILE });
+    await expect(page.getByText('1 of 1 uploaded.')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Mark ready for enrichment' }).click();
-    await expect(page.getByText('Mark ready for enrichment: done.')).toBeVisible();
-    await page.getByRole('button', { name: 'Run QA check' }).click();
-    await expect(page.getByText('QA check passed')).toBeVisible();
-    await page.getByRole('button', { name: 'Publish', exact: true }).click();
-    await confirmDialog(page, 'Publish');
-    await expect(page.getByText('Publish: done.')).toBeVisible();
-
-    await page.getByRole('tab', { name: 'Pricing' }).click();
-    await page.getByLabel('MRP (INR)').fill('1799');
-    await page.getByLabel('Selling price (INR)').fill('1499');
+    await step(/Pricing/).click();
+    await page.getByLabel('MRP (₹)').fill('1799');
+    await page.getByLabel('Selling price (₹)').fill('1499');
     await page.getByRole('button', { name: 'Save price' }).click();
-    await expect(page.getByText('Price saved.')).toBeVisible();
+    await expect(page.getByText(/Price saved\./)).toBeVisible();
+
+    await step(/Publish/).click();
+    await page.getByRole('region', { name: 'Publishing' }).getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect(page.getByText(/^Published\./)).toBeVisible();
 
     const style = await prisma.style.findUniqueOrThrow({ where: { styleCode: code }, include: { skus: true, colours: true, media: true, prices: true } });
     expect(style.lifecycleState).toBe('PUBLISHED');
     expect(style.skus).toHaveLength(2);
     expect(style.colours.map((c) => c.colourCode)).toEqual(['NVY']);
     expect(style.media).toHaveLength(1);
+    expect(style.media[0]!.url).toMatch(/^\/media\/products\/[0-9a-f-]{36}\.png$/);
     expect(style.prices.map((p) => Number(p.sellingPrice))).toEqual([1499]);
-    await expect(page.getByRole('heading', { name: `${code} · P1 Workbench Shirt` })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'P1 Workbench Shirt' })).toBeVisible();
 
     // Publishing and pricing in the console reach the shop at once, not after
-    // the storefront's 30-second page cache expires.
+    // the storefront's 30-second page cache expires, and the uploaded photo
+    // is served through the storefront's own address.
     await expect.poll(async () => (await storefront.get(`/product/${style.id}`)).status(), { timeout: 5_000 }).toBe(200);
     const shopPage = await (await storefront.get(`/product/${style.id}`)).text();
     expect(shopPage).toContain('P1 Workbench Shirt');
     expect(shopPage).toContain('1499');
+    expect(shopPage).toContain(style.media[0]!.url);
+    const photo = await storefront.get(style.media[0]!.url);
+    expect(photo.status()).toBe(200);
+    expect(photo.headers()['content-type']).toBe('image/png');
     await storefront.dispose();
   });
 

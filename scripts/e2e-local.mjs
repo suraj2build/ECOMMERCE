@@ -111,7 +111,7 @@ async function main() {
     NEXT_PUBLIC_GA4_MEASUREMENT_ID: 'G-E2ETEST01',
     NEXT_PUBLIC_META_PIXEL_ID: '1234567890',
   }, 'build-storefront');
-  runSync(npm, ['run', 'build', '--workspace=apps/admin'], { NODE_ENV: 'production', NEXT_PUBLIC_API_URL: `http://localhost:${PORTS.api}` }, 'build-admin');
+  runSync(npm, ['run', 'build', '--workspace=apps/admin'], { NODE_ENV: 'production', NEXT_PUBLIC_API_URL: `http://localhost:${PORTS.api}`, NEXT_PUBLIC_STOREFRONT_URL: `http://localhost:${PORTS.storefront}` }, 'build-admin');
 
   step('Starting the dedicated e2e API/storefront/admin trio');
   const apiEnv = {
@@ -128,6 +128,9 @@ async function main() {
     TRUST_PROXY_HOPS: '0',
     MAINTENANCE_ALERT_LOG_ONLY: 'true',
     SITE_INDEXING: 'enabled',
+    // Uploads go to a throwaway directory, never the demo's .demo/ stores.
+    PRODUCT_MEDIA_STORAGE_DIR: path.join(ROOT, '.e2e-local', 'product-media'),
+    RETURN_EVIDENCE_STORAGE_DIR: path.join(ROOT, '.e2e-local', 'return-evidence'),
   };
   runBackground('node', ['services/commerce-api/dist/index.js'], apiEnv, 'api');
   await waitFor(() => portOpen(PORTS.api), 'commerce-api');

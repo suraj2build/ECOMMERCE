@@ -152,6 +152,8 @@ const apiEnv = {
   // demo product; the real default limit (₹5,000) applies everywhere else.
   COD_MAX_ORDER_VALUE_INR: '100000',
   RETURN_EVIDENCE_STORAGE_DIR: path.join(STATE, 'return-evidence'),
+  // Product photos and banner images uploaded in admin (Admin Ops Phase 1).
+  PRODUCT_MEDIA_STORAGE_DIR: path.join(STATE, 'product-media'),
   SEED_SUPER_ADMIN_EMAIL: settings.adminEmail,
   SEED_SUPER_ADMIN_PASSWORD: settings.adminPassword,
 };
@@ -162,7 +164,7 @@ const storefrontEnv = {
   NEXT_PUBLIC_SITE_URL: url(PORTS.storefront),
   STOREFRONT_REVALIDATE_SECRET: settings.revalidateSecret,
 };
-const adminEnv = { NODE_ENV: 'production', NEXT_PUBLIC_API_URL: url(PORTS.api) };
+const adminEnv = { NODE_ENV: 'production', NEXT_PUBLIC_API_URL: url(PORTS.api), NEXT_PUBLIC_STOREFRONT_URL: url(PORTS.storefront) };
 
 say('VANYA local demo');
 say(`  This computer: ${HOST}`);

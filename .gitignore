@@ -54,3 +54,6 @@ checkout-contention-results.json
 
 # Local demo state: generated secrets, logs, demo uploads (npm run demo)
 .demo/
+
+# Local isolated e2e runs (scripts/e2e-local.mjs): logs and uploads
+.e2e-local/

@@ -55,7 +55,7 @@ export interface ProvisionedStyle {
   skus: Array<{ skuId: string; skuCode: string; sizeLabel: string }>;
 }
 
-async function ensureStaff(email: string, roleKey: string, fullName: string) {
+export async function ensureStaff(email: string, roleKey: string, fullName: string) {
   const role = await prisma.role.findUniqueOrThrow({ where: { key: roleKey } });
   const passwordHash = await hashPassword(STAFF_PASSWORD);
   const staff = await prisma.staffUser.upsert({
