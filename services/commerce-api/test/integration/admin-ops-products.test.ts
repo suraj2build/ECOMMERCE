@@ -248,6 +248,9 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
       expect(served.statusCode).toBe(200);
       expect(served.headers['content-type']).toBe('image/png');
       expect(served.headers['x-content-type-options']).toBe('nosniff');
+      // The admin shows these from another origin; JSON responses stay same-origin.
+      expect(served.headers['cross-origin-resource-policy']).toBe('cross-origin');
+      expect((await app.inject({ method: 'GET', url: '/api/v1/products/reference', headers: auth() })).headers['cross-origin-resource-policy']).toBe('same-origin');
       expect(Buffer.compare(served.rawPayload, PNG)).toBe(0);
     });
 

@@ -142,7 +142,7 @@ export function PhotosStep({ style, readiness, onChanged }: StepProps) {
                   <div className="photo-meta">
                     <span className="muted small">
                       {index + 1}. {m.colourId ? style.colours.find((c) => c.id === m.colourId)?.name : `All ${profile.colourLabel.toLowerCase()}s`}
-                      {m.byteSize ? ` · ${Math.round(m.byteSize / 1024)} KB` : ''}
+                      {m.byteSize ? ` · ${m.byteSize < 1024 ? 'under 1 KB' : `${Math.round(m.byteSize / 1024)} KB`}` : ''}
                     </span>
                     {canWrite && (
                       <>
@@ -266,6 +266,11 @@ function ReplaceButton({ mediaId, index, disabled, onDone }: { mediaId: string; 
       {(problem ?? (action.message?.kind === 'error' ? action.message.text : null)) && (
         <span className="field-error" role="alert">
           {problem ?? action.message?.text}
+        </span>
+      )}
+      {!problem && action.message?.kind === 'success' && (
+        <span className="small" role="status">
+          {action.message.text}
         </span>
       )}
     </>

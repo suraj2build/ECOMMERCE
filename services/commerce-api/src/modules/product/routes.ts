@@ -397,6 +397,9 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
       .header('Cache-Control', 'public, max-age=3600')
       .header('X-Content-Type-Options', 'nosniff')
       .header('Content-Security-Policy', "default-src 'none'")
+      // Public images: the admin (another origin) shows them too. Every
+      // other API response keeps helmet's same-origin default.
+      .header('Cross-Origin-Resource-Policy', 'cross-origin')
       .send(object.buffer);
   });
 };

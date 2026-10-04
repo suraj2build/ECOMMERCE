@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionMessage, Notice, SelectField, TextArea, TextField } from '@/components/ui';
 import { apiSend } from '@/lib/api';
 import { useAction } from '@/lib/session';
@@ -116,6 +116,20 @@ export function BasicsForm({
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initial), [form, initial]);
 
+  // After a save the product reloads; take the server's version of what was
+  // saved, while the form stays mounted so its confirmation stays visible.
+  const savedRef = useRef(false);
+  const initialJson = JSON.stringify(initial);
+  const lastInitial = useRef(initialJson);
+  useEffect(() => {
+    if (initialJson === lastInitial.current) return;
+    lastInitial.current = initialJson;
+    if (savedRef.current) {
+      savedRef.current = false;
+      setForm(JSON.parse(initialJson) as Form);
+    }
+  }, [initialJson]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const found = validateBasics(form, isNew);
@@ -133,7 +147,10 @@ export function BasicsForm({
         id = res.style.id;
       }
     }, isNew ? undefined : 'Saved.');
-    if (ok) onSaved({ id });
+    if (ok) {
+      savedRef.current = true;
+      onSaved({ id });
+    }
   }
 
   const err = (key: string) => (errors[key] ? <span className="field-error">{errors[key]}</span> : undefined);

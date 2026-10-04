@@ -141,7 +141,7 @@ export default function ChannelsPage() {
 
       {channel && (
         <>
-          <ChannelSettings channel={channel} onSaved={channels.reload} />
+          <ChannelSettings key={channel.id} channel={channel} onSaved={channels.reload} />
           <Can anyOf={['channel:manage']}>
             <Section title={`Publish a SKU to ${channel.name}`}>
               <SkuPicker value={sku} onChange={setSku} />
@@ -310,7 +310,7 @@ function NewChannel({ onCreated }: { onCreated: () => void }) {
           required
           value={f.providerName}
           onChange={(v) => setF((x) => ({ ...x, providerName: v }))}
-          hint="GOOGLE_MERCHANT or META_CATALOG (credentials are set on the server), or MOCK for testing; production refuses MOCK providers. Add config {&quot;publishAll&quot;: true} via the API to list every published product automatically."
+          hint="GOOGLE_MERCHANT or META_CATALOG (credentials are set on the server), or MOCK for testing; production refuses MOCK providers. After creating it, choose what it sends in its settings."
         />
         <button className="primary" type="submit" disabled={action.busy}>
           Create channel
@@ -330,9 +330,14 @@ function ChannelSettings({ channel, onSaved }: { channel: Channel; onSaved: () =
   const action = useAction();
   const canManage = useCan('channel:manage');
   const [pausing, setPausing] = useState(false);
-  const publishAll = channel.config?.publishAll === true;
+  // The choice shows at once; it falls back to the saved value if saving fails.
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const publishAll = chosen ?? channel.config?.publishAll === true;
   const save = async (patch: { isActive?: boolean; publishAll?: boolean }, message: string) => {
-    if (await action.run(() => apiSend('PATCH', `/channels/${channel.id}`, patch), message)) onSaved();
+    if (patch.publishAll !== undefined) setChosen(patch.publishAll);
+    const ok = await action.run(() => apiSend('PATCH', `/channels/${channel.id}`, patch), message);
+    if (ok) onSaved();
+    else setChosen(null);
   };
   return (
     <Section title={`${channel.name} settings`}>

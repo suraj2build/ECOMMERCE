@@ -117,6 +117,7 @@ describe('Admin Ops Phase 1: storefront configuration, channels and setup', () =
       const served = await app.inject({ method: 'GET', url: `/api/v1${asset.url}` });
       expect(served.statusCode).toBe(200);
       expect(served.headers['content-type']).toBe('image/png');
+      expect(served.headers['cross-origin-resource-policy']).toBe('cross-origin');
       // A content key is not a product photo, and the reverse.
       const asProduct = await app.inject({ method: 'GET', url: `/api/v1${asset.url.replace('/content/', '/products/')}` });
       expect(asProduct.statusCode).toBe(404);

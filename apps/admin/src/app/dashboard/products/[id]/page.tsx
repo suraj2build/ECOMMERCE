@@ -113,7 +113,7 @@ export default function ProductWorkspace() {
                     {step === 'basics' && (
                       <Section title="Basics">
                         <BasicsForm
-                          key={s.id + s.name + s.categoryId}
+                          key={s.id}
                           reference={ref}
                           initial={formFromStyle(s)}
                           styleId={s.id}
