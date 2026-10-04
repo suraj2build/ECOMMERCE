@@ -2748,32 +2748,62 @@ so and nothing is invented.
   the existing interface; until then OTP sign-in and shipment booking
   cannot run in production (the mocks are refused there by design).
 
-#### LR-010 — Hosted review preview · **P1**
-- **Status:** DECIDED (engineering, within the Product Owner's direction of
-  2026-10-04: "Keep payments in test mode", "a reachable preview you can
-  review on your phone — not production go-live yet", secrets through the
-  host's secure environment settings). Hosting vendor: recommended, awaiting
-  the Product Owner's account (see below).
-- **Final decision:**
-  - A preview runs the production build with `NODE_ENV=production` and
-    `DEPLOYMENT_STAGE=preview`. Every production secret check, signed guest
-    sessions and production rate limits apply.
-  - Because LR-008 is undecided, a preview may use the clearly labelled test
-    doubles: console OTP (the code is printed in the host's access-controlled
-    logs so testers can sign in), the MOCK carrier, messaging and channel
-    providers, and return photos on the service's own disk. The production
-    stage (the default) still refuses all of them.
-  - A preview refuses live Razorpay keys (only `rzp_test_…`) and refuses Meta
-    server events unless `META_TEST_EVENT_CODE` routes them to Events
-    Manager's test tool. It is never indexed, even if `SITE_INDEXING` is set,
-    and every storefront page shows a "preview, test payments" banner.
-  - Preview data lives in its own database, cache, search index and disk;
-    nothing is shared with any future production environment.
-- **Hosting recommendation:** Render (managed Postgres, Key Value, private
-  Meilisearch service with a disk, HTTPS `*.onrender.com` URLs reachable from
-  a phone, encrypted environment settings), region Singapore. Blueprint:
-  `infra/preview/render.yaml`; plan, monthly cost and inputs:
-  `docs/deployment/PREVIEW.md`. Choosing a different host does not change
-  the application; only the blueprint would be rewritten.
-- **Choice needed:** confirm the host and create the account (the Product
-  Owner's, so billing and access stay with the business).
+#### LR-010 — Review preview without hosting costs · **P1**
+- **Status:** DECIDED (Product Owner, 2026-10-04)
+- **Final decision (Product Owner):** "Do not deploy to Render or incur
+  hosting costs. Prepare a local demo with one-command startup, test data
+  and instructions for opening storefront/admin on my phone over the same
+  Wi-Fi. Also share current desktop/mobile screenshots. Paid hosting is
+  reserved for production." This replaces the Render preview plan proposed
+  earlier the same day; that blueprint and plan were removed unused, and
+  nothing was deployed.
+- **Implementation:**
+  - `npm run demo` (`scripts/demo-local.mjs`) runs the whole application
+    on the reviewer's computer, phone-reachable on the same Wi-Fi. It:
+    - starts PostgreSQL, Redis and Meilisearch in Docker when they are
+      not already running;
+    - creates a separate `vanya_demo` database, migrates and seeds it;
+    - builds the apps for the computer's Wi-Fi address;
+    - starts the API, storefront and admin on all interfaces;
+    - loads the demo catalogue and rebuilds the search index;
+    - prints both addresses and the admin login.
+  - Secrets are generated on that computer and kept in the git-ignored
+    `.demo/` folder. Guide: `docs/deployment/LOCAL_DEMO.md`.
+  - The demo runs the production build with `DEPLOYMENT_STAGE=preview`:
+    - every production secret check, signed guest sessions and production
+      rate limits apply;
+    - the labelled test providers for sign-in codes (printed in the demo
+      window), carrier and messaging stand in until LR-008 is decided;
+    - live Razorpay keys are refused, and Meta server events are refused
+      outside the test-events tool;
+    - the storefront is never indexed and shows a preview banner.
+  - The production stage (the default) still refuses every test provider.
+  - With no online payment in the demo, cash on delivery is allowed up to
+    ₹1,00,000 there so every demo product can be ordered. The ₹5,000
+    default applies everywhere else.
+- **Found while preparing it:** browsers withhold `crypto.randomUUID` on a
+  plain-http Wi-Fi address, so checkout, cancellation, returns, exchanges
+  and admin stock adjustments would have crashed on a phone. Fixed with a
+  fallback (`randomUuid()`, unit-tested).
+
+#### LR-011 — Bag contents after an order · **P1**
+- **Status:** **DECISION_REQUIRED**
+- **Question:** should placing an order empty the shopper's bag, and if
+  so, when?
+- **Why it matters:** today the bag keeps every item after an order is
+  placed, so the bag badge still shows them on the confirmation page and
+  a shopper can order the same items twice by mistake. No spec states
+  the intended behaviour (`specs/11-wishlist-cart.md`,
+  `specs/12-checkout.md`), and the E2E suite records the current
+  behaviour as existing product behaviour
+  (`test/e2e-storefront/promotions.spec.ts`). Found in the local demo
+  (LR-010).
+- **Options considered:**
+  - (a) Remove the ordered quantities when the order is confirmed (COD at
+    placement, prepaid after capture). A failed or abandoned online
+    payment leaves the bag intact, and anything added after checkout
+    started stays. **Engineering recommendation.**
+  - (b) Empty the whole bag when checkout starts. Simple, but a failed
+    payment loses the bag.
+  - (c) Keep the current behaviour.
+- **Engineering status:** not changed until decided.

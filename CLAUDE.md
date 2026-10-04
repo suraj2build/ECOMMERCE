@@ -7,7 +7,7 @@ including future sessions that have no memory of this one.
 ## 0. Current project stage — READ FIRST
 
 **Status as of 2026-10-04: `REVIEW FIXES, LR-009, CACHE PURGE AND
-PREVIEW PLAN IMPLEMENTED — AWAITING HOSTING ACCOUNT AND INDEPENDENT
+LOCAL DEMO IMPLEMENTED — AWAITING PRODUCT OWNER REVIEW AND INDEPENDENT
 REVIEW.`** Product Owner directions of 2026-10-04:
 
 - **Review fixes.** A review of `42a3656` found defects that are now
@@ -25,13 +25,25 @@ REVIEW.`** Product Owner directions of 2026-10-04:
   by `POST /search/reindex`. Verified by reseeding the database under a
   warm storefront: the deleted product stayed listed with a 200 page
   until the reindex, then answered 404.
-- **Preview (LR-010).** A `DEPLOYMENT_STAGE=preview` mode and a Render
-  blueprint. The plan, cost (≈ $46/month) and required inputs are in
-  `docs/deployment/PREVIEW.md`; the blueprint's commands were rehearsed
-  from a fresh clone.
+- **Review without hosting (LR-010, Product Owner).** No paid hosting
+  until production; nothing was deployed. `npm run demo` runs the whole
+  application locally with demo data, reachable from a phone on the same
+  Wi-Fi (`docs/deployment/LOCAL_DEMO.md`). It uses the production build in
+  `DEPLOYMENT_STAGE=preview`.
+- **Fixed while preparing the demo:**
+  - phones on a plain-http Wi-Fi address have no `crypto.randomUUID`, so
+    checkout and other actions crashed (fallback added);
+  - the size guide showed raw keys (`chestIn: 38`);
+  - order confirmation showed an internal ID instead of the order number;
+  - the preview banner was hidden on the home gateway.
 
-Still open: the hosting account, provider accounts, an alert webhook, S3,
-and the LR-008 SMS/carrier choice. Not self-certified; no go-live claimed.
+- **Found, not changed:** the bag keeps its items after an order is
+  placed. No spec decides this, so it is `LR-011`, `DECISION_REQUIRED`
+  (recommended: remove the ordered items when the order is confirmed).
+
+Still open: provider accounts, an alert webhook, S3, production hosting
+(chosen at production), the LR-008 SMS/carrier choice and LR-011. Not
+self-certified; no go-live claimed.
 
 **Status as of 2026-10-03 (later): `LAUNCH-READINESS REVIEW RISKS
 ADDRESSED — AWAITING INDEPENDENT REVIEW.`** The Product Owner's review

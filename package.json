@@ -17,6 +17,8 @@
     "dev:api": "npm run dev --workspace=services/commerce-api",
     "dev:storefront": "npm run dev --workspace=apps/storefront",
     "dev:admin": "npm run dev --workspace=apps/admin",
+    "demo": "node scripts/demo-local.mjs",
+    "demo:reset": "node scripts/demo-local.mjs --reset",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
