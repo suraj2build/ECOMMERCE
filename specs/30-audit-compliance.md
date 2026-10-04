@@ -132,3 +132,24 @@ and RBAC, pruning).
   13/17 between the instances, and no lease stayed held. One instance was
   then killed with SIGKILL. The survivor ran the next sweep's jobs (16
   runs, 0 failures) with no stuck lease.
+
+### Review fixes (2026-10-04) — crash detection and clocks
+
+A code review of `42a3656` found three scheduler defects, fixed with tests
+in `test/integration/maintenance-jobs.test.ts` (now 12):
+
+- **A failed release looked like a crash.** Recovery treated any expired
+  lease with a holder as a dead instance, so a run that finished and was
+  recorded but whose lease release failed ran again at once. The lease now
+  carries the run's ID (`currentRunId`, migration
+  `20261004100000_maintenance_lease_run_id`); a job counts as crashed only
+  when no run with that ID was recorded.
+- **Mixed clocks.** Run start times came from each instance's clock while
+  the lease used the database's, so clock skew between instances could
+  misorder runs. Runs now take `startedAt` from the database when the lease
+  is granted and add the measured duration for `finishedAt`.
+- **Streak counting.** The failure count sent with a `RECOVERED` message is
+  taken from the latest failure streak in database-clock order. A
+  `RECOVERED` delivery retried after the receiver was down now reports the
+  real count instead of 0.
+

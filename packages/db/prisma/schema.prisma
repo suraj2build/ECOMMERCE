@@ -4232,6 +4232,10 @@ model MaintenanceJobState {
   leaseUntil    DateTime? @db.Timestamptz(3)
   lastStartedAt DateTime? @db.Timestamptz(3)
   alertedAt     DateTime? @db.Timestamptz(3)
+  // Id of the run the current lease was taken for; the run row uses the
+  // same id. A lease with a holder whose run was never recorded belongs to
+  // a crashed instance.
+  currentRunId  String?
   updatedAt     DateTime  @default(now()) @db.Timestamptz(3)
 
   @@map("maintenance_job_states")

@@ -94,12 +94,12 @@ describe('Scheduler leases across API instances (LR-006)', () => {
   it('holds a job\'s interval across instances: another instance does not rerun it early', async () => {
     const a = instance();
     const b = instance();
-    expect(await a.acquire('expire-loyalty-points', 3_600_000)).toBe(true);
+    expect(await a.acquire('expire-loyalty-points', 3_600_000)).not.toBeNull();
     await a.release('expire-loyalty-points');
-    expect(await b.acquire('expire-loyalty-points', 3_600_000)).toBe(false);
-    expect(await a.acquire('expire-loyalty-points', 3_600_000)).toBe(false);
+    expect(await b.acquire('expire-loyalty-points', 3_600_000)).toBeNull();
+    expect(await a.acquire('expire-loyalty-points', 3_600_000)).toBeNull();
     // A manual "run all" ignores the interval but still takes the lease.
-    expect(await b.acquire('expire-loyalty-points', 0)).toBe(true);
+    expect(await b.acquire('expire-loyalty-points', 0)).not.toBeNull();
   });
 
   it('two running schedulers run a per-sweep job once per sweep between them, never back to back', async () => {
@@ -123,16 +123,34 @@ describe('Scheduler leases across API instances (LR-006)', () => {
 
   it('recovers a job whose instance died mid-run once its lease expires, without waiting for the interval', async () => {
     const crashed = instance(400);
-    expect(await crashed.acquire('vest-loyalty-points', 900_000)).toBe(true);
+    expect(await crashed.acquire('vest-loyalty-points', 900_000)).not.toBeNull();
     // The instance dies here: no release, no heartbeat.
     const survivor = instance(400);
-    expect(await survivor.acquire('vest-loyalty-points', 900_000)).toBe(false);
+    expect(await survivor.acquire('vest-loyalty-points', 900_000)).toBeNull();
     await sleep(600);
-    expect(await survivor.acquire('vest-loyalty-points', 900_000)).toBe(true);
+    expect(await survivor.acquire('vest-loyalty-points', 900_000)).not.toBeNull();
     // The dead instance can neither renew nor release the survivor's lease.
     expect(await crashed.renew('vest-loyalty-points')).toBe(false);
     await crashed.release('vest-loyalty-points');
-    expect(await instance().acquire('vest-loyalty-points', 0)).toBe(false);
+    expect(await instance().acquire('vest-loyalty-points', 0)).toBeNull();
+  });
+
+  it('a recorded run whose release failed is not mistaken for a crash: the interval still holds', async () => {
+    const a = instance(300);
+    const lease = (await a.acquire('resync-channel-listings', 900_000))!;
+    await a.record({ id: lease.runId, job: 'resync-channel-listings', startedAt: lease.startedAt, finishedAt: new Date(), outcome: 'SUCCESS', result: 0 });
+    // release() never happens (a dropped connection); the lease then expires.
+    await sleep(500);
+    expect(await instance().acquire('resync-channel-listings', 900_000)).toBeNull();
+  });
+
+  it('stamps runs with the database clock, so streaks order correctly whatever an instance\'s clock says', async () => {
+    const lease = (await instance().acquire('recover-invoices', 0))!;
+    const [{ now }] = await testPrisma.$queryRaw<{ now: Date }[]>`SELECT now() AS now`;
+    expect(Math.abs(lease.startedAt.getTime() - now.getTime())).toBeLessThan(5_000);
+    const state = await testPrisma.maintenanceJobState.findUniqueOrThrow({ where: { job: 'recover-invoices' } });
+    expect(state.lastStartedAt!.getTime()).toBe(lease.startedAt.getTime());
+    expect(state.currentRunId).toBe(lease.runId);
   });
 
   it('keeps a long-running job\'s lease alive with heartbeats so no other instance starts it', async () => {
@@ -191,7 +209,9 @@ describe('Maintenance alert webhook (LR-006)', () => {
     expect((await testPrisma.maintenanceJobState.findUniqueOrThrow({ where: { job: job.name } })).alertedAt).not.toBeNull();
 
     failing = false;
+    status = 503; // the recovery notice is not delivered on the first success...
     await runners[1]!.runAll();
+    status = 200; // ...and is retried on the next one, still reporting the real streak
     await runners[0]!.runAll();
     expect(received.map((r) => [r.kind, r.consecutiveFailures])).toEqual([['FAILING', 4], ['RECOVERED', 5]]);
     expect((await testPrisma.maintenanceJobState.findUniqueOrThrow({ where: { job: job.name } })).alertedAt).toBeNull();
