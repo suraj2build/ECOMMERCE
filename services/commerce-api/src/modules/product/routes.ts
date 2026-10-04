@@ -104,6 +104,7 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
   const writeAuth = [fastify.requireStaffAuth, fastify.requirePermission('product:write')];
   const readAuth = [fastify.requireStaffAuth, fastify.requirePermission('product:read')];
   const publishAuth = [fastify.requireStaffAuth, fastify.requirePermission('product:publish')];
+  const taxonomyAuth = [fastify.requireStaffAuth, fastify.requirePermission('product:taxonomy:manage')];
 
   fastify.post('/products/styles', { preHandler: writeAuth }, async (request, reply) => {
     const body = createStyleSchema.parse(request.body);
@@ -219,12 +220,12 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/products/reference', { preHandler: readAuth }, async () => service.getReferenceData());
 
-  fastify.post('/products/sizes', { preHandler: writeAuth }, async (request, reply) => {
+  fastify.post('/products/sizes', { preHandler: taxonomyAuth }, async (request, reply) => {
     const { label } = z.object({ label: z.string().min(1).max(20) }).parse(request.body);
     reply.status(201).send(await service.createSize(label, request.staffUser!.id));
   });
 
-  fastify.patch('/products/categories/:id', { preHandler: writeAuth }, async (request) => {
+  fastify.patch('/products/categories/:id', { preHandler: taxonomyAuth }, async (request) => {
     const { id } = idParam.parse(request.params);
     const { productType } = z.object({ productType: z.enum(['APPAREL', 'FOOTWEAR', 'BELT', 'FRAGRANCE']) }).parse(request.body);
     return service.updateCategoryProductType(id, productType, request.staffUser!.id);

@@ -207,6 +207,7 @@ model StaffUser {
   disabledGiftCards             GiftCard[]                  @relation("GiftCardDisabledBy")
   giftCardLedgerEntriesActed    GiftCardLedgerEntry[]       @relation("GiftCardLedgerEntryActor")
   productImportRuns             ProductImportRun[]
+  uploadedContentAssets         ContentAsset[]
 
   @@map("staff_users")
 }
@@ -4307,4 +4308,22 @@ model ProductImportRun {
 
   @@index([createdAt])
   @@map("product_import_runs")
+}
+
+/// Admin Ops Phase 1: an image the owner uploaded for banners or pages
+/// (not a product photo). Stored in the public product-media store and
+/// served at /media/content/<storageKey> only while this row exists.
+model ContentAsset {
+  id               String   @id @default(uuid())
+  storageKey       String   @unique
+  mimeType         String
+  byteSize         Int
+  altText          String?
+  createdByStaffId String
+  createdAt        DateTime @default(now())
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@map("content_assets")
 }

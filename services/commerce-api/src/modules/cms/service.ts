@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PrismaClient, CmsBanner, CmsContentBlock, CmsLandingPage, CmsNavigationMenu } from '@fcp/db';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { isSafeContentLink } from './placements.js';
 import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 
 export interface NavMenuItem {
@@ -31,11 +32,13 @@ export class CmsService {
   // --- Banners ---
 
   async createBanner(
-    input: { title: string; imageUrl: string; linkUrl?: string; placement: string; sortOrder?: number },
+    input: { title: string; imageUrl: string; linkUrl?: string; placement: string; sortOrder?: number; isActive?: boolean },
     actorStaffId: string,
   ): Promise<CmsBanner> {
+    // Admin Ops Phase 1: a banner can be saved as a draft (isActive false)
+    // and switched on later; left out, it is live at once as before.
     const banner = await this.prisma.cmsBanner.create({
-      data: { ...input, createdByStaffId: actorStaffId },
+      data: { ...input, publishedAt: input.isActive === false ? null : new Date(), createdByStaffId: actorStaffId },
     });
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
@@ -151,6 +154,34 @@ export class CmsService {
     return page;
   }
 
+  /** Admin Ops Phase 1: edit a page. A published page changes on the storefront at once. */
+  async updateLandingPage(
+    id: string,
+    input: Partial<{ title: string; metaDescription: string | null; heroImageUrl: string | null; blockKeys: string[] }>,
+    actorStaffId: string,
+  ): Promise<CmsLandingPage> {
+    const existing = await this.prisma.cmsLandingPage.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('CmsLandingPage', id);
+    const page = await this.prisma.cmsLandingPage.update({
+      where: { id },
+      data: {
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.metaDescription !== undefined ? { metaDescription: input.metaDescription || null } : {}),
+        ...(input.heroImageUrl !== undefined ? { heroImageUrl: input.heroImageUrl || null } : {}),
+        ...(input.blockKeys !== undefined ? { blockKeys: input.blockKeys as object } : {}),
+      },
+    });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'cms.landing_page.update',
+      entityType: 'CmsLandingPage',
+      entityId: id,
+      newValue: { changedFields: Object.keys(input), isPublished: page.isPublished },
+    });
+    return page;
+  }
+
   async publishLandingPage(id: string, actorStaffId: string): Promise<CmsLandingPage> {
     const page = await this.prisma.cmsLandingPage.update({
       where: { id },
@@ -201,6 +232,24 @@ export class CmsService {
 
   async upsertNavigationMenu(key: string, items: NavMenuItem[], actorStaffId: string): Promise<CmsNavigationMenu> {
     if (!Array.isArray(items)) throw new ValidationError('Navigation menu items must be an array');
+    // Admin Ops Phase 1: refuse links the storefront would drop (javascript:,
+    // data:, http:, //host) at save time, with the item named, instead of
+    // saving them and silently not showing them.
+    const check = (list: NavMenuItem[], depth: number) => {
+      if (list.length > 50) throw new ValidationError('A menu can have at most 50 items');
+      for (const item of list) {
+        if (!item.label?.trim() || item.label.trim().length > 60) throw new ValidationError('Every menu item needs a label of up to 60 characters');
+        if (!isSafeContentLink(item.url)) {
+          throw new ValidationError(`"${item.label.trim()}": use a page on this site (starting with /) or a full https:// address`);
+        }
+        const children = (item as { children?: NavMenuItem[] }).children;
+        if (children?.length) {
+          if (depth >= 1) throw new ValidationError('Menus can be at most two levels deep');
+          check(children, depth + 1);
+        }
+      }
+    };
+    check(items, 0);
     const menu = await this.prisma.cmsNavigationMenu.upsert({
       where: { key },
       update: { items: items as object, updatedByStaffId: actorStaffId },

@@ -45,12 +45,17 @@ test.describe('CMS content pages and footer menus', () => {
       data: { slug: draftSlug, title: 'Not yet approved', blockKeys: [] },
     }), 'Create draft landing page');
 
+    // Admin Ops Phase 1: the server refuses a link the storefront would
+    // drop, naming the item (the storefront's own filter stays as a second
+    // line of defence, covered by apps/storefront/test/cms-links.test.ts).
+    const unsafe = await api.put('/api/v1/cms/navigation-menus/footer-about', {
+      headers: auth,
+      data: { items: [{ label: 'Our Story', url: `/pages/${slug}`, sortOrder: 1 }, { label: 'Unsafe link', url: 'javascript:alert(1)', sortOrder: 2 }] },
+    });
+    expect(unsafe.status()).toBe(400);
     await expectOk(await api.put('/api/v1/cms/navigation-menus/footer-about', {
       headers: auth,
-      data: { items: [
-        { label: 'Our Story', url: `/pages/${slug}`, sortOrder: 1 },
-        { label: 'Unsafe link', url: 'javascript:alert(1)', sortOrder: 2 },
-      ] },
+      data: { items: [{ label: 'Our Story', url: `/pages/${slug}`, sortOrder: 1 }] },
     }), 'Set footer-about menu');
     await expectOk(await api.put('/api/v1/cms/navigation-menus/footer-social', {
       headers: auth,

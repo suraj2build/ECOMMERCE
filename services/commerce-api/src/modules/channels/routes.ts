@@ -29,6 +29,13 @@ const channelRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await channels.listChannels());
   });
 
+  // Admin Ops Phase 1: pause/resume and publishing scope from admin.
+  fastify.patch('/channels/:id', { preHandler: manageAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = z.object({ name: z.string().min(1).max(200).optional(), isActive: z.boolean().optional(), publishAll: z.boolean().optional() }).strict().parse(request.body);
+    reply.status(200).send(await channels.updateChannel(id, body, request.staffUser!.id));
+  });
+
   fastify.get('/channels/:id', { preHandler: readAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await channels.getChannel(id));

@@ -70,7 +70,7 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
   beforeEach(async () => {
     await resetDatabase();
     await seedRbac();
-    await grantPermissions('MERCHANDISING', ['product:read', 'product:write', 'product:publish', 'catalog:price:write']);
+    await grantPermissions('MERCHANDISING', ['product:read', 'product:write', 'product:publish', 'catalog:price:write', 'product:taxonomy:manage']);
     await grantPermissions('ANALYTICS', ['product:read']);
     token = (await createAuthenticatedStaff(app, ['MERCHANDISING'])).token;
     readOnlyToken = (await createAuthenticatedStaff(app, ['ANALYTICS'])).token;
