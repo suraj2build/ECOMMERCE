@@ -2583,9 +2583,10 @@ so and nothing is invented.
     events honour it.
   - IDs and units: item IDs are SKU codes, `item_group_id` the style
     code, currency INR, transaction ID the order number.
-  - Purchase semantics: a Purchase is recorded only when an order is
-    confirmed — COD at order placement (an order, not cash collected),
-    prepaid only after payment capture is confirmed by Razorpay. Clicking
+  - Purchase semantics: a Purchase is recorded only for a paid order —
+    prepaid after payment capture is confirmed by Razorpay; COD only after
+    delivery and confirmed cash collection (LR-009, superseding the
+    original "COD at placement"; a COD order placed is its own event). Clicking
     a payment button is never a purchase. Refund events are sent when a
     refund completes (GA4 `refund` via Measurement Protocol); Meta has no
     refund event and none is sent.
@@ -2608,33 +2609,58 @@ so and nothing is invented.
     dispatcher re-checks the order's consent before every send. Events
     already sent cannot be recalled. A lost withdrawal request is kept in
     the browser and sent again on the next page load.
+  - Withdrawal review fixes (2026-10-04):
+    - A consent saved before subject IDs existed is given one, so its
+      later checkouts can be withdrawn.
+    - The browser starts a new subject ID after every withdrawal, so a
+      withdrawal delivered late never reaches checkouts made after the
+      visitor consented again.
+    - Each queued withdrawal is kept and retried on its own.
+    - A signed-in customer's withdrawal applies only to orders created up
+      to the moment it was requested.
+    - Order creation reads the checkout's consent under the same row lock
+      the withdrawal takes, so an order placed during a withdrawal cannot
+      keep the old consent.
+    - When marketing is withdrawn but analytics is not, GA4 events still
+      sent carry `ad_user_data` / `ad_personalization` = `DENIED`.
+    - A send already in flight when the withdrawal arrives cannot be
+      stopped; this is documented, not fixed.
   - COD vs paid (2026-10-03 review): every purchase event carries
     `payment_type` = `cod` | `prepaid` (GA4 event parameter, register it
-    as a custom dimension; Meta `custom_data`), so "COD orders placed" can
-    be reported separately from paid revenue. Collected/delivered revenue
-    is reported from the order ledger (M28 analytics), not from GA4/Meta.
+    as a custom dimension; Meta `custom_data`). Since LR-009 a COD order
+    reaches GA4/Meta as a purchase only once delivered and collected.
 - **Affected specs:** `specs/27-analytics-reporting.md`
 
-#### LR-009 — Ad-platform reversal of COD orders that are never paid · **P1**
-- **Status:** **DECISION_REQUIRED** (marketing/finance)
-- **Question:** when a COD order is cancelled before dispatch, refused at
-  the door or returned to origin (RTO) — so no money is ever collected —
-  should GA4 receive a `refund` event for it (and, if so, at which point),
-  or should COD purchases instead be sent to GA4/Meta only at delivery?
-- **Why it matters:** today a COD purchase is reported at placement (the
-  decided LR-003 semantics) and nothing reverses it, so GA4/Meta revenue
-  over-counts by the COD cancellation/RTO rate and ad bidding optimises
-  toward orders that may never pay. Each option changes campaign
-  reporting and optimisation, which is a business choice.
-- **Options considered:** (a) keep placement semantics and send a GA4
-  `refund` for COD orders cancelled or RTO'd (Meta has no refund event);
-  (b) report COD purchases at delivery instead (accurate revenue, but
-  delayed by days, which weakens Meta optimisation); (c) leave as is and
-  segment on `payment_type`.
-- **Engineering status:** `payment_type` tagging is implemented, so (c)
-  works today and (a)/(b) can be added on the existing outbox. Nothing
-  is reversed until this is decided.
-
+#### LR-009 — COD orders in purchase reporting · **P1**
+- **Status:** DECIDED (Product Owner, 2026-10-04)
+- **Final decision (Product Owner):** "Report COD orders placed as a
+  separate event; record Purchase only after confirmed delivery and payment
+  collection. Cancelled/refused COD orders then never inflate purchase
+  revenue. Report genuine post-purchase refunds separately. Keep prepaid
+  Purchase tied to confirmed payment."
+- **Implementation (2026-10-04):**
+  - COD placed: GA4 custom event `cod_order_placed` and Meta custom event
+    `CODOrderPlaced`, event ID `cod_placed:<orderNumber>`, queued with the
+    order. Neither is a purchase. The browser sends no Purchase for a COD
+    order.
+  - COD purchase: queued when Finance records the order's cash collection
+    (`POST /orders/:id/cod-collection`, new permission `payment:cod:collect`,
+    Finance). Recording is allowed only once every line is delivered or
+    cancelled and at least one was delivered; the amount must be positive
+    and no more than the amount payable on delivery. It is once per order
+    and idempotent. The purchase is dated at collection, keeps the event IDs
+    `purchase:<orderNumber>`, and covers delivered lines not already
+    refunded, plus shipping. A courier remittance adapter can record the
+    same collection once a carrier is chosen (LR-008).
+  - Refunds: a GA4 `refund` is sent only against a reported purchase. A COD
+    refund completed before collection is not reported, and that line is
+    left out of the purchase.
+  - Prepaid: unchanged (purchase at confirmed capture).
+- **Engineering choices made within the decision:** collection is recorded
+  per order (one transaction ID, which GA4 deduplicates), not per shipment;
+  the amount is checked only against the amount payable, not required to
+  match it, because cancellation allocation of redemptions is not defined.
+- **Affected specs:** `specs/27-analytics-reporting.md`
 #### LR-004 — Google Merchant and Meta catalogue integrations · **P1**
 - **Status:** DECIDED (integration authorized); accounts not provided
 - **Final decision:** supersedes `CHAN-001`'s "none launch now" for these
@@ -2656,6 +2682,10 @@ so and nothing is invented.
   alongside local disk, selected by `RETURN_EVIDENCE_STORAGE=s3`.
   Objects are private (no public ACL, no public URL); reads go through
   the existing ownership-checked route. Production refuses local disk.
+  `scripts/verify-s3-bucket.mjs` checks a real bucket before use. Review
+  fix (2026-10-04): it now defaults to path-style addressing like the
+  application, and an ACL it cannot read counts as unverified (a note),
+  never as a pass; only a readable ACL without public grants passes.
 - **Affected specs:** `specs/18-returns.md`
 
 #### LR-006 — Scheduled sweeps and job monitoring · **P1**

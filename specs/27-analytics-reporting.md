@@ -69,9 +69,8 @@ Consent-aware GA4 ecommerce events and Meta Pixel + Conversions API with stable 
   confirmation page only when the checkout status is `CONFIRMED` and an
   order number exists, once per order per browser, with
   `eventID = purchase:<orderNumber>` — the same ID the Conversions API
-  sends, which Meta deduplicates. A COD order is a purchase when placed
-  (an order, not cash collected; a later RTO/cancellation is reported
-  only through refunds, never by retracting the purchase). A prepaid
+  sends, which Meta deduplicates. A COD order is not a purchase when
+  placed: see LR-009 below. A prepaid
   order is a purchase only after Razorpay capture: no order row exists
   before that, so a payment-button click or a failed/abandoned payment
   can never produce one.
@@ -128,9 +127,7 @@ Consent-aware GA4 ecommerce events and Meta Pixel + Conversions API with stable 
   - *COD vs paid.* Purchase events carry `payment_type` (`cod` |
     `prepaid`) in GA4 params and Meta `custom_data`. Register
     `payment_type` as an event-scoped custom dimension in GA4 to report
-    on it. Collected and delivered revenue comes from the order ledger
-    (M28), not the ad platforms. Whether to reverse unpaid COD orders in
-    GA4 is `LR-009` (DECISION_REQUIRED); nothing is reversed today.
+    on it. Unpaid COD orders are handled by LR-009 below.
   - *Tests.* `conversions.test.ts` now has 21 tests (+ withdrawal of all
     queued events, during retry backoff, of an in-flight claim,
     marketing-only, before prepaid capture, signed-in customer across
@@ -138,15 +135,30 @@ Consent-aware GA4 ecommerce events and Meta Pixel + Conversions API with stable 
     `consent.spec.ts` now withdraws after a real COD order with the first
     request dropped, and proves the retry clears the order's consent.
 
-## DECISION_REQUIRED
+### LR-009 COD reporting (Product Owner decision 2026-10-04)
 
-Question: when a COD order is never paid (cancelled before dispatch,
-refused, RTO), should GA4 get a `refund` for it, or should COD purchases
-be sent only at delivery? See `LR-009`.
-Why it matters: placement-time COD purchases over-count ad-platform
-revenue by the COD cancellation/RTO rate.
-Options considered: GA4 refund on cancel/RTO; purchase at delivery; keep
-and segment by `payment_type` (works today).
+- A COD order placed queues GA4 `cod_order_placed` and Meta
+  `CODOrderPlaced` (event ID `cod_placed:<orderNumber>`), not a purchase.
+  The browser records no Purchase for a COD order.
+- Its purchase (`purchase:<orderNumber>`) is queued when Finance records the
+  cash collection: `POST /orders/:id/cod-collection` (`payment:cod:collect`),
+  or "Record COD collection" on the admin order screen. The order must be
+  fully delivered or cancelled with at least one line delivered; the
+  amount must be positive and no more than the amount payable on delivery.
+  The purchase is dated at collection and covers delivered lines not
+  already refunded, plus shipping. Recording is once per order and
+  idempotent, serialised on the order row.
+- A cancelled, refused or RTO COD order can never be collected, so it never
+  becomes a purchase. A refund is reported (GA4 `refund`) only against a
+  reported purchase; a COD refund before collection is not reported and its
+  line is excluded from the purchase.
+- Prepaid orders are unchanged.
+- Tests: `conversions.test.ts` (30), including the full COD lifecycle with
+  the collection time as the event time, guards and RBAC, a concurrent
+  double recording, a cancelled order, refunds before and after the
+  purchase, and the unchanged prepaid path.
+- GA4 setup: register `cod_order_placed` parameters (value, payment_type) as
+  custom definitions to report placed COD orders.
 
 - **Not yet verified:** delivery into GA4 DebugView / Meta Events Manager
   test events. No GA4 property or Meta dataset is configured for this

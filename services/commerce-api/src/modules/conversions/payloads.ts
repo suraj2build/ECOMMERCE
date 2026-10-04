@@ -72,13 +72,26 @@ function ga4Consent(order: Pick<ConversionOrder, 'marketingConsent'>) {
   return { ad_user_data: value, ad_personalization: value };
 }
 
-export function ga4Purchase(order: ConversionOrder, lines: ConversionLine[]) {
+/** GA4 `purchase`. `at` is when the purchase happened: payment capture
+ * for prepaid (order creation), confirmed cash collection for COD (LR-009). */
+export function ga4Purchase(order: ConversionOrder, lines: ConversionLine[], at: Date = order.createdAt) {
+  return ga4OrderEvent('purchase', order, lines, at);
+}
+
+/** LR-009: a COD order placed (not paid). A custom GA4 event, so it never
+ * counts as purchase revenue; register its parameters as custom
+ * dimensions/metrics to report on it. */
+export function ga4CodOrderPlaced(order: ConversionOrder, lines: ConversionLine[]) {
+  return ga4OrderEvent('cod_order_placed', order, lines, order.createdAt);
+}
+
+function ga4OrderEvent(name: string, order: ConversionOrder, lines: ConversionLine[], at: Date) {
   return {
     client_id: ga4ClientId(order),
-    timestamp_micros: order.createdAt.getTime() * 1000,
+    timestamp_micros: at.getTime() * 1000,
     consent: ga4Consent(order),
     events: [{
-      name: 'purchase',
+      name,
       params: {
         transaction_id: order.orderNumber,
         currency: order.currency,
@@ -125,17 +138,28 @@ export function hashedPhone(mobile: string | null): string | undefined {
   return sha256(digits.length === 10 ? `91${digits}` : digits);
 }
 
-/** Shared with the browser Pixel, so Meta keeps one of the two copies. */
+/** Shared with the browser Pixel (prepaid orders), so Meta keeps one of the two copies. */
 export const metaPurchaseEventId = (orderNumber: string) => `purchase:${orderNumber}`;
+export const codPlacedEventId = (orderNumber: string) => `cod_placed:${orderNumber}`;
 
-export function metaPurchase(order: ConversionOrder, lines: ConversionLine[], storefrontUrl: string) {
+/** Meta `Purchase`; `at` as for ga4Purchase. */
+export function metaPurchase(order: ConversionOrder, lines: ConversionLine[], storefrontUrl: string, at: Date = order.createdAt) {
+  return metaOrderEvent('Purchase', metaPurchaseEventId(order.orderNumber), order, lines, storefrontUrl, at);
+}
+
+/** LR-009: Meta custom event for a COD order placed (not a Purchase). */
+export function metaCodOrderPlaced(order: ConversionOrder, lines: ConversionLine[], storefrontUrl: string) {
+  return metaOrderEvent('CODOrderPlaced', codPlacedEventId(order.orderNumber), order, lines, storefrontUrl, order.createdAt);
+}
+
+function metaOrderEvent(eventName: string, eventId: string, order: ConversionOrder, lines: ConversionLine[], storefrontUrl: string, at: Date) {
   if (!order.marketingConsent) throw new Error('Meta events require marketing consent');
   const em = hashedEmail(order.contactEmail);
   const ph = hashedPhone(order.contactMobile);
   return {
-    event_name: 'Purchase',
-    event_time: Math.floor(order.createdAt.getTime() / 1000),
-    event_id: metaPurchaseEventId(order.orderNumber),
+    event_name: eventName,
+    event_time: Math.floor(at.getTime() / 1000),
+    event_id: eventId,
     action_source: 'website',
     event_source_url: `${storefrontUrl.replace(/\/$/, '')}/checkout`,
     user_data: {

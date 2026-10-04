@@ -31,7 +31,8 @@ const store = new S3ObjectStore({
   accessKeyId: env.S3_ACCESS_KEY,
   secretAccessKey: env.S3_SECRET_KEY,
   bucket: env.RETURN_EVIDENCE_S3_BUCKET,
-  forcePathStyle: env.S3_FORCE_PATH_STYLE === 'true',
+  // Same default as the API (packages/config): path-style unless set to anything but 'true'.
+  forcePathStyle: (env.S3_FORCE_PATH_STYLE ?? 'true') === 'true',
 });
 
 const results = [];
@@ -66,9 +67,16 @@ if (stored) {
   check('Server-side encryption (reported)', Boolean(sse), sse ?? 'no x-amz-server-side-encryption header', false);
 
   const acl = await store.request('GET', key, undefined, {}, 'acl');
-  const aclText = acl.ok ? await acl.text() : '';
-  check('Object ACL grants nothing to the public', acl.ok ? !/AllUsers|AuthenticatedUsers/.test(aclText) : true,
-    acl.ok ? 'no AllUsers/AuthenticatedUsers grant' : `ACL not readable with these credentials (HTTP ${acl.status}); bucket policy governs access`);
+  const aclText = await acl.text().catch(() => '');
+  if (acl.ok) {
+    check('Object ACL grants nothing to the public', !/AllUsers|AuthenticatedUsers/.test(aclText), /AllUsers|AuthenticatedUsers/.test(aclText) ? 'public grant found' : 'no AllUsers/AuthenticatedUsers grant');
+  } else if ((acl.status === 403 && /<Code>AccessDenied<\/Code>/.test(aclText)) || acl.status === 501) {
+    // Least-privilege credentials, or a store without ACLs: not a pass, but
+    // the anonymous checks above are what decide whether objects are private.
+    check('Object ACL (reported)', false, acl.status === 501 ? 'this store does not support ACLs (HTTP 501)' : 'ACL not readable with these credentials (AccessDenied)', false);
+  } else {
+    check('Object ACL grants nothing to the public', false, `ACL request failed: HTTP ${acl.status}${aclText.match(/<Code>([^<]+)<\/Code>/)?.[1] ? ` ${aclText.match(/<Code>([^<]+)<\/Code>/)[1]}` : ''}`);
+  }
 }
 
 const listStatus = await anonymous(store.url(''));

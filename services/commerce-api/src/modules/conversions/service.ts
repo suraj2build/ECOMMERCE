@@ -1,7 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type ConversionEvent, type ConversionProvider, type PrismaClient } from '@fcp/db';
 import { loadEnv, type Env } from '@fcp/config';
-import { ga4Purchase, ga4Refund, metaPurchase, metaPurchaseEventId, type ConversionLine, type ConversionOrder } from './payloads.js';
+import {
+  codPlacedEventId, ga4CodOrderPlaced, ga4Purchase, ga4Refund, metaCodOrderPlaced, metaPurchase, metaPurchaseEventId,
+  type ConversionLine, type ConversionOrder,
+} from './payloads.js';
 
 /**
  * Server-side conversion events (LR-003, specs/27-analytics-reporting.md).
@@ -12,10 +15,14 @@ import { ga4Purchase, ga4Refund, metaPurchase, metaPurchaseEventId, type Convers
  * (provider, eventId) unique key means one can never be queued twice.
  * `dispatchDue` sends them later; nothing here runs on the request path.
  *
- * Purchase semantics: an order row only exists once it is confirmed —
- * COD at placement, prepaid only after Razorpay capture — so enqueuing at
- * order creation is exactly "purchase = confirmed order". A payment-button
- * click never creates an order and never produces a purchase.
+ * Purchase semantics (LR-003, LR-009): a prepaid order row only exists once
+ * Razorpay capture is confirmed, so its purchase is queued at order
+ * creation. A COD order is not a purchase when placed: it queues a separate
+ * "COD order placed" event, and its purchase is queued only when cash
+ * collection is confirmed after every line is delivered
+ * (enqueueCodPurchase). A cancelled or refused COD order is therefore never
+ * reported as purchase revenue. A payment-button click never creates an
+ * order and never produces either event.
  */
 
 type Db = Prisma.TransactionClient | PrismaClient;
@@ -136,8 +143,9 @@ export class ConversionService {
     return this.fastify.prisma;
   }
 
-  /** Inside the order-creation transaction: queue the purchase for each
-   * enabled provider the customer consented to at checkout. */
+  /** Inside the order-creation transaction, for each enabled provider the
+   * customer consented to at checkout: a prepaid order's purchase, or a COD
+   * order's "COD order placed" event (LR-009). */
   async enqueuePurchase(tx: Db, orderId: string): Promise<void> {
     const env = loadEnv();
     const providers = enabledProviders(env);
@@ -146,11 +154,46 @@ export class ConversionService {
     const data = toOrder(order);
     const lines = toLines(order.lines);
     const rows: Prisma.ConversionEventCreateManyInput[] = [];
+    const cod = order.paymentMethod === 'COD';
     if (providers.includes('GA4') && order.analyticsConsent) {
-      rows.push({ provider: 'GA4', eventName: 'purchase', eventId: `purchase:${order.orderNumber}`, orderId, retrySafe: true, payload: ga4Purchase(data, lines) as Prisma.InputJsonValue });
+      rows.push(cod
+        // GA4 does not deduplicate custom events: an unknown outcome is never resent blindly.
+        ? { provider: 'GA4', eventName: 'cod_order_placed', eventId: codPlacedEventId(order.orderNumber), orderId, retrySafe: false, payload: ga4CodOrderPlaced(data, lines) as Prisma.InputJsonValue }
+        : { provider: 'GA4', eventName: 'purchase', eventId: `purchase:${order.orderNumber}`, orderId, retrySafe: true, payload: ga4Purchase(data, lines) as Prisma.InputJsonValue });
     }
     if (providers.includes('META') && order.marketingConsent) {
-      rows.push({ provider: 'META', eventName: 'Purchase', eventId: metaPurchaseEventId(order.orderNumber), orderId, retrySafe: true, payload: metaPurchase(data, lines, env.STOREFRONT_PUBLIC_URL!) as Prisma.InputJsonValue });
+      rows.push(cod
+        ? { provider: 'META', eventName: 'CODOrderPlaced', eventId: codPlacedEventId(order.orderNumber), orderId, retrySafe: true, payload: metaCodOrderPlaced(data, lines, env.STOREFRONT_PUBLIC_URL!) as Prisma.InputJsonValue }
+        : { provider: 'META', eventName: 'Purchase', eventId: metaPurchaseEventId(order.orderNumber), orderId, retrySafe: true, payload: metaPurchase(data, lines, env.STOREFRONT_PUBLIC_URL!) as Prisma.InputJsonValue });
+    }
+    if (rows.length) await tx.conversionEvent.createMany({ data: rows, skipDuplicates: true });
+  }
+
+  /**
+   * LR-009, inside the COD-collection transaction: the COD order's purchase,
+   * dated when the cash was collected. It covers the delivered lines not
+   * already refunded (cancelled, refused and refunded lines are excluded),
+   * plus shipping. Consent is the order's current consent, so an earlier
+   * withdrawal is honoured. Same event IDs as a prepaid purchase.
+   */
+  async enqueueCodPurchase(tx: Db, orderId: string, collectedAt: Date): Promise<void> {
+    const env = loadEnv();
+    const providers = enabledProviders(env);
+    if (providers.length === 0) return;
+    const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: { include: { ...lineInclude, refund: true } } } });
+    if (order.paymentMethod !== 'COD') return;
+    const kept = order.lines.filter((line) => line.status === 'DELIVERED' && line.refund?.status !== 'COMPLETED');
+    if (kept.length === 0) return;
+    const goods = kept.reduce((sum, line) => sum + Number(line.lineTotalInclusive), 0);
+    const tax = kept.reduce((sum, line) => sum + Number(line.taxAmountSnapshot), 0);
+    const data: ConversionOrder = { ...toOrder(order), grandTotal: goods + Number(order.shippingCost), taxAmount: tax };
+    const lines = toLines(kept);
+    const rows: Prisma.ConversionEventCreateManyInput[] = [];
+    if (providers.includes('GA4') && order.analyticsConsent) {
+      rows.push({ provider: 'GA4', eventName: 'purchase', eventId: `purchase:${order.orderNumber}`, orderId, retrySafe: true, payload: ga4Purchase(data, lines, collectedAt) as Prisma.InputJsonValue });
+    }
+    if (providers.includes('META') && order.marketingConsent) {
+      rows.push({ provider: 'META', eventName: 'Purchase', eventId: metaPurchaseEventId(order.orderNumber), orderId, retrySafe: true, payload: metaPurchase(data, lines, env.STOREFRONT_PUBLIC_URL!, collectedAt) as Prisma.InputJsonValue });
     }
     if (rows.length) await tx.conversionEvent.createMany({ data: rows, skipDuplicates: true });
   }
@@ -162,6 +205,13 @@ export class ConversionService {
     if (!enabledProviders().includes('GA4')) return;
     const refund = await tx.refund.findUniqueOrThrow({ where: { id: refundId }, include: { orderLine: { include: lineInclude }, order: true } });
     if (!refund.order.analyticsConsent || refund.status !== 'COMPLETED') return;
+    // LR-009: a refund is reported only against a purchase that was reported.
+    // A COD order's purchase exists only after collection, and lines refunded
+    // before it were left out of that purchase.
+    if (refund.order.paymentMethod === 'COD') {
+      const purchase = await tx.conversionEvent.findFirst({ where: { orderId: refund.orderId, provider: 'GA4', eventName: 'purchase' } });
+      if (!purchase || (refund.processedAt ?? new Date()) < purchase.createdAt) return;
+    }
     const payload = ga4Refund(toOrder(refund.order), { amount: Number(refund.amount), processedAt: refund.processedAt ?? new Date() }, toLines([refund.orderLine]));
     await tx.conversionEvent.createMany({
       data: [{ provider: 'GA4', eventName: 'refund', eventId: `refund:${refund.id}`, orderId: refund.orderId, refundId, retrySafe: false, payload: payload as Prisma.InputJsonValue }],
@@ -203,8 +253,9 @@ export class ConversionService {
     for (const { id } of claimed) {
       const event = await this.prisma.conversionEvent.findUniqueOrThrow({ where: { id }, include: { order: { select: { analyticsConsent: true, marketingConsent: true } } } });
       const owned = { id, status: 'SENDING' as const };
-      // Consent is checked again at send time: a withdrawal that arrived
-      // after this event was queued (or claimed) stops it here.
+      // Consent is checked again just before the request: a withdrawal that
+      // committed after this event was queued or claimed stops it here (one
+      // committing while the request is in flight cannot).
       if (!(event.provider === 'GA4' ? event.order.analyticsConsent : event.order.marketingConsent)) {
         await this.prisma.conversionEvent.updateMany({ where: owned, data: { status: 'WITHDRAWN', lastError: 'consent withdrawn' } });
         result.withdrawn++;
@@ -246,11 +297,23 @@ export class ConversionService {
    * every event for that purpose that has not been sent yet is marked
    * WITHDRAWN, so neither the dispatcher nor a retry sends it. Sent events
    * cannot be recalled. Withdrawal never grants anything.
+   *
+   * The browser starts a new subject ID after a withdrawal, so a withdrawal
+   * resent later (it was offline) cannot reach orders placed after the
+   * shopper consented again. The signed-in customer's scope has no such
+   * marker, so it covers only orders and checkouts created up to the time
+   * the withdrawal was requested (never later than now).
    */
-  async withdrawConsent(who: { subjectId?: string; customerId?: string }, now: { analytics: boolean; marketing: boolean }): Promise<{ orders: number; withdrawnEvents: number }> {
+  async withdrawConsent(
+    who: { subjectId?: string; customerId?: string; requestedAt?: Date },
+    now: { analytics: boolean; marketing: boolean },
+  ): Promise<{ orders: number; withdrawnEvents: number }> {
     const scopes: Prisma.OrderWhereInput[] = [];
     if (who.subjectId) scopes.push({ consentSubjectId: who.subjectId });
-    if (who.customerId) scopes.push({ customerId: who.customerId });
+    if (who.customerId) {
+      const asOf = new Date(Math.min(who.requestedAt?.getTime() ?? Date.now(), Date.now()));
+      scopes.push({ customerId: who.customerId, createdAt: { lte: asOf } });
+    }
     if (scopes.length === 0 || (now.analytics && now.marketing)) return { orders: 0, withdrawnEvents: 0 };
     const sessionScopes = scopes as Prisma.CheckoutSessionWhereInput[];
     const analyticsOff = !now.analytics;
@@ -270,8 +333,9 @@ export class ConversionService {
       const orderIds = orders.map((o) => o.id);
       await tx.order.updateMany({ where: { id: { in: orderIds } }, data: sessionData });
       const providers: ConversionProvider[] = [...(analyticsOff ? ['GA4' as const] : []), ...(marketingOff ? ['META' as const] : [])];
-      // PENDING covers first attempts and scheduled retries. A SENDING event
-      // is re-checked by the dispatcher before it is sent.
+      // PENDING covers first attempts and scheduled retries. A claimed event
+      // is re-checked by the dispatcher just before its request; one whose
+      // request is already in flight when this commits may still be sent.
       const withdrawn = await tx.conversionEvent.updateMany({
         where: { orderId: { in: orderIds }, provider: { in: providers }, status: 'PENDING' },
         data: { status: 'WITHDRAWN', lastError: 'consent withdrawn', claimedAt: null },

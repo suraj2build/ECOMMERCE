@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { OrderService } from './service.js';
+import { CodCollectionService } from './cod-collection-service.js';
 import { resolveCartIdentity } from '../cart/identity.js';
 
 const assignFulfilmentSchema = z.object({ lineIds: z.array(z.string().uuid()).min(1) });
@@ -34,6 +35,8 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
   // same operation, just re-triggered (independent-review finding #2).
   const invoiceRetryAuth = [fastify.requireStaffAuth, fastify.requirePermission('invoice:create')];
   const identityAuth = { preHandler: fastify.tryCustomerAuth };
+  const codCollectAuth = [fastify.requireStaffAuth, fastify.requirePermission('payment:cod:collect')];
+  const codCollections = new CodCollectionService(fastify);
 
   // --- Storefront (customer/guest) ---
 
@@ -63,6 +66,25 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // --- Staff ---
+
+  // LR-009: Finance confirms a delivered COD order's cash collection; this
+  // is what reports the order as a purchase.
+  fastify.post('/orders/:id/cod-collection', { preHandler: codCollectAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({
+        amount: z.number().positive().multipleOf(0.01),
+        reference: z.string().trim().min(1).max(200),
+        collectedAt: z.string().datetime().optional(),
+      })
+      .parse(request.body);
+    const collection = await codCollections.record(
+      id,
+      { amount: body.amount, reference: body.reference, collectedAt: body.collectedAt ? new Date(body.collectedAt) : undefined },
+      request.staffUser!.id,
+    );
+    reply.status(200).send({ ...collection, amount: Number(collection.amount) });
+  });
 
   fastify.get('/orders', { preHandler: readAuth }, async (request, reply) => {
     const query = z

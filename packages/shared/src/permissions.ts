@@ -64,6 +64,9 @@ export const PERMISSION_KEYS = [
   'catalog:cross_sell:manage',
   'shipping:manage',
   'payment:refund',
+  // LR-009: confirming that a COD order's cash was collected (it is what
+  // turns the order into a reported purchase). Finance-owned, next to refunds.
+  'payment:cod:collect',
   'order:read',
   'order:fulfil',
   'order:cancel',

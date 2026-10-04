@@ -82,11 +82,13 @@ export default function CheckoutConfirmationPage() {
     openWidget(session);
   }, [session, openWidget]);
 
-  // LR-003: a purchase only once the order is confirmed (COD placed, or
-  // prepaid captured per the webhook-driven status) - never on the payment
-  // button. Same event_id as the server's Conversions API event.
+  // LR-003/LR-009: a purchase only once a prepaid payment is captured (the
+  // webhook-driven CONFIRMED status) - never on the payment button. Same
+  // event_id as the server's Conversions API event. A COD order is not a
+  // purchase here: the server reports it as placed, and as a purchase only
+  // after delivery and confirmed cash collection.
   useEffect(() => {
-    if (session?.status !== 'CONFIRMED' || !session.orderNumber) return;
+    if (session?.status !== 'CONFIRMED' || !session.orderNumber || session.paymentMethod !== 'PREPAID') return;
     track.purchase(
       session.orderNumber,
       session.grandTotal,

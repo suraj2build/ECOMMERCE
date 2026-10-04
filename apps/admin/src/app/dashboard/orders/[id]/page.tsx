@@ -21,6 +21,7 @@ import {
   SelectField,
   StatusBadge,
   TextArea,
+  TextField,
 } from '@/components/ui';
 import { apiSend, newIdempotencyKey } from '@/lib/api';
 import { useAction, useApi, useCan } from '@/lib/session';
@@ -79,6 +80,7 @@ interface Order {
   invoiceStatus: string;
   invoiceFailureReason: string | null;
   invoiceAttempts: number;
+  codCollection: { amount: number; collectedAt: string } | null;
   lines: OrderLine[];
   fulfilments: Fulfilment[];
   createdAt: string;
@@ -97,6 +99,7 @@ export default function OrderDetailPage() {
   const canReturns = useCan('return:read');
   const canExchanges = useCan('exchange:read');
   const canRefunds = useCan('payment:refund');
+  const canCollectCod = useCan('payment:cod:collect');
   const returns = useApi<Array<{ id: string; returnNumber: string; status: string; method: string; createdAt: string }>>(canReturns ? `/orders/${id}/returns` : null);
   const exchanges = useApi<Array<{ id: string; exchangeNumber: string; status: string; createdAt: string }>>(canExchanges ? `/orders/${id}/exchanges` : null);
   const refunds = useApi<Array<{ id: string; orderLineId: string; method: string; status: string; amount: string; failureReason: string | null; createdAt: string }>>(
@@ -106,12 +109,14 @@ export default function OrderDetailPage() {
   const action = useAction();
   const [selected, setSelected] = useState<string[]>([]);
   const [dialog, setDialog] = useState<LineDialog | null>(null);
-  const [orderDialog, setOrderDialog] = useState<'rto' | 'invoice' | 'fulfil' | 'return' | null>(null);
+  const [orderDialog, setOrderDialog] = useState<'rto' | 'invoice' | 'fulfil' | 'return' | 'cod' | null>(null);
   const [reason, setReason] = useState('');
   const [resolution, setResolution] = useState('REINSTATE');
   const [method, setMethod] = useState('DROP_OFF');
   const [replacement, setReplacement] = useState<SkuOption | null>(null);
   const [key, setKey] = useState('');
+  const [codAmount, setCodAmount] = useState('');
+  const [codReference, setCodReference] = useState('');
 
   const reloadAll = () => {
     order.reload();
@@ -128,7 +133,7 @@ export default function OrderDetailPage() {
     setDialog(d);
   }
 
-  function openOrder(d: 'rto' | 'invoice' | 'fulfil' | 'return') {
+  function openOrder(d: 'rto' | 'invoice' | 'fulfil' | 'return' | 'cod') {
     setReason('');
     setKey(newIdempotencyKey(d));
     action.clear();
@@ -159,16 +164,17 @@ export default function OrderDetailPage() {
     }
   }
 
-  async function submitOrder(d: 'rto' | 'invoice' | 'fulfil' | 'return') {
+  async function submitOrder(d: 'rto' | 'invoice' | 'fulfil' | 'return' | 'cod') {
     const o = order.data!;
     const calls = {
+      cod: () => apiSend('POST', `/orders/${o.id}/cod-collection`, { amount: Number(codAmount), reference: codReference.trim() }),
       rto: () => apiSend('POST', `/orders/${o.id}/rto`, { reason }),
       invoice: () => apiSend('POST', `/orders/${o.id}/retry-invoice`),
       fulfil: () => apiSend('POST', `/orders/${o.id}/fulfilments`, { lineIds: selected }),
       return: () =>
         apiSend('POST', '/returns', { orderId: o.id, lines: selected.map((orderLineId) => ({ orderLineId, reason })), method, idempotencyKey: key }),
     };
-    const labels = { rto: 'Marked return-to-origin.', invoice: 'Invoice retried.', fulfil: 'Fulfilment created.', return: 'Return requested.' };
+    const labels = { cod: 'COD collection recorded; the order is now reported as a purchase.', rto: 'Marked return-to-origin.', invoice: 'Invoice retried.', fulfil: 'Fulfilment created.', return: 'Return requested.' };
     const ok = await action.run(calls[d], labels[d]);
     if (ok) {
       setOrderDialog(null);
@@ -249,6 +255,36 @@ export default function OrderDetailPage() {
                 <dd>
                   <StatusBadge status={o.invoiceStatus} />
                 </dd>
+                {o.paymentMethod === 'COD' && (
+                  <>
+                    <dt>COD collection</dt>
+                    <dd>
+                      {o.codCollection ? (
+                        <>
+                          <Money value={o.codCollection.amount} /> collected <DateText value={o.codCollection.collectedAt} />
+                        </>
+                      ) : o.lines.some((l) => l.status === 'DELIVERED') && o.lines.every((l) => l.status === 'DELIVERED' || l.status === 'CANCELLED') ? (
+                        canCollectCod ? (
+                          <button
+                            type="button"
+                            className="btn small"
+                            onClick={() => {
+                              setCodAmount('');
+                              setCodReference('');
+                              openOrder('cod');
+                            }}
+                          >
+                            Record COD collection
+                          </button>
+                        ) : (
+                          <span className="muted">Awaiting Finance</span>
+                        )
+                      ) : (
+                        <span className="muted">After delivery</span>
+                      )}
+                    </dd>
+                  </>
+                )}
               </dl>
             </Section>
           </div>
@@ -532,8 +568,8 @@ export default function OrderDetailPage() {
 
           <ConfirmDialog
             open={orderDialog !== null}
-            title={orderDialog ? { rto: 'Mark return-to-origin', invoice: 'Retry invoice', fulfil: 'Create fulfilment', return: 'Start return' }[orderDialog] : ''}
-            confirmLabel={orderDialog ? { rto: 'Mark RTO', invoice: 'Retry', fulfil: 'Create fulfilment', return: 'Start return' }[orderDialog] : 'Confirm'}
+            title={orderDialog ? { cod: 'Record COD collection', rto: 'Mark return-to-origin', invoice: 'Retry invoice', fulfil: 'Create fulfilment', return: 'Start return' }[orderDialog] : ''}
+            confirmLabel={orderDialog ? { cod: 'Record collection', rto: 'Mark RTO', invoice: 'Retry', fulfil: 'Create fulfilment', return: 'Start return' }[orderDialog] : 'Confirm'}
             danger={orderDialog === 'rto'}
             busy={action.busy}
             onCancel={() => setOrderDialog(null)}
@@ -555,6 +591,13 @@ export default function OrderDetailPage() {
               </>
             )}
             {orderDialog === 'invoice' && <p>Re-attempts invoice generation. Safe to repeat.</p>}
+            {orderDialog === 'cod' && (
+              <>
+                <p>Confirm the cash the courier collected for this order. This reports the order as a purchase to analytics; it can be recorded once.</p>
+                <TextField label="Amount collected (INR)" type="number" min={0} step="0.01" value={codAmount} onChange={setCodAmount} required />
+                <TextField label="Remittance or receipt reference" value={codReference} onChange={setCodReference} required />
+              </>
+            )}
             {(orderDialog === 'rto' || orderDialog === 'return') && <TextArea label="Reason" value={reason} onChange={setReason} required />}
             {action.message?.kind === 'error' && <ActionMessage message={action.message} />}
           </ConfirmDialog>

@@ -8,6 +8,8 @@ const withdrawalSchema = z.object({
   // The shopper's choices after the change; a purpose that is now false is withdrawn.
   analytics: z.boolean(),
   marketing: z.boolean(),
+  // When the shopper withdrew (a resend after being offline is later).
+  requestedAt: z.string().datetime().optional(),
 });
 
 /**
@@ -22,7 +24,10 @@ const conversionRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/storefront/consent/withdrawal', { preHandler: fastify.tryCustomerAuth }, async (request, reply) => {
     const body = withdrawalSchema.parse(request.body);
-    await conversions.withdrawConsent({ subjectId: body.subjectId, customerId: request.customer?.id }, body);
+    await conversions.withdrawConsent(
+      { subjectId: body.subjectId, customerId: request.customer?.id, requestedAt: body.requestedAt ? new Date(body.requestedAt) : undefined },
+      { analytics: body.analytics, marketing: body.marketing },
+    );
     reply.status(204).send();
   });
 };

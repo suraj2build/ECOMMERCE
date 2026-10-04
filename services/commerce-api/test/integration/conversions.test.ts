@@ -6,6 +6,7 @@ import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedCustomer, createAuthenticatedStaff } from '../helpers/auth.js';
 import { ConversionService } from '../../src/modules/conversions/service.js';
+import { OrderService } from '../../src/modules/order/service.js';
 
 /**
  * LR-003 server-side conversion events (specs/27-analytics-reporting.md):
@@ -158,12 +159,13 @@ describe('Server-side conversion events (LR-003)', () => {
 
   // --- Consent and purchase semantics ---
 
-  it('queues a GA4 and a Meta purchase atomically with a consented COD order, with SKU IDs, INR and the order number', async () => {
+  it('a consented COD order placed queues "COD order placed" events, never a purchase (LR-009), with SKU IDs, INR and the order number', async () => {
     const { order, sku } = await codOrder(BOTH);
     const events = await testPrisma.conversionEvent.findMany({ where: { orderId: order.id }, orderBy: { provider: 'asc' } });
-    expect(events.map((e) => [e.provider, e.eventName, e.eventId, e.status])).toEqual([
-      ['GA4', 'purchase', `purchase:${order.orderNumber}`, 'PENDING'],
-      ['META', 'Purchase', `purchase:${order.orderNumber}`, 'PENDING'],
+    expect(events.map((e) => [e.provider, e.eventName, e.eventId, e.status, e.retrySafe])).toEqual([
+      // GA4 does not deduplicate custom events, so an unknown outcome is never resent.
+      ['GA4', 'cod_order_placed', `cod_placed:${order.orderNumber}`, 'PENDING', false],
+      ['META', 'CODOrderPlaced', `cod_placed:${order.orderNumber}`, 'PENDING', true],
     ]);
     const ga4 = events[0]!.payload as { client_id: string; events: { params: Record<string, unknown> & { items: Record<string, unknown>[] } }[] };
     expect(ga4.client_id).toBe(BOTH.analyticsClientId);
@@ -249,7 +251,7 @@ describe('Server-side conversion events (LR-003)', () => {
     const metaCall = calls.find((c) => c.url.startsWith(META_URL))!;
     expect(metaCall.url).toBe(`${META_URL}/1234567890/events`);
     expect(metaCall.url).not.toContain('access_token');
-    expect((metaCall.body.data as { event_id: string }[])[0]!.event_id).toBe(`purchase:${order.orderNumber}`);
+    expect((metaCall.body.data as { event_id: string }[])[0]!.event_id).toBe(`cod_placed:${order.orderNumber}`);
 
     // Re-queuing the same order's purchase is a no-op, and a second sweep sends nothing.
     await service().enqueuePurchase(testPrisma, order.id);
@@ -273,7 +275,7 @@ describe('Server-side conversion events (LR-003)', () => {
     await testPrisma.conversionEvent.update({ where: { id: pending.id }, data: { nextAttemptAt: new Date() } });
     expect(await service().dispatchDue()).toMatchObject({ sent: 1 });
     const ids = calls.map((c) => (c.body.data as { event_id: string }[])[0]!.event_id);
-    expect(ids).toEqual([`purchase:${order.orderNumber}`, `purchase:${order.orderNumber}`]);
+    expect(ids).toEqual([`cod_placed:${order.orderNumber}`, `cod_placed:${order.orderNumber}`]);
   });
 
   it('records a definite provider rejection as FAILED and never resends it', async () => {
@@ -385,7 +387,11 @@ describe('Server-side conversion events (LR-003)', () => {
 
   it('a GA4 claim in flight when marketing is withdrawn is sent with the ad purposes denied, and its Meta twin is not sent', async () => {
     const subjectId = SUBJECT();
-    const { order } = await codOrder({ ...BOTH, consentSubjectId: subjectId });
+    // A prepaid purchase: GA4 deduplicates it, so a reclaimed claim is resent.
+    const sku = await setupSku();
+    const res = await checkout(sku.skuId, 'PREPAID', { ...BOTH, consentSubjectId: subjectId });
+    await capture(res.json().id, `pay_conv_inflight_${counter}`);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id } });
     await testPrisma.conversionEvent.updateMany({ where: { orderId: order.id }, data: { status: 'SENDING', claimedAt: new Date(Date.now() - 3_600_000) } });
     expect((await withdraw({ subjectId, analytics: true, marketing: false })).statusCode).toBe(204);
     expect(await service().dispatchDue()).toMatchObject({ sent: 1, withdrawn: 1 });
@@ -428,6 +434,38 @@ describe('Server-side conversion events (LR-003)', () => {
     expect(await testPrisma.conversionEvent.count({ where: { orderId: stranger.order.id, status: 'PENDING' } })).toBe(2);
   });
 
+  it('an order created while a withdrawal is in progress takes the withdrawn consent, never the stale one', async () => {
+    const sku = await setupSku();
+    const subjectId = SUBJECT();
+    const res = await checkout(sku.skuId, 'PREPAID', { ...BOTH, consentSubjectId: subjectId });
+    const sessionId = res.json().id as string;
+    await testPrisma.checkoutSession.update({ where: { id: sessionId }, data: { status: 'CONFIRMED' } });
+    // The withdrawal's first step holds the session row while it runs.
+    let creating!: Promise<unknown>;
+    await testPrisma.$transaction(async (tx) => {
+      await tx.checkoutSession.update({ where: { id: sessionId }, data: { analyticsConsent: false, marketingConsent: false, analyticsClientId: null, metaBrowserId: null, metaClickId: null } });
+      creating = new OrderService(app).createOrderFromCheckoutSession(sessionId);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    await creating;
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: sessionId } });
+    expect(order).toMatchObject({ analyticsConsent: false, marketingConsent: false, metaBrowserId: null });
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id } })).toBe(0);
+  });
+
+  it('a signed-in withdrawal resent late reaches only orders placed before it was requested', async () => {
+    const { customerId, token } = await createAuthenticatedCustomer(app);
+    const { order: earlier, sku } = await codOrder({ ...BOTH, consentSubjectId: SUBJECT() });
+    const requestedAt = new Date();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const { order: later } = await codOrder({ ...BOTH, consentSubjectId: SUBJECT() }, sku);
+    for (const o of [earlier, later]) await testPrisma.order.update({ where: { id: o.id }, data: { customerId, guestSessionId: null } });
+    const res = await withdraw({ analytics: false, marketing: false, requestedAt: requestedAt.toISOString() }, { authorization: `Bearer ${token}` });
+    expect(res.statusCode).toBe(204);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: earlier.id, status: 'WITHDRAWN' } })).toBe(2);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: later.id, status: 'PENDING' } })).toBe(2);
+  });
+
   it('withdrawal never grants consent, reveals nothing, and rejects a malformed subject', async () => {
     const subjectId = SUBJECT();
     const { order } = await codOrder({ ...BOTH, marketing: false, consentSubjectId: subjectId });
@@ -436,6 +474,139 @@ describe('Server-side conversion events (LR-003)', () => {
     expect((await withdraw({ subjectId: SUBJECT(), analytics: false, marketing: false })).statusCode).toBe(204);
     expect((await withdraw({ subjectId: 'not-a-uuid', analytics: false, marketing: false })).statusCode).toBe(400);
     expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, status: 'PENDING' } })).toBe(1);
+  });
+
+  // --- LR-009: COD purchase only after delivery and confirmed collection ---
+
+  async function opsToken() {
+    return staffToken('WAREHOUSE_MANAGER', ['warehouse:pick', 'order:fulfil', 'order:read', 'return:initiate', 'return:receive', 'return:qc', 'return:read']);
+  }
+
+  async function deliver(orderId: string, token: string) {
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    const line = order.lines[0]!;
+    const task = await testPrisma.pickTask.findUniqueOrThrow({ where: { orderLineId: line.id } });
+    const auth = { authorization: `Bearer ${token}` };
+    await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: auth, payload: { idempotencyKey: `pick-${line.id}`, outcome: 'FULL', pickedQuantity: line.quantity } });
+    const fulfilmentId = (await app.inject({ method: 'POST', url: `/api/v1/orders/${orderId}/fulfilments`, headers: auth, payload: { lineIds: [line.id] } })).json().id as string;
+    for (const step of ['pack', 'ready-to-ship']) await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/${step}`, headers: auth });
+    await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/ship`, headers: auth, payload: {} });
+    expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/deliver`, headers: auth })).statusCode).toBe(200);
+    return line.id;
+  }
+
+  const collect = (orderId: string, token: string, body: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: `/api/v1/orders/${orderId}/cod-collection`, headers: { authorization: `Bearer ${token}` }, payload: body });
+
+  const financeToken = () => staffToken('FINANCE', ['payment:cod:collect', 'payment:refund', 'order:read']);
+
+  it('a COD order becomes a purchase only once delivered and its cash collection is confirmed, dated at collection', async () => {
+    const { order, sku } = await codOrder(BOTH);
+    const finance = await financeToken();
+    const amount = Number(order.grandTotal);
+    expect((await collect(order.id, finance, { amount, reference: 'REM-1' })).statusCode).toBe(409); // not delivered yet
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, eventName: { in: ['purchase', 'Purchase'] } } })).toBe(0);
+
+    await deliver(order.id, await opsToken());
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, eventName: { in: ['purchase', 'Purchase'] } } })).toBe(0); // delivered, cash not confirmed
+
+    const collectedAt = new Date(order.createdAt.getTime() + 500);
+    const res = await collect(order.id, finance, { amount, reference: 'REM-1', collectedAt: collectedAt.toISOString() });
+    expect(res.statusCode).toBe(200);
+    const purchases = await testPrisma.conversionEvent.findMany({ where: { orderId: order.id, eventName: { in: ['purchase', 'Purchase'] } }, orderBy: { provider: 'asc' } });
+    expect(purchases.map((e) => [e.provider, e.eventName, e.eventId, e.retrySafe])).toEqual([
+      ['GA4', 'purchase', `purchase:${order.orderNumber}`, true],
+      ['META', 'Purchase', `purchase:${order.orderNumber}`, true],
+    ]);
+    const ga4 = purchases[0]!.payload as { timestamp_micros: number; events: { params: Record<string, unknown> & { items: { item_id: string }[] } }[] };
+    expect(ga4.timestamp_micros).toBe(collectedAt.getTime() * 1000);
+    expect(ga4.events[0]!.params).toMatchObject({ transaction_id: order.orderNumber, currency: 'INR', value: amount, payment_type: 'cod' });
+    expect(ga4.events[0]!.params.items.map((i) => i.item_id)).toEqual([sku.skuCode]);
+    expect((purchases[1]!.payload as { event_time: number }).event_time).toBe(Math.floor(collectedAt.getTime() / 1000));
+
+    // Recording again with the same details is a no-op; different details are refused.
+    expect((await collect(order.id, finance, { amount, reference: 'REM-1' })).json().id).toBe(res.json().id);
+    expect((await collect(order.id, finance, { amount, reference: 'REM-2' })).statusCode).toBe(409);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, eventName: { in: ['purchase', 'Purchase'] } } })).toBe(2);
+    expect(await testPrisma.auditLog.count({ where: { action: 'order.cod.collected', reference: order.id } })).toBe(1);
+  });
+
+  it('a cancelled or undelivered COD order can never be recorded as collected, so it is never a purchase', async () => {
+    const { order } = await codOrder(BOTH);
+    const line = (await testPrisma.orderLine.findFirstOrThrow({ where: { orderId: order.id } }));
+    const cs = await staffToken('CUSTOMER_SERVICE', ['order:read', 'order:cancel']);
+    expect((await app.inject({ method: 'POST', url: `/api/v1/orders/${order.id}/lines/${line.id}/cancel`, headers: { authorization: `Bearer ${cs}` }, payload: { idempotencyKey: `cancel-cod-${counter}` } })).statusCode).toBe(200);
+    const res = await collect(order.id, await financeToken(), { amount: 10, reference: 'REM-X' });
+    expect(res.statusCode).toBe(409);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, eventName: { in: ['purchase', 'Purchase'] } } })).toBe(0);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, eventName: 'refund' } })).toBe(0);
+  });
+
+  it('collection is Finance-only, COD-only and bounded by the amount payable', async () => {
+    const { order, sku } = await codOrder(BOTH);
+    await deliver(order.id, await opsToken());
+    const viewer = await staffToken('ANALYTICS', ['order:read']);
+    expect((await collect(order.id, viewer, { amount: 1, reference: 'R' })).statusCode).toBe(403);
+    const finance = await financeToken();
+    expect((await collect(order.id, finance, { amount: Number(order.grandTotal) + 1, reference: 'R' })).statusCode).toBe(400);
+    expect((await collect(order.id, finance, { amount: -5, reference: 'R' })).statusCode).toBe(400);
+    expect((await collect(order.id, finance, { amount: 10, reference: 'R', collectedAt: new Date(Date.now() + 86_400_000).toISOString() })).statusCode).toBe(400);
+    const prepaid = await checkout(sku.skuId, 'PREPAID', BOTH);
+    await capture(prepaid.json().id, `pay_conv_notcod_${counter}`);
+    const prepaidOrder = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: prepaid.json().id } });
+    expect((await collect(prepaidOrder.id, finance, { amount: 10, reference: 'R' })).statusCode).toBe(400);
+  });
+
+  it('two Finance users recording the same collection at once produce one record and one purchase', async () => {
+    const { order } = await codOrder(BOTH);
+    await deliver(order.id, await opsToken());
+    const finance = await financeToken();
+    const body = { amount: Number(order.grandTotal), reference: 'REM-RACE' };
+    const results = await Promise.all([collect(order.id, finance, body), collect(order.id, finance, body)]);
+    expect(results.map((r) => r.statusCode)).toEqual([200, 200]);
+    expect(results[0]!.json().id).toBe(results[1]!.json().id);
+    expect(await testPrisma.codCollection.count({ where: { orderId: order.id } })).toBe(1);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: order.id, eventName: 'purchase' } })).toBe(1);
+  });
+
+  async function returnAndRefund(orderId: string, lineId: string, ops: string, finance: string) {
+    const auth = { authorization: `Bearer ${ops}` };
+    const init = await app.inject({ method: 'POST', url: '/api/v1/returns', headers: auth, payload: { orderId, lines: [{ orderLineId: lineId, reason: 'Wrong size' }], method: 'DROP_OFF', idempotencyKey: `ret-${lineId}` } });
+    expect(init.statusCode).toBe(201);
+    const returnId = init.json().id as string;
+    await app.inject({ method: 'POST', url: `/api/v1/returns/${returnId}/receive`, headers: auth });
+    expect((await app.inject({ method: 'POST', url: `/api/v1/returns/${returnId}/lines/${init.json().lines[0].id}/qc`, headers: auth, payload: { qcResult: 'PASS', disposition: 'RESTOCK_SELLABLE' } })).statusCode).toBe(200);
+    const refund = await app.inject({ method: 'POST', url: '/api/v1/refunds', headers: { authorization: `Bearer ${finance}` }, payload: { orderId, orderLineId: lineId, idempotencyKey: `refund-${lineId}` } });
+    expect(refund.statusCode).toBeLessThan(300);
+  }
+
+  it('a refund after the COD purchase is reported as a refund; a refund before it is left out of the purchase and never reported', async () => {
+    const ops = await opsToken();
+    const finance = await financeToken();
+
+    const after = await codOrder(BOTH);
+    const afterLine = await deliver(after.order.id, ops);
+    expect((await collect(after.order.id, finance, { amount: Number(after.order.grandTotal), reference: 'REM-A' })).statusCode).toBe(200);
+    await returnAndRefund(after.order.id, afterLine, ops, finance);
+    const refundEvent = await testPrisma.conversionEvent.findFirstOrThrow({ where: { orderId: after.order.id, eventName: 'refund' } });
+    expect(refundEvent.provider).toBe('GA4');
+
+    const before = await codOrder(BOTH, after.sku);
+    const beforeLine = await deliver(before.order.id, ops);
+    await returnAndRefund(before.order.id, beforeLine, ops, finance);
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: before.order.id, eventName: 'refund' } })).toBe(0);
+    expect((await collect(before.order.id, finance, { amount: Number(before.order.grandTotal), reference: 'REM-B' })).statusCode).toBe(200);
+    // Its only line was refunded before collection: nothing is left to report as purchased.
+    expect(await testPrisma.conversionEvent.count({ where: { orderId: before.order.id, eventName: { in: ['purchase', 'Purchase'] } } })).toBe(0);
+  });
+
+  it('a prepaid purchase is unchanged: reported at capture, with no "COD placed" event', async () => {
+    const sku = await setupSku();
+    const res = await checkout(sku.skuId, 'PREPAID', BOTH);
+    await capture(res.json().id, `pay_conv_prepaid_${counter}`);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id } });
+    const names = (await testPrisma.conversionEvent.findMany({ where: { orderId: order.id } })).map((e) => e.eventName).sort();
+    expect(names).toEqual(['Purchase', 'purchase']);
   });
 
   // --- Staff routes ---

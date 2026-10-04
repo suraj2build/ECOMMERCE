@@ -15,9 +15,10 @@
  *   item_group_id (GA4) / product_group (Meta). Currency is INR.
  * - No name, email, phone or address is ever passed to either tag.
  * - GA4 `purchase` is sent by the server only (Measurement Protocol, after the
- *   order is confirmed) so it is never counted twice. The browser sends the
- *   Meta Purchase with the same event_id as the Conversions API, which Meta
- *   deduplicates.
+ *   order is confirmed) so it is never counted twice. For a prepaid order the
+ *   browser sends the Meta Purchase with the same event_id as the Conversions
+ *   API, which Meta deduplicates. A COD order is never a browser purchase
+ *   (LR-009: the server reports it once delivered and the cash collected).
  */
 
 import { getStoredSession } from './customer-auth';
@@ -138,9 +139,15 @@ function stopPixel() {
 
 /** Applies the stored choice: loads what was granted, stops what was not. */
 export function applyConsent(consent: Consent | null = readConsent()) {
+  if (consent && !consent.subjectId) {
+    // A choice saved before subject IDs existed gets one now, so checkouts
+    // from here on can be found again if this browser withdraws.
+    consent.subjectId = newSubjectId();
+    try { localStorage.setItem(CONSENT_KEY, JSON.stringify(consent)); } catch { /* still applies to this page */ }
+  }
   if (consent?.analytics) startGa4(consent); else if (ga4Loaded) stopGa4();
   if (consent?.marketing) startPixel(); else if (pixelLoaded) stopPixel();
-  void retryPendingWithdrawal();
+  void retryPendingWithdrawals();
 }
 
 function newSubjectId(): string {
@@ -152,11 +159,14 @@ function newSubjectId(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-interface Withdrawal { subjectId?: string; analytics: boolean; marketing: boolean }
+/** One withdrawal; `id` only identifies it in this browser's queue. */
+interface Withdrawal { id: string; subjectId?: string; analytics: boolean; marketing: boolean; requestedAt: string }
 
-async function sendWithdrawal(body: Withdrawal, signedIn = true): Promise<boolean> {
-  // A signed-in customer's withdrawal also covers their orders from other browsers.
+async function sendWithdrawal(item: Withdrawal, signedIn = true): Promise<boolean> {
+  // A signed-in customer's withdrawal also covers their orders from other
+  // browsers placed up to requestedAt.
   const token = signedIn ? getStoredSession()?.accessToken : undefined;
+  const body = { subjectId: item.subjectId, analytics: item.analytics, marketing: item.marketing, requestedAt: item.requestedAt };
   try {
     const res = await fetch(`${API_URL}/api/v1/storefront/consent/withdrawal`, {
       method: 'POST',
@@ -165,42 +175,56 @@ async function sendWithdrawal(body: Withdrawal, signedIn = true): Promise<boolea
       body: JSON.stringify(body),
     });
     // An expired sign-in: still withdraw for this browser's own orders.
-    if (res.status === 401 && token) return sendWithdrawal(body, false);
+    if (res.status === 401 && token) return sendWithdrawal(item, false);
     return res.ok;
   } catch {
     return false;
   }
 }
 
-function rememberPending(body: Withdrawal | null) {
+function pendingWithdrawals(): Withdrawal[] {
   try {
-    if (body) localStorage.setItem(PENDING_WITHDRAWAL_ITEM, JSON.stringify(body));
+    const list = JSON.parse(localStorage.getItem(PENDING_WITHDRAWAL_ITEM) ?? '[]') as unknown;
+    return Array.isArray(list) ? (list as Withdrawal[]).filter((w) => typeof w?.id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function updatePending(change: (list: Withdrawal[]) => Withdrawal[]) {
+  try {
+    const next = change(pendingWithdrawals());
+    if (next.length) localStorage.setItem(PENDING_WITHDRAWAL_ITEM, JSON.stringify(next));
     else localStorage.removeItem(PENDING_WITHDRAWAL_ITEM);
   } catch { /* storage blocked: nothing more can be kept */ }
 }
 
-async function retryPendingWithdrawal() {
-  let pending: Withdrawal | null = null;
-  try { pending = JSON.parse(localStorage.getItem(PENDING_WITHDRAWAL_ITEM) ?? 'null') as Withdrawal | null; } catch { return; }
-  if (pending && (await sendWithdrawal(pending))) rememberPending(null);
+/** Sends one queued withdrawal and removes only that one once the server confirms it. */
+async function deliver(item: Withdrawal) {
+  if (await sendWithdrawal(item)) updatePending((list) => list.filter((w) => w.id !== item.id));
 }
 
-/** Server side of a withdrawal; kept and retried until the server confirms it. */
-async function withdrawOnServer(body: Withdrawal) {
-  rememberPending(body);
-  if (await sendWithdrawal(body)) rememberPending(null);
+async function retryPendingWithdrawals() {
+  await Promise.all(pendingWithdrawals().map(deliver));
 }
 
 export function saveConsent(choice: { analytics: boolean; marketing: boolean }) {
   const previous = readConsent();
-  const consent: Consent = { ...choice, decidedAt: new Date().toISOString(), subjectId: previous?.subjectId ?? newSubjectId() };
+  const withdrawn = Boolean((previous?.analytics && !choice.analytics) || (previous?.marketing && !choice.marketing));
+  // After a withdrawal this browser starts a new subject: the withdrawal
+  // (even one resent later) then covers only checkouts made before it.
+  const subjectId = withdrawn || !previous?.subjectId ? newSubjectId() : previous.subjectId;
+  const consent: Consent = { ...choice, decidedAt: new Date().toISOString(), subjectId };
   try { localStorage.setItem(CONSENT_KEY, JSON.stringify(consent)); } catch { /* the choice still applies to this page */ }
   if (!choice.analytics) stopGa4();
   if (!choice.marketing) stopPixel();
+  if (withdrawn) {
+    const item: Withdrawal = { id: newSubjectId(), subjectId: previous?.subjectId, analytics: choice.analytics, marketing: choice.marketing, requestedAt: consent.decidedAt };
+    updatePending((list) => [...list, item]);
+  }
+  // applyConsent sends every queued withdrawal, including this one.
   applyConsent(consent);
   window.dispatchEvent(new Event(CONSENT_EVENT));
-  const withdrawn = (previous?.analytics && !choice.analytics) || (previous?.marketing && !choice.marketing);
-  if (withdrawn) void withdrawOnServer({ subjectId: previous?.subjectId, analytics: choice.analytics, marketing: choice.marketing });
 }
 
 /** Consent and identifiers sent with the order so server events honour them. */

@@ -2025,6 +2025,7 @@ model Order {
   customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: Restrict)
   checkoutSession  CheckoutSession   @relation(fields: [checkoutSessionId], references: [id], onDelete: Restrict)
   conversionEvents ConversionEvent[]
+  codCollection    CodCollection?
   lines            OrderLine[]
   fulfilments      OrderFulfilment[]
   pickTasks        PickTask[]
@@ -4168,6 +4169,27 @@ enum ConversionEventStatus {
   AMBIGUOUS_RECONCILIATION_REQUIRED
   // The shopper withdrew consent for this purpose before it was sent.
   WITHDRAWN
+}
+
+// LR-009 (Product Owner decision 2026-10-04): a COD order counts as a
+// purchase only once it is delivered AND its cash collection is confirmed.
+// One row per order, recorded by Finance (or, later, a courier remittance
+// adapter) after every non-cancelled line is delivered; recording it is
+// what queues the GA4/Meta Purchase for a COD order.
+model CodCollection {
+  id                String   @id @default(uuid())
+  orderId           String   @unique
+  // Cash actually collected; positive, at most the order's amount payable.
+  amount            Decimal  @db.Decimal(10, 2)
+  collectedAt       DateTime
+  // Courier remittance or receipt reference.
+  reference         String
+  recordedByStaffId String?
+  createdAt         DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@map("cod_collections")
 }
 
 model ConversionEvent {

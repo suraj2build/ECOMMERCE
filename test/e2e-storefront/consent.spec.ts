@@ -12,9 +12,8 @@ import { PrismaClient } from '@fcp/db';
  *   order number; no name, email, phone or address.
  * - Withdrawal stops further events and deletes the tag cookies, and the
  *   server clears the order's consent (a lost request is retried).
- * - The choice travels with the order (server-side events honour it), and
- *   the browser Meta Purchase fires once, with event ID purchase:<orderNumber>,
- *   only for a confirmed order.
+ * - The choice travels with the order (server-side events honour it). A COD
+ *   order placed is never a browser Purchase (LR-009).
  */
 
 const API_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
@@ -156,7 +155,7 @@ test.describe('Consent-aware analytics (LR-003)', () => {
     expect(cookies).not.toContain('_fbp');
   });
 
-  test('a consented COD order carries the choice to the server and records the Meta purchase once, with the order number as event ID', async ({ page, context }) => {
+  test('a consented COD order carries the choice to the server and is not recorded as a purchase in the browser', async ({ page, context }) => {
     const requests = await stubTags(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/product/${styleId}`);
@@ -190,11 +189,11 @@ test.describe('Consent-aware analytics (LR-003)', () => {
     expect(order).toMatchObject({ analyticsConsent: true, marketingConsent: true, analyticsClientId: '555666777.1700000000', metaBrowserId: 'fb.1.1700000000000.424242' });
     expect(order.consentSubjectId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
-    await expect.poll(async () => (await tagCalls(page)).fbq.filter((c) => c.name === 'Purchase').length).toBe(1);
-    const purchase = (await tagCalls(page)).fbq.find((c) => c.name === 'Purchase')!;
-    expect(purchase.options).toEqual({ eventID: `purchase:${order.orderNumber}` });
-    expect(purchase.params).toMatchObject({ currency: 'INR', content_ids: [skuCode], value: Number(order.grandTotal) });
-    // GA4's purchase is server-side only.
+    // LR-009: a COD order placed is not a purchase. The browser records no
+    // Purchase; the server reports it only after delivery and confirmed
+    // cash collection.
+    await page.waitForLoadState('networkidle');
+    expect((await tagCalls(page)).fbq.some((c) => c.name === 'Purchase')).toBe(false);
     expect((await tagCalls(page)).ga.some((c) => c.name === 'purchase')).toBe(false);
     const everything = JSON.stringify(await tagCalls(page)).toLowerCase();
     for (const personal of ['consent buyer', '9876500001', 'consent lane', PINCODE]) expect(everything).not.toContain(personal);
@@ -217,7 +216,11 @@ test.describe('Consent-aware analytics (LR-003)', () => {
     await page.unroute('**/api/v1/storefront/consent/withdrawal');
     const sent = page.waitForRequest((req) => req.url().endsWith('/api/v1/storefront/consent/withdrawal') && req.method() === 'POST');
     await page.reload();
-    expect(JSON.parse((await sent).postData() ?? '{}')).toEqual({ subjectId: order.consentSubjectId, analytics: false, marketing: false });
+    expect(JSON.parse((await sent).postData() ?? '{}')).toEqual({ subjectId: order.consentSubjectId, analytics: false, marketing: false, requestedAt: expect.any(String) });
+    // Checkouts from now on use a new subject, out of reach of this withdrawal.
+    const current = await page.evaluate(() => JSON.parse(localStorage.getItem('vanya_consent_v1') ?? '{}') as { subjectId?: string });
+    expect(current.subjectId).toBeTruthy();
+    expect(current.subjectId).not.toBe(order.consentSubjectId);
     await expect.poll(async () => prisma.order.findUniqueOrThrow({ where: { id: order.id } }).then((o) => [o.analyticsConsent, o.marketingConsent, o.analyticsClientId, o.metaBrowserId])).toEqual([false, false, null, null]);
     expect(await page.evaluate(() => localStorage.getItem('vanya_consent_withdrawal_pending'))).toBeNull();
   });

@@ -41,6 +41,8 @@ const ORDER_VIEW_INCLUDE = {
   // (specs/16-shipping-tracking.md: "customer shipment tracking
   // required, degrading gracefully to last-known platform status").
   fulfilments: { include: { shipment: true } },
+  // LR-009: confirmed COD cash collection (what makes a COD order a purchase).
+  codCollection: true,
 } satisfies Prisma.OrderInclude;
 
 type OrderWithViewIncludes = Prisma.OrderGetPayload<{ include: typeof ORDER_VIEW_INCLUDE }>;
@@ -68,6 +70,7 @@ function buildOrderView(order: OrderWithViewIncludes) {
     invoiceStatus: order.invoiceStatus,
     invoiceFailureReason: order.invoiceFailureReason,
     invoiceAttempts: order.invoiceAttempts,
+    codCollection: order.codCollection ? { amount: Number(order.codCollection.amount), collectedAt: order.codCollection.collectedAt } : null,
     lines: order.lines.map((l) => ({
       id: l.id,
       skuId: l.skuId,
@@ -199,6 +202,13 @@ export class OrderService {
     }
 
     const run = async (tx: Prisma.TransactionClient) => {
+      // LR-003: tracking consent is read under the session's row lock, in
+      // this transaction. A consent withdrawal updates the session first,
+      // so it either commits before this read (and the order is created
+      // without consent) or waits for this order and then withdraws it.
+      const [consent] = await tx.$queryRaw<Pick<typeof session, 'analyticsConsent' | 'marketingConsent' | 'analyticsClientId' | 'metaBrowserId' | 'metaClickId' | 'consentSubjectId'>[]>`
+        SELECT "analyticsConsent", "marketingConsent", "analyticsClientId", "metaBrowserId", "metaClickId", "consentSubjectId"
+        FROM checkout_sessions WHERE id = ${session.id} FOR UPDATE`;
       const orderNumber = await this.nextOrderNumber(tx);
 
       const created = await tx.order.create({
@@ -220,12 +230,12 @@ export class OrderService {
           currency: session.currency,
           paymentMethod: session.paymentMethod,
           status: 'CONFIRMED',
-          analyticsConsent: session.analyticsConsent,
-          marketingConsent: session.marketingConsent,
-          analyticsClientId: session.analyticsClientId,
-          metaBrowserId: session.metaBrowserId,
-          metaClickId: session.metaClickId,
-          consentSubjectId: session.consentSubjectId,
+          analyticsConsent: consent!.analyticsConsent,
+          marketingConsent: consent!.marketingConsent,
+          analyticsClientId: consent!.analyticsClientId,
+          metaBrowserId: consent!.metaBrowserId,
+          metaClickId: consent!.metaClickId,
+          consentSubjectId: consent!.consentSubjectId,
           lines: {
             create: session.lines.map((l) => ({
               skuId: l.skuId,

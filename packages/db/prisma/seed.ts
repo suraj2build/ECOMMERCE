@@ -186,6 +186,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'invoice:read',
     'invoice:create',
     'payment:refund',
+    'payment:cod:collect',
     'order:read',
     // M23: Finance may also action a manual loyalty adjustment
     // (mirrors payment:refund's own Finance ownership of value corrections).
