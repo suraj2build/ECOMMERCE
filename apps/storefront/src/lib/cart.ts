@@ -69,6 +69,8 @@ export interface CartItemView {
   availableQuantity: number;
   inStock: boolean;
   isPurchasable: boolean;
+  categorySlug: string | null;
+  gender: string | null;
 }
 
 export interface CartView {
@@ -104,6 +106,12 @@ export const updateCartItemQuantity = (skuId: string, quantity: number) =>
 
 export const removeCartItem = (skuId: string) =>
   cartFetch<CartView>(`/api/v1/storefront/cart/items/${skuId}`, { method: 'DELETE' });
+
+// A shopper's explicit response to a priceChanged line: adopts the current
+// live price (already shown to them) as the line's new price. Never called
+// automatically by a quantity change.
+export const acceptCartItemPrice = (skuId: string) =>
+  cartFetch<CartView>(`/api/v1/storefront/cart/items/${skuId}/accept-price`, { method: 'POST' });
 
 export const getWishlist = () => cartFetch<WishlistItemView[]>('/api/v1/storefront/wishlist');
 

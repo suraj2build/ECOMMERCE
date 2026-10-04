@@ -112,6 +112,15 @@ const cartRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await cartService.removeItem(identity, skuId));
   });
 
+  // A shopper's explicit "Update price" response to a priceChanged line
+  // (CartService.acceptCurrentPrice's own docblock) - never triggered
+  // implicitly by a quantity change.
+  fastify.post('/storefront/cart/items/:skuId/accept-price', identityAuth, async (request, reply) => {
+    const identity = resolveCartIdentity(request);
+    const { skuId } = skuIdParamSchema.parse(request.params);
+    reply.status(200).send(await cartService.acceptCurrentPrice(identity, skuId));
+  });
+
   fastify.post(
     '/storefront/cart/merge',
     { preHandler: fastify.requireCustomerAuth },

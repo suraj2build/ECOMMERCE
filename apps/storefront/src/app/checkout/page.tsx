@@ -12,11 +12,36 @@ import { getStoredSession } from '@/lib/customer-auth';
 import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance } from '@/lib/account';
 import { randomUuid } from '@/lib/random-id';
 import { formatINR } from '@/lib/money';
+import { CheckoutStepper, type CheckoutStep } from '@/vanya/components/CheckoutStepper';
 
 const EMPTY_ADDRESS: Address = { line1: '', line2: '', landmark: '', city: '', state: '', stateCode: '', pincode: '' };
 
 function isAddressComplete(a: Address): boolean {
   return Boolean(a.line1 && a.city && a.stateCode && /^[0-9]{6}$/.test(a.pincode));
+}
+
+// In-progress contact/address text only - never payment method or coupon
+// state, and never written for a logged-in customer with a saved address
+// (a separate, already-existing concern). Cleared the moment an order is
+// actually placed. This is purely "don't lose unsaved keystrokes if a
+// shopper bounces to /bag and back" - the cart itself already lives
+// server-side, so it was never at risk.
+const DRAFT_KEY = 'vanya_checkout_draft';
+
+interface CheckoutDraft {
+  contactName: string;
+  contactMobile: string;
+  contactEmail: string;
+  shippingAddress: Address;
+}
+
+function readDraft(): CheckoutDraft | null {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as CheckoutDraft) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -72,6 +97,30 @@ export default function CheckoutPage() {
   // preview.
   const suppressNextCouponErrorClearRef = useRef(false);
 
+  // Bag -> Address -> Payment stepper (CheckoutStepper's own doc comment):
+  // "Address" and "Payment" are tracked by which of this one page's two
+  // sections the shopper has scrolled to, not a real route change.
+  const [activeStep, setActiveStep] = useState<CheckoutStep>('address');
+  const addressSectionRef = useRef<HTMLDivElement>(null);
+  const paymentSectionRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Prefer whichever section is intersecting closest to the top of
+        // the "active" band; if both are (a short viewport), Payment wins
+        // since it comes later in reading order.
+        const visible = entries.filter((e) => e.isIntersecting).map((e) => e.target);
+        if (visible.some((el) => el === paymentSectionRef.current)) setActiveStep('payment');
+        else if (visible.some((el) => el === addressSectionRef.current)) setActiveStep('address');
+      },
+      { rootMargin: '-35% 0px -55% 0px', threshold: 0 },
+    );
+    if (addressSectionRef.current) observer.observe(addressSectionRef.current);
+    if (paymentSectionRef.current) observer.observe(paymentSectionRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     void getCart().then((loaded) => {
       setCart(loaded);
@@ -85,7 +134,28 @@ export default function CheckoutPage() {
     getStoreCredit()
       .then(setStoreCreditBalance)
       .catch(() => setStoreCreditBalance(null));
+
+    // Rehydrate any in-progress contact/address text from a previous visit
+    // to this page this session (e.g. the shopper went back to /bag to
+    // change a quantity). Client-only - sessionStorage doesn't exist
+    // server-side, hence doing this in an effect, not a lazy useState init.
+    const draft = readDraft();
+    if (draft) {
+      setContactName(draft.contactName);
+      setContactMobile(draft.contactMobile);
+      setContactEmail(draft.contactEmail);
+      setShippingAddress(draft.shippingAddress);
+    }
   }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ contactName, contactMobile, contactEmail, shippingAddress }));
+    } catch {
+      // Best-effort only - a shopper in private browsing simply doesn't get
+      // draft persistence, never an error.
+    }
+  }, [contactName, contactMobile, contactEmail, shippingAddress]);
 
   useEffect(() => {
     if (!isAddressComplete(shippingAddress)) {
@@ -192,6 +262,7 @@ export default function CheckoutPage() {
         tracking: checkoutTracking(),
       });
       window.dispatchEvent(new Event('fcp:cart-updated'));
+      try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* best-effort */ }
       router.push(`/checkout/${session.id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not place your order.');
@@ -212,10 +283,12 @@ export default function CheckoutPage() {
 
   return (
     <Container className="py-10 sm:py-14">
+      <CheckoutStepper current={activeStep} />
       <h1 className="font-display text-2xl text-[#181716]">Checkout</h1>
 
       <form onSubmit={handlePlaceOrder} className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="space-y-8">
+          <div ref={addressSectionRef} className="space-y-8">
           <fieldset className="space-y-4 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
             <legend className="font-display text-2xl text-[#181716]">Contact</legend>
             <input
@@ -258,7 +331,9 @@ export default function CheckoutPage() {
           {!billingSameAsShipping && (
             <AddressFields legend="Billing address" address={billingAddress} onChange={setBillingAddress} />
           )}
+          </div>
 
+          <div ref={paymentSectionRef}>
           <fieldset className="space-y-3 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
             <legend className="font-display text-2xl text-[#181716]">Payment method</legend>
             <label className="flex min-h-[44px] items-center gap-2 text-sm text-[#181716]">
@@ -362,6 +437,7 @@ export default function CheckoutPage() {
               />
             </fieldset>
           )}
+          </div>
         </div>
 
         <div className="h-fit rounded-[22px] border border-[#e6ddd0] bg-white p-6 lg:sticky lg:top-28">

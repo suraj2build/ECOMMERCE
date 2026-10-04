@@ -21,6 +21,12 @@ export interface CartItemView {
   availableQuantity: number;
   inStock: boolean;
   isPurchasable: boolean; // still published and priced - false if the product was pulled after adding
+  // Storefront-only enrichment, not persisted on CartItem: lets the bag
+  // page's "Complete your look" cross-sell reuse the same category+gender
+  // search the PDP's "You May Also Like" already uses, without a second
+  // round-trip per line.
+  categorySlug: string | null;
+  gender: string | null;
 }
 
 export interface CartView {
@@ -155,6 +161,36 @@ export class CartService {
     return this.getCartView(identity);
   }
 
+  /**
+   * A shopper's explicit response to a `priceChanged` line (getCartView
+   * below): re-prices that one line to the SKU's current live price,
+   * never a client-supplied value - the same price already shown to the
+   * shopper via `currentPrice`, just adopted as the new `priceAtAdd` so
+   * the line stops being flagged. This is the only way a changed price
+   * is ever accepted; a plain quantity change deliberately never does
+   * this implicitly (updateItemQuantity above leaves priceAtAdd alone),
+   * so a shopper is never silently moved onto a new price by an
+   * unrelated action.
+   */
+  async acceptCurrentPrice(identity: CartOwnerIdentity, skuId: string): Promise<CartView> {
+    const cart = await this.getOrCreateCartRow(identity);
+    const item = await this.prisma.cartItem.findUnique({ where: { cartId_skuId: { cartId: cart.id, skuId } } });
+    if (!item) throw new NotFoundError('CartItem', skuId);
+
+    const sku = await this.prisma.sku.findUnique({ where: { id: skuId } });
+    if (!sku || !sku.isActive) throw new NotFoundError('Sku', skuId);
+    const activePrice = await this.catalog.getActivePrice(sku.styleId, sku.colourId);
+    if (!activePrice) throw new ValidationError('This product is not currently available for purchase');
+
+    await this.prisma.cartItem.update({
+      where: { cartId_skuId: { cartId: cart.id, skuId } },
+      data: { priceAtAdd: activePrice.sellingPrice },
+    });
+    await this.touchCart(cart.id);
+
+    return this.getCartView(identity);
+  }
+
   async removeItem(identity: CartOwnerIdentity, skuId: string): Promise<CartView> {
     const cart = await this.getOrCreateCartRow(identity);
     const item = await this.prisma.cartItem.findUnique({ where: { cartId_skuId: { cartId: cart.id, skuId } } });
@@ -180,7 +216,7 @@ export class CartService {
       include: {
         sku: {
           include: {
-            style: true,
+            style: { include: { category: true } },
             colour: true,
             size: true,
           },
@@ -242,6 +278,8 @@ export class CartService {
         availableQuantity,
         inStock,
         isPurchasable,
+        categorySlug: item.sku.style.category?.slug ?? null,
+        gender: item.sku.style.gender,
       });
     }
 

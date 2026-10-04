@@ -516,6 +516,10 @@ describe('Checkout (M13)', () => {
         },
       });
       expect(res.statusCode).toBe(409);
+      // The shopper-facing message names the style, never the raw internal
+      // SKU id (InsufficientStockError's own `displayName` param).
+      expect(res.json().error.message).toContain('Checkout Test Jacket');
+      expect(res.json().error.message).not.toContain(skuB);
 
       // skuA's reservation is made first (line order follows add-to-cart
       // order), then released when skuB's line fails - releaseReservation

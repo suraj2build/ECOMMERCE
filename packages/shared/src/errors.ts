@@ -48,11 +48,22 @@ export class ConflictError extends AppError {
   }
 }
 
-/** Raised specifically when inventory cannot satisfy a requested reservation. */
+/**
+ * Raised specifically when inventory cannot satisfy a requested reservation.
+ * `displayName`, when given, is a shopper-facing label (e.g. a style name)
+ * used in the message instead of the raw `skuId` - for storefront-facing
+ * callers like checkout, which must never surface an internal id to a
+ * shopper. `details.skuId` always carries the real id regardless, for
+ * logging/diagnostics. Staff-facing callers (inventory adjustments, GRN,
+ * transfers) omit it and keep the original SKU-id message, which is the
+ * right thing for an operator working directly with SKUs.
+ */
 export class InsufficientStockError extends AppError {
-  constructor(skuId: string, requested: number, available: number) {
+  constructor(skuId: string, requested: number, available: number, displayName?: string) {
     super(
-      `Insufficient stock for SKU ${skuId}: requested ${requested}, available ${available}`,
+      displayName
+        ? `Only ${available} of '${displayName}' is available - requested ${requested}`
+        : `Insufficient stock for SKU ${skuId}: requested ${requested}, available ${available}`,
       409,
       'INSUFFICIENT_STOCK',
       { skuId, requested, available },

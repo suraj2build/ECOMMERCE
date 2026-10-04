@@ -9,6 +9,7 @@ import { getCheckoutSession, retryPayment, type CheckoutSessionView } from '@/li
 import { openRazorpayCheckout } from '@/lib/razorpay';
 import { track } from '@/lib/tracking';
 import { formatINR } from '@/lib/money';
+import { CheckoutStepper } from '@/vanya/components/CheckoutStepper';
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_ATTEMPTS = 20; // ~40s - the webhook is typically near-instant; this just bounds the UI wait
@@ -134,6 +135,7 @@ export default function CheckoutConfirmationPage() {
 
   return (
     <Container className="py-10 sm:py-14">
+      <CheckoutStepper current={session.status === 'CONFIRMED' ? 'complete' : 'payment'} />
       {session.status === 'CONFIRMED' ? (
         <>
           <h1 className="font-display text-4xl text-[#181716] sm:text-5xl">Order placed</h1>

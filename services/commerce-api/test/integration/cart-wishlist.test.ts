@@ -175,6 +175,47 @@ describe('Wishlist / Cart (M12)', () => {
       expect(res.json().hasBlockingChanges).toBe(true);
     });
 
+    it("a shopper's explicit 'accept price' request clears priceChanged and unblocks checkout, adopting exactly the live price - never a client-supplied value", async () => {
+      const { styleId, skuId, token } = await publishStyle(await seedCatalogContext(), { styleCode: 'CART-004B', name: 'Cardigan', sellingPrice: 1500 });
+      const headers = { [GUEST_HEADER]: 'guest-accept-price' };
+
+      await app.inject({ method: 'POST', url: '/api/v1/storefront/cart/items', headers, payload: { skuId, quantity: 1 } });
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/catalog/prices',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { styleId, mrp: 1800, sellingPrice: 1800 },
+      });
+
+      const before = await app.inject({ method: 'GET', url: '/api/v1/storefront/cart', headers });
+      expect(before.json().items[0].priceChanged).toBe(true);
+      expect(before.json().hasBlockingChanges).toBe(true);
+
+      const accept = await app.inject({ method: 'POST', url: `/api/v1/storefront/cart/items/${skuId}/accept-price`, headers });
+      expect(accept.statusCode).toBe(200);
+      const item = accept.json().items[0];
+      expect(item.priceAtAdd).toBe(1800);
+      expect(item.currentPrice).toBe(1800);
+      expect(item.priceChanged).toBe(false);
+      expect(accept.json().hasBlockingChanges).toBe(false);
+
+      // A plain quantity change never does this implicitly.
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/catalog/prices',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { styleId, mrp: 2000, sellingPrice: 2000 },
+      });
+      const afterQuantityChange = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/storefront/cart/items/${skuId}`,
+        headers,
+        payload: { quantity: 2 },
+      });
+      expect(afterQuantityChange.json().items[0].priceAtAdd).toBe(1800);
+      expect(afterQuantityChange.json().items[0].priceChanged).toBe(true);
+    });
+
     it('flags an item that has gone out of stock since it was added, without erroring', async () => {
       const { skuId } = await publishStyle(await seedCatalogContext(), { styleCode: 'CART-005', name: 'Scarf', sellingPrice: 599 });
       const headers = { [GUEST_HEADER]: 'guest-e' };

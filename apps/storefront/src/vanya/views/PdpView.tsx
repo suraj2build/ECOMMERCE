@@ -29,8 +29,10 @@ import {
 } from 'lucide-react';
 import {
   checkServiceability,
+  getEstimatedOffers,
   getProductDetailLive,
   type CrossSellItem,
+  type EstimatedOffer,
   type ProductDetail,
   type ServiceabilityResult,
   type StorefrontSearchHit,
@@ -80,6 +82,18 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
     track.viewItem({ styleCode: initial.styleCode, name: initial.name, price: initial.sellingPrice });
     if (getStoredSession()) void recordProductView(initial.id).catch(() => {});
   }, [initial.id, initial.styleCode, initial.name, initial.sellingPrice]);
+
+  // "Best Offers" teaser: automatic promotions this product's own price
+  // alone already qualifies for (getEstimatedOffers's own doc comment) -
+  // always an estimate, never a substitute for the checkout-time total.
+  const [estimatedOffers, setEstimatedOffers] = useState<EstimatedOffer[]>([]);
+  useEffect(() => {
+    let active = true;
+    getEstimatedOffers(initial.id)
+      .then((offers) => { if (active) setEstimatedOffers(offers); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [initial.id]);
 
   // Color and size selection state (opens on a colour that has stock)
   const firstInStock = Math.max(0, product.colors.findIndex((c) => detail.variants.some((v) => v.colourName === c.name && v.inStock)));
@@ -379,6 +393,22 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
                 )}
               </div>
               <p className="text-[11px] text-[#756A5E] mt-0.5">Inclusive of all Indian taxes</p>
+
+              {estimatedOffers.length > 0 && (
+                <div className="mt-3 rounded-xl border border-[#EAE3D7] bg-[#FAF7F2] p-3">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[#756A5E]">Offers</span>
+                  <ul className="mt-1.5 space-y-1">
+                    {estimatedOffers.map((offer) => (
+                      <li key={offer.name} className="text-xs text-[#2E2823]">
+                        <span className="font-medium">{offer.name}</span> — save {formatPrice(offer.discountAmount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-[10px] text-[#A0978A]">
+                    Estimated if this is the only item in your bag — confirmed at checkout.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Colour Variant Selection */}

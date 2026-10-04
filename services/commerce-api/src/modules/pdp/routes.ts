@@ -5,6 +5,8 @@ import { PdpService } from './service.js';
 import { ReviewService } from './review-service.js';
 import { ServiceabilityService } from './serviceability-service.js';
 import { CrossSellService } from './cross-sell-service.js';
+import { CatalogService } from '../catalog/service.js';
+import { PromotionService } from '../promotions/service.js';
 
 const reviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -32,6 +34,8 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
   const reviewService = new ReviewService(fastify);
   const serviceabilityService = new ServiceabilityService(fastify);
   const crossSellService = new CrossSellService(fastify);
+  const catalogService = new CatalogService(fastify);
+  const promotionService = new PromotionService(fastify);
 
   const moderateAuth = [fastify.requireStaffAuth, fastify.requirePermission('review:moderate')];
   const pincodeAuth = [fastify.requireStaffAuth, fastify.requirePermission('pincode:manage')];
@@ -42,6 +46,26 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/storefront/products/:styleId', async (request, reply) => {
     const { styleId } = z.object({ styleId: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await pdpService.getProductDetail(styleId));
+  });
+
+  // A PDP "Best Offers" teaser, honestly scoped: Promotion has no
+  // product/category targeting (it's cart-subtotal-only by design), so
+  // this asks the real promotion engine what would apply if this
+  // product's own price were the entire cart - i.e. only AUTOMATIC
+  // promotions (never a coupon code, which needs the shopper to supply
+  // it) that this item alone already qualifies for. The storefront must
+  // label this as an estimate, not a confirmed checkout discount.
+  fastify.get('/storefront/products/:styleId/estimated-offers', async (request, reply) => {
+    const { styleId } = z.object({ styleId: z.string().uuid() }).parse(request.params);
+    const price = await catalogService.getActivePrice(styleId);
+    if (!price) {
+      reply.status(200).send({ offers: [] });
+      return;
+    }
+    const evaluation = await promotionService.previewApplication(Number(price.sellingPrice), undefined);
+    reply.status(200).send({
+      offers: evaluation.applied.map((a) => ({ name: a.name, discountAmount: a.discountAmount })),
+    });
   });
 
   // The shop-wide delivery and returns defaults the storefront may state

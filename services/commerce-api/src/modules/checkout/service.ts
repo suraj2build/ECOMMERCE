@@ -74,6 +74,7 @@ export interface StartCheckoutInput {
 
 interface PricedLine {
   skuId: string;
+  styleName: string;
   quantity: number;
   unitPriceInclusive: number;
   discountAmount: number;
@@ -176,6 +177,7 @@ export class CheckoutService {
 
     interface BaseLine {
       skuId: string;
+      styleName: string;
       quantity: number;
       unitPriceInclusive: number;
       lineInclusive: number;
@@ -205,6 +207,7 @@ export class CheckoutService {
       const lineInclusive = sellingPriceInclusive * item.quantity;
       baseLines.push({
         skuId: item.skuId,
+        styleName: item.styleName,
         quantity: item.quantity,
         unitPriceInclusive: sellingPriceInclusive,
         lineInclusive,
@@ -249,6 +252,7 @@ export class CheckoutService {
 
       lines.push({
         skuId: base.skuId,
+        styleName: base.styleName,
         quantity: base.quantity,
         unitPriceInclusive: base.unitPriceInclusive,
         discountAmount,
@@ -377,7 +381,7 @@ export class CheckoutService {
         const candidate = balances.find((b) => b.onHand - b.reserved >= line.quantity);
         if (!candidate) {
           const bestAvailable = Math.max(0, ...balances.map((b) => b.onHand - b.reserved), 0);
-          throw new InsufficientStockError(line.skuId, line.quantity, bestAvailable);
+          throw new InsufficientStockError(line.skuId, line.quantity, bestAvailable, line.styleName);
         }
 
         const reservation = await this.inventory.reserve({

@@ -208,6 +208,26 @@ export async function checkServiceability(pincode: string): Promise<Serviceabili
   return res.json() as Promise<ServiceabilityResult>;
 }
 
+export interface EstimatedOffer {
+  name: string;
+  discountAmount: number;
+}
+
+/**
+ * A PDP "Best Offers" teaser: automatic promotions this product's own
+ * price alone already qualifies for (never a coupon - those need a code
+ * only the shopper has). Always an ESTIMATE ("if this is the only item in
+ * your bag") - the real, confirmed discount is computed at checkout
+ * against the whole cart. Client-side, never cached, since price changes
+ * should be reflected immediately.
+ */
+export async function getEstimatedOffers(styleId: string): Promise<EstimatedOffer[]> {
+  const res = await fetch(`${API_URL}/api/v1/storefront/products/${styleId}/estimated-offers`);
+  if (!res.ok) return [];
+  const body = (await res.json()) as { offers: EstimatedOffer[] };
+  return body.offers;
+}
+
 export async function submitReview(
   styleId: string,
   token: string,
