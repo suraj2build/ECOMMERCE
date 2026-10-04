@@ -1,0 +1,25 @@
+# Product photography work queue
+
+Suraj authorized generation, review, replacement and push to `main`, with womenswear completed first and menswear second. The target is four separate images per colourway: front, back, side and construction detail. There are 28 women's and 36 men's colourways: 256 images total. This is AI-generated demo/UAT imagery until real merchandise photography is supplied.
+
+## Source of truth and workflow
+
+Use `scripts/demo-data/product-photography.json` as the durable queue. Product colours, fabrics, fits and construction details come from `aistudio-catalogue.json`. Do not invent additional product claims or change stock, pricing, taxonomy or orders. Keep each job status and exact prompt updated as work completes. Store reviewed WebP assets in `apps/storefront/public/products/launch-v1/`. Rejected variants must not enter the selected pack.
+
+Generate one separate image per job with the built-in image generation tool. Start with the first colour's front image as the garment master. Use that approved garment master for back/side/detail images and colour edits; never independently invent the garment in each view. Across views preserve neckline, seam layout, sleeve length, closures, hem, pockets, material, print scale and model identity. Colour changes alter only the product colour. Save original generated PNGs locally while working; encode reviewed selected assets as WebP without visual editing. Do not use collages as product gallery images.
+
+Apparel: neutral light-grey seamless studio, soft even neutral lighting, eye-level camera, portrait 4:5, consistent margins and garment scale. No distracting scenery, props, influencer posing or accessories that obscure the product. Tops/shirts frame head to upper thighs with collar, sleeves and hem visible. Dresses/kurtis show complete garment length. Bottoms prominently frame waistband to feet with an unobtrusive neutral top; avoid long unrelated upper-body framing. Details show real specified construction, not just a face close-up. Full back view must show the garment back without hair obscuring it. Side view shows silhouette and seam. Keep head/neck upright; profile turns rotate head and body together, never bend the neck sideways.
+
+Models: Riya for playful daily tees/denim/shorts, Heena for glamour/party, Deeksha for daily/formals/kurtis, Aryan for menswear. Deeksha's approved comparison sample is the identity anchor when available; otherwise use the selected campaign portrait listed in each job. Preserve exact face/hair/height and natural body proportions. Riya must read as adult petite 152cm, Deeksha 165cm, Aryan 178cm. Heena must have level eyes/chin and straight neck, no repetitive side tilt. Identity anchor paths are existing committed campaign images, usable if transient original references are unavailable. Inspect every input before use.
+
+Shoes: hero three-quarter, heel/back, outer side and material/outsole/closure detail, no model needed. Belts: complete product, reverse surface, side/edge and buckle mechanism detail. Perfume: front bottle, rear, side silhouette, cap/sprayer detail; consistent fictional demo packaging, no unsupported certification or misleading capacity claim across the 50/100ml variants.
+
+## Quality and application
+
+Review every selected image and each complete colour gallery for garment continuity, colour, fabric, closures/pockets, face identity, neck alignment, head/body ratio, fingers, shoes, background, shadow direction, crop and resolution. Replace failures before marking `reviewed`. Never mark a batch complete merely because generation succeeded.
+
+For complete reviewed colour galleries, update demo seed media mappings and provide an idempotent existing-catalogue media updater through the audited backend workflow. Inspect the existing API: the current media route is append-only, so do not leave old placeholders interspersed with real gallery images or create duplicate media on reruns. Add narrowly scoped audited media update support if necessary, preserving product/colour identities, and invalidate storefront cache/reindex affected styles. Preflight exact styleCode and colourCode/name matches and all served image assets before writing. Never reset/reseed the desktop database.
+
+The generation environment cannot reach the desktop's private LAN API. Push reviewed assets, mappings, updater and precise desktop instructions to `main`; report local generation/push separately from live CMS/product application. Preserve concurrent desktop commits: fetch current `main` and working branch before each push, use a non-force update, and verify pushed tree/blob hashes. The initial `main` campaign checkpoint is `a48fa602b23c7606fee5d27aa5fab27ec0d73672`.
+
+Complete the womenswear queue before beginning menswear. Keep the queue, completed assets, prompts and status checkpoint committed so work can resume faithfully. On completion validate every asset and mapping, run relevant checks and report exact completed/remaining counts and commit SHA. Do not claim that overnight completion or deployment happened until verified.
