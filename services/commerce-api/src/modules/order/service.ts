@@ -187,6 +187,33 @@ export class OrderService {
    * this at the top level (no race to guard against: COD has no
    * separate async capture step).
    */
+  /**
+   * LR-011 (Product Owner, 2026-10-04): removes only the ordered quantity of
+   * each ordered SKU from the owner's bag. Items added after checkout started,
+   * or left out of it, stay. Each statement is a single atomic delete or
+   * decrement, so a concurrent bag change is never overwritten.
+   */
+  private async removePurchasedFromBag(
+    tx: Prisma.TransactionClient,
+    owner: { customerId: string | null; guestSessionId: string | null },
+    lines: { skuId: string; quantity: number }[],
+  ) {
+    const cart = owner.customerId
+      ? await tx.cart.findUnique({ where: { customerId: owner.customerId } })
+      : owner.guestSessionId
+        ? await tx.cart.findUnique({ where: { guestSessionId: owner.guestSessionId } })
+        : null;
+    if (!cart) return;
+    const purchased = new Map<string, number>();
+    for (const line of lines) purchased.set(line.skuId, (purchased.get(line.skuId) ?? 0) + line.quantity);
+    // Quantities must stay positive (cart_items_quantity_positive_check), so
+    // a line bought in full is deleted and a larger line is decremented.
+    for (const [skuId, quantity] of purchased) {
+      await tx.cartItem.deleteMany({ where: { cartId: cart.id, skuId, quantity: { lte: quantity } } });
+      await tx.cartItem.updateMany({ where: { cartId: cart.id, skuId, quantity: { gt: quantity } }, data: { quantity: { decrement: quantity } } });
+    }
+  }
+
   async createOrderFromCheckoutSession(checkoutSessionId: string, externalTx?: Prisma.TransactionClient) {
     const db = externalTx ?? this.prisma;
 
@@ -296,6 +323,12 @@ export class OrderService {
       // LR-003: the confirmed order's purchase event, queued atomically with
       // the order itself (consent-gated; a no-op while no provider is set).
       await this.conversions.enqueuePurchase(tx, created.id);
+
+      // LR-011: the purchased quantities leave the shopper's bag with the
+      // order, in this same transaction - so a failed or cancelled payment
+      // (no order) leaves the bag as it was, and a retried call (which
+      // returns the existing order above) never removes anything again.
+      await this.removePurchasedFromBag(tx, session, created.lines);
 
       await recordAudit(tx, {
         actorType: session.customerId ? 'CUSTOMER' : 'SYSTEM',

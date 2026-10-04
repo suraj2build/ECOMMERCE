@@ -6,6 +6,7 @@ import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPr
 import { createAuthenticatedStaff } from '../helpers/auth.js';
 import { PaymentService } from '../../src/modules/payment/service.js';
 import { InventoryService } from '../../src/modules/inventory/service.js';
+import { OrderService } from '../../src/modules/order/service.js';
 import * as auditService from '../../src/modules/audit/service.js';
 
 // RazorpayPaymentProvider only fails safe to UNAVAILABLE when these are
@@ -874,6 +875,87 @@ describe('Payment (M14)', () => {
 
       const session = await testPrisma.checkoutSession.findUniqueOrThrow({ where: { id: sessionId } });
       expect(session.status).toBe('CONFIRMED');
+    });
+  });
+
+  describe('Bag after an order (LR-011)', () => {
+    async function webhook(event: object) {
+      const body = JSON.stringify(event);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/razorpay',
+        headers: { 'content-type': 'application/json', 'x-razorpay-signature': signWebhook(body) },
+        payload: body,
+      });
+      expect(res.statusCode).toBe(200);
+    }
+
+    async function bag(headers: Record<string, string>) {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/cart', headers });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { itemCount: number; items: { skuId: string; quantity: number }[] };
+      return { itemCount: body.itemCount, quantities: Object.fromEntries(body.items.map((i) => [i.skuId, i.quantity])) };
+    }
+
+    /** A second sellable SKU of the same style (another size), with stock. */
+    async function siblingSku(skuId: string) {
+      const sku = await testPrisma.sku.findUniqueOrThrow({ where: { id: skuId }, include: { size: true } });
+      const size = await testPrisma.size.create({ data: { label: `LR11-${orderCounter}`, sortOrder: 99 } });
+      const sibling = await testPrisma.sku.create({
+        data: { skuCode: `${sku.skuCode}-LR11`, styleId: sku.styleId, colourId: sku.colourId, sizeId: size.id },
+      });
+      const balance = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId } });
+      await testPrisma.inventoryBalance.create({ data: { skuId: sibling.id, locationId: balance.locationId, onHand: 10, reserved: 0 } });
+      return sibling.id;
+    }
+
+    async function add(headers: Record<string, string>, skuId: string, quantity: number) {
+      const res = await app.inject({ method: 'POST', url: '/api/v1/storefront/cart/items', headers, payload: { skuId, quantity } });
+      expect(res.statusCode).toBe(201);
+    }
+
+    it('payment capture removes only the purchased quantity; items added after checkout started stay', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const otherSkuId = await siblingSku(skuId);
+      const { orderId, headers } = await startPrepaidCheckout(skuId, 'guest-lr11-capture', 'idem-lr11-capture');
+      // While paying, the shopper adds one more of the same item and a new one.
+      await add(headers, skuId, 1);
+      await add(headers, otherSkuId, 1);
+      expect((await bag(headers)).quantities).toEqual({ [skuId]: 2, [otherSkuId]: 1 });
+
+      await webhook(razorpayOrderCapturedEvent(orderId, 'pay_lr11_capture'));
+
+      expect(await testPrisma.order.count()).toBe(1);
+      const after = await bag(headers);
+      expect(after.quantities).toEqual({ [skuId]: 1, [otherSkuId]: 1 });
+      expect(after.itemCount).toBe(2);
+    });
+
+    it('a failed payment leaves the bag as it was', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { orderId, headers } = await startPrepaidCheckout(skuId, 'guest-lr11-failed', 'idem-lr11-failed');
+
+      await webhook(razorpayOrderFailedEvent(orderId, 'pay_lr11_failed'));
+
+      expect(await testPrisma.order.count()).toBe(0);
+      expect((await bag(headers)).quantities).toEqual({ [skuId]: 1 });
+    });
+
+    it('a duplicate capture webhook or a repeated order creation never empties a later bag', async () => {
+      const skuId = await setupCheckoutableSku(500);
+      const { sessionId, orderId, headers } = await startPrepaidCheckout(skuId, 'guest-lr11-retry', 'idem-lr11-retry');
+      const captured = razorpayOrderCapturedEvent(orderId, 'pay_lr11_retry');
+      await webhook(captured);
+      expect((await bag(headers)).itemCount).toBe(0);
+
+      // The shopper starts a new bag with the same item.
+      await add(headers, skuId, 1);
+      await webhook(captured);
+      const order = await new OrderService(app).createOrderFromCheckoutSession(sessionId);
+
+      expect(order.checkoutSessionId).toBe(sessionId);
+      expect(await testPrisma.order.count()).toBe(1);
+      expect((await bag(headers)).quantities).toEqual({ [skuId]: 1 });
     });
   });
 });

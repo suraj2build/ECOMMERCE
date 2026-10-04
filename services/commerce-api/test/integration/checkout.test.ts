@@ -306,6 +306,72 @@ describe('Checkout (M13)', () => {
     });
   });
 
+  describe('Bag after a COD order (LR-011)', () => {
+    async function bagQuantities(headers: Record<string, string>) {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/cart', headers });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { itemCount: number; items: { skuId: string; quantity: number }[] };
+      return { itemCount: body.itemCount, quantities: Object.fromEntries(body.items.map((i) => [i.skuId, i.quantity])) };
+    }
+
+    function codPayload(idempotencyKey: string) {
+      return {
+        contactName: 'Jane Doe',
+        contactMobile: '9876543210',
+        billingAddress: validAddress(),
+        shippingAddress: validAddress(),
+        paymentMethod: 'COD',
+        idempotencyKey,
+      };
+    }
+
+    it('empties the purchased bag, and a retried submission leaves a later bag alone', async () => {
+      const { skuId } = await setupCheckoutableSku({ sellingPrice: 500 });
+      const headers = { [GUEST_HEADER]: 'guest-lr11-cod' };
+      await addToCart(skuId, headers, 2);
+
+      const first = await app.inject({ method: 'POST', url: '/api/v1/storefront/checkout', headers, payload: codPayload('idem-lr11-cod') });
+      expect(first.statusCode).toBe(201);
+      expect(await bagQuantities(headers)).toEqual({ itemCount: 0, quantities: {} });
+
+      await addToCart(skuId, headers, 1);
+      const retry = await app.inject({ method: 'POST', url: '/api/v1/storefront/checkout', headers, payload: codPayload('idem-lr11-cod') });
+      expect(retry.statusCode).toBe(201);
+      expect(retry.json().id).toBe(first.json().id);
+      expect(await testPrisma.order.count()).toBe(1);
+      expect((await bagQuantities(headers)).quantities).toEqual({ [skuId]: 1 });
+    });
+
+    it('a rejected COD order leaves the bag as it was', async () => {
+      const { skuId } = await setupCheckoutableSku({ sellingPrice: 500 });
+      const headers = { [GUEST_HEADER]: 'guest-lr11-cod-rejected' };
+      await addToCart(skuId, headers);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/storefront/checkout',
+        headers,
+        payload: { ...codPayload('idem-lr11-cod-rejected'), billingAddress: validAddress({ pincode: NO_COD_PINCODE }), shippingAddress: validAddress({ pincode: NO_COD_PINCODE }) },
+      });
+      expect(res.statusCode).toBe(400);
+      expect((await bagQuantities(headers)).quantities).toEqual({ [skuId]: 1 });
+    });
+
+    it("removes the order from a signed-in customer's bag and not from another shopper's", async () => {
+      const { skuId } = await setupCheckoutableSku({ sellingPrice: 500 });
+      const { token } = await createAuthenticatedCustomer(app);
+      const customer = { authorization: `Bearer ${token}` };
+      const otherShopper = { [GUEST_HEADER]: 'guest-lr11-other' };
+      await addToCart(skuId, customer);
+      await addToCart(skuId, otherShopper);
+
+      const res = await app.inject({ method: 'POST', url: '/api/v1/storefront/checkout', headers: customer, payload: codPayload('idem-lr11-customer') });
+      expect(res.statusCode).toBe(201);
+      expect((await bagQuantities(customer)).itemCount).toBe(0);
+      expect((await bagQuantities(otherShopper)).quantities).toEqual({ [skuId]: 1 });
+    });
+  });
+
   describe('Prepaid - honest handoff, not completed here', () => {
     it('reserves inventory but leaves the session RESERVED, payment INITIATED, with a clear "coming soon" message', async () => {
       const { skuId } = await setupCheckoutableSku({ sellingPrice: 500 });
