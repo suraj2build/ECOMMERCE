@@ -565,10 +565,15 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-tp-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: product-mockup. One standalone portrait 4:5 ecommerce FRONT photograph. Reference image is ONLY adult Riya identity: preserve her round compact face, highlighted short bob, natural complexion and petite 152cm proportions. Replace clothing with exact product Ruffle Sleeve Top: black #191919 matte crepe, fitted through body, round neckline, short ruffle sleeves, concealed center back zipper (not visible front), untucked hip-length hem. No extra front closures, prints or embellishments. Neutral charcoal trousers unobtrusive. Straight front standing, head and neck upright, level eyes, arms relaxed slightly clear of garment, fingers natural. Frame head to upper thighs, complete sleeves neckline and hem visible, garment dominates. Neutral light-grey seamless studio, soft even neutral lighting, crisp crepe texture and stitching. No bag,jewelry,scenery,text,logo,watermark,collage. Product construction focus. This is garment front master for all derivative views.",
+      "review": "Selected corrected upright front: matching Riya identity, fitted black crepe, round neck, ruffle sleeves, unobstructed hip hem, natural hands and grey studio.",
+      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ],
+      "correctionPrompt": "Edit this catalogue photo: correct ONLY the head/neck alignment, rotate head to perfectly upright with level eyes and straight vertical neck, no sideways tilt. Preserve exact Riya face, bob, petite frame, black fitted crepe round-neck ruffle sleeve top, hands, garment design, trousers, framing and grey studio lighting. Single standalone portrait 4:5."
     },
     {
       "key": "women-tp-03-c1-back",
@@ -594,10 +599,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-tp-03-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve product catalogue. Approved reference is Riya wearing exact black #191919 crepe fitted round-neck ruffle short-sleeve top. Create one standalone BACK view 4:5, back of head to upper thighs, straight upright body and head facing away. Keep short bob lifted neatly so back neckline visible. Show specified concealed center-back zip from neckline, discreet narrow seam no exposed teeth; preserve sleeve ruffles, fitted silhouette, hip hem, charcoal trousers, neutral lightgrey studio and soft lighting. No additional buttons/embellishment. Natural arms and hands, garment focus, no text,collage,logo.",
+      "review": "Reviewed against front master: black crepe, round neck, ruffle sleeves and fitted hip hem consistent; back concealed zipper, side silhouette, detail binding and crepe grain visible. Natural proportions, grey studio and clear crop.",
+      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-03-c1-side",
@@ -623,10 +632,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-tp-03-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve product catalogue. Approved reference Riya exact black fitted matte crepe round neck ruffle sleeve top. One standalone true 90 degree SIDE profile portrait4:5, head and body rotated together facing camera-left, upright neck level chin, no tilt. Head to upper thighs, near arm slightly clear to reveal side seam and fitted silhouette, exact hip hem ruffle sleeves material and charcoal trousers. Same face short highlighted bob petite152cm proportions, neutral lightgrey seamless studio and soft even lighting. No design changes, jewelry,props,text,logos,collage.",
+      "review": "Reviewed against front master: black crepe, round neck, ruffle sleeves and fitted hip hem consistent; back concealed zipper, side silhouette, detail binding and crepe grain visible. Natural proportions, grey studio and clear crop.",
+      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-03-c1-detail",
@@ -652,10 +665,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-tp-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve catalogue construction detail. Reference exact black fitted matte CREPE round neck ruffle sleeve top. Create one standalone 4:5 close-up shoulders to midtorso face excluded, emphasize round neckline binding stitching and one short ruffle sleeve edge with crepe grain clearly sharp. Preserve exact black#191919 material, sleeve shape, design, Riya body and grey studio soft neutral lighting. No invented trim/buttons/prints, no face glamour, no collage,text,logo. Garment fills frame.",
+      "review": "Reviewed against front master: black crepe, round neck, ruffle sleeves and fitted hip hem consistent; back concealed zipper, side silhouette, detail binding and crepe grain visible. Natural proportions, grey studio and clear crop.",
+      "garmentMaster": "/products/launch-v1/women-tp-03-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-te-01-c1-front",
