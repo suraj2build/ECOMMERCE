@@ -225,6 +225,7 @@ or the Product Owner removes it from scope.
 | Prototype promises (free delivery above ₹999/₹1,999, express delivery and tailoring above ₹5,000, coupon VANYA10) | Header, footer, bag | Approved policy | Shown only when the real policy service confirms them (C-1) |
 
 `EXC-003` (decided 2026-10-04): exchanges share the return window,
-including overrides and exclusions, and stay within the same product. The
+including overrides and exclusions. Under `EXC-002`, an exchange stays
+within the same product. The
 footer says "Size & Colour Exchanges" with no day count, because the window
 differs by category and product. Each product page states its own window.

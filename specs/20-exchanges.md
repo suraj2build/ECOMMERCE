@@ -48,8 +48,9 @@ different size or colour.
   (`specs/18-returns.md` `RET-001`), configured together: the same
   category/product overrides and non-returnable exclusions apply, measured
   from delivery (`EXC-003`, Product Owner, 2026-10-04).
-- The replacement MUST be an available size or colour of the same product;
-  a different product is refused (`EXC-002`/`EXC-003`).
+- The replacement MUST be an available size or colour of the same item (see
+  Purpose and `EXC-002`). The server refuses a different product, whether
+  the request comes from staff or from a shopper.
 
 ## Remaining open items
 

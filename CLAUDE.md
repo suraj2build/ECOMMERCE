@@ -37,10 +37,12 @@ design (`suraj2build/Stitch-Spark_Ai_Studio`).
 - **Exchange copy.** The footer no longer claims "7-Day Exchanges": that
   number was the platform return window, which categories and products
   can override. It now reads "Size & Colour Exchanges" (EXC-002).
-- **EXC-003 (decided, Product Owner, 2026-10-04).** Exchanges use the
-  return window with its category/product overrides and exclusions,
-  measured from delivery. The replacement must be a size or colour of the
-  same product, and the API now refuses any other product.
+- **EXC-002 scope defect fixed.** The approved scope is a different size
+  or colour of the same item, but the API accepted any priced SKU. It now
+  refuses a different product from staff and shopper routes alike.
+- **EXC-003 (decided by Suraj, 2026-10-04).** Exchanges use the return
+  window with its category/product overrides and exclusions, measured from
+  delivery. No code change was needed; tests now cover it.
 - **Pending design features** (Notify me, newsletter, social links,
   Fit-First and the rest) are listed with what each needs in
   `docs/design/VANYA_VISUAL_PARITY.md` → "Pending functionality".

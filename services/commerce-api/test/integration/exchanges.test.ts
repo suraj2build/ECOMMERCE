@@ -605,9 +605,10 @@ describe('Exchanges (M21)', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  // --- 13b. EXC-002/EXC-003 (Product Owner, 2026-10-04) ---
+  // --- 13b. EXC-002 scope (a size or colour of the same product) and the
+  // EXC-003 window (return window with overrides and exclusions) ---
 
-  describe('EXC-003: same product, return window with overrides and exclusions', () => {
+  describe('EXC-002 same-product scope and EXC-003 window', () => {
     async function expectNothingReserved(orderId: string, replacementSkuId: string) {
       expect(await testPrisma.exchange.count({ where: { orderId } })).toBe(0);
       expect(await testPrisma.inventoryTransaction.count({ where: { skuId: replacementSkuId, type: 'RESERVATION' } })).toBe(0);
@@ -633,6 +634,40 @@ describe('Exchanges (M21)', () => {
       // The same line can still be exchanged for another size of its own product.
       const ok = await initiateExchange(orderId, lineId, original.blackL.id, wT, `exc-xstyle-ok-${counter}`);
       expect(ok.statusCode).toBe(201);
+    });
+
+    it('a shopper calling the storefront API directly cannot exchange for a different product; stock and prices are untouched', async () => {
+      const ctx = await seedContext();
+      const original = await setupExchangeableStyle(1500, ctx);
+      const other = await setupExchangeableStyle(900, ctx);
+      const guestId = `guest-direct-${counter}`;
+      const { orderId } = await codOrder(original.blackM.id, guestId, `idem-direct-${counter}`);
+      const wT = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, wT);
+      const balanceBefore = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId: other.blackM.id } });
+      const pricesBefore = await testPrisma.price.count({ where: { styleId: other.styleId } });
+
+      const direct = (replacementSkuId: string, key: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/api/v1/storefront/exchanges',
+          headers: { [GUEST_HEADER]: guestId },
+          payload: { orderId, orderLineId: lineId, replacementSkuId, reason: 'Prefer this one', method: 'DROP_OFF', idempotencyKey: key },
+        });
+
+      const crossProduct = await direct(other.blackM.id, `exc-direct-x-${counter}`);
+      expect(crossProduct.statusCode).toBe(400);
+      expect(crossProduct.json().error.message).toMatch(/same product/);
+      await expectNothingReserved(orderId, other.blackM.id);
+      const balanceAfter = await testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId: other.blackM.id } });
+      expect({ onHand: balanceAfter.onHand, reserved: balanceAfter.reserved }).toEqual({ onHand: balanceBefore.onHand, reserved: balanceBefore.reserved });
+      expect(await testPrisma.price.count({ where: { styleId: other.styleId } })).toBe(pricesBefore);
+
+      // The same shopper's request for another colour of the same product still works,
+      // with the existing stock check and reservation.
+      const sameProduct = await direct(original.whiteM.id, `exc-direct-ok-${counter}`);
+      expect(sameProduct.statusCode).toBe(201);
+      expect(sameProduct.json().replacementReservationId).toBeTruthy();
     });
 
     it('a category window shorter than the default closes exchanges sooner', async () => {

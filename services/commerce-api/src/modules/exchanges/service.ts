@@ -206,8 +206,8 @@ export class ExchangeService {
     }
     const replacementSku = await this.prisma.sku.findUnique({ where: { id: input.replacementSkuId }, include: { style: true, colour: true, size: true } });
     if (!replacementSku) throw new NotFoundError('Sku', input.replacementSkuId);
-    // EXC-002/EXC-003 (Product Owner, 2026-10-04): an exchange is another size
-    // or colour of the same product, never a different product.
+    // EXC-002 and specs/20-exchanges.md scope: an exchange is the same item in
+    // a different size or colour, never a different product.
     if (replacementSku.styleId !== line.sku.styleId) {
       throw new ValidationError('The replacement must be another size or colour of the same product');
     }

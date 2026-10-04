@@ -1492,39 +1492,52 @@ Not self-certified; awaiting independent re-review.
 - **Status:** DECIDED · **Decision date:** 2026-09-22
 - **Final decision:** **If the replacement costs MORE, the customer pays the difference through an online payment flow/link/checkout. If it costs LESS, the difference becomes STORE CREDIT** (explicit, §18). **Size exchange and colour exchange are both supported. Replacement SKU availability MUST be checked and appropriately reserved** (explicit, §18) — this resolves the replacement-SKU-reservation-timing gap flagged in `blueprint/FASHION_DOMAIN_GAPS.md`: reservation happens at exchange request time, using the same short-lived reservation mechanics as `INV-002`.
 - **Affected specs:** `specs/20-exchanges.md`
+- **Scope-enforcement defect, fixed 2026-10-04:**
+  - **Approved scope:** `specs/20-exchanges.md` defines an exchange as "a
+    customer exchanging a delivered item for a different size or colour",
+    and this decision supports "size exchange and colour exchange". A
+    replacement from a different product is outside that approved scope.
+  - **Defect:** the storefront form offered only same-product variants,
+    but `ExchangeService.performInitiate` accepted any priced SKU. A direct
+    API call, from staff or from a shopper, could exchange into another
+    product.
+  - **Fix:** the server refuses a replacement from another style (400).
+    No reservation is made and no stock or price changes. The existing
+    checks are unchanged: identical-SKU refusal, replacement stock and
+    reservation, active-price lookup, and price-difference payment or
+    store credit.
+  - **Tests:** `services/commerce-api/test/integration/exchanges.test.ts`,
+    "EXC-002 same-product scope and EXC-003 window":
+    - the staff route refuses a cross-product request;
+    - a shopper's direct request to `POST /storefront/exchanges` is
+      refused, and stock, reservations and prices are untouched;
+    - both requests were accepted (201) when the tests were run without
+      the check;
+    - five price-difference tests that had crossed products now use a
+      colour of the same product with its own colour-level price.
 
 #### EXC-003 — Exchange eligibility window · **P2**
 - **Question:** Same window as returns, or distinct?
-- **Dependencies:** RET-001, EXC-002
-- **Status:** **DECIDED** (Product Owner, 2026-10-04). It replaces the
-  2026-09-22 engineering default.
-- **Final decision:**
-  - An exchange uses the same effective eligibility window as a return:
-    the category and product overrides and the non-returnable exclusions
-    of `RET-001` apply, and the window is measured from delivery.
-  - The replacement must be an available size or colour of the same
-    product. A different product is not an exchange.
+- **Dependencies:** RET-001
+- **Status:** **DECIDED** (Product Owner, Suraj, 2026-10-04: "This is
+  approved from my side exe 3"; confirmed again: "Exe approved by me").
+  This replaces the 2026-09-22 engineering default.
+- **Final decision:** an exchange uses the same effective eligibility
+  window as a return. The category and product overrides and the
+  non-returnable exclusions of `RET-001` apply, and the window is
+  measured from delivery.
 - **Affected specs:** `specs/20-exchanges.md`
-- **Implementation (2026-10-04):**
-  - The window already matched: `ExchangeService` resolves it through
-    `resolveReturnPolicy` (product, then category, then platform
-    default), refuses non-returnable items, and checks `isWithinWindow`
-    from `deliveredAt`.
-  - Same product: the storefront form offered only same-style variants,
-    but `ExchangeService.performInitiate` accepted any priced SKU. It now
-    refuses a replacement from another style (400, nothing reserved).
-- **Tests:** `services/commerce-api/test/integration/exchanges.test.ts`,
-  "EXC-003: same product, return window with overrides and exclusions":
-  - a cross-product replacement is refused and reserves nothing; run
-    against the code without the check, this test failed with a 201;
+- **Implementation:** no code change was needed. `ExchangeService`
+  resolves the window through `resolveReturnPolicy` (product, then
+  category, then platform default), refuses non-returnable items, and
+  checks `isWithinWindow` from `deliveredAt`.
+- **Tests added 2026-10-04:**
   - a category window shorter than the default closes exchanges sooner;
   - a product window longer than the default keeps them open;
   - an excluded product cannot be exchanged.
-
-  Five existing price-difference tests had used a different product only
-  to get a different price. They now use a colour of the same product
-  with its own colour-level price.
-- **Storefront copy:** the footer still makes no site-wide day-count claim
+- **Separate item:** the same-product restriction is existing `EXC-002`
+  scope, not part of this decision; see EXC-002's 2026-10-04 note.
+- **Storefront copy:** the footer makes no site-wide day-count claim
   ("Size & Colour Exchanges · On eligible items"), because the window
   differs by category and product. Each product page states its own
   window.
