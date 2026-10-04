@@ -40,7 +40,7 @@ export const LIGHTING_CONFIGS: Record<LightingMode, LightingStyleConfig> = {
   golden: {
     label: 'Golden Hour',
     kelvin: '3200K Sunset',
-    description: 'Rich amber sunset glow accentuating metallic zari highlights, gold foil hand-printing, and warm undertones.',
+    description: 'Rich amber sunset glow accentuating fabric texture, hardware finishes, and warm undertones.',
     filter: 'brightness(1.07) contrast(1.06) sepia(0.22) saturate(1.18)',
     overlayStyle: {
       background: 'radial-gradient(ellipse at 85% 15%, rgba(255, 195, 95, 0.35) 0%, rgba(220, 120, 50, 0.15) 50%, transparent 85%)',
@@ -48,9 +48,9 @@ export const LIGHTING_CONFIGS: Record<LightingMode, LightingStyleConfig> = {
     },
   },
   evening: {
-    label: 'Evening Soirée',
+    label: 'Evening',
     kelvin: '2400K Candlelight',
-    description: 'Atmospheric cocktail & wedding reception lighting with deep dramatic shadows and gleaming jewel luster.',
+    description: 'Atmospheric evening lighting with deep dramatic shadows and gleaming highlights.',
     filter: 'brightness(0.92) contrast(1.14) sepia(0.3) saturate(1.12)',
     overlayStyle: {
       background: 'radial-gradient(circle at center, transparent 35%, rgba(24, 14, 8, 0.42) 100%)',
@@ -121,7 +121,7 @@ export function ContextualLightingControl({
               ? 'bg-[#1A1816] text-[#FAF8F5] shadow-xs'
               : 'bg-[#FAF8F5] hover:bg-[#F2ECE1] text-[#5C5146]'
           }`}
-          title="Evening Soirée Candlelight (2400K)"
+          title="Evening Candlelight (2400K)"
         >
           <Moon className="w-3.5 h-3.5 text-[#A65439]" />
           <span className="text-[9px] font-medium tracking-tight">Evening</span>

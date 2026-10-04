@@ -63,7 +63,7 @@ export function WishlistView() {
           Saved Garments ({count})
         </h1>
         <p className="text-xs text-[#7A6F64] mt-1">
-          Handloom pieces you have set aside. Move them to your bag whenever you are ready.
+          Pieces you have set aside. Move them to your bag whenever you are ready.
         </p>
       </div>
 
@@ -78,7 +78,7 @@ export function WishlistView() {
           </div>
           <h2 className="font-editorial text-2xl text-[#1A1816]">Your wishlist is currently empty</h2>
           <p className="text-xs text-[#7A6F64] leading-relaxed">
-            As you explore our festive edits and handcrafted silhouettes, tap the heart icon on any piece to save it here.
+            As you explore our daily wear and business casual edits, tap the heart icon on any piece to save it here.
           </p>
           <Link
             href={hrefFor('plp', { gender })}

@@ -16,7 +16,16 @@ declare module 'fastify' {
   }
 }
 
-export const STYLES_INDEX_UID = 'styles';
+/**
+ * Isolated from the real 'styles' index whenever NODE_ENV=test (set
+ * unconditionally by test/helpers/setup-env.ts before any test file
+ * runs) so a local integration-test run can never write into - or
+ * delete from - the same Meilisearch index the dev/demo/production
+ * storefront reads from. CI's Meilisearch container is ephemeral either
+ * way; this closes the gap for a long-lived local instance shared
+ * between `npm run demo` and `npm run test:integration`.
+ */
+export const STYLES_INDEX_UID = process.env.NODE_ENV === 'test' ? 'styles_test' : 'styles';
 
 export interface StyleSearchDocument {
   id: string;

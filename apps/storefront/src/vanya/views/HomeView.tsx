@@ -84,7 +84,7 @@ export function HomeView({
   return (
     <div className="space-y-12 sm:space-y-16 pb-20 select-none">
       {/* ======================================================== */}
-      {/* 1. HERO 1: THE FESTIVE EDIT (Matches Mockup Top Hero) */}
+      {/* 1. HERO 1: LAUNCH ASSORTMENT (Matches Mockup Top Hero) */}
       {/* ======================================================== */}
       <section className="relative w-full overflow-hidden bg-[#181716] min-h-[calc(100svh-58px-var(--preview-banner-h,0px))] sm:min-h-[calc(100svh-66px-var(--preview-banner-h,0px))] lg:min-h-[calc(100svh-114px-var(--preview-banner-h,0px))] flex items-center">
         {/* Full-bleed background image with subtle warm tone */}
@@ -92,7 +92,7 @@ export function HomeView({
           {editorial.hero && (
             <img
               src={editorial.hero}
-              alt="The Festive Edit"
+              alt={isMen ? 'VANYA Men - Business Casual & Daily Wear' : 'VANYA Women - Daily, Work & Partywear'}
               className="w-full h-full object-cover object-[center_top] brightness-[0.80]"
             />
           )}
@@ -105,7 +105,7 @@ export function HomeView({
           {/* Left Block */}
           <div className="max-w-xl text-white space-y-3.5 sm:space-y-4">
             <span className="text-[11px] tracking-[0.26em] uppercase font-light text-[#E5DCD0] block">
-              {isMen ? 'THE FESTIVE EDIT' : 'THE FESTIVE EDIT'}
+              {isMen ? 'BUSINESS CASUAL, DONE RIGHT' : 'WORKWEAR TO WEEKEND TO EVENING'}
             </span>
 
             <h1 className="font-editorial text-4xl sm:text-6xl lg:text-7xl text-white font-normal leading-[1.05] tracking-wide uppercase">
@@ -117,7 +117,9 @@ export function HomeView({
             </h2>
 
             <p className="text-xs sm:text-sm text-[#DDD2C4] font-light leading-relaxed max-w-md pt-1">
-              Timeless silhouettes. Contemporary craftsmanship. For every occasion that matters.
+              {isMen
+                ? 'Premium shirts, denims and business casual essentials for every day.'
+                : 'Everyday, workwear, weekend and party - dressed for every day.'}
             </p>
 
             {/* Dual CTA Buttons */}
@@ -131,10 +133,10 @@ export function HomeView({
               </Link>
 
               <Link
-                href={hrefFor('plp', { gender: activeGender, category: isMen ? 'Festive & Ceremonial' : 'Festive Silk Edit' })}
+                href={`/collections/${isMen ? 'business-casual' : 'party-evening'}`}
                 className="inline-flex items-center gap-2.5 px-8 py-3.5 border border-white/80 bg-black/25 backdrop-blur-xs text-white hover:bg-white hover:text-[#181716] text-xs uppercase tracking-[0.20em] font-medium transition-all cursor-pointer rounded-full"
               >
-                <span>EXPLORE FESTIVE</span>
+                <span>{isMen ? 'BUSINESS CASUAL EDIT' : 'PARTY & EVENING'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
@@ -143,7 +145,7 @@ export function HomeView({
           {/* Right Editorial Watermark (as seen in mockup) */}
           <div className="hidden lg:block text-right pb-2">
             <div className="text-xs tracking-[0.32em] uppercase font-light text-white/85 space-y-1">
-              <p>TRADITION</p>
+              <p>DAILY WEAR</p>
               <p>TAILORED</p>
               <p>FOR A</p>
               <p className="font-medium text-white">{isMen ? 'MODERN MAN' : 'MODERN WOMAN'}</p>
@@ -206,7 +208,7 @@ export function HomeView({
               </div>
               <div>
                 <h4 className="text-xs uppercase tracking-wider font-semibold text-[#181716]">
-                  HANDCRAFTED FABRICS
+                  QUALITY FABRICS
                 </h4>
                 <p className="text-[11px] text-[#7A7065] font-light">Thoughtful fabrics &amp; modern fits</p>
               </div>
@@ -249,8 +251,8 @@ export function HomeView({
 
             <p className="text-xs sm:text-sm text-[#DDD3C5] font-light leading-relaxed max-w-md">
               {isMen
-                ? 'From refined staples to statement styles. Discover modern Indian menswear for work, celebrations and beyond.'
-                : 'From sculpted wrap co-ords to effortless sarees. Discover modern Indian womenswear for celebrations and beyond.'}
+                ? 'From premium shirting to business casual staples. Discover modern Indian menswear for every day at work and beyond.'
+                : 'From workwear essentials to weekend and evening edits. Discover modern Indian womenswear for every day and beyond.'}
             </p>
 
             <div className="pt-2">
@@ -398,82 +400,82 @@ export function HomeView({
       {/* ======================================================== */}
       <section className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Banner 1: Workwear */}
+          {/* Banner 1: men=Workday, women=Workwear */}
           <Link
-            href={editorial.occasions[0]?.href ?? hrefFor('plp', { gender: activeGender, category: isMen ? 'Linen & Silk Shirts' : 'Co-ords & Sets' })}
+            href={editorial.occasions[0]?.href ?? `/collections/${isMen ? 'workday' : 'workwear'}`}
             className="group relative aspect-[4/3] rounded-2xl overflow-hidden cursor-pointer shadow-md bg-[#181716] flex flex-col justify-end p-6 sm:p-8"
           >
             {editorial.occasions[0]?.image && <img
               src={editorial.occasions[0]?.image ?? undefined}
-              alt="For Work"
+              alt={isMen ? 'For the Workday' : 'Workwear'}
               className="absolute inset-0 w-full h-full object-cover object-top brightness-[0.75] transition-transform duration-700 group-hover:scale-105"
             />}
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
             <div className="relative z-10 text-white space-y-2">
               <span className="text-[10px] tracking-[0.24em] uppercase font-light text-[#E0D5C7] block">
-                FOR WORK
+                {isMen ? 'FOR THE WORKDAY' : 'WORKWEAR'}
               </span>
               <h4 className="font-editorial text-2xl sm:text-3xl text-white font-normal leading-tight">
-                Refined Staples
+                {isMen ? 'Tailored for the Office' : 'Office Ready'}
               </h4>
               <span
                 className="mt-2 inline-flex items-center gap-2 px-6 py-2.5 bg-white text-[#181716] hover:bg-[#F3EFE9] text-[11px] uppercase tracking-[0.18em] font-medium transition-all rounded-full shadow-sm"
               >
-                <span>SHOP WORKWEAR</span>
+                <span>{isMen ? 'SHOP WORKDAY' : 'SHOP WORKWEAR'}</span>
                 <ArrowRight className="w-3 h-3" />
               </span>
             </div>
           </Link>
 
-          {/* Banner 2: Celebration */}
+          {/* Banner 2: men=Business Casual, women=Weekend */}
           <Link
-            href={editorial.occasions[1]?.href ?? hrefFor('plp', { gender: activeGender, category: isMen ? 'Festive & Ceremonial' : 'Festive Silk Edit' })}
+            href={editorial.occasions[1]?.href ?? `/collections/${isMen ? 'business-casual' : 'weekend'}`}
             className="group relative aspect-[4/3] rounded-2xl overflow-hidden cursor-pointer shadow-md bg-[#181716] flex flex-col justify-end p-6 sm:p-8"
           >
             {editorial.occasions[1]?.image && <img
               src={editorial.occasions[1]?.image ?? undefined}
-              alt="For Celebration"
+              alt={isMen ? 'Business Casual' : 'Weekend'}
               className="absolute inset-0 w-full h-full object-cover object-top brightness-[0.75] transition-transform duration-700 group-hover:scale-105"
             />}
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
             <div className="relative z-10 text-white space-y-2">
               <span className="text-[10px] tracking-[0.24em] uppercase font-light text-[#E0D5C7] block">
-                FOR CELEBRATION
+                {isMen ? 'BUSINESS CASUAL' : 'WEEKEND'}
               </span>
               <h4 className="font-editorial text-2xl sm:text-3xl text-white font-normal leading-tight">
-                Festive Tailoring
+                {isMen ? 'Smart, Not Formal' : 'Easy Weekend'}
               </h4>
               <span
                 className="mt-2 inline-flex items-center gap-2 px-6 py-2.5 bg-white text-[#181716] hover:bg-[#F3EFE9] text-[11px] uppercase tracking-[0.18em] font-medium transition-all rounded-full shadow-sm"
               >
-                <span>SHOP FESTIVE</span>
+                <span>{isMen ? 'SHOP BUSINESS CASUAL' : 'SHOP WEEKEND'}</span>
                 <ArrowRight className="w-3 h-3" />
               </span>
             </div>
           </Link>
 
-          {/* Banner 3: Travel / Resort */}
+          {/* Banner 3: men=Everyday, women=Party & Evening */}
           <Link
-            href={editorial.occasions[2]?.href ?? hrefFor('plp', { gender: activeGender, category: isMen ? 'Pleated Trousers' : 'Dresses' })}
+            href={editorial.occasions[2]?.href ?? `/collections/${isMen ? 'everyday' : 'party-evening'}`}
             className="group relative aspect-[4/3] rounded-2xl overflow-hidden cursor-pointer shadow-md bg-[#181716] flex flex-col justify-end p-6 sm:p-8"
           >
             {editorial.occasions[2]?.image && <img
               src={editorial.occasions[2]?.image ?? undefined}
-              alt="For Travel"
+              alt={isMen ? 'Everyday' : 'Party & Evening'}
               className="absolute inset-0 w-full h-full object-cover object-top brightness-[0.75] transition-transform duration-700 group-hover:scale-105"
             />}
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
             <div className="relative z-10 text-white space-y-2">
               <span className="text-[10px] tracking-[0.24em] uppercase font-light text-[#E0D5C7] block">
-                FOR TRAVEL
+                {isMen ? 'EVERYDAY' : 'PARTY & EVENING'}
               </span>
               <h4 className="font-editorial text-2xl sm:text-3xl text-white font-normal leading-tight">
-                Relaxed Linen
+                {isMen ? 'Everyday Essentials' : 'Evening Edit'}
               </h4>
               <span
                 className="mt-2 inline-flex items-center gap-2 px-6 py-2.5 bg-white text-[#181716] hover:bg-[#F3EFE9] text-[11px] uppercase tracking-[0.18em] font-medium transition-all rounded-full shadow-sm"
               >
-                <span>SHOP LINEN</span>
+                <span>{isMen ? 'SHOP EVERYDAY' : 'SHOP PARTY & EVENING'}</span>
                 <ArrowRight className="w-3 h-3" />
               </span>
             </div>

@@ -122,7 +122,7 @@ function BagPanel({ onClose }: { onClose: () => void }) {
             <div className="py-20 text-center space-y-3">
               <h4 className="font-editorial text-2xl text-[#6B5F53]">Your bag is empty</h4>
               <p className="text-xs text-[#756A5E] max-w-xs mx-auto">
-                Explore our curated handloom silks, linen tailoring, and modern silhouettes.
+                Explore our curated shirts, denims, and everyday essentials.
               </p>
               <button
                 type="button"

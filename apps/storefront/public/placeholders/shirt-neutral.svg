@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1250">
+  <rect width="1000" height="1250" fill="#EFEAE2"/>
+  <rect x="24" y="24" width="952" height="1202" fill="none" stroke="#B8AC9A" stroke-width="2" stroke-dasharray="10 8"/>
+  <g transform="translate(500, 565)" fill="none" stroke="#B8AC9A" stroke-width="10" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M-90,-110 L-40,-150 L0,-120 L40,-150 L90,-110 L60,-60 L30,-80 L30,140 L-30,140 L-30,-80 L-60,-60 Z"/>
+  </g>
+  <text x="500" y="795" text-anchor="middle" font-family="Georgia, serif" font-size="34" letter-spacing="4" fill="#6B6256">SHIRT</text>
+  <text x="500" y="840" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" letter-spacing="3" fill="#6B6256" opacity="0.7">PLACEHOLDER IMAGE</text>
+</svg>

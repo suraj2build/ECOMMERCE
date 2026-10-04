@@ -6,7 +6,7 @@ import type { Metadata } from 'next';
 import { getAllPublicCollections } from '@/lib/api';
 import { absoluteUrl, sharing } from '@/lib/seo';
 
-const DESCRIPTION = 'Curated VANYA edits: festive, everyday and occasion collections.';
+const DESCRIPTION = 'Curated VANYA edits: workday, everyday, business casual and party collections.';
 
 export const metadata: Metadata = {
   title: 'Collections',

@@ -235,7 +235,7 @@ export function LandingGatewayView({
         <div className="flex items-center gap-2">
           <FloralMotif className="w-3.5 h-3.5 text-[#C5A278]" />
           <span className="text-[10px] sm:text-[11px] tracking-[0.22em] uppercase text-[#D8CFBF] font-light">
-            FESTIVE 2026
+            BUSINESS CASUAL EDIT
           </span>
         </div>
 

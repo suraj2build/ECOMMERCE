@@ -19,33 +19,50 @@ import { Search, Heart, ShoppingBag, User, Menu, X, Truck, Coins, Compass } from
 import { useModalFocus } from '@/components/layout/useModalFocus';
 import { useShop } from '../bridge/shop';
 
+// Launch assortment (Product Owner approved, 2026-10-04): Men's daily
+// wear/premium shirts/business casual, Women's daily/work/casual/
+// partywear. No ethnicwear/ceremonial/wedding for men; no sarees/
+// lehengas/bridalwear/festive ethnicwear for women (everyday kurtis stay).
+// The top nav shows a representative subset so the row keeps fitting at
+// 1024-1279px (see the header-compaction pass); the drawer lists every
+// approved category.
 const MEN_NAV = [
-  { label: 'FESTIVE', category: 'Festive & Ceremonial' },
   { label: 'NEW IN', category: 'new' },
-  { label: 'BANDHGALAS', category: 'Bandhgalas & Jackets' },
-  { label: 'SHIRTS', category: 'Linen & Silk Shirts' },
-  { label: 'KURTAS', category: 'Kurtas' },
-  { label: 'TROUSERS', category: 'Pleated Trousers' },
+  { label: 'SHIRTS', category: 'Formal Shirts' },
+  { label: 'POLOS', category: 'Polo T-Shirts' },
+  { label: 'DENIMS', category: 'Denims' },
+  { label: 'CHINOS', category: 'Casual Trousers / Chinos' },
+  { label: 'SHOES', category: 'Business Casual Shoes' },
 ];
 const WOMEN_NAV = [
-  { label: 'FESTIVE', category: 'Festive Silk Edit' },
   { label: 'NEW IN', category: 'new' },
-  { label: 'SAREES', category: 'Modern Sarees' },
-  { label: 'CO-ORDS', category: 'Co-ords & Sets' },
+  { label: 'KURTIS', category: 'Everyday Kurtis' },
   { label: 'DRESSES', category: 'Dresses' },
-  { label: 'SETS', category: 'Co-ords & Sets' },
+  { label: 'TOPS', category: 'Tops' },
+  { label: 'DENIMS', category: 'Denims' },
+  { label: 'SKIRTS', category: 'Skirts' },
 ];
 const MEN_DRAWER = [
-  ['Bandhgalas & Jackets', 'Bandhgalas & Jackets'],
-  ['Linen & Silk Shirts', 'Linen & Silk Shirts'],
-  ['Handloom Kurtas', 'Kurtas'],
-  ['Pleated Trousers', 'Pleated Trousers'],
+  ['Formal Shirts', 'Formal Shirts'],
+  ['Casual Shirts', 'Casual Shirts'],
+  ['Polo T-Shirts', 'Polo T-Shirts'],
+  ['Denims', 'Denims'],
+  ['Casual Trousers / Chinos', 'Casual Trousers / Chinos'],
+  ['Formal Trousers', 'Formal Trousers'],
+  ['Business Casual Shoes', 'Business Casual Shoes'],
+  ['Business Casual Belts', 'Business Casual Belts'],
+  ['Perfume', 'Perfume'],
 ];
 const WOMEN_DRAWER = [
-  ['Modern Sarees', 'Modern Sarees'],
-  ['Co-ords & Sets', 'Co-ords & Sets'],
-  ['Dresses & Drapes', 'Dresses'],
-  ['Festive Silk Edit', 'Festive Silk Edit'],
+  ['Tops', 'Tops'],
+  ['Tees', 'Tees'],
+  ['Everyday Kurtis', 'Everyday Kurtis'],
+  ['Denims', 'Denims'],
+  ['Dresses', 'Dresses'],
+  ['Trousers', 'Trousers'],
+  ['Shirts', 'Shirts'],
+  ['Skirts', 'Skirts'],
+  ['Hotpants / Shorts', 'Hotpants / Shorts'],
 ];
 
 export function Header() {
@@ -81,7 +98,7 @@ export function Header() {
     >
       <Search className="w-3.5 h-3.5 shrink-0 text-[#9E9488]" />
       <span className="text-[11px] truncate tracking-normal font-light">
-        {isMen ? 'Search kurtas, bandhgalas...' : 'Search sarees, dresses...'}
+        {isMen ? 'Search shirts, chinos...' : 'Search kurtis, dresses...'}
       </span>
     </button>
   );

@@ -263,11 +263,22 @@ async function main() {
   // Storefront navigation categories (the approved VANYA header links to
   // these slugs). Reference data, so every environment has them: an
   // unknown category slug is a 404 (LR-002), an empty one is a real page.
+  // Launch assortment (Product Owner approved, 2026-10-04): Men's daily
+  // wear/premium shirts/business casual, Women's daily/work/casual/
+  // partywear - superseding the earlier festive/ethnicwear taxonomy. Men
+  // and Women each have 9 approved categories; Denims/Dresses/Trousers/
+  // Shirts/Tops/Tees are shared slugs (Category has no gender field).
   const navigationCategories: [string, string][] = [
-    ['festive-ceremonial', 'Festive & Ceremonial'], ['bandhgalas-jackets', 'Bandhgalas & Jackets'],
-    ['linen-silk-shirts', 'Linen & Silk Shirts'], ['kurtas', 'Kurtas'], ['trousers', 'Trousers'],
-    ['festive-silk-edit', 'Festive Silk Edit'], ['modern-sarees', 'Modern Sarees'],
-    ['co-ords-sets', 'Co-ords & Sets'], ['dresses', 'Dresses'],
+    // Men
+    ['formal-shirts', 'Formal Shirts'], ['casual-shirts', 'Casual Shirts'],
+    ['polo-t-shirts', 'Polo T-Shirts'], ['casual-trousers-chinos', 'Casual Trousers / Chinos'],
+    ['formal-trousers', 'Formal Trousers'], ['business-casual-shoes', 'Business Casual Shoes'],
+    ['business-casual-belts', 'Business Casual Belts'], ['perfume', 'Perfume'],
+    // Women
+    ['tees', 'Tees'], ['everyday-kurtis', 'Everyday Kurtis'], ['skirts', 'Skirts'],
+    ['hotpants-shorts', 'Hotpants / Shorts'],
+    // Shared
+    ['denims', 'Denims'], ['dresses', 'Dresses'], ['trousers', 'Trousers'], ['shirts', 'Shirts'],
   ];
   for (const [slug, name] of navigationCategories) {
     await prisma.category.upsert({ where: { slug }, update: {}, create: { name, slug, parentId: apparel.id } });

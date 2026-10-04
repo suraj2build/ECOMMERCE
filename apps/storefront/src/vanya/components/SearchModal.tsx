@@ -28,159 +28,100 @@ export interface VibeFilter {
   matcher: (p: Product) => boolean;
 }
 
+// Launch assortment (Product Owner approved, 2026-10-04): Men's daily
+// wear/premium shirts/business casual, Women's daily/work/casual/
+// partywear. Matchers key off the new category/collection/occasion
+// vocabulary - no ethnicwear/festive/wedding terms.
 export const VIBE_OCCASIONS: VibeFilter[] = [
   {
-    id: 'summer-wedding',
-    name: 'Summer Wedding Guest',
-    tagline: 'Airy Chanderi silk, pre-draped georgettes & pastel daytime ceremony ensembles',
-    badge: 'Celebrations',
-    categories: ['Modern Sarees', 'Co-ords & Sets', 'Kurtas', 'Bandhgalas & Jackets'],
-    matcher: (p: Product) => {
-      const occ = (p.occasion || '').toLowerCase();
-      const cat = (p.category || '').toLowerCase();
-      const col = (p.collection || '').toLowerCase();
-      const fab = (p.fabric || '').toLowerCase();
-      return (
-        occ.includes('wedding') ||
-        occ.includes('celebrat') ||
-        occ.includes('sangeet') ||
-        occ.includes('mehendi') ||
-        occ.includes('festive') ||
-        col.includes('festive') ||
-        fab.includes('chanderi') ||
-        fab.includes('georgette') ||
-        fab.includes('organza') ||
-        ['modern sarees', 'sarees & drapes', 'kurtas', 'kurtas & sets', 'co-ords & sets'].includes(cat)
-      );
-    },
-  },
-  {
-    id: 'business-formal',
-    name: 'Business Formal',
-    tagline: 'Tailored Bandhgalas, double-pleated trousers & executive shirting',
-    badge: 'Executive',
-    categories: ['Bandhgalas & Jackets', 'Pleated Trousers', 'Shirts & Overshirts'],
+    id: 'business-casual',
+    name: 'Business Casual',
+    tagline: 'Shirts, chinos and loafers that carry straight from desk to dinner',
+    badge: 'Workday',
+    categories: ['Formal Shirts', 'Casual Trousers / Chinos', 'Business Casual Shoes', 'Business Casual Belts'],
     matcher: (p: Product) => {
       const cat = (p.category || '').toLowerCase();
-      const title = (p.title || '').toLowerCase();
+      const col = (p.collection || '').toLowerCase();
       const occ = (p.occasion || '').toLowerCase();
-      const details = (p.details || []).join(' ').toLowerCase();
       return (
-        cat.includes('bandhgala') ||
-        cat.includes('trouser') ||
-        cat.includes('jacket') ||
-        cat.includes('shirt') ||
-        title.includes('trouser') ||
-        title.includes('bandhgala') ||
-        title.includes('blazer') ||
-        title.includes('shirt') ||
-        details.includes('pleat') ||
-        details.includes('cuff') ||
-        details.includes('collar') ||
-        occ.includes('formal')
+        col.includes('business casual') ||
+        occ.includes('business casual') ||
+        cat.includes('formal shirt') ||
+        cat.includes('chino') ||
+        cat.includes('shoes') ||
+        cat.includes('belt')
       );
     },
   },
   {
-    id: 'minimalist-luxe',
-    name: 'Minimalist Luxe',
-    tagline: 'Undyed Belgian linen, wild tussar & clean understated architectural cuts',
-    badge: 'Quiet Luxury',
-    categories: ['Co-ords & Sets', 'Shirts & Overshirts', 'Dresses', 'Pleated Trousers'],
+    id: 'premium-shirting',
+    name: 'Premium Shirting',
+    tagline: 'Formal and casual shirts built for every workday',
+    badge: 'Shirts',
+    categories: ['Formal Shirts', 'Casual Shirts', 'Shirts'],
+    matcher: (p: Product) => {
+      const cat = (p.category || '').toLowerCase();
+      const col = (p.collection || '').toLowerCase();
+      return cat.includes('shirt') || col.includes('premium shirts');
+    },
+  },
+  {
+    id: 'everyday-essentials',
+    name: 'Everyday Essentials',
+    tagline: 'Tees, polos, denims and kurtis for daily wear',
+    badge: 'Everyday',
+    categories: ['Polo T-Shirts', 'Tees', 'Denims', 'Everyday Kurtis'],
     matcher: (p: Product) => {
       const col = (p.collection || '').toLowerCase();
-      const fab = (p.fabric || '').toLowerCase();
-      const title = (p.title || '').toLowerCase();
-      const sub = (p.subtitle || '').toLowerCase();
-      return (
-        col.includes('minimalist') ||
-        col.includes('essentials') ||
-        col.includes('atelier') ||
-        fab.includes('linen') ||
-        fab.includes('tussar') ||
-        fab.includes('matka') ||
-        fab.includes('khadi') ||
-        fab.includes('supima') ||
-        title.includes('linen') ||
-        title.includes('wrap') ||
-        sub.includes('effortless') ||
-        sub.includes('minimal')
-      );
+      const cat = (p.category || '').toLowerCase();
+      return col.includes('everyday') || cat.includes('tee') || cat.includes('polo') || cat.includes('kurti');
     },
   },
   {
-    id: 'cocktail-soiree',
-    name: 'Cocktail Soirée',
-    tagline: 'Pre-draped metallic zari, sculpted corsets & midnight reception glamour',
+    id: 'workwear',
+    name: 'Workwear',
+    tagline: 'Shirts, trousers and skirts built for the office',
+    badge: 'Workwear',
+    categories: ['Shirts', 'Trousers', 'Skirts', 'Dresses'],
+    matcher: (p: Product) => {
+      const col = (p.collection || '').toLowerCase();
+      const occ = (p.occasion || '').toLowerCase();
+      return col.includes('workwear') || col.includes('workday') || occ.includes('workwear');
+    },
+  },
+  {
+    id: 'weekend-casual',
+    name: 'Weekend Casual',
+    tagline: 'Denims, shorts and relaxed layers for easy weekends',
+    badge: 'Weekend',
+    categories: ['Denims', 'Hotpants / Shorts', 'Casual Shirts'],
+    matcher: (p: Product) => {
+      const col = (p.collection || '').toLowerCase();
+      const occ = (p.occasion || '').toLowerCase();
+      return col.includes('weekend') || (occ.includes('casual') && !col.includes('everyday'));
+    },
+  },
+  {
+    id: 'party-evening',
+    name: 'Party & Evening',
+    tagline: 'Cocktail dresses, sequin skirts and party tops for the evening',
     badge: 'Evening',
-    categories: ['Modern Sarees', 'Dresses', 'Bandhgalas & Jackets', 'Co-ords & Sets'],
+    categories: ['Dresses', 'Skirts', 'Tops'],
     matcher: (p: Product) => {
+      const col = (p.collection || '').toLowerCase();
       const occ = (p.occasion || '').toLowerCase();
-      const col = (p.collection || '').toLowerCase();
-      const title = (p.title || '').toLowerCase();
-      return (
-        occ.includes('cocktail') ||
-        occ.includes('soir') ||
-        occ.includes('gala') ||
-        occ.includes('evening') ||
-        col.includes('evening') ||
-        title.includes('corset') ||
-        title.includes('bandhgala') ||
-        title.includes('saree')
-      );
-    },
-  },
-  {
-    id: 'resort-travel',
-    name: 'Resort & Sun-Drenched',
-    tagline: '60 lea French flax linen, breezy tunic sets & vacation ease',
-    badge: 'Resort',
-    categories: ['Shirts & Overshirts', 'Dresses', 'Co-ords & Sets'],
-    matcher: (p: Product) => {
-      const occ = (p.occasion || '').toLowerCase();
-      const col = (p.collection || '').toLowerCase();
-      const fab = (p.fabric || '').toLowerCase();
-      return (
-        occ.includes('resort') ||
-        occ.includes('casual') ||
-        occ.includes('luncheon') ||
-        col.includes('resort') ||
-        fab.includes('linen') ||
-        fab.includes('chiffon')
-      );
-    },
-  },
-  {
-    id: 'heritage-festive',
-    name: 'Heritage Festive',
-    tagline: 'Varanasi Ahimsa silks, Yeola Paithani motifs & authentic hand-sewn Gota Patti',
-    badge: 'Artisanal',
-    categories: ['Modern Sarees', 'Kurtas', 'Bandhgalas & Jackets', 'Co-ords & Sets'],
-    matcher: (p: Product) => {
-      const col = (p.collection || '').toLowerCase();
-      const details = (p.details || []).join(' ').toLowerCase();
-      const badges = (p.badges || []).join(' ');
-      return (
-        col.includes('festive') ||
-        col.includes('heritage') ||
-        details.includes('zari') ||
-        details.includes('gota') ||
-        details.includes('paithani') ||
-        details.includes('handloom') ||
-        badges.includes('LIMITED')
-      );
+      return col.includes('party') || col.includes('evening') || occ.includes('party');
     },
   },
 ];
 
-
 const SUGGESTED_SEARCHES = [
-  'Chanderi Silk Set',
-  'Mandarin Linen Shirt',
-  'Pleated Khadi Trousers',
-  'Bandhgala Jacket',
-  'Pre-Draped Saree',
-  'Mulberry Silk',
+  'Formal Shirt',
+  'Polo T-Shirt',
+  'Slim Fit Chinos',
+  'Everyday Kurti',
+  'Cocktail Dress',
+  'Leather Belt',
 ];
 const RECENT_KEY = 'vanya_recent_searches';
 const POOL_SIZE = 60;
@@ -331,7 +272,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
             placeholder={
               activeVibe
                 ? `Search within "${activeVibe.name}" (e.g. Silk, Blue, Trousers)...`
-                : 'Search silhouettes, fabrics, occasions (e.g. Silk, Linen, Festive)...'
+                : 'Search styles, fabrics, occasions (e.g. Cotton, Denim, Business Casual)...'
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -492,7 +433,7 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
                   <p className="text-xs max-w-md mx-auto">
                     {activeVibe && trimmed
                       ? `We found no garments in the "${activeVibe.name}" collection matching "${trimmed}". Try searching for another fabric, silhouette, or clear your search term.`
-                      : 'Try searching for "Silk", "Linen", "Kurta", or switch to a different curated Vibe & Occasion above.'}
+                      : 'Try searching for "Cotton", "Denim", "Kurti", or switch to a different curated Vibe & Occasion above.'}
                   </p>
                   <div className="pt-2 flex justify-center gap-2">
                     {trimmed && (
@@ -634,10 +575,10 @@ function SearchPanel({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {[
-                    { label: 'Modern Sarees', count: 'Pre-draped ease', gender: 'women' as const },
-                    { label: 'Bandhgalas & Jackets', count: 'Ceremonial cuts', gender: 'men' as const },
-                    { label: 'Pleated Trousers', count: 'High-waisted fit', gender: 'men' as const },
-                    { label: 'Co-ords & Sets', count: 'Handloom luxury', gender: 'women' as const },
+                    { label: 'Formal Shirts', count: 'Business casual ready', gender: 'men' as const },
+                    { label: 'Everyday Kurtis', count: 'Daily-wear ease', gender: 'women' as const },
+                    { label: 'Business Casual Shoes', count: 'Lace-ups & slip-ons', gender: 'men' as const },
+                    { label: 'Dresses', count: 'Work to weekend', gender: 'women' as const },
                   ].map((cat) => (
                     <Link
                       key={cat.label}

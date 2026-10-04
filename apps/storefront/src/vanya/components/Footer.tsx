@@ -76,10 +76,10 @@ export function Footer() {
             <HeartHandshake className="w-5 h-5 text-[#D4AF37] shrink-0 mt-0.5" />
             <div>
               <h5 className="text-xs uppercase tracking-widest font-semibold text-[#EDE6DC]">
-                Artisanal Craft
+                Thoughtfully Made
               </h5>
               <p className="text-[11px] text-[#A69A8E] mt-0.5">
-                Woven by master artisan clusters across India
+                Designed for everyday wear, made to last
               </p>
             </div>
           </div>
@@ -113,7 +113,7 @@ export function Footer() {
                 </span>
               </div>
               <h4 className="font-editorial text-2xl sm:text-3xl text-white font-normal mt-1 tracking-wide">
-                Earn Handcrafted Privileges on Every Purchase
+                Earn Exclusive Privileges on Every Purchase
               </h4>
               <p className="text-xs text-[#B5A89B] max-w-2xl mt-1 leading-relaxed">
                 Collect Atelier Points on your orders and redeem them at checkout.
@@ -160,14 +160,9 @@ export function Footer() {
                   New In
                 </Link>
               </li>
-              <li>
-                <Link href={shop(isMen ? 'Festive & Ceremonial' : 'Festive Silk Edit')} className="hover:text-white transition-colors cursor-pointer">
-                  {isMen ? 'Festive & Ceremonial' : 'Festive Silk Edit'}
-                </Link>
-              </li>
               {(isMen
-                ? ([['Bandhgalas & Jackets', 'Bandhgalas & Jackets'], ['Handloom Kurtas', 'Kurtas'], ['Linen & Silk Shirts', 'Linen & Silk Shirts'], ['Pleated Trousers', 'Pleated Trousers']] as const)
-                : ([['Modern Sarees', 'Modern Sarees'], ['Co-ords & Sets', 'Co-ords & Sets'], ['Dresses & Drapes', 'Dresses']] as const)
+                ? ([['Casual Shirts', 'Casual Shirts'], ['Formal Trousers', 'Formal Trousers'], ['Business Casual Belts', 'Business Casual Belts'], ['Perfume', 'Perfume']] as const)
+                : ([['Tees', 'Tees'], ['Trousers', 'Trousers'], ['Shirts', 'Shirts'], ['Hotpants / Shorts', 'Hotpants / Shorts']] as const)
               ).map(([label, category]) => (
                 <li key={label}>
                   <Link href={shop(category)} className="hover:text-white transition-colors cursor-pointer">

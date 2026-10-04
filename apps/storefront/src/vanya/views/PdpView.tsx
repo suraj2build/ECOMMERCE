@@ -225,8 +225,8 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
   const averageRating = detail.ratingSummary.averageRating ?? 0;
   const manufacturingRows = [
     ['Country of Origin', product.manufacturing.origin],
-    ['Weaving Cluster', product.manufacturing.artisanCluster],
-    ['Eco Protocol', product.manufacturing.sustainableNote],
+    ['Production Cluster', product.manufacturing.artisanCluster],
+    ['Sustainability Note', product.manufacturing.sustainableNote],
   ].filter(([, value]) => value);
 
   return (
@@ -666,7 +666,7 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
               )}
 
               {(product.fabric || product.care.length > 0) && (
-                <Accordion id="fabric" title="Fabric & Artisan Care" open={Boolean(openAccordions.fabric)} onToggle={toggleAccordion}>
+                <Accordion id="fabric" title="Fabric & Care" open={Boolean(openAccordions.fabric)} onToggle={toggleAccordion}>
                   <div className="text-[#5C5146] space-y-2">
                     {product.fabric && <p><strong>Textile Composition:</strong> {product.fabric}</p>}
                     {product.care.length > 0 && (
@@ -705,7 +705,7 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
               </Accordion>
 
               {manufacturingRows.length > 0 && (
-                <Accordion id="manufacturing" title="Artisan Origin & Transparency" open={Boolean(openAccordions.manufacturing)} onToggle={toggleAccordion}>
+                <Accordion id="manufacturing" title="Origin & Transparency" open={Boolean(openAccordions.manufacturing)} onToggle={toggleAccordion}>
                   <div className="text-[#5C5146] space-y-1.5">
                     {manufacturingRows.map(([label, value]) => (
                       <p key={label}><strong>{label}:</strong> {value}</p>

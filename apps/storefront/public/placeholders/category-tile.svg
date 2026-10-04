@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 900">
+  <rect width="1800" height="900" fill="#201D19"/>
+  <rect x="40" y="40" width="1720" height="820" fill="none" stroke="#5B5048" stroke-width="2" stroke-dasharray="14 10"/>
+  <text x="900" y="440" text-anchor="middle" font-family="Georgia, serif" font-size="56" letter-spacing="8" fill="#EFEAE2">CATEGORY</text>
+  <text x="900" y="496" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" letter-spacing="4" fill="#C8BEB1" opacity="0.8">PLACEHOLDER IMAGE - DEMO CONTENT</text>
+</svg>

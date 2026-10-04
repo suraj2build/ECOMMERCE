@@ -113,7 +113,7 @@ export default function BagPage() {
       {!loading && cart && cart.items.length === 0 ? (
         <div className="py-16 text-center space-y-3">
           <h2 className="font-editorial text-2xl text-[#6B5F53]">Your bag is empty</h2>
-          <p className="text-xs text-[#756A5E] max-w-xs mx-auto">Explore our curated handloom silks, linen tailoring, and modern silhouettes.</p>
+          <p className="text-xs text-[#756A5E] max-w-xs mx-auto">Explore our curated shirts, denims, and everyday essentials.</p>
           <Link href="/" className="mt-4 inline-flex px-8 py-3 bg-[#1F1C18] text-[#FAF8F5] text-xs uppercase tracking-[0.16em] font-semibold rounded-full hover:bg-black transition-colors">Continue Exploring</Link>
         </div>
       ) : null}

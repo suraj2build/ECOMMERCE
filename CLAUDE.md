@@ -6,6 +6,102 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-04 (latest): `LAUNCH ASSORTMENT REPLACED THROUGHOUT
+THE CATALOGUE AND STOREFRONT — AWAITING PRODUCT OWNER REVIEW ON THE LOCAL
+DEMO.`** The Product Owner (Suraj) authorized replacing the earlier
+festive/ethnicwear assortment with the approved Men's (daily wear,
+premium shirts, business casual: Formal/Casual Shirts, Polo T-Shirts,
+Denims, Casual Trousers/Chinos, Formal Trousers, Business Casual Shoes,
+Business Casual Belts, Perfume) and Women's (daily/work/casual/partywear:
+Tops, Tees, Everyday Kurtis, Denims, Dresses, Trousers, Shirts, Skirts,
+Hotpants/Shorts) launch assortment, explicitly excluding ethnicwear/
+ceremonial/weddingwear for men and sarees/lehengas/bridalwear/festive
+ethnicwear for women (everyday kurtis stay).
+
+- **Real catalogue, not mock arrays.** `scripts/generate-launch-assortment.mjs`
+  authors 45 styles (23 men, 22 women) with real colour/size variants,
+  category-appropriate non-apparel attributes (shoe sizes + closure type;
+  belt size + material; fragrance volume + notes, modelled as
+  Colour=fragrance/Size=volume rather than forcing clothing sizes onto
+  accessories), a deliberate mix of available/low-stock/sold-out
+  variants, and category-specific HSN/GST rates (apparel 12%, footwear/
+  leather goods/fragrance 18%). `scripts/seed-demo.mjs` loads it through
+  the real staff API exactly as before (categories/sizes via Prisma
+  upsert, everything else via `POST` routes), now also attaching a style
+  to more than one `Collection` (`additionalCollections`) so "Business
+  Casual" genuinely spans suitable items across categories alongside
+  each item's own primary collection. `packages/db/prisma/seed.ts`'s own
+  baseline navigation-category reference data was updated to the same
+  17-category taxonomy - it is not demo-only, so a fresh database of any
+  kind now gets the approved categories, not the retired ones.
+- **Storefront updated consistently.** Header nav/drawer, home hero and
+  occasion banners, footer category links, the search overlay's Vibe &
+  Occasion chips and suggested searches, and the collections page copy
+  all point at the new categories/collections. Checked for leftover
+  ethnic/festive copy repo-wide (bandhgala/saree/lehenga/chanderi/zari/
+  sangeet/mehendi/wedding/ceremonial/festive/handloom/artisan-as-product-claim);
+  a few true positives were fixed (trust-badge and empty-state copy that
+  claimed handloom/artisan sourcing these mass-market styles don't have).
+  "Atelier" branding (loyalty programme name, lighting-preview mode,
+  gateway/footer copy) was deliberately left alone - it is generic
+  luxury-brand vocabulary baked into the whole approved design, not an
+  ethnicwear reference, and the brief asks to preserve brand presentation.
+- **Images.** Generation is paused (approved models for the next stage:
+  Aryan, Heena, Riya, Deeksha, Alisha). Every product/colour and CMS
+  banner points at a neutral, clearly-labelled placeholder SVG under
+  `apps/storefront/public/placeholders/` (`scripts/generate-placeholder-images.mjs`),
+  never a mismatched garment photo. Media/banner URLs are ordinary
+  admin-entered values, not hardcoded into page components, so the real
+  photography pack can replace them without a code change.
+- **Meilisearch test isolation (found during this pass).** A local
+  integration-test run (`npm run test:integration`) and `npm run demo`
+  shared one Meilisearch instance *and* one hardcoded index name
+  (`styles`), so a local test run could delete/pollute the real demo's
+  search results - confirmed by reading
+  `test/integration/search-discovery.test.ts`, which calls
+  `deleteAllDocuments()` on that exact index. Fixed by deriving the
+  index name from `NODE_ENV` (`services/commerce-api/src/modules/search/index-service.ts`):
+  `styles_test` whenever `NODE_ENV=test` (already guaranteed by
+  `test/helpers/setup-env.ts` before any test file runs), `styles`
+  otherwise. CI is unaffected (its Meilisearch container is ephemeral
+  either way). Verified directly: after running the integration suite,
+  Meilisearch has two separate indexes (`styles`, `styles_test`) and the
+  demo's own search total was unchanged.
+- **Verified locally** (this machine's Postgres/Redis/Meilisearch, not
+  `npm run demo` itself - see below): categories/collections/products
+  reachable and correctly gendered; apparel, footwear, belt and fragrance
+  variants and their stock states (available/low-stock/sold-out) render
+  correctly on PLP and PDP; add-to-bag, wishlist, "Complete Your Look"
+  cross-sell, search (including the new Vibe & Occasion chips), Watch &
+  Shop tag-to-product links, and a full guest COD checkout (address →
+  payment → confirmation, order visible in admin with an issued invoice)
+  all work end-to-end against the new catalogue; 98 integration tests
+  across search/catalog/product/cart/checkout/tax pass with zero
+  regressions.
+- **`npm run demo` itself was not run as a black box** for this pass -
+  this machine's native Postgres already occupies port 5432, which is
+  also what `scripts/demo-local.mjs` hardcodes, and its "is Postgres
+  already up" check would pass against the wrong (native) Postgres
+  before failing on a missing role - a pre-existing environment
+  conflict, not a product defect. Instead, the exact same sequence
+  `demo-local.mjs` would run (migrate → seed RBAC/admin → start the API
+  in `DEPLOYMENT_STAGE=preview` → run `scripts/seed-demo.mjs` → reindex
+  search) was run by hand against this machine's own already-working
+  demo Postgres, with the same generated secrets from `.demo/settings.json`.
+  A clean machine running the documented `npm run demo` should rebuild
+  automatically from the catalogue's bumped `version` field with no
+  extra steps.
+
+Still not done: no image-generation pass yet (placeholders only, by
+design); no cloud/hosted UAT - "UAT" for this project is, and has only
+ever been, the local demo (`docs/deployment/LOCAL_DEMO.md`); the
+Playwright e2e suite was not re-run against this catalogue (two specs,
+`search-deep-pages`/`record-completeness`, are documented as writing
+thousands of temporary fixtures against whatever search index is live -
+unsafe to run against the real demo catalogue without the same kind of
+isolation this pass just gave the integration suite). Not self-certified;
+no go-live claimed.
+
 **Status as of 2026-10-04 (later): `APPROVED VANYA DESIGN RESTORED
 IN THE STOREFRONT CODE — AWAITING PRODUCT OWNER VISUAL REVIEW ON THE
 LOCAL DEMO.`** Nothing is publicly deployed; "live" in earlier reports
