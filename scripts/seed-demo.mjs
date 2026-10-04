@@ -32,6 +32,21 @@ if (process.env.DEMO_SEED_ALLOWED !== 'preview' || productionStage) {
 }
 const API = `${process.env.DEMO_API_URL ?? 'http://localhost:4000'}/api/v1`;
 const { version: CATALOGUE_VERSION, products: PRODUCTS, reels: REELS } = JSON.parse(readFileSync(new URL('./demo-data/aistudio-catalogue.json', import.meta.url), 'utf8'));
+// Only complete, reviewed colour galleries replace product placeholders.
+// Existing demos still require the media updater; never reset to add photos.
+const photography = JSON.parse(readFileSync(new URL('./demo-data/product-photography.json', import.meta.url), 'utf8'));
+const productViews = ['front', 'back', 'side', 'detail'];
+for (const product of PRODUCTS) {
+  for (const [index, colour] of product.colors.entries()) {
+    const gallery = productViews.map(view => photography.jobs.find(job =>
+      job.productId === product.id && job.colourCode === `C${index + 1}` && job.view === view));
+    if (!gallery.every(job => job?.status === 'reviewed')) continue;
+    if (gallery.some(job => job.colour !== colour.name || job.hex !== colour.hex)) throw new Error(`Product photo colour mismatch: ${product.id}`);
+    for (const job of gallery) readFileSync(new URL(`../apps/storefront/public${job.asset}`, import.meta.url));
+    const origin = process.env.DEMO_STOREFRONT_URL ?? 'http://localhost:3000';
+    colour.images = gallery.map(job => new URL(job.asset, origin).href);
+  }
+}
 const prisma = new PrismaClient();
 
 async function call(method, path, body, token, attempt = 0) {
@@ -235,7 +250,7 @@ for (const p of PRODUCTS) {
     for (const url of colour.images) {
       await call('POST', `/products/styles/${style.id}/media`, {
         colourId: colourRows[index].id, url, sortOrder: sortOrder++,
-        altText: `${p.title} in ${colour.name} (placeholder image)`,
+        altText: `${p.title} in ${colour.name}${url.includes('/placeholders/') ? ' (placeholder image)' : ' (AI-generated UAT product image)'}`,
       }, token);
     }
   }

@@ -70,10 +70,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-tp-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve ecommerce product photograph. Reference is APPROVED GARMENT MASTER and adult Deeksha identity. Create one standalone portrait4:5 product gallery image. Show straight BACK view of exact blouse, from back of head to upperthighs. Model faces directly away from camera, no lookingover shoulder. Hair secured in a simple low bun so back neckline, continuous back satin panel, shoulder/sleeve seams and hem are unobstructed. Preserve same blouse construction: no invented back zip, embroidery or buttons. Keep exact satin blouse design/fit/material, neutral light-grey seamless background, soft even neutral lighting. Product fills frame, normal proportions, level neck, no influencer pose, no text/logos/watermark/collage/extra people. Garment is focus, not facial glamour.",
+      "review": "Reviewed against front master: satin colour/sheen, bow neckline, sleeve/cuff construction, relaxed fit and curved hem consistent; unobstructed view, upright neck, matching grey studio and natural proportions. Detail shows bow stitching and single-button cuff.",
+      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp",
+      "dimensions": {
+        "width": 1086,
+        "height": 1448
+      }
     },
     {
       "key": "women-tp-01-c1-side",
@@ -99,10 +103,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-tp-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve ecommerce product photograph. Reference is APPROVED GARMENT MASTER and adult Deeksha identity. Create one standalone portrait4:5 product gallery image. Show full SIDE profile of same model and exact blouse, camera-left profile, head upright aligned with body, hair in lowbun, near arm slightly away from torso to reveal seam and relaxed silhouette. Head to upperthigh framing, complete collar, sleeve, cuff and hem visible. Keep exact satin blouse design/fit/material, neutral light-grey seamless background, soft even neutral lighting. Product fills frame, normal proportions, level neck, no influencer pose, no text/logos/watermark/collage/extra people. Garment is focus, not facial glamour.",
+      "review": "Reviewed against front master: satin colour/sheen, bow neckline, sleeve/cuff construction, relaxed fit and curved hem consistent; unobstructed view, upright neck, matching grey studio and natural proportions. Detail shows bow stitching and single-button cuff.",
+      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp",
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      }
     },
     {
       "key": "women-tp-01-c1-detail",
@@ -128,10 +136,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-tp-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve ecommerce product photograph. Reference is APPROVED GARMENT MASTER and adult Deeksha identity. Create one standalone portrait4:5 product gallery image. Show close-up PRODUCT CONSTRUCTION detail of the exact ivory blouse on same model, frame shoulders to midtorso, face excluded. Bow tie-neck and satin stitching/placket joins clearly visible, include one cuff naturally beside torso to show singlebutton closure. No hands obscuring bow. Exact same material and colour, realistic garment details. Keep exact satin blouse design/fit/material, neutral light-grey seamless background, soft even neutral lighting. Product fills frame, normal proportions, level neck, no influencer pose, no text/logos/watermark/collage/extra people. Garment is focus, not facial glamour.",
+      "review": "Reviewed against front master: satin colour/sheen, bow neckline, sleeve/cuff construction, relaxed fit and curved hem consistent; unobstructed view, upright neck, matching grey studio and natural proportions. Detail shows bow stitching and single-button cuff.",
+      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp",
+      "dimensions": {
+        "width": 1122,
+        "height": 1402
+      }
     },
     {
       "key": "women-tp-01-c2-front",
@@ -157,10 +169,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-tp-01-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve ecommerce product photograph. Reference is APPROVED GARMENT MASTER and adult Deeksha identity. Create one standalone portrait4:5 product gallery image. Change ONLY blouse colour to true BLACK #1C1C1C. Keep exact same model identity and facial geometry, pose, garment tie-neck, sleeve construction, singlebutton cuffs, relaxedfit, untuckedhem, charcoaltrousers, studio lighting, background and camera crop. Maintain visible satin texture and construction in black fabric. Keep exact satin blouse design/fit/material, neutral light-grey seamless background, soft even neutral lighting. Product fills frame, normal proportions, level neck, no influencer pose, no text/logos/watermark/collage/extra people. Garment is focus, not facial glamour.",
+      "review": "Reviewed against front master: satin colour/sheen, bow neckline, sleeve/cuff construction, relaxed fit and curved hem consistent; unobstructed view, upright neck, matching grey studio and natural proportions. Detail shows bow stitching and single-button cuff.",
+      "garmentMaster": "/products/launch-v1/women-tp-01-c1-front.webp",
+      "dimensions": {
+        "width": 1086,
+        "height": 1448
+      }
     },
     {
       "key": "women-tp-01-c2-back",
@@ -186,10 +202,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-tp-01-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-01-c2-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve ecommerce product photograph. Reference is approved BLACK Satin Blouse Top garment master and adult Deeksha identity. One standalone portrait4:5 image. Straight BACK view, back of head to upperthighs, Deeksha facing away, hair in simple lowbun. Exact same black blouse: unobstructed continuous back satin panel, shoulder and sleeve seams, buttoncuffs and hem. No invented backzip/buttons/embroidery. Preserve exact BLACK#1C1C1C satin colour, material,regularfit, garment design and greytrousers, soft even studio lighting, neutralgrey seamless background. Garment fillsframe, true black with visible construction detail, no glamour/influencer posing, lateralnecktilt, text,logo,watermark,collage,extrapeople.",
+      "review": "Reviewed garment construction, colour, studio background, crop and upright posture. Side view corrected to true profile; selected assets only.",
+      "garmentMaster": "/products/launch-v1/women-tp-01-c2-front.webp",
+      "dimensions": [
+        1086,
+        1448
+      ]
     },
     {
       "key": "women-tp-01-c2-side",
@@ -215,10 +235,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-tp-01-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-01-c2-front.webp"
+      "status": "reviewed",
+      "prompt": "Edit only the blouse colour in this exact ecommerce side-profile photograph from ivory to deep neutral black #1C1C1C. Preserve satin material with realistic subtle highlights, exact tie-neck bow, collar, curved hem, seam positions, relaxed fit, sleeve and single-button cuff construction. Preserve the woman Deeksha's exact face identity, hairstyle low bun, upright neutral head/neck, true 90-degree side pose, natural proportions, hands, trousers, grey seamless studio background, lighting and framing. Product focused catalog photograph, no new embellishments or design changes.",
+      "review": "Reviewed garment construction, colour, studio background, crop and upright posture. Side view corrected to true profile; selected assets only.",
+      "garmentMaster": "/products/launch-v1/women-tp-01-c2-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-01-c2-detail",
@@ -244,10 +268,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-tp-01-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-01-c2-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: identity-preserve ecommerce product photograph. Reference is approved BLACK Satin Blouse Top garment master and adult Deeksha identity. One standalone portrait4:5 image. Close-up shoulders to midtorso, face excluded. Show exact black satin tie-neck bow, fine stitching, material texture and one single-button cuff at lowerleft near torso; no hand obscuringneckline. Preserve exact size and shape of bow/ties and collar. Preserve exact BLACK#1C1C1C satin colour, material,regularfit, garment design and greytrousers, soft even studio lighting, neutralgrey seamless background. Garment fillsframe, true black with visible construction detail, no glamour/influencer posing, lateralnecktilt, text,logo,watermark,collage,extrapeople.",
+      "review": "Reviewed garment construction, colour, studio background, crop and upright posture. Side view corrected to true profile; selected assets only.",
+      "garmentMaster": "/products/launch-v1/women-tp-01-c2-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c1-front",
