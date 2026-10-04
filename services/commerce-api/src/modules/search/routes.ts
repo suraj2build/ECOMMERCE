@@ -9,11 +9,12 @@ const searchQuerySchema = z.object({
   brand: z.string().optional(),
   gender: z.string().optional(),
   markdown: z.enum(['true', 'false']).optional(),
+  inStock: z.enum(['true']).optional(),
   color: z.string().optional(),
   size: z.string().optional(),
   priceMin: z.coerce.number().nonnegative().optional(),
   priceMax: z.coerce.number().nonnegative().optional(),
-  sort: z.enum(['relevance', 'price_asc', 'price_desc', 'newest']).default('relevance'),
+  sort: z.enum(['relevance', 'price_asc', 'price_desc', 'newest', 'rating']).default('relevance'),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(60).default(24),
 });
@@ -24,7 +25,10 @@ function quote(value: string): string {
 
 function buildFilter(params: z.infer<typeof searchQuerySchema>): string[] {
   const filters: string[] = [];
-  if (params.category) filters.push(`categorySlug = ${quote(params.category)}`);
+  if (params.category) {
+    const values = params.category.split(',').map((v) => v.trim()).filter(Boolean);
+    if (values.length) filters.push(`categorySlug IN [${values.map(quote).join(', ')}]`);
+  }
   if (params.brand) filters.push(`brandName = ${quote(params.brand)}`);
   if (params.gender) {
     const normalized = params.gender.toLowerCase();
@@ -33,6 +37,7 @@ function buildFilter(params: z.infer<typeof searchQuerySchema>): string[] {
     filters.push(`(gender IN [${quote(normalized)}, ${quote(titleCase)}, ${quote(upper)}] OR department IN [${quote(normalized)}, ${quote(titleCase)}, ${quote(upper)}])`);
   }
   if (params.markdown !== undefined) filters.push(`isMarkdown = ${params.markdown}`);
+  if (params.inStock) filters.push('inStock = true');
   if (params.color) {
     const values = params.color.split(',').map((v) => v.trim()).filter(Boolean);
     if (values.length) filters.push(`colours IN [${values.map(quote).join(', ')}]`);
@@ -51,6 +56,7 @@ function buildSort(sort: z.infer<typeof searchQuerySchema>['sort']): string[] | 
     case 'price_asc': return ['sellingPrice:asc'];
     case 'price_desc': return ['sellingPrice:desc'];
     case 'newest': return ['publishedAt:desc'];
+    case 'rating': return ['ratingAverage:desc'];
     default: return undefined;
   }
 }

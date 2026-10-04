@@ -340,6 +340,35 @@ describe('Search / Discovery (M10)', () => {
     expect(byBrand.json().hits.length).toBe(2);
   });
 
+  it('filters by several categories and by in-stock only, and sorts by rating', async () => {
+    await grantPermissions('MERCHANDISING', ['product:read', 'product:write', 'product:publish', 'catalog:price:write']);
+    const { token } = await createAuthenticatedStaff(app, ['MERCHANDISING']);
+    const { brand, category, size, location } = await seedBrandAndLocation();
+    const second = await testPrisma.category.create({ data: { name: 'Second', slug: 'second-category' } });
+    const third = await testPrisma.category.create({ data: { name: 'Third', slug: 'third-category' } });
+    const a = await publishStyle(token, location.id, { styleCode: 'SRCH-M1', name: 'Multi A', brandId: brand.id, categoryId: category.id, sizeId: size.id, sellingPrice: 900, onHand: 3 });
+    const b = await publishStyle(token, location.id, { styleCode: 'SRCH-M2', name: 'Multi B', brandId: brand.id, categoryId: second.id, sizeId: size.id, sellingPrice: 900 });
+    await publishStyle(token, location.id, { styleCode: 'SRCH-M3', name: 'Multi C', brandId: brand.id, categoryId: third.id, sizeId: size.id, sellingPrice: 900, onHand: 3 });
+
+    const ids = async (query: string) =>
+      (await app.inject({ method: 'GET', url: `/api/v1/storefront/search?${query}` })).json().hits.map((h: { id: string }) => h.id).sort();
+
+    expect(await ids(`category=${category.slug},${second.slug}`)).toEqual([a.styleId, b.styleId].sort());
+    expect(await ids(`category=${category.slug},${second.slug}&inStock=true`)).toEqual([a.styleId]);
+
+    // Only published reviews count; B is rated above A.
+    const customers = await Promise.all([1, 2].map(() => createAuthenticatedCustomer(app)));
+    for (const [styleId, rating, customer] of [[a.styleId, 3, customers[0]!], [b.styleId, 5, customers[1]!]] as const) {
+      const res = await app.inject({
+        method: 'POST', url: `/api/v1/storefront/products/${styleId}/reviews`,
+        headers: { authorization: `Bearer ${customer.token}` }, payload: { rating, body: 'Review' },
+      });
+      expect(res.statusCode).toBe(201);
+    }
+    const byRating = await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Multi&sort=rating' });
+    expect(byRating.json().hits.slice(0, 2).map((h: { id: string }) => h.id)).toEqual([b.styleId, a.styleId]);
+  });
+
   it('sorts by price ascending/descending and newest', async () => {
     await grantPermissions('MERCHANDISING', [
       'product:read',

@@ -177,7 +177,7 @@ export class SearchIndexService {
             'inStock',
             'sellingPrice',
           ],
-          sortableAttributes: ['sellingPrice', 'publishedAt', 'searchPinned', 'inStock'],
+          sortableAttributes: ['sellingPrice', 'publishedAt', 'searchPinned', 'inStock', 'ratingAverage'],
           // Manual merchandiser pin first (SRCH-001), then standard text
           // relevance, then the customer's explicit sort choice (price/
           // newest) when one is given (the "sort" placeholder is a no-op
