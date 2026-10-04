@@ -112,12 +112,17 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/catalog/badges', { preHandler: collectionAuth }, async (request, reply) => {
     const body = badgeSchema.parse(request.body);
-    reply.status(201).send(await afterChange(service.setBadge(body, request.staffUser!.id)));
+    // Badges show on listing cards, which read them from the search index.
+    const badge = await afterChange(service.setBadge(body, request.staffUser!.id).then(async (created) => {
+      await fastify.searchIndex.indexStyle(created.styleId);
+      return created;
+    }));
+    reply.status(201).send(badge);
   });
 
   fastify.delete('/catalog/badges/:id', { preHandler: collectionAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    await afterChange(service.removeBadge(id, request.staffUser!.id));
+    await afterChange(service.removeBadge(id, request.staffUser!.id).then((removed) => fastify.searchIndex.indexStyle(removed.styleId)));
     reply.status(204).send();
   });
 

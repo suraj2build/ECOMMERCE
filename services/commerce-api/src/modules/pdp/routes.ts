@@ -57,6 +57,8 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
       const { styleId } = z.object({ styleId: z.string().uuid() }).parse(request.params);
       const body = reviewSchema.parse(request.body);
       const review = await reviewService.submitReview(request.customer!.id, { styleId, ...body });
+      // Listing cards show the rating from the search index.
+      await fastify.searchIndex.indexStyle(styleId);
       reply.status(201).send(review);
     },
   );
@@ -65,12 +67,16 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/pdp/reviews/:id/hide', { preHandler: moderateAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    reply.status(200).send(await reviewService.hideReview(id, request.staffUser!.id));
+    const review = await reviewService.hideReview(id, request.staffUser!.id);
+    await fastify.searchIndex.indexStyle(review.styleId);
+    reply.status(200).send(review);
   });
 
   fastify.post('/pdp/reviews/:id/unhide', { preHandler: moderateAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    reply.status(200).send(await reviewService.unhideReview(id, request.staffUser!.id));
+    const review = await reviewService.unhideReview(id, request.staffUser!.id);
+    await fastify.searchIndex.indexStyle(review.styleId);
+    reply.status(200).send(review);
   });
 
   fastify.post('/pdp/pincodes', { preHandler: pincodeAuth }, async (request, reply) => {

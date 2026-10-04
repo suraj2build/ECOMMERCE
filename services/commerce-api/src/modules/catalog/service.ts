@@ -314,6 +314,7 @@ export class CatalogService {
       entityId: id,
       oldValue: badge,
     });
+    return badge;
   }
 
   async listBadges(styleId: string) {

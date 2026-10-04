@@ -4,6 +4,11 @@ import { NotFoundError } from '@fcp/shared';
 import { CatalogService, THUMBNAIL_MEDIA } from '../catalog/service.js';
 import { recordAudit } from '../audit/service.js';
 
+/**
+ * The card needs the thumbnail (THUMBNAIL_MEDIA's first image), a second
+ * image for hover and one image per colour for its swatches.
+ */
+const CARD_MEDIA = { ...THUMBNAIL_MEDIA, take: undefined };
 declare module 'fastify' {
   interface FastifyInstance {
     searchIndex: SearchIndexService;
@@ -42,6 +47,17 @@ export interface StyleSearchDocument {
   searchPinned: boolean;
   publishedAt: number;
   thumbnailUrl: string | null;
+  /** Second image of the style, shown when a shopper hovers a product card. */
+  hoverImageUrl: string | null;
+  /** One entry per colour, in colour order: name, swatch hex and first image. */
+  swatches: { name: string; hex: string | null; imageUrl: string | null }[];
+  /** Per size label, whether any colour of that size can be sold now. */
+  sizeAvailability: { label: string; inStock: boolean }[];
+  /** Merchandising badges (MerchandiseBadge), as the PDP lists them. */
+  badges: string[];
+  /** From PUBLISHED reviews only; null when there are none. */
+  ratingAverage: number | null;
+  reviewCount: number;
 }
 
 /**
@@ -195,8 +211,8 @@ export class SearchIndexService {
         include: {
           brand: true,
           category: true,
-          skus: { where: { isActive: true }, include: { colour: true, size: true } },
-          media: THUMBNAIL_MEDIA,
+          skus: { where: { isActive: true }, include: { colour: true, size: true }, orderBy: [{ size: { sortOrder: 'asc' } }] },
+          media: CARD_MEDIA,
         },
       });
       if (!style) {
@@ -218,10 +234,24 @@ export class SearchIndexService {
             _sum: { onHand: true, reserved: true },
           })
         : [];
-      const availableQuantity = balances.reduce(
-        (sum, b) => sum + Math.max(0, (b._sum.onHand ?? 0) - (b._sum.reserved ?? 0)),
-        0,
+      const availableBySku = new Map(
+        balances.map((b) => [b.skuId, Math.max(0, (b._sum.onHand ?? 0) - (b._sum.reserved ?? 0))]),
       );
+      const availableQuantity = [...availableBySku.values()].reduce((sum, quantity) => sum + quantity, 0);
+      const [badges, rating] = await Promise.all([
+        this.catalog.listBadges(styleId),
+        this.prisma.review.aggregate({ where: { styleId, status: 'PUBLISHED' }, _avg: { rating: true }, _count: { _all: true } }),
+      ]);
+      const swatches = new Map<string, StyleSearchDocument['swatches'][number]>();
+      for (const sku of style.skus) {
+        if (swatches.has(sku.colourId)) continue;
+        const image = style.media.find((m) => m.colourId === sku.colourId) ?? style.media.find((m) => m.colourId === null);
+        swatches.set(sku.colourId, { name: sku.colour.name, hex: sku.colour.hexSwatch, imageUrl: image?.url ?? null });
+      }
+      const sizeAvailability = new Map<string, boolean>();
+      for (const sku of style.skus) {
+        sizeAvailability.set(sku.size.label, (sizeAvailability.get(sku.size.label) ?? false) || (availableBySku.get(sku.id) ?? 0) > 0);
+      }
 
       const document: StyleSearchDocument = {
         id: style.id,
@@ -253,6 +283,12 @@ export class SearchIndexService {
         searchPinned: style.searchPinned,
         publishedAt: style.publishedAt ? style.publishedAt.getTime() : 0,
         thumbnailUrl: style.media[0]?.url ?? null,
+        hoverImageUrl: style.media.find((m, i) => i > 0 && m.colourId === style.media[0]?.colourId)?.url ?? null,
+        swatches: [...swatches.values()],
+        sizeAvailability: [...sizeAvailability].map(([label, inStock]) => ({ label, inStock })),
+        badges: [...new Set(badges.map((b) => b.badgeType))],
+        ratingAverage: rating._avg.rating === null ? null : Math.round(rating._avg.rating * 10) / 10,
+        reviewCount: rating._count._all,
       };
 
       await this.index().addDocuments([document]).waitTask();

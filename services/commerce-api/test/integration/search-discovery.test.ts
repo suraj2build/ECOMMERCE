@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
-import { createAuthenticatedStaff } from '../helpers/auth.js';
+import { createAuthenticatedStaff, createAuthenticatedCustomer } from '../helpers/auth.js';
 import { STYLES_INDEX_UID } from '../../src/modules/search/index-service.js';
 
 /**
@@ -140,6 +140,53 @@ describe('Search / Discovery (M10)', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.hits.map((h: { id: string }) => h.id)).toContain(styleId);
+  });
+
+  it('carries what a listing card shows: swatches, size availability, hover image, badges and the published rating', async () => {
+    await grantPermissions('MERCHANDISING', ['product:read', 'product:write', 'product:publish', 'catalog:price:write', 'catalog:collection:manage']);
+    await grantPermissions('CUSTOMER_SERVICE', ['review:moderate']);
+    const { token } = await createAuthenticatedStaff(app, ['MERCHANDISING']);
+    const { token: moderatorToken } = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+    const { brand, category, size, location } = await seedBrandAndLocation();
+    const { styleId, skuId } = await publishStyle(token, location.id, {
+      styleCode: 'SRCH-CARD', name: 'Card Data Kurta', brandId: brand.id, categoryId: category.id, sizeId: size.id, sellingPrice: 1500, onHand: 4,
+    });
+    const sku = await testPrisma.sku.findUniqueOrThrow({ where: { id: skuId } });
+    await testPrisma.colour.update({ where: { id: sku.colourId }, data: { hexSwatch: '#1E2A4A' } });
+    // A second size of the same colour with no stock.
+    const soldOutSize = await testPrisma.size.create({ data: { label: 'CARD-XL', sortOrder: 99 } });
+    await testPrisma.sku.create({ data: { skuCode: 'SRCH-CARD-XL', styleId, colourId: sku.colourId, sizeId: soldOutSize.id } });
+    await app.inject({
+      method: 'POST', url: `/api/v1/products/styles/${styleId}/media`, headers: { authorization: `Bearer ${token}` },
+      payload: { colourId: sku.colourId, url: 'https://example.com/back.jpg', sortOrder: 1 },
+    });
+    const badge = await app.inject({
+      method: 'POST', url: '/api/v1/catalog/badges', headers: { authorization: `Bearer ${token}` },
+      payload: { styleId, badgeType: 'BESTSELLER', source: 'MANUAL' },
+    });
+    expect(badge.statusCode).toBe(201);
+    const { token: customerToken } = await createAuthenticatedCustomer(app);
+    const review = await app.inject({
+      method: 'POST', url: `/api/v1/storefront/products/${styleId}/reviews`, headers: { authorization: `Bearer ${customerToken}` },
+      payload: { rating: 4, body: 'Lovely fall.' },
+    });
+    expect(review.statusCode).toBe(201);
+
+    const hit = (await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Card' })).json().hits.find((h: { id: string }) => h.id === styleId);
+    expect(hit.swatches).toEqual([{ name: 'Black', hex: '#1E2A4A', imageUrl: 'https://example.com/x.jpg' }]);
+    expect(hit.sizeAvailability).toEqual([{ label: size.label, inStock: true }, { label: 'CARD-XL', inStock: false }]);
+    expect(hit.hoverImageUrl).toBe('https://example.com/back.jpg');
+    expect(hit.badges).toEqual(['BESTSELLER']);
+    expect(hit.ratingAverage).toBe(4);
+    expect(hit.reviewCount).toBe(1);
+
+    // Hiding the only review removes the rating from the card at once.
+    const reviewId = review.json().id as string;
+    const hidden = await app.inject({ method: 'POST', url: `/api/v1/pdp/reviews/${reviewId}/hide`, headers: { authorization: `Bearer ${moderatorToken}` } });
+    expect(hidden.statusCode).toBe(200);
+    const afterHide = (await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=Card' })).json().hits.find((h: { id: string }) => h.id === styleId);
+    expect(afterHide.ratingAverage).toBeNull();
+    expect(afterHide.reviewCount).toBe(0);
   });
 
   it('removes a style from the index the instant it is unpublished', async () => {
