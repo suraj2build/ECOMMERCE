@@ -301,10 +301,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-tp-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: product-mockup. Generate one ultra-realistic ecommerce studio FRONT product photograph of a Relaxed Cotton Top in Blush Pink #E7C3C3. Reference image is ONLY the adult model Riya identity authority: preserve exact compact round face, eyes, nose, lips, short highlighted layered bob, natural Indian skin complexion and petite adult 152cm proportions. Do not copy reference outfit, background or head tilt. New garment: plain matte soft cotton jersey top, round crew neck with neat self-fabric narrow neckband, elbow-length straight sleeves, relaxed silhouette, untucked straight hem reaching upper hip. No prints, ribbed body, embellishments, pockets or logos. Unobtrusive charcoal straight trousers. Product is the focus: entire top, neckline, sleeves and hem clearly visible and unobstructed. Neutral light-grey seamless studio, soft even neutral lighting, natural cotton texture and stitches. Straight front-facing shoulders, head upright, level eyes and chin, arms relaxed a few centimetres from torso, all fingers natural. Gentle approachable expression. Eye-level 70mm catalogue photograph, portrait 4:5, frame full head to upper thighs with generous consistent margins, no props/accessories, no text/watermark, no scenery, no glamour pose. Natural face/body ratio.",
+      "review": "Reviewed product visibility, cotton fabric, matching neckline/sleeves/seams/hem, identity, upright posture, proportions and studio framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c1-back",
@@ -330,10 +334,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-tp-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: product-mockup. Derive a matching ecommerce back photo from this approved FRONT garment master. True straight BACK view of same adult Riya facing away. Keep short highlighted bob above shoulder seam. Show full plain back cotton panel, round neckline, elbow sleeves, side seams and straight hip-length hem. Head upright facing away; arms relaxed a little away from sides. Preserve exact blush pink #E7C3C3 relaxed cotton top, plain cotton jersey material, sleeve length, fit, seams, hem and adult Riya identity; do not redesign. Same neutral grey seamless studio and soft even neutral lighting, no text/logos/scenery/accessories. Portrait 4:5, consistent product scale and margins; for back/side frame head to upperthighs. Natural fingers, natural face/body ratio, no head tilt.",
+      "review": "Reviewed product visibility, cotton fabric, matching neckline/sleeves/seams/hem, identity, upright posture, proportions and studio framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c1-side",
@@ -359,10 +367,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-tp-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: product-mockup. Derive a matching ecommerce side photo from this approved FRONT garment master. True 90-degree SIDE profile facing camera left, shoulders and head rotate together with straight neck, level chin. Show side silhouette and seam, round neck, elbow sleeves, complete straight hem. Preserve Riya face in profile, short highlighted bob and exact petite natural proportions. Arms relaxed slightly away so side seam is visible. Preserve exact blush pink #E7C3C3 relaxed cotton top, plain cotton jersey material, sleeve length, fit, seams, hem and adult Riya identity; do not redesign. Same neutral grey seamless studio and soft even neutral lighting, no text/logos/scenery/accessories. Portrait 4:5, consistent product scale and margins; for back/side frame head to upperthighs. Natural fingers, natural face/body ratio, no head tilt.",
+      "review": "Reviewed product visibility, cotton fabric, matching neckline/sleeves/seams/hem, identity, upright posture, proportions and studio framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c1-detail",
@@ -388,10 +400,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-tp-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: product-mockup. Derive a matching ecommerce detail photo from this approved FRONT garment master. Close-up of garment only, no face. Show round crew neckline self-fabric binding, shoulder seam and elbow sleeve double-needle hem with soft matte cotton fine texture. Exact blush colour and original construction. Product construction fills frame, no hands or unrelated objects. Preserve exact blush pink #E7C3C3 relaxed cotton top, plain cotton jersey material, sleeve length, fit, seams, hem and adult Riya identity; do not redesign. Same neutral grey seamless studio and soft even neutral lighting, no text/logos/scenery/accessories. Portrait 4:5, consistent product scale and margins; for back/side frame head to upperthighs. Natural fingers, natural face/body ratio, no head tilt.",
+      "review": "Reviewed product visibility, cotton fabric, matching neckline/sleeves/seams/hem, identity, upright posture, proportions and studio framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c2-front",
@@ -417,10 +433,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-tp-02-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: precise-object-edit. Change ONLY the blouse/top colour in this approved ecommerce photo from blush pink to White #F5F5F0. Preserve exact Riya adult face, short highlighted bob, upright neck, relaxed pose, natural proportions, charcoal trousers, neutral grey seamless studio, lighting, framing. Preserve every garment detail: matte soft cotton jersey, round crew neck self-fabric binding, relaxed fit, elbow-length sleeves with double-needle hems, shoulder/side seams, straight hip-length untucked hem. White must be opaque and show subtle fabric texture under soft studio lighting, no sheer fabric, no new embellishments. Product focused catalog front view, no text/logo.",
+      "review": "Reviewed product visibility, cotton fabric, matching neckline/sleeves/seams/hem, identity, upright posture, proportions and studio framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c1-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c2-back",
@@ -446,10 +466,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-tp-02-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c2-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: precise-object-edit. Change ONLY the cotton top colour from blush pink to opaque neutral White #FAFAF6, preserving natural white cotton texture and subtle shadows. Keep EXACT back view, garment design, round neck binding, elbow sleeves, relaxed silhouette, seam positions, stitching and straight hip-length hem. Preserve adult Riya identity, short highlighted bob, face/body ratio, upright neck, pose, hands, charcoal trousers, grey seamless studio, even neutral lighting and framing. This is a product focused ecommerce gallery image; no redesign, logos, text, props or scenery.",
+      "review": "Reviewed matching garment construction, neutral white cotton, identity, upright profile, back visibility, product detail and consistent framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c2-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c2-side",
@@ -475,10 +499,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-tp-02-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c2-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: precise-object-edit. Change ONLY the cotton top colour from blush pink to opaque neutral White #FAFAF6, preserving natural white cotton texture and subtle shadows. Keep EXACT side view, garment design, round neck binding, elbow sleeves, relaxed silhouette, seam positions, stitching and straight hip-length hem. Preserve adult Riya identity, short highlighted bob, face/body ratio, upright neck, pose, hands, charcoal trousers, grey seamless studio, even neutral lighting and framing. This is a product focused ecommerce gallery image; no redesign, logos, text, props or scenery.",
+      "review": "Reviewed matching garment construction, neutral white cotton, identity, upright profile, back visibility, product detail and consistent framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c2-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-02-c2-detail",
@@ -504,10 +532,14 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-tp-02-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
-      "garmentMaster": "/products/launch-v1/women-tp-02-c2-front.webp"
+      "status": "reviewed",
+      "prompt": "Use case: precise-object-edit. Change ONLY the cotton top colour from blush pink to opaque neutral White #FAFAF6, preserving natural white cotton texture and subtle shadows. Keep EXACT detail view, garment design, round neck binding, elbow sleeves, relaxed silhouette, seam positions, stitching and straight hip-length hem. Preserve adult Riya identity, short highlighted bob, face/body ratio, upright neck, pose, hands, charcoal trousers, grey seamless studio, even neutral lighting and framing. This is a product focused ecommerce gallery image; no redesign, logos, text, props or scenery.",
+      "review": "Reviewed matching garment construction, neutral white cotton, identity, upright profile, back visibility, product detail and consistent framing.",
+      "garmentMaster": "/products/launch-v1/women-tp-02-c2-front.webp",
+      "dimensions": [
+        1122,
+        1402
+      ]
     },
     {
       "key": "women-tp-03-c1-front",
