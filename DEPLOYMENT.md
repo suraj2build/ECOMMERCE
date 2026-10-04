@@ -146,7 +146,7 @@ the API (default 1 = one load balancer; e.g. CDN + load balancer = 2).
 Per-IP rate limiting uses the client address that many hops back, and
 the API must not be reachable except through those proxies.
 
-### Storefront build and product-page cache
+### Storefront build and cache
 
 Build the storefront only with its own script (`npm run build
 --workspace=apps/storefront`). It runs `next build` in production mode
@@ -154,14 +154,27 @@ and fails if the product route cannot render products that did not
 exist at build time. A plain `next build` under any other `NODE_ENV`
 silently produces a storefront where every product page is a 404.
 
-Product pages are cached for up to 30 seconds per storefront instance.
+Each storefront instance caches catalogue reads and the pages built from
+them: product pages for up to 30 seconds, listings (home, category,
+search, collections, Watch & Shop) for 30-60 seconds. After a quiet
+spell the first visitor still gets the old copy while it refreshes, so
+on its own the cache can show a removed product or an old price.
+
 Set `STOREFRONT_REVALIDATE_URL` on the API (the storefront's
 `/api/revalidate/product` URL, reachable from the API) and the same
 random `STOREFRONT_REVALIDATE_SECRET` (32+ characters) on both the API
-and the storefront. The API then drops a product's page after publish,
-unpublish, archive, media and price changes. Without them, those
-changes appear within 30 seconds, and a product opened before it was
-published keeps showing "not found" for up to 30 seconds after publish.
+and the storefront. The API then:
+
+- drops the product page and every cached listing after a product's
+  publish, unpublish, archive, media, price or markdown change;
+- drops every cached listing (`/api/revalidate/catalog`, next to the
+  product URL) after a collection, badge, CMS, Watch & Shop or search-pin
+  change and after `POST /search/reindex`.
+
+Without them, those changes appear only when each cache entry expires.
+Stock-only changes (orders, reservations, receipts) do not purge: listings
+show no stock, a product page's availability refreshes within 30 seconds,
+and cart and checkout always read live stock.
 
 - More than one storefront instance: each keeps its own cache; use a
   shared Next.js cache handler or call every instance.
@@ -172,12 +185,19 @@ published keeps showing "not found" for up to 30 seconds after publish.
   per second in CI-class testing before newly arriving visitors queued
   for seconds; size instances or CDN offload to expected traffic
   (`acceptance/go-live/2026-10-02-readiness.md`).
-- Reseeding a preview: the storefront keeps fetched listings in
-  `apps/storefront/.next/cache` across restarts. After resetting or
-  reseeding the database behind an existing build, delete that folder (or
-  redeploy) before starting the storefront. Otherwise listings can still
-  link to products from the old data until they are revalidated. A
-  normal deploy starts from a fresh build and is not affected.
+
+**After a database restore or reseed** (any change made behind the
+application), run `POST /api/v1/search/reindex` (`search:reindex`). It
+rebuilds the search index from the database, removes products that are
+no longer published, and purges the storefront cache. Until then the
+storefront keeps the old listings and product pages, including pages
+for products that no longer exist. Verified on 2026-10-04 by dropping
+and reseeding the database under a running, warm storefront: the deleted
+product stayed listed and its page answered 200 until the reindex, then
+it left the listing and its page answered 404 within about 100 ms
+(`test/e2e-storefront/listing-cache.spec.ts` checks the same path in CI).
+Without `STOREFRONT_REVALIDATE_URL`, also delete
+`apps/storefront/.next/cache` (or redeploy) and restart the storefront.
 
 ### Analytics and Meta (LR-003)
 
@@ -199,10 +219,29 @@ queued in `conversion_events` and sent by `POST /analytics/sweep/conversions`
 `GET /analytics/conversions` for failures. `SITE_INDEXING=enabled` must be
 set only on the real production storefront (LR-002).
 
-Purchase events carry `payment_type` (`cod` / `prepaid`). In GA4, register it
-under Admin → Custom definitions as an event-scoped dimension, so COD orders
-placed can be separated from paid revenue. Withdrawing consent in "Privacy
+Purchase semantics (LR-009, Product Owner decision 2026-10-04):
+
+- Prepaid: `purchase` / `Purchase` once the payment is captured.
+- COD: placing the order sends `cod_order_placed` (GA4) and
+  `CODOrderPlaced` (Meta custom event), never a purchase. The purchase is
+  sent only when Finance records the cash collection after delivery
+  (admin order page → "Record COD collection", or
+  `POST /orders/:id/cod-collection`, permission `payment:cod:collect`),
+  for the delivered lines only. A cancelled or refused COD order is
+  therefore never a purchase. A refund is reported only against a
+  purchase that was reported, and only when it completes after it.
+
+`payment_type` (`cod` / `prepaid`) is on every order event. In GA4, register
+it under Admin → Custom definitions as an event-scoped dimension, and mark
+`cod_order_placed` as a key event only if you want placed COD orders counted
+separately; do not count it as revenue. Withdrawing consent in "Privacy
 choices" stops that purpose's queued server events (status `WITHDRAWN`).
+
+Upgrading an existing database: migration `20261004110000_cod_collections`
+creates `payment:cod:collect` and grants it to the SUPER_ADMIN and FINANCE
+roles, so no re-seed is needed. (Re-running `npm run db:seed` against a
+deployed database also creates the seed admin account if
+`SEED_SUPER_ADMIN_EMAIL` is not that environment's existing admin; avoid it.)
 
 ### Product feeds: Google Merchant and Meta catalogue (LR-004)
 

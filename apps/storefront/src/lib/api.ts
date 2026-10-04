@@ -4,8 +4,8 @@
  * endpoint - see services/commerce-api/src/modules/catalog/routes.ts
  * (/storefront/*) and modules/content/routes.ts (/content/watch-and-shop/*).
  * This file is a thin read client, never a second source of truth: it
- * has no local cache/state of its own beyond Next.js's own request-scoped
- * fetch cache.
+ * has no local cache/state of its own beyond Next.js's fetch cache, whose
+ * catalogue entries are tagged CATALOG_CACHE_TAG.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -55,8 +55,15 @@ export interface ShoppableMediaSummary {
   tags: ShoppableMediaTagSummary[];
 }
 
+/**
+ * Every cached catalogue read carries this tag, so commerce-api can drop all
+ * of them at once (POST /api/revalidate/catalog) after a catalogue change or
+ * a search reindex, instead of waiting out each entry's revalidation window.
+ */
+export const CATALOG_CACHE_TAG = 'catalog';
+
 async function apiGet<T>(path: string, revalidateSeconds: number): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, { next: { revalidate: revalidateSeconds } });
+  const res = await fetch(`${API_URL}${path}`, { next: { revalidate: revalidateSeconds, tags: [CATALOG_CACHE_TAG] } });
   if (!res.ok) {
     throw new Error(`commerce-api request failed: GET ${path} -> ${res.status}`);
   }
@@ -150,7 +157,7 @@ export interface ProductDetail {
 export async function getProductDetail(styleId: string): Promise<ProductDetail | null> {
   // Product IDs are UUIDs: anything else is an unknown product (404), never a server error.
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(styleId)) return null;
-  const res = await fetch(`${API_URL}/api/v1/storefront/products/${styleId}`, { next: { revalidate: 30 } });
+  const res = await fetch(`${API_URL}/api/v1/storefront/products/${styleId}`, { next: { revalidate: 30, tags: [CATALOG_CACHE_TAG] } });
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`commerce-api request failed: GET /storefront/products/${styleId} -> ${res.status}`);

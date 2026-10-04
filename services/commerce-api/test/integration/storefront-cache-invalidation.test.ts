@@ -10,17 +10,21 @@ import { createAuthenticatedStaff } from '../helpers/auth.js';
 const SECRET = 'test-only-storefront-revalidate-secret-0001';
 
 interface Received {
+  path: string | undefined;
   authorization: string | undefined;
   body: unknown;
 }
 
 /**
- * The storefront caches each product page for up to 30 seconds. A page
- * requested before publication must not stay a cached 404 after publish,
- * and an unpublished product must not stay visible: the API asks the
- * storefront to drop the page after every change that alters it. A
- * stand-in storefront records those calls here; the real storefront
- * endpoint is exercised by test/e2e-storefront/pdp-publish-cache.spec.ts.
+ * The storefront caches each product page for up to 30 seconds and its
+ * listings for 30-60 seconds. A page requested before publication must not
+ * stay a cached 404 after publish, and an unpublished product must not stay
+ * visible on its page or in any listing: the API asks the storefront to
+ * drop the page and its cached catalogue reads after every change that
+ * alters them, and after a search reindex (the runbook step after a restore
+ * or reseed). A stand-in storefront records those calls here; the real
+ * storefront endpoints are exercised by
+ * test/e2e-storefront/pdp-publish-cache.spec.ts and listing-cache.spec.ts.
  */
 describe('Storefront product-page invalidation', () => {
   let app: FastifyInstance;
@@ -33,7 +37,7 @@ describe('Storefront product-page invalidation', () => {
       let raw = '';
       req.on('data', (chunk) => (raw += chunk));
       req.on('end', () => {
-        received.push({ authorization: req.headers.authorization, body: JSON.parse(raw || 'null') });
+        received.push({ path: req.url, authorization: req.headers.authorization, body: JSON.parse(raw || 'null') });
         setTimeout(() => {
           res.statusCode = respondWith.status;
           res.end('{}');
@@ -90,6 +94,7 @@ describe('Storefront product-page invalidation', () => {
   }
 
   const calls = (styleId: string) => received.filter((r) => (r.body as { styleId?: string })?.styleId === styleId).length;
+  const catalogPurges = () => received.filter((r) => r.path === '/api/revalidate/catalog').length;
 
   it('asks the storefront to drop the product page on publish, price change, unpublish and archive', async () => {
     const token = await merchandiser();
@@ -108,10 +113,38 @@ describe('Storefront product-page invalidation', () => {
     expect((await post(token, `/api/v1/products/styles/${styleId}/archive`)).statusCode).toBe(200);
     expect(calls(styleId)).toBe(beforePublish + 4);
 
+    // Each change also purges the cached listings the product appears in.
+    expect(catalogPurges()).toBe(calls(styleId));
     for (const call of received) {
       expect(call.authorization).toBe(`Bearer ${SECRET}`);
-      expect(call.body).toEqual({ styleId });
+      if (call.path === '/api/revalidate/product') expect(call.body).toEqual({ styleId });
+      else expect(call.path).toBe('/api/revalidate/catalog');
     }
+  });
+
+  it('purges cached listings after a collection change and a search reindex, and not after a refused change', async () => {
+    await grantPermissions('MERCHANDISING', ['catalog:collection:manage', 'catalog:publish', 'search:reindex']);
+    const token = (await createAuthenticatedStaff(app, ['MERCHANDISING'])).token;
+
+    const created = await post(token, '/api/v1/catalog/collections', { name: 'Purge Edit', slug: `purge-edit-${Date.now()}` });
+    expect(created.statusCode).toBe(201);
+    expect(catalogPurges()).toBe(1);
+    expect((await post(token, `/api/v1/catalog/collections/${created.json().id}/publish`)).statusCode).toBe(200);
+    expect(catalogPurges()).toBe(2);
+
+    // A refused change leaves the cache alone.
+    expect((await post(token, '/api/v1/catalog/collections/00000000-0000-4000-8000-000000000000/publish')).statusCode).toBe(404);
+    expect(catalogPurges()).toBe(2);
+
+    expect((await post(token, '/api/v1/search/reindex')).statusCode).toBe(200);
+    expect(catalogPurges()).toBe(3);
+    for (const call of received) expect(call).toMatchObject({ path: '/api/revalidate/catalog', authorization: `Bearer ${SECRET}`, body: {} });
+  });
+
+  it('a purge without permission is refused before anything reaches the storefront', async () => {
+    const token = (await createAuthenticatedStaff(app, ['MERCHANDISING'])).token;
+    expect((await post(token, '/api/v1/search/reindex')).statusCode).toBe(403);
+    expect(received).toHaveLength(0);
   });
 
   it('still publishes when the storefront refuses or does not answer in time', async () => {

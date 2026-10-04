@@ -66,10 +66,15 @@ test.describe('Product page follows publish, price and unpublish without waiting
     const page = `/product/${styleId}`;
 
     // Requested before publication: a 404, cached by the storefront.
+    // Polled: another spec's catalogue change purges every cached page, so
+    // the cache may need a second request to be warm again.
     expect((await request.get(page)).status()).toBe(404);
-    const cached404 = await request.get(page);
-    expect(cached404.status()).toBe(404);
-    expect(cached404.headers()['x-nextjs-cache']).toBe('HIT');
+    await expect
+      .poll(async () => {
+        const cached404 = await request.get(page);
+        return `${cached404.status()} ${cached404.headers()['x-nextjs-cache']}`;
+      }, { timeout: 5_000 })
+      .toBe('404 HIT');
 
     await post(`/api/v1/products/styles/${styleId}/publish`, undefined, 'publish');
     await expect.poll(async () => (await request.get(page)).status(), { timeout: 5_000 }).toBe(200);

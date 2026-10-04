@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { SearchIndexService, STYLES_INDEX_UID, type StyleSearchDocument } from './index-service.js';
+import { purgeCatalogAfter } from '../pdp/storefront-cache.js';
 
 const searchQuerySchema = z.object({
   q: z.string().optional(),
@@ -58,6 +59,7 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new SearchIndexService(fastify);
   const pinAuth = [fastify.requireStaffAuth, fastify.requirePermission('catalog:search:pin')];
   const reindexAuth = [fastify.requireStaffAuth, fastify.requirePermission('search:reindex')];
+  const afterChange = purgeCatalogAfter(fastify);
 
   async function readSearch(params: z.infer<typeof searchQuerySchema>) {
     const filter = buildFilter(params);
@@ -110,18 +112,18 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/catalog/styles/:id/pin', { preHandler: pinAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    await service.setPinned(id, true, request.staffUser!.id);
+    await afterChange(service.setPinned(id, true, request.staffUser!.id));
     reply.status(200).send({ styleId: id, searchPinned: true });
   });
 
   fastify.post('/catalog/styles/:id/unpin', { preHandler: pinAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    await service.setPinned(id, false, request.staffUser!.id);
+    await afterChange(service.setPinned(id, false, request.staffUser!.id));
     reply.status(200).send({ styleId: id, searchPinned: false });
   });
 
   fastify.post('/search/reindex', { preHandler: reindexAuth }, async (_request, reply) => {
-    reply.status(200).send(await service.reindexAll());
+    reply.status(200).send(await afterChange(service.reindexAll()));
   });
 };
 

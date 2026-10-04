@@ -1,14 +1,8 @@
-import { timingSafeEqual } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { NextResponse } from 'next/server';
+import { revalidateAuthorized } from '@/lib/revalidate-auth';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function authorized(header: string | null, secret: string): boolean {
-  const expected = Buffer.from(`Bearer ${secret}`);
-  const provided = Buffer.from(header ?? '');
-  return provided.length === expected.length && timingSafeEqual(provided, expected);
-}
 
 /**
  * Drops this storefront instance's cached render of one product page so a
@@ -20,7 +14,7 @@ function authorized(header: string | null, secret: string): boolean {
 export async function POST(request: Request): Promise<NextResponse> {
   const secret = process.env.STOREFRONT_REVALIDATE_SECRET;
   if (!secret) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  if (!authorized(request.headers.get('authorization'), secret)) {
+  if (!revalidateAuthorized(request.headers.get('authorization'), secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ContentService } from './service.js';
+import { purgeCatalogAfter } from '../pdp/storefront-cache.js';
 
 const createSchema = z.object({
   title: z.string().min(1),
@@ -35,6 +36,7 @@ const contentRoutes: FastifyPluginAsync = async (fastify) => {
   const manageAuth = [fastify.requireStaffAuth, fastify.requirePermission('content:manage')];
   const moderateAuth = [fastify.requireStaffAuth, fastify.requirePermission('content:moderate')];
   const readAuth = [fastify.requireStaffAuth, fastify.requirePermission('content:read')];
+  const afterChange = purgeCatalogAfter(fastify);
 
   fastify.post('/content/shoppable-media', { preHandler: manageAuth }, async (request, reply) => {
     const body = createSchema.parse(request.body);
@@ -63,13 +65,13 @@ const contentRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
       const body = tagSchema.parse(request.body);
-      reply.status(201).send(await service.addTag(id, body, request.staffUser!.id));
+      reply.status(201).send(await afterChange(service.addTag(id, body, request.staffUser!.id)));
     },
   );
 
   fastify.delete('/content/shoppable-media/tags/:tagId', { preHandler: manageAuth }, async (request, reply) => {
     const { tagId } = z.object({ tagId: z.string().uuid() }).parse(request.params);
-    await service.removeTag(tagId, request.staffUser!.id);
+    await afterChange(service.removeTag(tagId, request.staffUser!.id));
     reply.status(204).send();
   });
 
@@ -82,10 +84,12 @@ const contentRoutes: FastifyPluginAsync = async (fastify) => {
       reply
         .status(200)
         .send(
-          await service.transition(id, body.toState, request.staffUser!.id, {
-            scheduledPublishAt: body.scheduledPublishAt,
-            moderationNote: body.moderationNote,
-          }),
+          await afterChange(
+            service.transition(id, body.toState, request.staffUser!.id, {
+              scheduledPublishAt: body.scheduledPublishAt,
+              moderationNote: body.moderationNote,
+            }),
+          ),
         );
     },
   );
@@ -94,7 +98,7 @@ const contentRoutes: FastifyPluginAsync = async (fastify) => {
     '/content/shoppable-media/promote-scheduled',
     { preHandler: moderateAuth },
     async (_request, reply) => {
-      const promoted = await service.promoteDueScheduledMedia();
+      const promoted = await afterChange(service.promoteDueScheduledMedia());
       reply.status(200).send({ promoted });
     },
   );

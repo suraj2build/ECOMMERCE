@@ -3,11 +3,12 @@
  * a deactivated category, an unpublished collection, an unpublished legal
  * page. Next's fetch cache never stores a 404, so a cached 200 would keep
  * being served after the record went away; unstable_cache stores the null
- * too, so either change shows within the same 60-second window. Errors are
- * not cached (the previous value keeps serving).
+ * too, so either change shows within the same 60-second window, or at once
+ * when commerce-api purges the catalogue tag. Errors are not cached (the
+ * previous value keeps serving).
  */
 import { unstable_cache } from 'next/cache';
-import type { LegalPageContent, PublicCategory, PublicCollectionDetail } from './api';
+import { CATALOG_CACHE_TAG, type LegalPageContent, type PublicCategory, type PublicCollectionDetail } from './api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const REVALIDATE_SECONDS = 60;
@@ -22,13 +23,13 @@ async function getOrNull<T>(path: string): Promise<T | null> {
 export const getPublicCategory = unstable_cache(
   (slug: string) => getOrNull<PublicCategory>(`/api/v1/storefront/categories/${encodeURIComponent(slug)}`),
   ['storefront-category'],
-  { revalidate: REVALIDATE_SECONDS },
+  { revalidate: REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
 );
 
 export const getPublicCollection = unstable_cache(
   (slug: string) => getOrNull<PublicCollectionDetail>(`/api/v1/storefront/collections/${encodeURIComponent(slug)}`),
   ['storefront-collection'],
-  { revalidate: REVALIDATE_SECONDS },
+  { revalidate: REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
 );
 
 /** Approved legal text published by staff through the CMS (LR-001); null
@@ -37,5 +38,5 @@ export const getPublicCollection = unstable_cache(
 export const getLegalPage = unstable_cache(
   (kind: 'privacy' | 'terms') => getOrNull<LegalPageContent>(`/api/v1/storefront/cms/landing-pages/legal-${kind}`),
   ['storefront-legal-page'],
-  { revalidate: REVALIDATE_SECONDS },
+  { revalidate: REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
 );

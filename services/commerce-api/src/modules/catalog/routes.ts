@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { CatalogService } from './service.js';
+import { purgeCatalogAfter } from '../pdp/storefront-cache.js';
 
 const priceSchema = z.object({
   styleId: z.string().uuid(),
@@ -36,6 +37,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
   const publishAuth = [fastify.requireStaffAuth, fastify.requirePermission('catalog:publish')];
   const collectionAuth = [fastify.requireStaffAuth, fastify.requirePermission('catalog:collection:manage')];
   const readAuth = [fastify.requireStaffAuth, fastify.requirePermission('product:read')];
+  const afterChange = purgeCatalogAfter(fastify);
 
   fastify.post('/catalog/prices', { preHandler: priceWriteAuth }, async (request, reply) => {
     const body = priceSchema.parse(request.body);
@@ -65,7 +67,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/catalog/collections', { preHandler: collectionAuth }, async (request, reply) => {
     const body = collectionSchema.parse(request.body);
-    reply.status(201).send(await service.createCollection(body, request.staffUser!.id));
+    reply.status(201).send(await afterChange(service.createCollection(body, request.staffUser!.id)));
   });
 
   fastify.post(
@@ -74,7 +76,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
       const { styleId } = z.object({ styleId: z.string().uuid() }).parse(request.body);
-      reply.status(201).send(await service.addStyleToCollection(id, styleId, request.staffUser!.id));
+      reply.status(201).send(await afterChange(service.addStyleToCollection(id, styleId, request.staffUser!.id)));
     },
   );
 
@@ -85,7 +87,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
       const { id, styleId } = z
         .object({ id: z.string().uuid(), styleId: z.string().uuid() })
         .parse(request.params);
-      await service.removeStyleFromCollection(id, styleId, request.staffUser!.id);
+      await afterChange(service.removeStyleFromCollection(id, styleId, request.staffUser!.id));
       reply.status(204).send();
     },
   );
@@ -95,7 +97,7 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     { preHandler: publishAuth },
     async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-      reply.status(200).send(await service.setCollectionActive(id, true, request.staffUser!.id));
+      reply.status(200).send(await afterChange(service.setCollectionActive(id, true, request.staffUser!.id)));
     },
   );
 
@@ -104,18 +106,18 @@ const catalogRoutes: FastifyPluginAsync = async (fastify) => {
     { preHandler: publishAuth },
     async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-      reply.status(200).send(await service.setCollectionActive(id, false, request.staffUser!.id));
+      reply.status(200).send(await afterChange(service.setCollectionActive(id, false, request.staffUser!.id)));
     },
   );
 
   fastify.post('/catalog/badges', { preHandler: collectionAuth }, async (request, reply) => {
     const body = badgeSchema.parse(request.body);
-    reply.status(201).send(await service.setBadge(body, request.staffUser!.id));
+    reply.status(201).send(await afterChange(service.setBadge(body, request.staffUser!.id)));
   });
 
   fastify.delete('/catalog/badges/:id', { preHandler: collectionAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    await service.removeBadge(id, request.staffUser!.id);
+    await afterChange(service.removeBadge(id, request.staffUser!.id));
     reply.status(204).send();
   });
 
