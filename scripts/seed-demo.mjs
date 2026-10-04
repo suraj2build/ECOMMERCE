@@ -8,8 +8,9 @@
 // Prisma is used only for reference data with no staff route (categories,
 // sizes, SKU size-chart links). Not copied into this file: reviews,
 // ratings, view counts and likes (never invented, LR-001). Every image is
-// a neutral placeholder under /placeholders (image generation is paused;
-// see CLAUDE.md) - never a real or implied product photograph.
+// a neutral product placeholder under /placeholders. Homepage campaign
+// banners are replaced from homepage-images.json below; they are generated
+// UAT imagery, not real merchandise photographs.
 //
 //   DEMO_SEED_ALLOWED=preview DEMO_API_URL=http://localhost:4000 DATABASE_URL=... \
 //   SEED_SUPER_ADMIN_EMAIL=... SEED_SUPER_ADMIN_PASSWORD=... node scripts/seed-demo.mjs
@@ -95,12 +96,12 @@ const CHARTS = {
 const BADGES = { BESTSELLER: 'BESTSELLER', NEW: 'NEW_ARRIVAL' };
 
 // Editorial placements as CMS banners (placement per department; the
-// storefront reads them - see bridge/editorial.ts). Every image is a
-// neutral placeholder (image generation is paused; the approved models
-// for the next stage are Aryan, Heena, Riya, Deeksha and Alisha - none of
-// this demo content is their photography). Links point at the new
+// storefront reads them - see bridge/editorial.ts). Approved campaign
+// models are Aryan, Heena, Riya and Deeksha; imagery is loaded from the
+// manifest below. Links point at the new
 // launch-assortment categories/collections, never the retired festive
-// ones.
+// ones. The baseline placeholder URLs below are overridden by the
+// generated campaign manifest after this definition.
 const BANNERS = {
   men: {
     gateway: [['Modern Indian Menswear · Daily Wear & Business Casual', placeholder('gateway-men.svg'), '/']],
@@ -155,6 +156,17 @@ const BANNERS = {
     ],
   },
 };
+
+// Fresh demos use the campaign pack. Existing demos must use
+// apply-homepage-images.mjs; installing imagery never requires a reset.
+const homepageImages = JSON.parse(readFileSync(new URL('./demo-data/homepage-images.json', import.meta.url), 'utf8'));
+for (const image of homepageImages.banners) {
+  const department = image.placement.endsWith('-men') ? 'men' : 'women';
+  const key = image.placement.slice(0, -(department.length + 1));
+  const banner = BANNERS[department]?.[key]?.[image.sortOrder];
+  if (!banner || banner[0] !== image.title) throw new Error(`Campaign manifest mismatch: ${image.placement}:${image.sortOrder}`);
+  banner[1] = image.asset;
+}
 
 const { token } = await call('POST', '/auth/staff/login', { email: process.env.SEED_SUPER_ADMIN_EMAIL, password: process.env.SEED_SUPER_ADMIN_PASSWORD });
 const yesterday = new Date(Date.now() - 86_400_000).toISOString();

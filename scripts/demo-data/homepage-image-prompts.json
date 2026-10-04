@@ -1,0 +1,123 @@
+{
+  "tool": "Built-in image generation",
+  "scope": "Selected homepage UAT assets only",
+  "identityAnchor": "Deeksha: approved white tee comparison sample; Aryan, Heena and Riya: supplied character sheets",
+  "roles": {
+    "Aryan": "Business casual and daily menswear",
+    "Riya": "Playful everyday fashion",
+    "Heena": "Glamour and partywear",
+    "Deeksha": "Daily wear, formals and everyday kurtis"
+  },
+  "assets": [
+    {
+      "asset": "/campaigns/launch-v1/gateway-men.webp",
+      "model": "Aryan",
+      "prompt": "Create ONE standalone ultra-realistic fashion ecommerce campaign photograph. portrait 3:4 gateway, full body centered, premium pale-blue Oxford formal shirt tucked into charcoal tailored trousers, brown leather belt, dark brown lace-up shoes. Modern stone-and-glass architectural courtyard, natural morning sidelight. Relaxed standing, direct calm eye contact, no jacket. Input image is ONLY an identity reference: preserve ARYAN's exact approved adult face, hair, complexion and natural body proportions from character sheet. Do not copy reference outfit or sheet layout. Premium professional photography, authentic pores, realistic textile and construction, refined natural colour grade, crisp eyes, 70mm neutral perspective, believable anatomy and hands. ONE adult solo model. Keep garments opaque and correctly fitted. No ethnicwear, weddingwear, sarees, bandhgala, kurta for men. No text, logo, watermark, collage or borders. Head and garment crop-safe."
+    },
+    {
+      "asset": "/campaigns/launch-v1/home-hero-men.webp",
+      "model": "Aryan",
+      "prompt": "Create ONE standalone ultra-realistic fashion ecommerce campaign photograph. landscape 16:9 main homepage hero. Navy fine-knit business casual polo, beige chinos, brown leather belt and brown business casual slip-on shoes. Natural standing pose at RIGHT third, modern dark stone courtyard, softly lit face, large clean LEFT half for website text. Full body visible. Input image is ONLY an identity reference: preserve ARYAN's exact approved adult face, hair, complexion and natural body proportions from character sheet. Do not copy reference outfit or sheet layout. Premium professional photography, authentic pores, realistic textile and construction, refined natural colour grade, crisp eyes, 70mm neutral perspective, believable anatomy and hands. ONE adult solo model. Keep garments opaque and correctly fitted. No ethnicwear, weddingwear, sarees, bandhgala, kurta for men. No text, logo, watermark, collage or borders. Head and garment crop-safe."
+    },
+    {
+      "asset": "/campaigns/launch-v1/home-feature-men.webp",
+      "model": "Aryan",
+      "prompt": "Create ONE standalone ultra-realistic fashion ecommerce campaign photograph. landscape very wide 5:2 banner, premium white subtly textured formal shirt, sleeves to wrist, charcoal trousers, black belt, standing three-quarter on RIGHT third in modern warm grey office foyer, shirt visible in crisp detail, ample clear LEFT half, camera framing head to upper thighs. Input image is ONLY an identity reference: preserve ARYAN's exact approved adult face, hair, complexion and natural body proportions from character sheet. Do not copy reference outfit or sheet layout. Premium professional photography, authentic pores, realistic textile and construction, refined natural colour grade, crisp eyes, 70mm neutral perspective, believable anatomy and hands. ONE adult solo model. Keep garments opaque and correctly fitted. No ethnicwear, weddingwear, sarees, bandhgala, kurta for men. No text, logo, watermark, collage or borders. Head and garment crop-safe."
+    },
+    {
+      "asset": "/campaigns/launch-v1/occasion-men-work.webp",
+      "model": "Aryan",
+      "prompt": "ONE standalone ultra-realistic premium fashion ecommerce photograph: 4:3 landscape banner. Pale blue formal shirt, charcoal tailored trousers, black leather belt and black lace-up shoes. Solo full-body relaxed standing beside modern glass office entrance, daylight, subject right of centre, clean left area. Use supplied character sheet as SOLE identity reference for adult ARYAN, exact face, hair, complexion, natural height and proportions. Outfit must fit reference body, don't alter identity or anatomy. Real professional camera, neutral 70mm perspective, lifelike pores, realistic fabric weave, accurate garment seams, clean hands, polished natural colour grade. One adult only, no other people. No text/logos/watermark/collage/borders. No ethnic ceremonial or wedding styling. Keep entire head and shoes within frame."
+    },
+    {
+      "asset": "/campaigns/launch-v1/occasion-men-business.webp",
+      "model": "Aryan",
+      "prompt": "ONE standalone ultra-realistic premium fashion ecommerce photograph: 4:3 landscape banner. Cream fine-knit business casual polo tucked into navy chinos, brown leather belt and suede brown slip-ons. Full body standing in refined outdoor cafe courtyard, subject right of centre, calm confidence. Use supplied character sheet as SOLE identity reference for adult ARYAN, exact face, hair, complexion, natural height and proportions. Outfit must fit reference body, don't alter identity or anatomy. Real professional camera, neutral 70mm perspective, lifelike pores, realistic fabric weave, accurate garment seams, clean hands, polished natural colour grade. One adult only, no other people. No text/logos/watermark/collage/borders. No ethnic ceremonial or wedding styling. Keep entire head and shoes within frame."
+    },
+    {
+      "asset": "/campaigns/launch-v1/occasion-men-everyday.webp",
+      "model": "Aryan",
+      "prompt": "ONE standalone ultra-realistic premium fashion ecommerce photograph: 4:3 landscape banner. Premium muted olive cotton casual shirt with sleeves rolled neatly, dark clean indigo straight jeans, brown belt, brown casual lace-up shoes. Full body walking on modern city pavement, soft daylight, subject right of centre. Use supplied character sheet as SOLE identity reference for adult ARYAN, exact face, hair, complexion, natural height and proportions. Outfit must fit reference body, don't alter identity or anatomy. Real professional camera, neutral 70mm perspective, lifelike pores, realistic fabric weave, accurate garment seams, clean hands, polished natural colour grade. One adult only, no other people. No text/logos/watermark/collage/borders. No ethnic ceremonial or wedding styling. Keep entire head and shoes within frame."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-men-polo.webp",
+      "model": "Aryan",
+      "prompt": "ONE standalone ultra-realistic premium fashion ecommerce photograph: 4:5 portrait editorial photo, premium burgundy business casual polo, beige chinos, dark brown leather belt and brown slip-ons. Solo full body leaning gently against modern stone wall, natural daylight, calm direct eye contact. Use supplied character sheet as SOLE identity reference for adult ARYAN, exact face, hair, complexion, natural height and proportions. Outfit must fit reference body, don't alter identity or anatomy. Real professional camera, neutral 70mm perspective, lifelike pores, realistic fabric weave, accurate garment seams, clean hands, polished natural colour grade. One adult only, no other people. No text/logos/watermark/collage/borders. No ethnic ceremonial or wedding styling. Keep entire head and shoes within frame."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-men-shirt.webp",
+      "model": "Aryan",
+      "prompt": "ONE standalone ultra-realistic premium fashion ecommerce photograph: 4:5 portrait editorial photo, premium subtly striped blue cotton shirt, grey trousers, brown belt, dark brown lace-up shoes. Solo seated naturally at outdoor cafe table, visible shirt detail and unforced expression, real candid sunlight. Use supplied character sheet as SOLE identity reference for adult ARYAN, exact face, hair, complexion, natural height and proportions. Outfit must fit reference body, don't alter identity or anatomy. Real professional camera, neutral 70mm perspective, lifelike pores, realistic fabric weave, accurate garment seams, clean hands, polished natural colour grade. One adult only, no other people. No text/logos/watermark/collage/borders. No ethnic ceremonial or wedding styling. Keep entire head and shoes within frame."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-men-denim.webp",
+      "model": "Aryan",
+      "prompt": "ONE standalone ultra-realistic premium fashion ecommerce photograph: 4:5 portrait editorial photo, dark indigo straight jeans, beige cotton casual shirt worn untucked, brown lace-up shoes. Solo full body mid-stride on urban pavement, looking slightly away, natural skin texture. Use supplied character sheet as SOLE identity reference for adult ARYAN, exact face, hair, complexion, natural height and proportions. Outfit must fit reference body, don't alter identity or anatomy. Real professional camera, neutral 70mm perspective, lifelike pores, realistic fabric weave, accurate garment seams, clean hands, polished natural colour grade. One adult only, no other people. No text/logos/watermark/collage/borders. No ethnic ceremonial or wedding styling. Keep entire head and shoes within frame."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-men-trouser.webp",
+      "model": "Aryan",
+      "prompt": "ONE standalone ultra-realistic premium fashion ecommerce photograph: 4:5 portrait editorial photo, sharply tailored charcoal formal trousers and ivory Oxford shirt, black belt and black lace-up shoes. Solo full body relaxed standing in modern office hallway, soft window light, slight three-quarter angle. Use supplied character sheet as SOLE identity reference for adult ARYAN, exact face, hair, complexion, natural height and proportions. Outfit must fit reference body, don't alter identity or anatomy. Real professional camera, neutral 70mm perspective, lifelike pores, realistic fabric weave, accurate garment seams, clean hands, polished natural colour grade. One adult only, no other people. No text/logos/watermark/collage/borders. No ethnic ceremonial or wedding styling. Keep entire head and shoes within frame."
+    },
+    {
+      "asset": "/campaigns/launch-v1/category-men-shoes.webp",
+      "model": "Still life",
+      "prompt": "One pair of premium dark brown leather business casual lace-up derby shoes, neat laces, realistic leather grain and stitching, arranged three-quarter on warm neutral stone plinth, square 1:1 ecommerce editorial still life. Photorealistic luxury product photograph, soft studio light, no text, logo, watermark, collage or people, product centered crop-safe for circular category image."
+    },
+    {
+      "asset": "/campaigns/launch-v1/category-men-belts.webp",
+      "model": "Still life",
+      "prompt": "One premium dark brown leather business casual belt with restrained brushed silver rectangular buckle, neatly coiled with buckle visible, realistic leather grain, on warm neutral stone surface, square 1:1 ecommerce editorial still life. Photorealistic luxury product photograph, soft studio light, no text, logo, watermark, collage or people, product centered crop-safe for circular category image."
+    },
+    {
+      "asset": "/campaigns/launch-v1/home-hero-women.webp",
+      "model": "deeksha",
+      "prompt": "Use case: photorealistic-natural. Single garment-focused premium ecommerce photograph. Identity reference is adult DEEKSHA, preserve exact facial geometry, eyes, eyebrows, nose, lips, complexion and natural body proportions. Use the approved comparison sample as strict identity anchor. Oval refined face, dark brown almond eyes, natural full lips, long dark-brown softly waved hair with same side part. Height165cm, natural slim-curvy body, normal head size. Do not borrow Alisha's face. 16:9 landscape fullbody, teal short-sleeve midi day dress, white low heels, ivory bag. Bright cream rooftop terrace with colourful bougainvillea. Model rightthird, clear left copyspace. Upright level head front-facing, relaxed natural standing stance, joyful subtle smile, no walking/crossedlegs. CAMERA: eye-level85mm, realistic skin and fabric, consistent softlight, fullfigure margins as appropriate. HEAD ALIGNMENT: lateral roll0degrees, no ear leaning towardshoulder, chin directly centered over sternum, no stretched neck. No hip thrust, hair touching or influencer pose. No logos/text/watermark/collage/otherpeople."
+    },
+    {
+      "asset": "/campaigns/launch-v1/home-feature-women.webp",
+      "model": "deeksha",
+      "prompt": "Use case: photorealistic-natural. Single garment-focused premium ecommerce photograph. Identity reference is adult DEEKSHA, preserve exact facial geometry, eyes, eyebrows, nose, lips, complexion and natural body proportions. Use the approved comparison sample as strict identity anchor. Oval refined face, dark brown almond eyes, natural full lips, long dark-brown softly waved hair with same side part. Height165cm, natural slim-curvy body, normal head size. Do not borrow Alisha's face. 5:2 wide banner head to upperthighs, sage everyday cotton straight kurti with ivorytrousers, cream architectural studio. Model rightthird and clear left copyspace, upright head turned 15degrees camera-right, no lateral tilt, relaxed arms. CAMERA: eye-level85mm, realistic skin and fabric, consistent softlight, fullfigure margins as appropriate. HEAD ALIGNMENT: lateral roll0degrees, no ear leaning towardshoulder, chin directly centered over sternum, no stretched neck. No hip thrust, hair touching or influencer pose. No logos/text/watermark/collage/otherpeople."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-women-kurti.webp",
+      "model": "deeksha",
+      "prompt": "Use case: photorealistic-natural. Single garment-focused premium ecommerce photograph. Identity reference is adult DEEKSHA, preserve exact facial geometry, eyes, eyebrows, nose, lips, complexion and natural body proportions. Use the approved comparison sample as strict identity anchor. Oval refined face, dark brown almond eyes, natural full lips, long dark-brown softly waved hair with same side part. Height165cm, natural slim-curvy body, normal head size. Do not borrow Alisha's face. 4:5 portrait fullbody, dustyblue simple cotton everyday straight kurti, ivorytrousers, tan flats, cream studio. Body and face turned together 30degrees camera-left, chin level and neck straight over shoulders, arms relaxed. CAMERA: eye-level85mm, realistic skin and fabric, consistent softlight, fullfigure margins as appropriate. HEAD ALIGNMENT: lateral roll0degrees, no ear leaning towardshoulder, chin directly centered over sternum, no stretched neck. No hip thrust, hair touching or influencer pose. No logos/text/watermark/collage/otherpeople."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-women-work.webp",
+      "model": "deeksha",
+      "prompt": "Use case: photorealistic-natural. Single garment-focused premium ecommerce photograph. Identity reference is adult DEEKSHA, preserve exact facial geometry, eyes, eyebrows, nose, lips, complexion and natural body proportions. Use the approved comparison sample as strict identity anchor. Oval refined face, dark brown almond eyes, natural full lips, long dark-brown softly waved hair with same side part. Height165cm, natural slim-curvy body, normal head size. Do not borrow Alisha's face. 4:5 portrait fullbody, ivory opaque buttonshirt tucked into navy tailored trousers, black low heels, clean grey studio. Body slightly threequarter camera-right, face straight towardcamera without any lateral headtilt, hair behind rightshoulder, balanced stance. CAMERA: eye-level85mm, realistic skin and fabric, consistent softlight, fullfigure margins as appropriate. HEAD ALIGNMENT: lateral roll0degrees, no ear leaning towardshoulder, chin directly centered over sternum, no stretched neck. No hip thrust, hair touching or influencer pose. No logos/text/watermark/collage/otherpeople."
+    },
+    {
+      "asset": "/campaigns/launch-v1/gateway-women.webp",
+      "model": "heena",
+      "prompt": "Use case: photorealistic-natural. Single garment-focused premium ecommerce photograph. Identity reference is adult HEENA, preserve exact facial geometry, eyes, eyebrows, nose, lips, complexion and natural body proportions. Refined oval face, dark-brown almond eyes, long straight dark-brown hair, natural head size. Do not copy the tilted poses in the sheet. 3:4 portrait fullbody, burgundy satin glamorous mididress, gold earrings and champagneheels, warm creamstudio. EXACTLY frontal head and body, level horizontal eye line, ears same height, vertical nose/chin/sternum axis. Both shoulders level, arms at sides, uncrossed balanced stance. CAMERA: eye-level85mm, realistic skin and fabric, consistent softlight, fullfigure margins as appropriate. HEAD ALIGNMENT: lateral roll0degrees, no ear leaning towardshoulder, chin directly centered over sternum, no stretched neck. No hip thrust, hair touching or influencer pose. No logos/text/watermark/collage/otherpeople."
+    },
+    {
+      "asset": "/campaigns/launch-v1/occasion-women-party.webp",
+      "model": "heena",
+      "prompt": "Use case: photorealistic-natural. Single garment-focused premium ecommerce photograph. Identity reference is adult HEENA, preserve exact facial geometry, eyes, eyebrows, nose, lips, complexion and natural body proportions. Refined oval face, dark-brown almond eyes, long straight dark-brown hair, natural head size. Do not copy the tilted poses in the sheet. 4:3 landscape fullbody, black satin cocktail mididress, black heels, warm creamstudio. Body AND head rotated together 25degrees camera-right, ZERO lateral necktilt, chin level, relaxed hands at sides and both shoulders level. CAMERA: eye-level85mm, realistic skin and fabric, consistent softlight, fullfigure margins as appropriate. HEAD ALIGNMENT: lateral roll0degrees, no ear leaning towardshoulder, chin directly centered over sternum, no stretched neck. No hip thrust, hair touching or influencer pose. No logos/text/watermark/collage/otherpeople."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-women-party.webp",
+      "model": "heena",
+      "prompt": "Use case: photorealistic-natural. Single garment-focused premium ecommerce photograph. Identity reference is adult HEENA, preserve exact facial geometry, eyes, eyebrows, nose, lips, complexion and natural body proportions. Refined oval face, dark-brown almond eyes, long straight dark-brown hair, natural head size. Do not copy the tilted poses in the sheet. 4:5 portrait fullbody, emerald satin evening mididress, champagneheels, warm grey studio. Body AND head rotated together 25degrees camera-left, eyes lookforward along nose, ZERO lateral headtilt, ears level, neck vertical over torso, both arms relaxed. CAMERA: eye-level85mm, realistic skin and fabric, consistent softlight, fullfigure margins as appropriate. HEAD ALIGNMENT: lateral roll0degrees, no ear leaning towardshoulder, chin directly centered over sternum, no stretched neck. No hip thrust, hair touching or influencer pose. No logos/text/watermark/collage/otherpeople."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-women-denim.webp",
+      "model": "riya",
+      "prompt": "Use case: photorealistic-natural. Single ecommerce photograph of adult RIYA22–25, identity from supplied sheet. Round compact face, short highlighted layered bob, darkbrown eyes, leftcheek dimple, natural complexion. Height152cm/5feet, genuinely short petite frame, natural compact torso and SHORT proportionate legs. Do not elongate legs or make runway/tall proportions. Eyelevel85mm camera with no lowangle, fullbody margins, soft consistent daylight, correct fingers and realistic skin. 4:5 portrait, rust short-sleeve top tucked in light blue straight jeans, whitesneakers. Clean cream cafe wall. Upright head body three-quarter camera-right, level chin, relaxed hands visible at sides, mild friendly expression. Neck straight, no lateral headtilt, no crossedlegs or hipthrust, no influencer posing. No text/logo/watermark/extra people."
+    },
+    {
+      "asset": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
+      "model": "riya",
+      "prompt": "Use case: photorealistic-natural. Single ecommerce photograph of adult RIYA22–25, identity from supplied sheet. Round compact face, short highlighted layered bob, darkbrown eyes, leftcheek dimple, natural complexion. Height152cm/5feet, genuinely short petite frame, natural compact torso and SHORT proportionate legs. Do not elongate legs or make runway/tall proportions. Eyelevel85mm camera with no lowangle, fullbody margins, soft consistent daylight, correct fingers and realistic skin. 4:5 portrait, butteryellow fitted tee with mediumblue denim miniskirt and whitesneakers, small ivory bag. Colourful cafe planters. Upright face looking slightly camera-left, gentle smile, relaxed balanced stance. Neck straight, no lateral headtilt, no crossedlegs or hipthrust, no influencer posing. No text/logo/watermark/extra people."
+    },
+    {
+      "asset": "/campaigns/launch-v1/occasion-women-weekend.webp",
+      "model": "riya",
+      "prompt": "Use case: photorealistic-natural. Single ecommerce photograph of adult RIYA22–25, identity from supplied sheet. Round compact face, short highlighted layered bob, darkbrown eyes, leftcheek dimple, natural complexion. Height152cm/5feet, genuinely short petite frame, natural compact torso and SHORT proportionate legs. Do not elongate legs or make runway/tall proportions. Eyelevel85mm camera with no lowangle, fullbody margins, soft consistent daylight, correct fingers and realistic skin. 4:3 landscape, ivorytee mediumblue jeans whitesneakers, modern cafe street. Uprighthead looking camera-right, casual relaxed stance, arms at sides. Neck straight, no lateral headtilt, no crossedlegs or hipthrust, no influencer posing. No text/logo/watermark/extra people."
+    }
+  ]
+}
