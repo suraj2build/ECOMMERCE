@@ -120,6 +120,15 @@ Whatever the eventual target, the following are fixed constraints
 production deployment** — per M33's own explicit scope boundary, it
 records readiness/topology requirements only.
 
+### Hosted review preview (LR-010)
+
+A preview is not a production target. It runs the production build with
+`DEPLOYMENT_STAGE=preview`, which keeps every production check but allows
+the labelled test doubles while LR-008 is open, takes Razorpay test keys
+only, and is never indexed. Plan, monthly cost, required inputs and
+steps: `docs/deployment/PREVIEW.md`; Render blueprint:
+`infra/preview/render.yaml`.
+
 ## 5. Environment variables (IMPLEMENTED)
 
 `.env.example` exists at the repo root and documents every required

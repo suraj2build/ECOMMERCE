@@ -6,6 +6,33 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-04: `REVIEW FIXES, LR-009, CACHE PURGE AND
+PREVIEW PLAN IMPLEMENTED — AWAITING HOSTING ACCOUNT AND INDEPENDENT
+REVIEW.`** Product Owner directions of 2026-10-04:
+
+- **Review fixes.** A review of `42a3656` found defects that are now
+  fixed with tests:
+  - scheduler: a failed lease release looked like a crash; runs mixed
+    instance and database clocks;
+  - consent: legacy records had no subject ID; a late withdrawal could
+    reach checkouts made after consenting again; order creation could
+    race a withdrawal;
+  - the S3 check could pass on an unreadable ACL.
+- **LR-009 (decided).** A COD order sends `cod_order_placed`, not a
+  purchase. The purchase is sent when Finance records the cash
+  collection after delivery (`payment:cod:collect`).
+- **Cache.** Cached listings now follow catalogue changes and are purged
+  by `POST /search/reindex`. Verified by reseeding the database under a
+  warm storefront: the deleted product stayed listed with a 200 page
+  until the reindex, then answered 404.
+- **Preview (LR-010).** A `DEPLOYMENT_STAGE=preview` mode and a Render
+  blueprint. The plan, cost (≈ $46/month) and required inputs are in
+  `docs/deployment/PREVIEW.md`; the blueprint's commands were rehearsed
+  from a fresh clone.
+
+Still open: the hosting account, provider accounts, an alert webhook, S3,
+and the LR-008 SMS/carrier choice. Not self-certified; no go-live claimed.
+
 **Status as of 2026-10-03 (later): `LAUNCH-READINESS REVIEW RISKS
 ADDRESSED — AWAITING INDEPENDENT REVIEW.`** The Product Owner's review
 of the build above named six risks. Changes:
