@@ -2787,7 +2787,10 @@ so and nothing is invented.
   fallback (`randomUuid()`, unit-tested).
 
 #### LR-011 — Bag contents after an order · **P1**
-- **Status:** **DECISION_REQUIRED**
+- **Status:** **DECIDED** (Product Owner, 2026-10-04): empty the purchased
+  items from the bag after successful order creation; remove only the
+  purchased quantities; never on a failed or cancelled payment; a retry
+  must not clear a later bag.
 - **Question:** should placing an order empty the shopper's bag, and if
   so, when?
 - **Why it matters:** today the bag keeps every item after an order is
@@ -2806,4 +2809,11 @@ so and nothing is invented.
   - (b) Empty the whole bag when checkout starts. Simple, but a failed
     payment loses the bag.
   - (c) Keep the current behaviour.
-- **Engineering status:** not changed until decided.
+- **Engineering status:** implemented. `OrderService.createOrderFromCheckoutSession`
+  removes the ordered quantity of each SKU from the owner's bag inside the
+  same transaction that creates the order (COD at placement, prepaid when
+  the captured payment creates the order). Lines added after checkout
+  started keep their extra quantity; a failed payment creates no order and
+  leaves the bag; a repeated webhook or creation finds the existing order
+  and removes nothing again. Tests: `checkout.test.ts` "Bag after a COD
+  order (LR-011)", `payment.test.ts` "Bag after an order (LR-011)".

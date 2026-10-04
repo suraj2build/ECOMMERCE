@@ -6,6 +6,39 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-04 (later): `APPROVED VANYA DESIGN RESTORED
+ON THE LIVE STOREFRONT — AWAITING PRODUCT OWNER VISUAL REVIEW.`** The
+Product Owner paused launch work: the storefront had drifted from the
+approved AI Studio design (`suraj2build/Stitch-Spark_Ai_Studio`).
+
+- **Design port.** The design's own components (gateway, header, footer,
+  home, product card, listing, product page, Watch & Shop, wishlist, bag
+  drawer, quick add, size guide, search) are copied into
+  `apps/storefront/src/vanya/` and changed only where they read data:
+  `vanya/bridge/` maps the real APIs onto the design's types. Tailwind
+  moved to 4.3.3 so the copied classes render as designed. The approved
+  separate brand row above desktop navigation is kept.
+- **Not faked.** Prototype data with no real source is left out or shown
+  as real data: Fit-First filter, Digital Product Passport, ensemble
+  discount, restock sign-ups, view counts, trending searches and chart,
+  rewards earning rates, newsletter. See
+  `docs/design/VANYA_VISUAL_PARITY.md` for every item.
+- **LR-011 (decided, Product Owner).** An order removes the purchased
+  quantities from the bag when it is created; failed or cancelled
+  payments and retries leave the bag alone.
+- **Also:** en-IN money everywhere on the shopper side; plural fixes;
+  shopper copy; admin navigation is a drawer on phones; the demo loads
+  the design's own catalogue and editorial photographs (preview data
+  only) and resets itself when that catalogue changes.
+- **Accessibility over exact colour.** Some of the design's small grey
+  text and its two primaries were just under WCAG AA. They are darkened
+  one tone (parity item C-3), and the existing axe tests stay strict. A
+  sweep of every storefront page and overlay at 1440 and 390 px finds no
+  serious or critical violations.
+
+Still open: provider accounts, an alert webhook, S3, production hosting,
+the LR-008 SMS/carrier choice. Not self-certified; no go-live claimed.
+
 **Status as of 2026-10-04: `REVIEW FIXES, LR-009, CACHE PURGE AND
 LOCAL DEMO IMPLEMENTED — AWAITING PRODUCT OWNER REVIEW AND INDEPENDENT
 REVIEW.`** Product Owner directions of 2026-10-04:
@@ -40,6 +73,7 @@ REVIEW.`** Product Owner directions of 2026-10-04:
 - **Found, not changed:** the bag keeps its items after an order is
   placed. No spec decides this, so it is `LR-011`, `DECISION_REQUIRED`
   (recommended: remove the ordered items when the order is confirmed).
+  *(Decided and implemented later the same day; see the entry above.)*
 
 Still open: provider accounts, an alert webhook, S3, production hosting
 (chosen at production), the LR-008 SMS/carrier choice and LR-011. Not
