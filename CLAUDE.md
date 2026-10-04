@@ -7,9 +7,13 @@ including future sessions that have no memory of this one.
 ## 0. Current project stage — READ FIRST
 
 **Status as of 2026-10-04 (later): `APPROVED VANYA DESIGN RESTORED
-ON THE LIVE STOREFRONT — AWAITING PRODUCT OWNER VISUAL REVIEW.`** The
-Product Owner paused launch work: the storefront had drifted from the
-approved AI Studio design (`suraj2build/Stitch-Spark_Ai_Studio`).
+IN THE STOREFRONT CODE — AWAITING PRODUCT OWNER VISUAL REVIEW ON THE
+LOCAL DEMO.`** Nothing is publicly deployed; "live" in earlier reports
+meant the locally running application. Visual acceptance needs the
+Product Owner's review on a normal network (`npm run demo -- --rebuild`),
+because this sandbox blocks the photographs and fonts. The Product Owner
+paused launch work: the storefront had drifted from the approved AI Studio
+design (`suraj2build/Stitch-Spark_Ai_Studio`).
 
 - **Design port.** The design's own components (gateway, header, footer,
   home, product card, listing, product page, Watch & Shop, wishlist, bag
@@ -30,6 +34,13 @@ approved AI Studio design (`suraj2build/Stitch-Spark_Ai_Studio`).
   shopper copy; admin navigation is a drawer on phones; the demo loads
   the design's own catalogue and editorial photographs (preview data
   only) and resets itself when that catalogue changes.
+- **Exchange copy.** The footer no longer claims "7-Day Exchanges": that
+  number was the platform return window, and whether exchanges share it
+  (EXC-003) is an unconfirmed engineering default. It now reads "Size &
+  Colour Exchanges" (EXC-002).
+- **Pending design features** (Notify me, newsletter, social links,
+  Fit-First and the rest) are listed with what each needs in
+  `docs/design/VANYA_VISUAL_PARITY.md` → "Pending functionality".
 - **Accessibility over exact colour.** Some of the design's small grey
   text and its two primaries were just under WCAG AA. They are darkened
   one tone (parity item C-3), and the existing axe tests stay strict. A

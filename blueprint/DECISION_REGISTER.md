@@ -1499,6 +1499,12 @@ Not self-certified; awaiting independent re-review.
 - **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
 - **Final decision:** Same window as returns (`RET-001`), configured together for consistency and simplicity.
 - **Affected specs:** `specs/20-exchanges.md`
+- **Product Owner confirmation pending (2026-10-04):** this is an
+  engineering default, not a Product Owner decision. The code enforces it
+  (`ExchangeService` uses `resolveReturnPolicy`), and each product page
+  states that product's resolved window. The storefront makes no
+  site-wide exchange day-count claim: the footer reads "Size & Colour
+  Exchanges" (EXC-002) until this is confirmed.
 
 #### EXC-004 — M21 exchange data model, payment integration, and scope boundaries · **P1**
 - **Question:** How does a first-class `Exchange` entity (`EXC-001`)
