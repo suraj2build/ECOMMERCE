@@ -184,7 +184,7 @@ export default function CheckoutConfirmationPage() {
 
       <div className="mt-8 rounded-[24px] border border-[#e6ddd0] bg-white p-6 sm:p-8">
         <p className="text-sm text-[#6e6359]">Order reference</p>
-        <p className="text-sm text-[#181716]">{session.id}</p>
+        <p className="text-sm text-[#181716]">{session.orderNumber ?? session.id}</p>
 
         <ul className="mt-4 space-y-3 border-t border-border pt-4">
           {session.lines.map((line) => (

@@ -5,8 +5,9 @@ import { isPreviewDeployment } from '@/lib/seo';
 export function PreviewBanner() {
   if (!isPreviewDeployment()) return null;
   return (
-    <div role="note" className="bg-[#181716] px-4 py-2 text-center text-xs font-medium tracking-wide text-[#faf8f5]">
-      Preview site for review only. Payments are in test mode and no order is fulfilled.
+    // Above the full-screen department gateway (z-[100]) so the home page shows it too.
+    <div role="note" className="relative z-[110] bg-[#181716] px-4 py-1.5 text-center text-[11px] font-medium tracking-wide text-[#faf8f5]">
+      Preview for review only · No real orders or payments
     </div>
   );
 }

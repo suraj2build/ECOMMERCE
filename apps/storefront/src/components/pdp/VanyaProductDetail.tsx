@@ -8,6 +8,7 @@ import { getStoredSession } from '@/lib/customer-auth';
 import { recordProductView } from '@/lib/account';
 import { useModalFocus } from '@/components/layout/useModalFocus';
 import { track } from '@/lib/tracking';
+import { formatMeasurement } from '@/lib/measurements';
 
 export function VanyaProductDetail({ product: initialProduct }: { product: ProductDetail }) {
   const [product, setProduct] = useState(initialProduct);
@@ -273,7 +274,7 @@ export function VanyaProductDetail({ product: initialProduct }: { product: Produ
                   {product.sizeChart.entries.map((entry) => (
                     <tr key={entry.sizeLabel} className="border-b border-border">
                       <td className="py-3 pr-4 font-semibold text-ink">{entry.sizeLabel}</td>
-                      <td className="py-3 text-ink-muted">{Object.entries(entry.measurements).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}</td>
+                      <td className="py-3 text-ink-muted">{Object.entries(entry.measurements).map(([key, value]) => formatMeasurement(key, value)).join(' · ')}</td>
                     </tr>
                   ))}
                 </tbody>
