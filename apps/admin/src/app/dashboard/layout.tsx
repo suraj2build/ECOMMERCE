@@ -21,6 +21,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname() ?? '/dashboard';
   const [session, setSession] = useState<StaffSession | undefined>(undefined);
+  // Phones and narrow windows: navigation is a drawer, so the workspace shows first.
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenuOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   useEffect(() => {
     const s = getStoredSession();
@@ -46,7 +55,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         Skip to content
       </a>
       <div className="shell">
-        <nav className="sidebar" aria-label="Console">
+        <div className="mobile-bar">
+          <span className="sidebar-brand" style={{ padding: 0 }}>Operations console</span>
+          <button
+            type="button"
+            className="menu-button"
+            aria-expanded={menuOpen}
+            aria-controls="console-navigation"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? 'Close menu' : 'Menu'}
+          </button>
+        </div>
+        {menuOpen && <button type="button" className="nav-backdrop" aria-hidden="true" tabIndex={-1} onClick={() => setMenuOpen(false)} />}
+        <nav id="console-navigation" className={`sidebar${menuOpen ? ' sidebar-open' : ''}`} aria-label="Console">
           <div className="sidebar-brand">Operations console</div>
           {groups.map((g) => (
             <div key={g.title} className="nav-group">

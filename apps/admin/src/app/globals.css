@@ -151,19 +151,71 @@ button {
   padding: 1.25rem 1.75rem 3rem;
 }
 
+.mobile-bar,
+.nav-backdrop {
+  display: none;
+}
+
 @media (max-width: 900px) {
   .shell {
     flex-direction: column;
   }
-  .sidebar {
-    width: 100%;
-    height: auto;
-    position: static;
-    border-right: none;
+  /* The workspace comes first; navigation opens as a drawer from "Menu". */
+  .mobile-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 0.5rem 1rem;
+    background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
+  }
+  .menu-button {
+    min-height: 44px;
+    padding: 0 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-surface);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: min(300px, 85vw);
+    height: 100vh;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.2s ease, visibility 0.2s;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  }
+  .sidebar.sidebar-open {
+    transform: none;
+    visibility: visible;
+  }
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    border: 0;
+    background: rgba(0, 0, 0, 0.4);
   }
   .main {
     padding: 1rem;
+  }
+}
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
   }
 }
 
