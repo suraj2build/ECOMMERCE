@@ -1505,6 +1505,24 @@ Not self-certified; awaiting independent re-review.
   states that product's resolved window. The storefront makes no
   site-wide exchange day-count claim: the footer reads "Size & Colour
   Exchanges" (EXC-002) until this is confirmed.
+- **Proposed rule (review recommendation, 2026-10-04; not yet confirmed
+  by the Product Owner):**
+  - an exchange uses the same effective eligibility window as a return,
+    including category and product overrides and non-returnable
+    exclusions, measured from delivery;
+  - the replacement must be an available size or colour of the same
+    product.
+- **Gap against the proposal, found 2026-10-04 (unchanged until
+  confirmed):** the window half already matches the code
+  (`resolveReturnPolicy` plus `isWithinWindow` from delivery, with
+  non-returnable items refused). The same-product half does not:
+  - the storefront's exchange form offers only in-stock variants of the
+    same style;
+  - `ExchangeService.initiate` accepts any SKU with an active price, so a
+    direct API call could exchange for a different product.
+
+  If the rule is confirmed, the server must refuse a replacement from
+  another style, and a test must cover it.
 
 #### EXC-004 — M21 exchange data model, payment integration, and scope boundaries · **P1**
 - **Question:** How does a first-class `Exchange` entity (`EXC-001`)
