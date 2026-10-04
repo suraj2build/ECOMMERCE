@@ -372,6 +372,16 @@ describe('PDP (M11)', () => {
     });
   });
 
+  describe('Shop-wide policies (storefront trust bar and footer)', () => {
+    it('states the configured delivery and returns defaults, flagged unconfirmed until confirmed', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/policies' });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.shipping).toEqual({ flatAmount: expect.any(Number), freeAboveAmount: expect.any(Number), currency: 'INR', confirmed: expect.any(Boolean) });
+      expect(body.returns.defaultWindowDays).toEqual(expect.any(Number));
+    });
+  });
+
   describe('PIN-code serviceability (IND-002)', () => {
     it('returns known:false, non-serviceable for an unlisted pincode - never an error', async () => {
       const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/serviceability?pincode=110001' });

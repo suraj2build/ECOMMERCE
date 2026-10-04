@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import { loadEnv } from '@fcp/config';
 import { PdpService } from './service.js';
 import { ReviewService } from './review-service.js';
 import { ServiceabilityService } from './serviceability-service.js';
@@ -41,6 +42,23 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/storefront/products/:styleId', async (request, reply) => {
     const { styleId } = z.object({ styleId: z.string().uuid() }).parse(request.params);
     reply.status(200).send(await pdpService.getProductDetail(styleId));
+  });
+
+  // The shop-wide delivery and returns defaults the storefront may state
+  // (home trust bar, footer). Shipping is flagged unconfirmed until
+  // SHIPPING_RATES_CONFIRMED, so the storefront never presents an
+  // unconfirmed threshold as a promise.
+  fastify.get('/storefront/policies', async (_request, reply) => {
+    const env = loadEnv();
+    reply.status(200).send({
+      shipping: {
+        flatAmount: env.SHIPPING_DEFAULT_FLAT_AMOUNT,
+        freeAboveAmount: env.SHIPPING_DEFAULT_FREE_ABOVE_THRESHOLD,
+        currency: 'INR',
+        confirmed: env.SHIPPING_RATES_CONFIRMED,
+      },
+      returns: { defaultWindowDays: env.RETURN_WINDOW_DEFAULT_DAYS },
+    });
   });
 
   fastify.get('/storefront/serviceability', async (request, reply) => {

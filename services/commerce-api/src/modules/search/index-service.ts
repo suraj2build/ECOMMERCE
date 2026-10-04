@@ -3,6 +3,7 @@ import type { PrismaClient } from '@fcp/db';
 import { NotFoundError } from '@fcp/shared';
 import { CatalogService, THUMBNAIL_MEDIA } from '../catalog/service.js';
 import { recordAudit } from '../audit/service.js';
+import { productCopy } from '../product/copy.js';
 
 /**
  * The card needs the thumbnail (THUMBNAIL_MEDIA's first image), a second
@@ -47,6 +48,8 @@ export interface StyleSearchDocument {
   searchPinned: boolean;
   publishedAt: number;
   thumbnailUrl: string | null;
+  /** Shopper-facing subtitle (Style.customAttributes, see product/copy.ts). */
+  subtitle: string | null;
   /** Second image of the style, shown when a shopper hovers a product card. */
   hoverImageUrl: string | null;
   /** One entry per colour, in colour order: name, swatch hex and first image. */
@@ -283,6 +286,7 @@ export class SearchIndexService {
         searchPinned: style.searchPinned,
         publishedAt: style.publishedAt ? style.publishedAt.getTime() : 0,
         thumbnailUrl: style.media[0]?.url ?? null,
+        subtitle: productCopy(style.customAttributes).subtitle ?? null,
         hoverImageUrl: style.media.find((m, i) => i > 0 && m.colourId === style.media[0]?.colourId)?.url ?? null,
         swatches: [...swatches.values()],
         sizeAvailability: [...sizeAvailability].map(([label, inStock]) => ({ label, inStock })),
