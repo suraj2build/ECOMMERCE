@@ -255,8 +255,11 @@ deployed database also creates the seed admin account if
 ### Product feeds: Google Merchant and Meta catalogue (LR-004)
 
 Create a channel with `providerName` `GOOGLE_MERCHANT` or `META_CATALOG`
-(admin Channels screen or `POST /channels`); add `"publishAll": true` to its
-config to list every published product. Requires `STOREFRONT_PUBLIC_URL`.
+(admin Channels screen or `POST /channels`). In admin → Channels → the
+channel's settings, choose "Every product that can be bought" to list the
+whole catalogue (stored as `config.publishAll`), or "Only products I send
+by hand" to choose them one by one. "Pause" stops all automatic publishing to the
+channel until it is resumed. Requires `STOREFRONT_PUBLIC_URL`.
 
 | Variable | Purpose |
 |---|---|
@@ -293,6 +296,35 @@ The script must end with "All required checks passed". It proves:
 It also reports encryption and Block Public Access. The API credentials
 need only `s3:PutObject` and `s3:GetObject` on `<bucket>/<prefix>*`; the
 script reports, without failing, when DELETE is not allowed.
+
+### Product photos and content images (Admin Ops Phase 1)
+
+Photos uploaded in admin (product photos, and banner/page images) are
+stored by the API and served at `/api/v1/media/products/<file>` and
+`/api/v1/media/content/<file>`. The storefront proxies `/media/products/*`
+and `/media/content/*` to those routes (`apps/storefront/next.config.mjs`),
+so shoppers only ever see the storefront address. A file is served only
+while a product photo or content image record still points to it
+(`Cache-Control: public, max-age=3600`). Replacing or removing a photo
+therefore stops serving the old file; a browser or CDN may keep it for up
+to an hour.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `PRODUCT_MEDIA_STORAGE` | `local` | `local` or `s3`. **Production refuses `local`**: set `s3`. |
+| `PRODUCT_MEDIA_STORAGE_DIR` | `var/product-media` | Local disk only (development, tests, local demo). |
+| `PRODUCT_MEDIA_S3_BUCKET` | `product-media` | A separate bucket from return evidence. It does not need public access because files are read through the API. |
+| `PRODUCT_MEDIA_S3_PREFIX` | `product-media/` | Key prefix inside the bucket. |
+| `PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES` | `10485760` (10 MiB) | Larger uploads are refused. |
+
+S3 uses the same `S3_ENDPOINT`/`S3_REGION`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`
+as return evidence. The credentials need `s3:PutObject`, `s3:GetObject`
+and `s3:DeleteObject` on `<bucket>/<prefix>*`. Return evidence stays in its
+own private store and is never served by these routes.
+
+Not yet verified against a real bucket: no bucket exists for this project.
+Admin → Setup & health → "Run storage test" writes, reads back and deletes
+a probe file on whichever store is configured.
 
 ### Scheduled jobs and monitoring (LR-006)
 

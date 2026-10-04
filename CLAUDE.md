@@ -6,6 +6,30 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-04 (admin): `DESKTOP-FIRST ADMIN OPERATIONS
+PHASE 1 IMPLEMENTED ON claude/admin-ops-phase1 — AWAITING
+IMPLEMENTATION REVIEW.`** Authorized by the Product Owner ("START BUILD —
+DESKTOP-FIRST ADMIN OPERATIONS, PHASE 1"). Built on its own branch from
+`1195f48` so the catalogue/image/storefront work continues separately;
+not merged to `main` until reviewed. Full record:
+`docs/admin/ADMIN_OPS_PHASE1.md`.
+
+- Product workspace (Basics → Colours & sizes → Photos → Pricing →
+  Readiness → Preview → Publish) with category product types (apparel,
+  footwear, belt, fragrance), editing of existing products, and readiness
+  that separates published / purchasable / in stock / channels.
+- Photo upload, listing photo, colour, order, replace and remove; public
+  product media store (production requires `PRODUCT_MEDIA_STORAGE=s3`).
+- Spreadsheet import with dry run, change preview, batches of 500, safe
+  retries; never touches stock.
+- Visual footer-menu editor, draft banners, page editing, image library;
+  Setup & health page; channel scope and pause in admin.
+- Research only: `docs/admin/NEXT_PHASES_RESEARCH.md` (buying, dispatch
+  incl. the booking-equals-shipped proposal, promotions, after-sales,
+  solo-owner approval options). Shipping/inventory semantics unchanged.
+- Open decisions AO-D1..D5 (republish, product-page attributes, business
+  details screen, owner mode, dispatch handover) are listed there.
+
 **Status as of 2026-10-04 (latest): `LAUNCH ASSORTMENT REPLACED THROUGHOUT
 THE CATALOGUE AND STOREFRONT — AWAITING PRODUCT OWNER REVIEW ON THE LOCAL
 DEMO.`** The Product Owner (Suraj) authorized replacing the earlier
