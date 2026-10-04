@@ -43,9 +43,15 @@ design (`suraj2build/Stitch-Spark_Ai_Studio`).
 - **EXC-003 (decided by Suraj, 2026-10-04).** Exchanges use the return
   window with its category/product overrides and exclusions, measured from
   delivery. No code change was needed; tests now cover it.
-- **Pending design features** (Notify me, newsletter, social links,
-  Fit-First and the rest) are listed with what each needs in
-  `docs/design/VANYA_VISUAL_PARITY.md` → "Pending functionality".
+- **CMS pages and footer menus (specs/28-admin.md, already authorized).**
+  The storefront now renders published landing pages at `/pages/<slug>` as
+  plain text, and the footer reads the `footer-about` and `footer-social`
+  CMS menus (site paths and https links only). About pages and social links
+  therefore go live from admin, with no code change once content exists.
+- **Pending design features** (Notify me, newsletter for visitors,
+  Fit-First, product passport, ensemble discount, rewards rates, trending,
+  view counts) are grouped by the input each needs in
+  `docs/design/VANYA_VISUAL_PARITY.md` → "Decision list".
 - **Accessibility over exact colour.** Some of the design's small grey
   text and its two primaries were just under WCAG AA. They are darkened
   one tone (parity item C-3), and the existing axe tests stay strict. A

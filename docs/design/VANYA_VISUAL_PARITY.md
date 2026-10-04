@@ -214,8 +214,8 @@ or the Product Owner removes it from scope.
 |---|---|---|---|
 | Notify me (restock alert) | Product page: sold-out size | Restock-alert service and consent | Product Owner decision on channel (SMS/email/WhatsApp, tied to LR-008) and opt-in wording; then a subscription table, a trigger on GRN/stock arrival, and delivery through the notification service |
 | Newsletter sign-up | Footer: "Join the Atelier" | Subscription service | Choice of email provider and consent wording (DPDP); then capture with double opt-in |
-| Social links | Footer | Approved handles | The brand's Instagram, Facebook, YouTube and Pinterest URLs |
-| About pages (Our Story, Craft & Artisans, Sustainability, Journal, Atelier, Stores) | Footer: "About Vanya" | Approved text and store data | CMS content approved by the Product Owner (the legal-page pattern already shows only approved text) |
+| Social links | Footer | Approved handles | **Built 2026-10-04; waiting on content.** The footer shows whatever staff put in the `footer-social` CMS menu (https links only, drawn as the design's IG / YT / PIN / FB labels). Needs the brand's URLs entered in admin → Content → Navigation menus. |
+| About pages (Our Story, Craft & Artisans, Sustainability, Journal, Atelier, Stores) | Footer: "About Vanya" | Approved text and store data | **Built 2026-10-04; waiting on content.** A published CMS landing page appears at `/pages/<slug>` as plain text, and the `footer-about` menu links to it (`specs/28-admin.md`: landing pages and menus change without a deployment). Needs the approved text entered and published in admin. |
 | Fit-First filter | Listing sidebar | Garment measurements per size | A garment-measurement field in the product master, filled in admin; then a search facet |
 | Digital Product Passport | Product page | Provenance data | Data model and source for origin, artisan cluster, fibre and certifications |
 | Coordinated ensemble (15% off) and Shop the Look hotspots | Product page | Look data and the discount rule | Merchandiser "look" records, a Product Owner-approved bundle discount, and a bundle condition in the promotions engine (today it has cart-value and coupon rules, not "these items together") |
@@ -223,6 +223,56 @@ or the Product Owner removes it from scope.
 | Trending categories chart | Footer | Demand data | An approved public metric from analytics; the original's figures are invented |
 | Rewards earning rates and tiers | Footer: rewards panel | Published rates | Product Owner approval to publish the loyalty rates (the engine has configurable rates; they are not shown to shoppers) |
 | Prototype promises (free delivery above ₹999/₹1,999, express delivery and tailoring above ₹5,000, coupon VANYA10) | Header, footer, bag | Approved policy | Shown only when the real policy service confirms them (C-1) |
+
+### Decision list for the remaining features
+
+One list of everything still needed. Nothing here is built on a guess.
+Engineering continues with whatever an existing decision already authorises.
+
+**A. Content to enter in admin (no further engineering needed)**
+
+1. About pages: approved text for Our Story, Craft & Artisans,
+   Sustainability, Journal, Atelier and Stores (and store addresses, if
+   Stores is wanted). Publish each in Content → Landing pages, then list them
+   in the `footer-about` menu.
+2. Social links: the brand's Instagram, YouTube, Pinterest and Facebook URLs
+   in the `footer-social` menu.
+3. Legal pages: privacy and terms text (LR-001; the missing details are
+   listed on each page).
+
+**B. Product Owner policy decisions**
+
+4. Delivery promises: the free-delivery threshold and the flat charge, and
+   confirmation that they are final. They appear on the site only when
+   `SHIPPING_RATES_CONFIRMED` is set. The prototype's express delivery,
+   tailoring and coupon VANYA10 offers are not adopted unless approved.
+5. Rewards: whether to publish the loyalty earning and redemption rates and
+   tiers to shoppers, and with which figures.
+6. Coordinated ensemble: the bundle discount (amount, which items qualify,
+   whether it stacks). Engineering then adds a "these items together"
+   condition to promotions and merchandiser look records.
+7. Trending chart and reel view counts: an approved public metric, or remove
+   both from scope.
+
+**C. Choices that need a provider or consent wording**
+
+8. Notify me (restock alerts): the channel (email, SMS or WhatsApp; SMS
+   depends on the LR-008 vendor) and the opt-in wording.
+9. Newsletter for visitors without an account: the email provider and the
+   double opt-in and consent wording (DPDP). Signed-in customers can already
+   choose newsletter email in their account preferences, and the footer
+   links there.
+
+**D. Data-model decisions**
+
+10. Fit-First filter: which garment measurements to store per size (for
+    example shoulder, chest, waist and inseam) and who enters them. Then a
+    product-master field and a listing filter.
+11. Digital Product Passport: which provenance facts to show (origin,
+    artisan cluster, fibre, certifications), and their source.
+
+Tracked elsewhere and unchanged: LR-008 SMS/carrier vendors, GA4/Meta/Merchant
+accounts, S3, the alert webhook and production hosting.
 
 `EXC-003` (decided 2026-10-04): exchanges share the return window,
 including overrides and exclusions. Under `EXC-002`, an exchange stays
