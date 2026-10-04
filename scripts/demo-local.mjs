@@ -33,7 +33,13 @@ const option = (name) => {
 
 const PORTS = { api: 4000, storefront: 3000, admin: 3001 };
 const DB_NAME = 'vanya_demo';
-const PG = { user: 'fcp_app', password: 'fcp_dev_password', host: '127.0.0.1', port: 5432 };
+// Overridable (PG_HOST_PORT env var or --pg-port) for a computer where
+// something else - commonly a native Homebrew/system Postgres - already
+// owns 5432; see the port-conflict check below for why this matters.
+// infra/docker-compose.yml reads the same PG_HOST_PORT, so this actually
+// changes what Docker publishes, not just what this script expects.
+const PG_HOST_PORT = Number(option('pg-port')) || Number(process.env.PG_HOST_PORT) || 5432;
+const PG = { user: 'fcp_app', password: 'fcp_dev_password', host: '127.0.0.1', port: PG_HOST_PORT };
 const DATABASE_URL = `postgresql://${PG.user}:${PG.password}@${PG.host}:${PG.port}/${DB_NAME}`;
 
 const say = (msg = '') => console.log(msg);
@@ -94,6 +100,16 @@ function run(cmd, cmdArgs, env, label, { cwd = ROOT } = {}) {
   if (res.status !== 0) fail(`${label} failed. See ${log}`);
 }
 const npm = isWin ? 'npm.cmd' : 'npm';
+
+async function adminDb(sql, { query = false } = {}) {
+  const { PrismaClient } = await import('@fcp/db');
+  const client = new PrismaClient({ datasources: { db: { url: `postgresql://${PG.user}:${PG.password}@${PG.host}:${PG.port}/postgres` } } });
+  try {
+    return query ? await client.$queryRawUnsafe(sql) : await client.$executeRawUnsafe(sql);
+  } finally {
+    await client.$disconnect();
+  }
+}
 
 // ---------------------------------------------------------------- state
 
@@ -161,10 +177,28 @@ if (missing.length) {
   const docker = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8', shell: isWin });
   if (docker.status !== 0) fail(`Not running: ${missing.join(', ')}. Install and start Docker Desktop (https://www.docker.com/products/docker-desktop/), then run again.`);
   say(`  Starting with Docker: ${missing.join(', ')}`);
-  run('docker', ['compose', '-f', 'infra/docker-compose.yml', 'up', '-d', ...missing], {}, 'docker');
+  run('docker', ['compose', '-f', 'infra/docker-compose.yml', 'up', '-d', ...missing], { PG_HOST_PORT: String(PG_HOST_PORT) }, 'docker');
   for (const name of missing) await waitFor(() => portOpen(services[name]), name);
 } else {
   say('  Already running.');
+}
+
+// A port being open doesn't mean it's OUR Postgres: on a machine that
+// already runs a native/system Postgres on 5432, that check above passes
+// even though this demo's fcp_app role and vanya_demo database don't
+// exist there - the failure used to surface much later as an opaque
+// "role fcp_app does not exist". Verify the real thing now and fail with
+// an actionable message instead.
+try {
+  await adminDb('SELECT 1', { query: true });
+} catch (error) {
+  fail(
+    `Postgres is listening on ${PG.host}:${PG.port}, but it isn't this demo's Postgres ` +
+    `(expected role "${PG.user}") - likely a different, already-running Postgres on this ` +
+    `machine (${error.message.split('\n')[0]}). Either stop that Postgres, or run again with ` +
+    `a free port: PG_HOST_PORT=5434 npm run demo (the demo's own Docker Postgres will be ` +
+    `started on that port instead).`,
+  );
 }
 
 for (const [name, port] of Object.entries(PORTS)) {
@@ -176,16 +210,6 @@ for (const [name, port] of Object.entries(PORTS)) {
 if (!existsSync(path.join(ROOT, 'node_modules', '.package-lock.json'))) {
   step('Installing dependencies (first run, a few minutes)');
   run(npm, ['ci'], {}, 'install');
-}
-
-async function adminDb(sql, { query = false } = {}) {
-  const { PrismaClient } = await import('@fcp/db');
-  const client = new PrismaClient({ datasources: { db: { url: `postgresql://${PG.user}:${PG.password}@${PG.host}:${PG.port}/postgres` } } });
-  try {
-    return query ? await client.$queryRawUnsafe(sql) : await client.$executeRawUnsafe(sql);
-  } finally {
-    await client.$disconnect();
-  }
 }
 
 step('Demo database');

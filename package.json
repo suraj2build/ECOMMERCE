@@ -26,6 +26,7 @@
     "test": "npm run test --workspace=services/commerce-api && npm run test --workspace=apps/storefront",
     "test:integration": "npm run test:integration --workspace=services/commerce-api",
     "test:e2e": "playwright test",
+    "test:e2e:local": "node scripts/e2e-local.mjs",
     "db:generate": "npm run db:generate --workspace=packages/db",
     "db:migrate": "npm run db:migrate --workspace=packages/db",
     "db:migrate:deploy": "npm run db:migrate:deploy --workspace=packages/db",

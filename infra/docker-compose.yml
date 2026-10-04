@@ -24,7 +24,9 @@ services:
       POSTGRES_PASSWORD: fcp_dev_password
       POSTGRES_DB: fcp_dev
     ports:
-      - '5432:5432'
+      # Overridable (PG_HOST_PORT) for a machine where something else -
+      # commonly a native Homebrew/system Postgres - already owns 5432.
+      - '${PG_HOST_PORT:-5432}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
