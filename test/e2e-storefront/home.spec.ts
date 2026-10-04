@@ -35,9 +35,10 @@ test.describe('Storefront Home', () => {
 
     const nav = page.getByRole('navigation', { name: 'Primary' });
     await expect(nav).toBeVisible();
+    // The approved design's navigation: department home, edits, categories, Watch & Shop.
     await expect(nav.getByRole('link', { name: 'Women' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'New In' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Collections' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Watch & Shop' })).toBeVisible();
   });
 
   test('mobile nav opens after department selection and reaches the real PLP', async ({ page }) => {
@@ -48,9 +49,10 @@ test.describe('Storefront Home', () => {
     await menuButton.click();
     const mobileNav = page.getByRole('navigation', { name: 'Primary mobile' });
     await expect(mobileNav).toBeVisible();
-    await mobileNav.getByRole('link', { name: 'Shop women' }).click();
+    await expect(mobileNav.getByRole('link', { name: 'Collections' })).toBeVisible();
+    await mobileNav.getByRole('link', { name: 'New In' }).click();
     await expect(page).toHaveURL(/\/category\/women$/);
-    await expect(page.getByRole('heading', { name: 'Women' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: "Women's Collection" })).toBeVisible();
   });
 
   test('the chosen department persists and the skip-to-content link remains first focusable', async ({ page }) => {
@@ -62,6 +64,8 @@ test.describe('Storefront Home', () => {
 
   test('new browse routes resolve and chosen Home has no serious accessibility violations', async ({ page }) => {
     await chooseWomen(page);
+    // Choosing a department fades the page in; contrast is measured on the settled page, not a mid-fade frame.
+    await expect(page.locator('#main-content > div').first()).toHaveCSS('opacity', '1');
     const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
     const blocking = results.violations.filter((violation) => violation.impact === 'critical' || violation.impact === 'serious');
     expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
@@ -102,8 +106,10 @@ test.describe('Storefront Home', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'men');
     await trigger.click();
     const search = page.getByRole('dialog', { name: 'Search VANYA' });
-    await expect(search.getByLabel('Search products')).toBeFocused();
-    await search.getByRole('button', { name: 'Close search', exact: true }).focus();
+    const searchInput = search.getByLabel('Search products');
+    await expect(searchInput).toBeFocused();
+    // Focus stays inside the dialog: Shift+Tab from the first control wraps to the last.
+    await search.getByRole('button', { name: 'Search', exact: true }).focus();
     await page.keyboard.press('Shift+Tab');
     await expect(search.getByRole('link', { name: 'Watch & Shop', exact: true })).toBeFocused();
     await page.keyboard.press('Escape');
@@ -121,8 +127,11 @@ test.describe('Storefront Home', () => {
     await search.getByLabel('Search products').fill('linen');
     await search.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page).toHaveURL(/\/search\?q=linen&gender=men$/);
-    await expect(page.locator('form input[name="gender"]')).toHaveValue('men');
-    await page.getByRole('button', { name: 'Apply filters' }).click();
+    // The phone "Filter & Refine" sheet keeps the department when filters are applied.
+    await page.getByRole('button', { name: /^Filter/ }).click();
+    const filters = page.getByRole('dialog', { name: 'Filter & Refine' });
+    await expect(filters.locator('form input[name="gender"]')).toHaveValue('men');
+    await filters.getByRole('button', { name: 'Apply filters' }).click();
     await expect(page).toHaveURL(/gender=men/);
   });
 });

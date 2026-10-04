@@ -213,7 +213,7 @@ test.describe('Refunds & Store Credit', () => {
 
     await page.goto(`/orders/${orderId}`);
     const row = page.locator('li', { hasText: 'E2E Refunds Sneaker' });
-    await expect(row.getByText(/^Refunded - /)).toHaveText(`Refunded - ₹${refund.amount} as store credit`);
+    await expect(row.getByText(/^Refunded - /)).toHaveText(`Refunded - ${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: Number.isInteger(Number(refund.amount)) ? 0 : 2, maximumFractionDigits: Number.isInteger(Number(refund.amount)) ? 0 : 2 }).format(Number(refund.amount))} as store credit`);
 
     // Database-verified outcome, not just the browser-visible text: a
     // real StoreCreditAccount/StoreCreditEntry pair now exists for this

@@ -8,6 +8,7 @@ import { buttonClassName } from '@/components/ui/Button';
 import { getCheckoutSession, retryPayment, type CheckoutSessionView } from '@/lib/checkout';
 import { openRazorpayCheckout } from '@/lib/razorpay';
 import { track } from '@/lib/tracking';
+import { formatINR } from '@/lib/money';
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_ATTEMPTS = 20; // ~40s - the webhook is typically near-instant; this just bounds the UI wait
@@ -192,7 +193,7 @@ export default function CheckoutConfirmationPage() {
               <span className="text-[#181716]">
                 {line.styleName} - {line.colourName} - {line.sizeLabel} x{line.quantity}
               </span>
-              <span className="text-[#181716]">&#8377;{line.lineTotalInclusive}</span>
+              <span className="text-[#181716]">{formatINR(line.lineTotalInclusive)}</span>
             </li>
           ))}
         </ul>
@@ -201,36 +202,36 @@ export default function CheckoutConfirmationPage() {
           {session.promotionDiscountTotal > 0 && (
             <div className="flex justify-between">
               <span className="text-[#6e6359]">Promotion discount</span>
-              <span className="text-[#181716]">-&#8377;{session.promotionDiscountTotal}</span>
+              <span className="text-[#181716]">{'-' + formatINR(session.promotionDiscountTotal)}</span>
             </div>
           )}
           <div className="flex justify-between">
             <span className="text-[#6e6359]">Subtotal</span>
-            <span className="text-[#181716]">&#8377;{session.subtotal}</span>
+            <span className="text-[#181716]">{formatINR(session.subtotal)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-[#6e6359]">Shipping</span>
-            <span className="text-[#181716]">{session.shippingCost === 0 ? 'Free' : `₹${session.shippingCost}`}</span>
+            <span className="text-[#181716]">{session.shippingCost === 0 ? 'Free' : formatINR(session.shippingCost)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-[#6e6359]">Total</span>
-            <span className="text-[#181716]">&#8377;{session.grandTotal}</span>
+            <span className="text-[#181716]">{formatINR(session.grandTotal)}</span>
           </div>
           {session.loyaltyPointsRedeemed > 0 && (
             <div className="flex justify-between">
               <span className="text-[#6e6359]">Loyalty points redeemed ({session.loyaltyPointsRedeemed} pts)</span>
-              <span className="text-[#181716]">-&#8377;{session.loyaltyRedemptionValue}</span>
+              <span className="text-[#181716]">{'-' + formatINR(session.loyaltyRedemptionValue)}</span>
             </div>
           )}
           {session.storeCreditApplied > 0 && (
             <div className="flex justify-between">
               <span className="text-[#6e6359]">Store credit applied</span>
-              <span className="text-[#181716]">-&#8377;{session.storeCreditApplied}</span>
+              <span className="text-[#181716]">{'-' + formatINR(session.storeCreditApplied)}</span>
             </div>
           )}
           <div className="flex justify-between border-t border-border pt-2 font-medium">
             <span className="text-[#181716]">Amount payable</span>
-            <span className="text-[#181716]">&#8377;{session.amountPayable}</span>
+            <span className="text-[#181716]">{formatINR(session.amountPayable)}</span>
           </div>
         </div>
       </div>

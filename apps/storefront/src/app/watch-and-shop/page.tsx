@@ -12,9 +12,10 @@ export const metadata: Metadata = {
   alternates: { canonical: absoluteUrl('/watch-and-shop') },
   ...sharing('Watch & Shop | VANYA', DESCRIPTION, '/watch-and-shop'),
 };
-import { VanyaWatchAndShop } from '@/components/watch-and-shop/VanyaWatchAndShop';
+import { ReelsView } from '@/vanya/views/ReelsView';
 
-export default async function WatchAndShopPage() {
+export default async function WatchAndShopPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const reel = (await searchParams).reel;
   const items = await getWatchAndShopFeed();
-  return <VanyaWatchAndShop items={items} />;
+  return <ReelsView feed={items} initialReelId={typeof reel === 'string' ? reel : undefined} />;
 }

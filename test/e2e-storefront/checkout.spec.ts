@@ -179,7 +179,7 @@ test.describe('Checkout', () => {
     expect(reservationsBeforeCheckout).toBe(0);
 
     await page.goto('/bag');
-    await page.getByRole('link', { name: /Checkout/ }).click();
+    await page.getByRole('link', { name: 'Proceed to Checkout' }).click();
     await expect(page).toHaveURL(/\/checkout$/);
 
     await page.getByPlaceholder('Full name').fill('E2E Test Buyer');
@@ -254,7 +254,7 @@ test.describe('Checkout', () => {
 
     // --- PDP ---
     await page.goto(`/product/${styleId}`);
-    await expect(page.getByRole('heading', { name: 'E2E Checkout Jacket' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'E2E Checkout Jacket' })).toBeVisible();
     await expectNoHorizontalOverflow('PDP');
 
     const sizeButton = page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first();
@@ -282,7 +282,7 @@ test.describe('Checkout', () => {
     // --- Bag ---
     await page.goto('/bag');
     await expectNoHorizontalOverflow('Bag');
-    const checkoutLink = page.getByRole('link', { name: /Checkout/ });
+    const checkoutLink = page.getByRole('link', { name: 'Proceed to Checkout' });
     await expectUsableTouchTarget(checkoutLink, 'Bag Checkout link');
     await checkoutLink.click();
     await expect(page).toHaveURL(/\/checkout$/);

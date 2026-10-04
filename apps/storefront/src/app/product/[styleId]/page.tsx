@@ -1,12 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getProductDetail, SITE_URL } from '@/lib/api';
-import { Container } from '@/components/ui/Container';
-import { VanyaProductDetail } from '@/components/pdp/VanyaProductDetail';
-import { PincodeChecker } from '@/components/pdp/PincodeChecker';
-import { ReviewsSection } from '@/components/pdp/ReviewsSection';
-import { CrossSellStrip } from '@/components/pdp/CrossSellStrip';
-import { Breadcrumbs } from '@/components/pdp/Breadcrumbs';
+import { getProductDetail, searchStorefront, SITE_URL } from '@/lib/api';
+import { PdpView } from '@/vanya/views/PdpView';
 import { safeJsonLd } from '@/lib/json-ld';
 import { sharing } from '@/lib/seo';
 
@@ -100,9 +95,17 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   if (!product) notFound();
 
   const structuredData = productStructuredData(product);
+  const gender = product.gender?.toLowerCase();
+  const department = gender === 'men' || gender === 'women' ? gender : null;
 
+  // "You may also like": live styles from the same category and department.
+  const similar = (await searchStorefront({ category: product.categorySlug, gender: department ?? undefined, pageSize: 5 }).catch(() => null))
+    ?.hits.filter((hit) => hit.id !== product.id) ?? [];
+
+  // Matches the visible breadcrumb trail in the design (Home / department / category / product).
   const breadcrumbItems = [
     { name: 'Home', href: '/' },
+    ...(department ? [{ name: department === 'men' ? 'Men' : 'Women', href: `/category/${department}` }] : []),
     { name: product.categoryName, href: `/category/${product.categorySlug}` },
     { name: product.name, href: `/product/${product.id}` },
   ];
@@ -125,23 +128,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           than trusted as though it were a hard-coded constant. */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(structuredData) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbStructuredData) }} />
-      <Container className="py-6 sm:py-8 lg:py-10">
-        <Breadcrumbs items={breadcrumbItems} />
-        <VanyaProductDetail product={product} />
-        <PincodeChecker />
-        <ReviewsSection
-          styleId={product.id}
-          ratingSummary={product.ratingSummary}
-          initialReviews={product.reviews}
-        />
-      </Container>
-      <CrossSellStrip items={product.crossSell} />
-      {/* Reserves space for the mobile sticky Add-to-Bag bar so it never
-          permanently covers the footer at max scroll - the bar itself
-          has no scroll position of its own to "clear", since page
-          content scrolling can only push it out of the way where there
-          is real content/space left below to reveal. */}
-      <div className="h-24 md:hidden" aria-hidden="true" />
+      <PdpView initial={product} similar={similar} />
     </>
   );
 }

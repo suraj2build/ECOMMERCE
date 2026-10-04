@@ -21,7 +21,7 @@ export function isPreviewDeployment(): boolean {
 export const PRIVATE_PATHS = ['/account', '/bag', '/checkout', '/orders', '/wishlist', '/search', '/api/'];
 
 /** Query parameters that turn a listing into a filtered/sorted variant. */
-const FILTER_PARAMS = ['q', 'brand', 'color', 'size', 'sort', 'gender', 'priceMin', 'priceMax', 'markdown'];
+const FILTER_PARAMS = ['q', 'brand', 'category', 'color', 'size', 'sort', 'gender', 'inStock', 'priceMin', 'priceMax', 'markdown'];
 
 export function hasFilterParams(params: Record<string, string | string[] | undefined>): boolean {
   return FILTER_PARAMS.some((key) => {

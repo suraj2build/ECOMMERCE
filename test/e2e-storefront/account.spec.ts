@@ -204,7 +204,7 @@ test.describe('Customer 360 account', () => {
     // --- G: own reviews visible (submit via the real PDP review flow) ---
     await page.goto(`/product/${styleId}`);
     await page.getByRole('button', { name: 'Write a review' }).click();
-    await page.getByLabel('Rating', { exact: true }).selectOption('5');
+    await page.getByRole('button', { name: '5 Stars' }).click();
     await page.getByLabel('Your review').fill('A genuinely great jacket.');
     await page.getByRole('button', { name: 'Submit review' }).click();
     await expect(page.getByText('A genuinely great jacket.').first()).toBeVisible({ timeout: 10_000 });

@@ -146,7 +146,7 @@ test.describe('Cart / Wishlist', () => {
     await bagDrawer.getByRole('link', { name: 'View full bag' }).click();
     await expect(page).toHaveURL(/\/bag$/);
     await expect(page.getByText('E2E Cart Jacket').first()).toBeVisible();
-    await expect(page.getByText('₹2999').first()).toBeVisible();
+    await expect(page.getByText('₹2,999').first()).toBeVisible();
 
     await page.getByRole('button', { name: 'Increase quantity for E2E Cart Jacket' }).click();
     await expect(page.getByText('Subtotal (2 items)')).toBeVisible();
@@ -160,7 +160,7 @@ test.describe('Cart / Wishlist', () => {
     await page.goto(`/product/${styleId}`);
 
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save to wishlist' }).click();
     await expect(page.getByText('Saved to wishlist.')).toBeVisible({ timeout: 10_000 });
 
     await page.goto('/wishlist');
@@ -168,7 +168,7 @@ test.describe('Cart / Wishlist', () => {
 
     await page.getByRole('button', { name: 'Move to Bag' }).click();
     await expect(page.getByText('Moved to bag.')).toBeVisible();
-    await expect(page.getByText('Nothing saved yet.')).toBeVisible();
+    await expect(page.getByText('Your wishlist is currently empty')).toBeVisible();
 
     await page.goto('/bag');
     await expect(page.getByText('E2E Cart Jacket').first()).toBeVisible();

@@ -41,7 +41,7 @@ export interface ShoppableMediaTagSummary {
   colourId: string | null;
   sizeId: string | null;
   sortOrder: number;
-  style: { id: string; name: string; styleCode: string };
+  style: { id: string; name: string; styleCode: string; gender?: string | null; department?: string | null };
   colour: { id: string; name: string } | null;
   size: { id: string; label: string } | null;
 }
@@ -134,6 +134,8 @@ export interface ProductDetail {
   occasion: string | null;
   washCare: string | null;
   countryOfOrigin: string | null;
+  /** Shopper-facing copy from the product master (only these keys). */
+  copy?: { subtitle?: string; details?: string[]; fitNotes?: string; styleNotes?: string; artisanCluster?: string; sustainableNote?: string };
   mrp: number;
   sellingPrice: number;
   currency: string;
@@ -273,6 +275,17 @@ export interface StorefrontSearchHit {
   inStock: boolean;
   publishedAt: number;
   thumbnailUrl: string | null;
+  fabric?: string | null;
+  fit?: string | null;
+  occasion?: string | null;
+  subtitle?: string | null;
+  /** Card data (search index); absent on documents indexed before it existed. */
+  hoverImageUrl?: string | null;
+  swatches?: { name: string; hex: string | null; imageUrl: string | null }[];
+  sizeAvailability?: { label: string; inStock: boolean }[];
+  badges?: string[];
+  ratingAverage?: number | null;
+  reviewCount?: number;
 }
 
 export interface StorefrontSearchResult {
@@ -295,7 +308,8 @@ export async function searchStorefront(params: {
   size?: string;
   priceMin?: number;
   priceMax?: number;
-  sort?: 'relevance' | 'price_asc' | 'price_desc' | 'newest';
+  inStock?: boolean;
+  sort?: 'relevance' | 'price_asc' | 'price_desc' | 'newest' | 'rating';
   page?: number;
   pageSize?: number;
 } = {}): Promise<StorefrontSearchResult> {
@@ -309,6 +323,7 @@ export async function searchStorefront(params: {
   if (params.size) query.set('size', params.size);
   if (params.priceMin !== undefined) query.set('priceMin', String(params.priceMin));
   if (params.priceMax !== undefined) query.set('priceMax', String(params.priceMax));
+  if (params.inStock) query.set('inStock', 'true');
   if (params.sort) query.set('sort', params.sort);
   if (params.page) query.set('page', String(params.page));
   if (params.pageSize) query.set('pageSize', String(params.pageSize));
@@ -342,3 +357,53 @@ export interface LegalPageContent {
   blocks: { key: string; title: string; content: string }[];
 }
 
+
+/** An editorial image placed by staff in the CMS (admin → Content → Banners). */
+export interface CmsBanner {
+  id: string;
+  title: string;
+  imageUrl: string;
+  linkUrl: string | null;
+  sortOrder: number;
+}
+
+/** Active banners for one placement, in their configured order. Never throws:
+ * a missing placement shows the section's text without an image. */
+export async function getBanners(placement: string): Promise<CmsBanner[]> {
+  try {
+    const banners = await apiGet<CmsBanner[]>(`/api/v1/storefront/cms/banners?placement=${encodeURIComponent(placement)}`, 60);
+    return [...banners].sort((a, b) => a.sortOrder - b.sortOrder);
+  } catch {
+    return [];
+  }
+}
+
+export interface StorefrontPolicies {
+  shipping: { flatAmount: number; freeAboveAmount: number; currency: string; confirmed: boolean };
+  returns: { defaultWindowDays: number };
+}
+
+/** Shop-wide delivery and returns defaults; null when unavailable, so the
+ * storefront falls back to neutral wording rather than a guessed number. */
+export async function getStorefrontPolicies(): Promise<StorefrontPolicies | null> {
+  try {
+    return await apiGet<StorefrontPolicies>('/api/v1/storefront/policies', 60);
+  } catch {
+    return null;
+  }
+}
+
+export interface StorefrontCategory {
+  id: string;
+  name: string;
+  slug?: string;
+}
+
+/** Active categories with their slugs (navigation links by name). */
+export async function getStorefrontCategories(): Promise<{ name: string; slug: string }[]> {
+  try {
+    return await apiGet<{ name: string; slug: string }[]>('/api/v1/storefront/categories', 60);
+  } catch {
+    return [];
+  }
+}

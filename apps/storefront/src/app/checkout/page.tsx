@@ -11,6 +11,7 @@ import { INDIAN_STATES } from '@/lib/indian-states';
 import { getStoredSession } from '@/lib/customer-auth';
 import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance } from '@/lib/account';
 import { randomUuid } from '@/lib/random-id';
+import { formatINR } from '@/lib/money';
 
 const EMPTY_ADDRESS: Address = { line1: '', line2: '', landmark: '', city: '', state: '', stateCode: '', pincode: '' };
 
@@ -270,7 +271,7 @@ export default function CheckoutPage() {
             </label>
             {paymentMethod === 'PREPAID' && (
               <p role="status" className="text-xs text-[#6e6359]">
-                Secure online payment opens after you place the order. Confirmation is based on the payment provider&apos;s verified server notification.
+                Secure online payment opens after you place the order. Your order is confirmed as soon as the payment goes through.
               </p>
             )}
             {paymentMethod === 'COD' && preview && !preview.codAvailable && (
@@ -311,7 +312,7 @@ export default function CheckoutPage() {
               <div className="flex min-h-[46px] items-center justify-between rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4">
                 <span className="text-sm text-[#181716]">
                   {appliedCouponCode} applied
-                  {preview && preview.promotionDiscountTotal > 0 ? ` - you saved ₹${preview.promotionDiscountTotal}` : ''}
+                  {preview && preview.promotionDiscountTotal > 0 ? ` - you saved ${formatINR(preview.promotionDiscountTotal)}` : ''}
                 </span>
                 <button type="button" onClick={handleRemoveCoupon} className="text-xs font-medium text-[#181716] underline underline-offset-2">
                   Remove
@@ -345,7 +346,7 @@ export default function CheckoutPage() {
           {storeCreditBalance && storeCreditBalance.balance > 0 && (
             <fieldset className="space-y-3 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
               <legend className="font-display text-2xl text-[#181716]">Store credit</legend>
-              <p className="text-sm text-[#6e6359]">You have ₹{storeCreditBalance.balance} of store credit available.</p>
+              <p className="text-sm text-[#6e6359]">You have {formatINR(storeCreditBalance.balance)} of store credit available.</p>
               <label htmlFor="store-credit-amount" className="sr-only">
                 Store credit to apply
               </label>
@@ -383,20 +384,20 @@ export default function CheckoutPage() {
               {preview.promotionDiscountTotal > 0 && (
                 <div className="flex justify-between">
                   <span className="text-[#6e6359]">Discount ({preview.appliedPromotions.map((p) => p.name).join(', ')})</span>
-                  <span className="text-[#181716]">-&#8377;{preview.promotionDiscountTotal}</span>
+                  <span className="text-[#181716]">{'-' + formatINR(preview.promotionDiscountTotal)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span className="text-[#6e6359]">Subtotal</span>
-                <span className="text-[#181716]">&#8377;{preview.subtotal}</span>
+                <span className="text-[#181716]">{formatINR(preview.subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#6e6359]">Shipping</span>
-                <span className="text-[#181716]">{preview.shippingCost === 0 ? 'Free' : `₹${preview.shippingCost}`}</span>
+                <span className="text-[#181716]">{preview.shippingCost === 0 ? 'Free' : formatINR(preview.shippingCost)}</span>
               </div>
               <div className="flex justify-between border-t border-border pt-2 font-medium">
                 <span className="text-[#181716]">Total (tax incl.)</span>
-                <span className="text-[#181716]">&#8377;{preview.grandTotal}</span>
+                <span className="text-[#181716]">{formatINR(preview.grandTotal)}</span>
               </div>
               {loyaltyBalance && parseInt(redeemPointsInput, 10) > 0 && (
                 <p className="text-xs text-[#6e6359]">
@@ -406,7 +407,7 @@ export default function CheckoutPage() {
               )}
               {storeCreditBalance && parseFloat(storeCreditInput) > 0 && (
                 <p className="text-xs text-[#6e6359]">
-                  ₹{storeCreditInput} of store credit will be applied at checkout - the final amount payable is shown on
+                  {formatINR(storeCreditInput)} of store credit will be applied at checkout - the final amount payable is shown on
                   your order confirmation.
                 </p>
               )}

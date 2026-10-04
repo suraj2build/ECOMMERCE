@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
-import { BrowseResults } from '@/components/catalog/BrowseResults';
+import { PlpView } from '@/vanya/views/PlpView';
+import { loadListing, one, parseListing } from '@/vanya/bridge/listing';
 import { searchStorefront } from '@/lib/api';
 import { getPublicCategory } from '@/lib/lookups';
 import { hasFilterParams, listingRobots, pageRedirect, requestedPage, sharing, absoluteUrl } from '@/lib/seo';
 
 type Params = Record<string, string | string[] | undefined>;
-const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value;
 
 const SPECIAL: Record<string, { title: string; description: string; gender?: string; markdown?: boolean; sort?: 'newest' }> = {
   women: { title: 'Women', description: 'Modern Indian womenswear with timeless roots.', gender: 'women' },
@@ -24,20 +24,16 @@ async function resolveCategory(slug: string) {
   return { title: category.name, description: `Shop ${category.name} at VANYA: modern Indian clothing with live prices and stock.`, preset: undefined };
 }
 
-function searchFor(slug: string, preset: (typeof SPECIAL)[string] | undefined, raw: Params, page: number) {
-  return searchStorefront({
-    q: one(raw.q),
-    category: preset ? undefined : slug,
-    gender: preset?.gender ?? (['men', 'women'].includes(one(raw.gender) ?? '') ? one(raw.gender) : undefined),
-    markdown: preset?.markdown,
-    brand: one(raw.brand),
-    color: one(raw.color),
-    size: one(raw.size),
-    sort: (one(raw.sort) as 'relevance' | 'price_asc' | 'price_desc' | 'newest' | undefined) ?? preset?.sort ?? 'relevance',
-    page,
-    pageSize: 24,
-  });
+function listingQuery(slug: string, preset: (typeof SPECIAL)[string] | undefined, raw: Params) {
+  const query = parseListing(raw, { gender: preset?.gender, sort: preset?.sort });
+  return preset ? query : { ...query, categories: [slug] };
 }
+
+function searchFor(slug: string, preset: (typeof SPECIAL)[string] | undefined, raw: Params, page: number) {
+  return loadListing({ query: listingQuery(slug, preset, raw), page, markdown: preset?.markdown });
+}
+
+const DESIGN_DESCRIPTION = 'Sculpted drapes, raw wild silks, and natural handwoven textiles. Designed with ease for contemporary living.';
 
 export async function generateMetadata({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Params> }): Promise<Metadata> {
   const { slug } = await params;
@@ -46,7 +42,7 @@ export async function generateMetadata({ params, searchParams }: { params: Promi
   if (!resolved) return { title: 'Not found', robots: { index: false, follow: false } };
   const page = requestedPage(one(raw.page));
   const path = `/category/${slug}`;
-  const firstHit = (await searchFor(slug, resolved.preset, {}, 1).catch(() => null))?.hits.find((hit) => hit.thumbnailUrl);
+  const firstHit = (await searchStorefront({ category: resolved.preset ? undefined : slug, gender: resolved.preset?.gender, markdown: resolved.preset?.markdown, pageSize: 4 }).catch(() => null))?.hits.find((hit) => hit.thumbnailUrl);
   return {
     title: page > 1 ? `${resolved.title} — page ${page}` : resolved.title,
     description: resolved.description,
@@ -63,12 +59,30 @@ export default async function CategoryPage({ params, searchParams }: { params: P
   const resolved = await resolveCategory(slug);
   if (!resolved) notFound();
   const page = requestedPage(one(raw.page));
-  const result = await searchFor(slug, resolved.preset, raw, page);
+  const { result, categoryFacets, colourFacets } = await searchFor(slug, resolved.preset, raw, page);
   // LR-007: a page past the live last page goes to the last populated page.
   if (!result.unavailable) {
     const target = pageRedirect(`/category/${slug}`, raw, page, result.totalPages, one(raw.page));
     if (target) redirect(target);
   }
-  const query = { q: one(raw.q), brand: one(raw.brand), color: one(raw.color), size: one(raw.size), sort: one(raw.sort), page: one(raw.page), gender: resolved.preset?.gender ?? (['men', 'women'].includes(one(raw.gender) ?? '') ? one(raw.gender) : undefined) };
-  return <BrowseResults title={resolved.title} eyebrow="VANYA edit" description={resolved.preset?.description} basePath={`/category/${slug}`} result={result} query={query} />;
+  const query = listingQuery(slug, resolved.preset, raw);
+  const gender = query.gender;
+  const departmentTitle = gender === 'men' ? "Men's Collection" : gender === 'women' ? "Women's Collection" : resolved.title;
+  const title = resolved.preset?.gender
+    ? query.categories.length === 1 ? categoryFacets.find((f) => f.value === query.categories[0])?.label ?? departmentTitle : departmentTitle
+    : resolved.title;
+  return (
+    <PlpView
+      title={title}
+      eyebrow={gender === 'women' ? "Dedicated Women's Atelier" : gender === 'men' ? "Dedicated Men's Atelier" : 'VANYA Edit'}
+      description={resolved.preset && !resolved.preset.gender ? resolved.preset.description : DESIGN_DESCRIPTION}
+      basePath={`/category/${slug}`}
+      routeCategory={resolved.preset ? undefined : slug}
+      query={query}
+      result={result}
+      categoryFacets={categoryFacets}
+      colourFacets={colourFacets}
+      listName={resolved.title}
+    />
+  );
 }

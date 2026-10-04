@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getStoreCredit, type StoreCreditBalance } from '@/lib/account';
+import { formatINR } from '@/lib/money';
 
 export default function StoreCreditPage() {
   const [data, setData] = useState<StoreCreditBalance | null>(null);
@@ -27,7 +28,7 @@ export default function StoreCreditPage() {
 
       {data && (
         <>
-          <p className="mt-4 text-2xl font-medium text-ink">&#8377;{data.balance}</p>
+          <p className="mt-4 text-2xl font-medium text-ink">{formatINR(data.balance)}</p>
           <p className="text-sm text-ink-muted">Current balance - never expires.</p>
 
           {data.entries.length === 0 ? (
@@ -37,7 +38,7 @@ export default function StoreCreditPage() {
               {data.entries.map((entry) => (
                 <li key={entry.id} className="flex items-center justify-between rounded-sm border border-border p-3">
                   <span className="text-sm text-ink">{entry.reason}</span>
-                  <span className="text-sm font-medium text-ink">+&#8377;{entry.amount}</span>
+                  <span className="text-sm font-medium text-ink">{'+' + formatINR(entry.amount)}</span>
                 </li>
               ))}
             </ul>

@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import { Inter, Playfair_Display } from 'next/font/google';
 import { DepartmentProvider } from '@/components/layout/DepartmentContext';
-import { Header } from '@/components/layout/Header';
-import { Footer } from '@/components/layout/Footer';
 import { ConsentBanner } from '@/components/consent/ConsentBanner';
 import { PreviewBanner } from '@/components/layout/PreviewBanner';
-import { SITE_URL } from '@/lib/api';
+import { SITE_URL, getStorefrontCategories, getStorefrontPolicies } from '@/lib/api';
+import { ShopProvider, type ShopPolicies } from '@/vanya/bridge/shop';
+import { StoreShell } from '@/vanya/bridge/StoreShell';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
@@ -20,16 +20,25 @@ export const metadata: Metadata = {
   description: 'Modern Indian menswear and womenswear. Timeless silhouettes, contemporary craftsmanship.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const [categories, terms] = await Promise.all([getStorefrontCategories(), getStorefrontPolicies()]);
+  // Delivery figures are shown only once the shop has confirmed them.
+  const confirmed = terms?.shipping.confirmed === true;
+  const policies: ShopPolicies = {
+    freeDeliveryAbove: confirmed && terms!.shipping.freeAboveAmount > 0 ? terms!.shipping.freeAboveAmount : null,
+    deliveryCharge: confirmed ? terms!.shipping.flatAmount : null,
+    returnWindowDays: terms?.returns.defaultWindowDays ?? null,
+  };
+
   return (
     <html lang="en" data-theme="women" className={`${inter.variable} ${playfair.variable}`}>
       <body>
         <DepartmentProvider>
-          <PreviewBanner />
-          <Header />
-          <main id="main-content">{children}</main>
-          <Footer />
-          <ConsentBanner />
+          <ShopProvider categories={categories.filter((c) => c.slug)} policies={policies}>
+            <PreviewBanner />
+            <StoreShell>{children}</StoreShell>
+            <ConsentBanner />
+          </ShopProvider>
         </DepartmentProvider>
       </body>
     </html>

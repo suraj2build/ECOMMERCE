@@ -19,6 +19,7 @@ import {
 } from '@/lib/exchanges';
 import { openRazorpayCheckout } from '@/lib/razorpay';
 import { randomUuid } from '@/lib/random-id';
+import { formatINR } from '@/lib/money';
 
 // M18 (specs/17-cancellation.md, CAN-001): "before shipment" - convenience
 // display only, the server (OrderService.performCancellation) is the sole
@@ -360,7 +361,7 @@ export default function OrderDetailPage() {
                     {line.cancelledReason ? `: ${line.cancelledReason}` : ''}
                   </p>
                 </div>
-                <span className="text-[#181716]">&#8377;{line.lineTotalInclusive}</span>
+                <span className="text-[#181716]">{formatINR(line.lineTotalInclusive)}</span>
               </div>
 
               {/* M18 (CAN-001): convenience gating only - the server is
@@ -424,7 +425,7 @@ export default function OrderDetailPage() {
                 <p className="mt-1 text-xs text-[#6e6359]">
                   {REFUND_STATUS_LABEL[refundForLine(line.id)!.status]}
                   {refundForLine(line.id)!.status === 'COMPLETED'
-                    ? ` - ₹${refundForLine(line.id)!.amount} ${refundForLine(line.id)!.method === 'STORE_CREDIT' ? 'as store credit' : 'to your original payment method'}`
+                    ? ` - ${formatINR(refundForLine(line.id)!.amount)} ${refundForLine(line.id)!.method === 'STORE_CREDIT' ? 'as store credit' : 'to your original payment method'}`
                     : ''}
                 </p>
               )}
@@ -700,7 +701,7 @@ export default function OrderDetailPage() {
 
         <div className="mt-4 flex justify-between border-t border-border pt-4 text-sm font-medium">
           <span className="text-[#181716]">Total</span>
-          <span className="text-[#181716]">&#8377;{order.grandTotal}</span>
+          <span className="text-[#181716]">{formatINR(order.grandTotal)}</span>
         </div>
       </div>
 

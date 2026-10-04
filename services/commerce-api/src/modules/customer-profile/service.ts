@@ -357,7 +357,7 @@ export class CustomerProfileService {
   async listCategoriesForSizePicker() {
     return this.prisma.category.findMany({
       where: { isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, slug: true },
       orderBy: { name: 'asc' },
     });
   }

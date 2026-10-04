@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { listMyOrders, type OrderView } from '@/lib/orders';
+import { formatINR } from '@/lib/money';
 
 const STATUS_LABEL: Record<OrderView['status'], string> = {
   CONFIRMED: 'Confirmed',
@@ -57,7 +58,7 @@ export default function OrdersPage() {
                 </div>
                 <div className="mt-5 flex items-center justify-between border-t border-[#eee7de] pt-4 text-sm">
                   <span className="text-[#6e6359]">{order.lines.length} item{order.lines.length === 1 ? '' : 's'}</span>
-                  <span className="font-semibold text-[#181716]">&#8377;{order.grandTotal}</span>
+                  <span className="font-semibold text-[#181716]">{formatINR(order.grandTotal)}</span>
                 </div>
               </Link>
             </li>

@@ -14,20 +14,22 @@ import type { Config } from 'tailwindcss';
  */
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
-  darkMode: ['class'],
+  darkMode: 'class',
   theme: {
-    fontFamily: {
-      display: ['var(--font-display)', 'serif'],
-      sans: ['var(--font-sans)', 'sans-serif'],
-    },
     extend: {
+      // Extended, not replaced, so the design's font-mono and font-serif
+      // utilities keep their Tailwind defaults.
+      fontFamily: {
+        display: ['var(--font-display)', 'serif'],
+        sans: ['var(--font-sans)', 'sans-serif'],
+      },
       colors: {
         canvas: 'var(--color-canvas)',
-        surface: 'var(--color-surface)',
+        surface: 'var(--color-card)',
         ink: 'var(--color-ink)',
         'ink-muted': 'var(--color-ink-muted)',
         border: 'var(--color-border)',
-        accent: 'var(--color-accent)',
+        accent: 'var(--color-primary)',
         'accent-ink': 'var(--color-accent-ink)',
         danger: 'var(--color-danger)',
         success: 'var(--color-success)',

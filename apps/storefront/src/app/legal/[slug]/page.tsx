@@ -14,7 +14,7 @@ const PAGES = {
       'Legal entity name and registered office address',
       'Grievance officer name and contact details',
       'Purposes of processing and the legal basis for each',
-      'Data-retention periods (decision CUST-001 is still under review)',
+      'How long personal data is kept',
       'Service providers that process personal data (payment, SMS, shipping, analytics)',
       'How customers request access, correction, erasure or consent withdrawal',
       'Effective date',

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { getCart, updateCartItemQuantity, removeCartItem, type CartView } from '@/lib/cart';
 import { cartItems, track } from '@/lib/tracking';
+import { formatINR } from '@/lib/money';
 
 export default function BagPage() {
   const [cart, setCart] = useState<CartView | null>(null);
@@ -33,56 +34,73 @@ export default function BagPage() {
     } finally { setPendingSkuId(null); }
   }
 
-  return (
-    <div className="mx-auto max-w-[1440px] px-gutter py-10 sm:py-14">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Your selection</p>
-      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Shopping Bag</h1>
+  const count = cart?.itemCount ?? 0;
 
-      {loading ? <p className="mt-8 text-sm text-[#6e6359]">Loading bag…</p> : null}
-      {error ? <p role="alert" className="mt-4 text-sm text-danger">{error}</p> : null}
+  // The design has no separate bag page; this follows its bag drawer
+  // (vanya/components/BagDrawer.tsx) at page width.
+  return (
+    <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+      <div className="border-b border-[#EAE3D7] pb-6 mb-8">
+        <span className="text-[10px] tracking-[0.22em] uppercase text-[#756A5E] font-semibold">Shopping Bag</span>
+        <h1 className="font-editorial text-3xl sm:text-4xl text-[#1A1816] font-normal mt-1">Review Bag ({count})</h1>
+      </div>
+
+      {loading ? <p className="text-xs text-[#756A5E]">Loading your bag…</p> : null}
+      {error ? <p role="alert" className="mb-4 text-xs text-[#962E3B]">{error}</p> : null}
 
       {!loading && cart && cart.items.length === 0 ? (
-        <div className="mt-10 rounded-[24px] border border-[#e6ddd0] bg-white p-8 text-center">
-          <h2 className="font-display text-2xl text-[#181716]">Your bag is empty</h2>
-          <p className="mt-2 text-sm text-[#6e6359]">Explore the latest VANYA edit when you’re ready.</p>
-          <Link href="/" className="mt-6 inline-flex min-h-[46px] items-center rounded-full bg-[#181716] px-7 text-xs font-semibold uppercase tracking-[0.14em] text-white">Continue shopping</Link>
+        <div className="py-16 text-center space-y-3">
+          <h2 className="font-editorial text-2xl text-[#6B5F53]">Your bag is empty</h2>
+          <p className="text-xs text-[#756A5E] max-w-xs mx-auto">Explore our curated handloom silks, linen tailoring, and modern silhouettes.</p>
+          <Link href="/" className="mt-4 inline-flex px-8 py-3 bg-[#1F1C18] text-[#FAF8F5] text-xs uppercase tracking-[0.16em] font-semibold rounded-full hover:bg-black transition-colors">Continue Exploring</Link>
         </div>
       ) : null}
 
       {!loading && cart && cart.items.length > 0 ? (
-        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
-          <ul className="divide-y divide-[#e8dfd3] rounded-[24px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
-            {cart.items.map((item) => (
-              <li key={item.skuId} className="flex gap-4 py-5 first:pt-0 last:pb-0">
-                <Link href={'/product/' + item.styleId} aria-label="View product image" className="relative h-36 w-28 shrink-0 overflow-hidden rounded-[16px] bg-[var(--color-surface-soft)]">
-                  {item.imageUrl ? <Image src={item.imageUrl} alt={item.styleName} fill sizes="112px" className="object-cover" /> : null}
-                </Link>
-                <div className="min-w-0 flex-1">
-                  <Link href={'/product/' + item.styleId} aria-label="View product details" className="line-clamp-2 text-sm font-medium text-[#181716] hover:text-[var(--color-primary)]">{item.styleName}</Link>
-                  <p className="mt-1 text-xs text-[#6e6359]">{item.colourName} · {item.sizeLabel}</p>
-                  <p className="mt-2 text-sm font-semibold text-[#181716]">&#8377;{item.currentPrice ?? item.priceAtAdd}</p>
-                  {!item.isPurchasable ? <p role="alert" className="mt-2 text-xs text-danger">This style is no longer purchasable.</p> : null}
-                  {item.isPurchasable && !item.inStock ? <p role="alert" className="mt-2 text-xs text-danger">Only {item.availableQuantity} available.</p> : null}
-                  {item.priceChanged ? <p role="status" className="mt-2 text-xs text-[#5f554c]">Price changed from &#8377;{item.priceAtAdd}.</p> : null}
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <div className="inline-flex overflow-hidden rounded-full border border-[#d8d0c6]">
-                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity - 1)} disabled={pendingSkuId === item.skuId} className="min-h-[44px] min-w-[44px]" aria-label={'Decrease quantity for ' + item.styleName}>−</button>
-                      <span className="min-w-[36px] self-center text-center text-xs font-semibold">{item.quantity}</span>
-                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity + 1)} disabled={pendingSkuId === item.skuId} className="min-h-[44px] min-w-[44px]" aria-label={'Increase quantity for ' + item.styleName}>+</button>
+        <div className="grid gap-8 lg:grid-cols-[1fr_380px] items-start">
+          <ul className="divide-y divide-[#EFE8DC] rounded-2xl border border-[#EAE3D7] bg-white p-4 sm:p-6">
+            {cart.items.map((item) => {
+              const price = item.currentPrice ?? item.priceAtAdd;
+              const busy = pendingSkuId === item.skuId;
+              return (
+                <li key={item.skuId} className="flex gap-4 py-5 first:pt-0 last:pb-0">
+                  <Link href={'/product/' + item.styleId} tabIndex={-1} aria-hidden="true" className="relative h-32 w-24 sm:h-36 sm:w-28 shrink-0 overflow-hidden rounded-xl bg-[#EFE9DF]">
+                    {item.imageUrl ? <Image src={item.imageUrl} alt="" fill sizes="112px" className="object-cover" /> : null}
+                  </Link>
+                  <div className="min-w-0 flex-1">
+                    <Link href={'/product/' + item.styleId} className="line-clamp-2 text-sm font-medium text-[#1A1816] hover:text-[#A85B3F]">{item.styleName}</Link>
+                    <p className="text-[11px] text-[#7A6F64] mt-0.5">
+                      Colour: <span className="font-medium text-[#2E2823]">{item.colourName}</span> | Size: <span className="font-medium text-[#2E2823]">{item.sizeLabel}</span>
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#1A1816]">{formatINR(price * item.quantity)}</p>
+                    {item.quantity > 1 ? <p className="text-[11px] text-[#756A5E]">{formatINR(price)} each</p> : null}
+                    {!item.isPurchasable ? <p role="alert" className="mt-1 text-[11px] text-[#962E3B]">This style is no longer available.</p> : null}
+                    {item.isPurchasable && !item.inStock ? <p role="alert" className="mt-1 text-[11px] text-[#962E3B]">{item.availableQuantity === 0 ? 'Sold out in this size.' : `Only ${item.availableQuantity} left in this size.`}</p> : null}
+                    {item.priceChanged ? <p role="status" className="mt-1 text-[11px] text-[#7A6F64]">Price updated from {formatINR(item.priceAtAdd)}.</p> : null}
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <div className="inline-flex items-center overflow-hidden rounded-full border border-[#DFD6C8] bg-white">
+                        <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity - 1)} disabled={busy} className="min-h-[44px] min-w-[44px] text-[#5C5146] hover:bg-[#F2ECE1]" aria-label={'Decrease quantity for ' + item.styleName}>−</button>
+                        <span className="min-w-[32px] text-center text-xs font-semibold text-[#1A1816]">{item.quantity}</span>
+                        <button type="button" onClick={() => void handleQuantityChange(item.skuId, item.quantity + 1)} disabled={busy} className="min-h-[44px] min-w-[44px] text-[#5C5146] hover:bg-[#F2ECE1]" aria-label={'Increase quantity for ' + item.styleName}>+</button>
+                      </div>
+                      <button type="button" onClick={() => void handleQuantityChange(item.skuId, 0)} disabled={busy} className="min-h-[44px] px-2 text-[11px] text-[#6E6358] hover:text-[#A85B3F] underline underline-offset-4">Remove</button>
                     </div>
-                    <button type="button" onClick={() => void handleQuantityChange(item.skuId, 0)} disabled={pendingSkuId === item.skuId} className="min-h-[44px] text-xs text-[#5f554c] underline underline-offset-4">Remove</button>
                   </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
 
-          <aside className="h-fit rounded-[24px] border border-[#e6ddd0] bg-white p-6 lg:sticky lg:top-28">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6e6359]">Order summary</p>
-            <div className="mt-4 flex justify-between text-sm"><span className="text-[#5f554c]">Subtotal ({cart.itemCount} items)</span><span className="font-semibold text-[#181716]">&#8377;{cart.subtotal}</span></div>
-            <p className="mt-4 text-xs leading-5 text-[#6e6359]">Shipping, promotions, loyalty and store credit are calculated by the live checkout service.</p>
-            {cart.hasBlockingChanges ? <p role="alert" className="mt-3 text-xs text-danger">Some items need attention before checkout.</p> : null}
-            <Link href="/checkout" aria-disabled={cart.hasBlockingChanges} className={'mt-6 flex min-h-[50px] items-center justify-center rounded-full bg-[var(--color-primary)] px-6 text-xs font-semibold uppercase tracking-[0.15em] text-white ' + (cart.hasBlockingChanges ? 'pointer-events-none opacity-50' : 'hover:bg-[var(--color-primary-hover)]')}>Proceed to Checkout</Link>
+          <aside className="rounded-2xl border border-[#EAE3D7] bg-white p-5 sm:p-6 space-y-3 lg:sticky lg:top-28">
+            <span className="text-[10px] tracking-[0.22em] uppercase text-[#756A5E] font-semibold">Order Summary</span>
+            <div className="flex justify-between text-xs text-[#5C5146] pt-1">
+              <span>Subtotal ({count} {count === 1 ? 'item' : 'items'})</span>
+              <span className="font-semibold text-[#1A1816]">{formatINR(cart.subtotal)}</span>
+            </div>
+            <p className="text-[11px] leading-5 text-[#7A6F64]">Delivery charges, coupons, rewards and gift cards are shown and applied at checkout.</p>
+            <p className="text-[10px] text-[#756A5E] text-right">Inclusive of all taxes</p>
+            {cart.hasBlockingChanges ? <p role="alert" className="text-[11px] text-[#962E3B]">Remove or update the items marked in your bag before checkout.</p> : null}
+            <Link href="/checkout" aria-disabled={cart.hasBlockingChanges} className={'w-full py-3.5 bg-[var(--color-primary)] text-white text-xs uppercase tracking-[0.18em] font-semibold rounded-full shadow-md flex items-center justify-center ' + (cart.hasBlockingChanges ? 'pointer-events-none opacity-50' : 'hover:bg-[var(--color-primary-hover)]')}>Proceed to Checkout</Link>
           </aside>
         </div>
       ) : null}

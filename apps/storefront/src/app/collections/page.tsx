@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic';
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Container } from '@/components/ui/Container';
 import type { Metadata } from 'next';
 import { getAllPublicCollections } from '@/lib/api';
 import { absoluteUrl, sharing } from '@/lib/seo';
@@ -21,18 +20,25 @@ export default async function CollectionsPage() {
   const collections = await getAllPublicCollections();
 
   return (
-    <Container className="py-10 md:py-14">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">Curated edits</p>
-      <h1 className="mt-2 font-display text-4xl tracking-[-0.035em] text-ink md:text-6xl">Collections</h1>
+    <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+      <div className="border-b border-[#EAE3D7] pb-6">
+        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[#756A5E] font-semibold">
+          <span>Atelier Catalog</span>
+          <span aria-hidden="true">•</span>
+          <span className="text-[var(--color-primary)] font-bold">Curated Edits</span>
+        </div>
+        <h1 className="font-editorial text-3xl sm:text-5xl text-[#1A1816] font-normal mt-1">Collections</h1>
+        <p className="text-xs text-[#7A6F64] mt-1.5 max-w-xl">{DESCRIPTION}</p>
+      </div>
 
       {collections.length === 0 ? (
-        <p className="mt-8 text-sm text-ink-muted">No published collections right now.</p>
+        <p className="mt-8 text-sm text-[#7A6F64]">No published collections right now.</p>
       ) : (
         <ul className="mt-10 grid gap-8 md:grid-cols-2">
           {collections.map((collection) => (
             <li key={collection.id}>
               <Link href={`/collections/${collection.slug}`} className="group block">
-                <div className="grid aspect-[16/10] grid-cols-2 overflow-hidden rounded-[24px] bg-[var(--color-surface-soft)]">
+                <div className="grid aspect-[16/10] grid-cols-2 overflow-hidden rounded-2xl bg-[#F1ECE2] shadow-sm">
                   {collection.styleThumbnails.length > 0 ? (
                     collection.styleThumbnails.slice(0, 4).map((url, index) => (
                       <div key={url + index} className="relative">
@@ -40,18 +46,18 @@ export default async function CollectionsPage() {
                       </div>
                     ))
                   ) : (
-                    <div className="col-span-2 flex items-center justify-center text-xs uppercase tracking-[0.16em] text-ink-muted">
-                      Editorial coming soon
+                    <div className="col-span-2 flex items-center justify-center text-xs uppercase tracking-[0.16em] text-[#756A5E]">
+                      Styles coming soon
                     </div>
                   )}
                 </div>
-                <h2 className="mt-4 font-display text-2xl text-ink">{collection.name}</h2>
-                {collection.description && <p className="mt-2 max-w-xl text-sm leading-6 text-ink-muted">{collection.description}</p>}
+                <h2 className="mt-4 font-editorial text-2xl text-[#1A1816] group-hover:text-[var(--color-primary)] transition-colors">{collection.name}</h2>
+                {collection.description && <p className="mt-1 max-w-xl text-xs leading-5 text-[#7A6F64]">{collection.description}</p>}
               </Link>
             </li>
           ))}
         </ul>
       )}
-    </Container>
+    </div>
   );
 }

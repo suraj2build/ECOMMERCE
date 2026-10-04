@@ -160,7 +160,7 @@ test.describe('Product Detail Page', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/product/${styleId}`);
     await expect(page.getByRole('heading', { name: 'E2E Test Jacket' })).toBeVisible();
-    await expect(page.getByText('₹1999').first()).toBeVisible();
+    await expect(page.getByText('₹1,999').first()).toBeVisible();
 
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
     await expect(page.getByText('Please select a size').first()).toBeVisible();
@@ -242,7 +242,7 @@ test.describe('Product Detail Page', () => {
     }), 'Remove live stock');
 
     await page.goto(`/product/${styleId}`);
-    await expect(page.getByText('₹1499').first()).toBeVisible();
+    await expect(page.getByText('₹1,499').first()).toBeVisible();
     await expect(page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first()).toBeDisabled();
   });
 

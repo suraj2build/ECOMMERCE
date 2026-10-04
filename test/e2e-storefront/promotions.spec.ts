@@ -281,12 +281,9 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     expect(loyaltyAccount.balance).toBeGreaterThanOrEqual(100);
     const balanceBeforeRedeem = loyaltyAccount.balance;
 
-    // Placing an order does NOT clear the bag (a separate, pre-existing
-    // product behavior, not something this repair changes) - remove the
-    // loyalty-seed item so the main scenario's cart holds only the
-    // promo product below.
+    // LR-011: the order took the purchased item out of the bag, so the
+    // main scenario's cart holds only the promo product below.
     await page.goto('/bag');
-    await page.getByRole('button', { name: 'Remove' }).first().click();
     await expect(page.getByRole('heading', { name: 'Your bag is empty', exact: true })).toBeVisible({ timeout: 10_000 });
 
     await page.goto(`/product/${styleId}`);
