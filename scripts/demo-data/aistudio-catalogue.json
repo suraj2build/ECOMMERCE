@@ -1,0 +1,3443 @@
+{
+ "version": "aistudio-24b2399-v1",
+ "source": "suraj2build/Stitch-Spark_Ai_Studio@24b2399 src/data/mockData.ts (reviews, ratings, view counts and likes removed)",
+ "products": [
+  {
+   "id": "prod-1",
+   "title": "Chanderi Draped Wrap Kurta Set",
+   "slug": "chanderi-draped-wrap-kurta-set",
+   "subtitle": "Woven handloom silk-cotton blend with artisanal gota patti detailing",
+   "gender": "women",
+   "category": "Co-ords & Sets",
+   "collection": "The Festive Silk Edit",
+   "price": 4950,
+   "mrp": 6990,
+   "discountPercent": 29,
+   "colors": [
+    {
+     "name": "Moonlit Ivory",
+     "hex": "#F4F1EA",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1596783074918-c84cb06531ca?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Raw Terracotta",
+     "hex": "#C06C52",
+     "images": [
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Forest Olive",
+     "hex": "#4A5B4E",
+     "images": [
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 12
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 2
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "XL",
+     "inStock": false
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 4
+    }
+   ],
+   "fit": "Relaxed Tailored",
+   "fabric": "Pure Chanderi Silk-Cotton",
+   "care": [
+    "Dry clean only for initial washes to maintain hand-embroidery sheen",
+    "Steam iron on low setting from reverse side",
+    "Store wrapped in unbleached muslin cloth"
+   ],
+   "occasion": "Festive & Occasion",
+   "badges": [
+    "BESTSELLER",
+    "LOW STOCK"
+   ],
+   "modelInfo": {
+    "height": "5'9\" (175 cm)",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Angrakha-inspired wrap front with adjustable concealed mother-of-pearl inner closure",
+    "Handcrafted subtle zari micro-piping along collar and asymmetrical cuffs",
+    "Accompanied by straight cropped trousers with elasticated back waist and side seam pockets",
+    "Lined with breathable mulmul cotton for all-day humid climate comfort"
+   ],
+   "fitNotes": "Designed for an effortless silhouette. Falls gracefully over the hips without clinging. If between sizes, we recommend sizing down.",
+   "styleNotes": "Pair with statement temple earrings and handcrafted leather juttis for evening pujas, or style open over linen slip trousers for elevated resort evenings.",
+   "manufacturing": {
+    "origin": "Chanderi & Jaipur, India",
+    "artisanCluster": "Chanderi Weavers Collective, Madhya Pradesh",
+    "sustainableNote": "AZO-free eco-certified dyes and zero single-use plastic in packaging."
+   }
+  },
+  {
+   "id": "prod-2",
+   "title": "Textured Linen Mandarin Overshirt",
+   "slug": "textured-linen-mandarin-overshirt",
+   "subtitle": "European flax linen tailored with a modern Indian relaxed band collar",
+   "gender": "men",
+   "category": "Shirts & Overshirts",
+   "collection": "Minimalist Resort",
+   "price": 3850,
+   "mrp": 4990,
+   "discountPercent": 23,
+   "colors": [
+    {
+     "name": "Warm Sand",
+     "hex": "#D7C9B8",
+     "images": [
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Deep Indigo",
+     "hex": "#26344B",
+     "images": [
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Chalk White",
+     "hex": "#F9F8F6",
+     "images": [
+      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 10
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 15
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 3
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 7
+    },
+    {
+     "size": "XXL",
+     "inStock": false
+    }
+   ],
+   "fit": "Relaxed Drop-Shoulder",
+   "fabric": "100% Normandy Flax Linen (60 Lea)",
+   "care": [
+    "Machine wash gentle with cold water and mild detergent",
+    "Air dry flat in shade; do not tumble dry",
+    "Embrace natural linen crinkles or warm press while damp"
+   ],
+   "occasion": "Resort & Casual Chic",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'1\" (185 cm)",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Clean mandarin stand collar with natural river shell buttons",
+    "Curved hemline designed to be worn untucked over tailored trousers or shorts",
+    "Subtle double-needle topstitching and side seam gussets for structural durability",
+    "Pre-washed with enzyme wash for immediate buttery softness from day one"
+   ],
+   "fitNotes": "Cut with intentional ease across the chest and shoulders. Fits true to size for a contemporary relaxed look.",
+   "styleNotes": "Layer unbuttoned over a ribbed Supima cotton vest and our Pleated Khadi Trousers for breezy tropical dinners.",
+   "manufacturing": {
+    "origin": "Bengaluru, India",
+    "artisanCluster": "Craft Tailoring Unit 04, Karnataka",
+    "sustainableNote": "Flax requires 80% less irrigation than conventional cotton. Completely biodegradable."
+   }
+  },
+  {
+   "id": "prod-3",
+   "title": "Asymmetric Pleated Midi Dress",
+   "slug": "asymmetric-pleated-midi-dress",
+   "subtitle": "Sculpted drape in modal silk with hand-pleated waist cinch",
+   "gender": "women",
+   "category": "Dresses",
+   "collection": "Monsoon Horizon",
+   "price": 5400,
+   "mrp": 7200,
+   "discountPercent": 25,
+   "colors": [
+    {
+     "name": "Ochre Saffron",
+     "hex": "#D9822B",
+     "images": [
+      "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1502716119720-b23a93e5fe1b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Slate Charcoal",
+     "hex": "#303336",
+     "images": [
+      "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": false
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Fluid Tailored",
+   "fabric": "Micro-Modal Mulberry Silk",
+   "care": [
+    "Gentle hand wash in cold water or dry clean",
+    "Line dry in shade"
+   ],
+   "occasion": "Cocktail & Contemporary Festive",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'8\" (173 cm)",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Architectural hand-pleated diagonal bodice with drape falling along the left hem",
+    "Discreet side zip with hook and eye closure",
+    "Integrated deep right-hand pocket that sits flush against the hip"
+   ],
+   "fitNotes": "Fitted through the ribcage with generous drape from the waist down.",
+   "styleNotes": "Style with architectural gold cuffs and minimalist sandals.",
+   "manufacturing": {
+    "origin": "Kolkata, India",
+    "artisanCluster": "Bengal Weaving Atelier",
+    "sustainableNote": "Plant-derived cellulosic yarn spun in closed-loop water recycled facility."
+   }
+  },
+  {
+   "id": "prod-4",
+   "title": "Raw Silk Tailored Bandhgala Jacket",
+   "slug": "raw-silk-tailored-bandhgala-jacket",
+   "subtitle": "Structured ceremonial Nehru jacket with antique brass buttons",
+   "gender": "men",
+   "category": "Jackets & Blazers",
+   "collection": "The Festive Silk Edit",
+   "price": 6800,
+   "mrp": 8990,
+   "discountPercent": 24,
+   "colors": [
+    {
+     "name": "Forest Olive",
+     "hex": "#3E4D41",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Midnight Navy",
+     "hex": "#1D2533",
+     "images": [
+      "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "38 (S)",
+     "inStock": true
+    },
+    {
+     "size": "40 (M)",
+     "inStock": true,
+     "stockCount": 2
+    },
+    {
+     "size": "42 (L)",
+     "inStock": true
+    },
+    {
+     "size": "44 (XL)",
+     "inStock": false
+    }
+   ],
+   "fit": "Structured Slim Fit",
+   "fabric": "Matka Raw Silk with Satin Twill Lining",
+   "care": [
+    "Strictly professional dry clean only",
+    "Keep inside garment bag on wooden hanger"
+   ],
+   "occasion": "Wedding & Formal Festive",
+   "badges": [
+    "LIMITED"
+   ],
+   "modelInfo": {
+    "height": "6'0\" (183 cm)",
+    "wearingSize": "40 (M)"
+   },
+   "details": [
+    "Signature 1.25-inch high stand bandhgala collar with reinforced interfacing",
+    "Welt chest pocket designed to hold bespoke silk pocket squares",
+    "Hand-cast brass filigree shank buttons",
+    "Dual rear riding vents for ergonomic comfort when seated"
+   ],
+   "fitNotes": "True tailored profile. If you plan to layer over thick textured kurtas, size up one chest size.",
+   "styleNotes": "Wear with an ivory silk kurta and slim churidar or over a clean crisp white shirt with dark chinos.",
+   "manufacturing": {
+    "origin": "Jaipur, Rajasthan",
+    "artisanCluster": "Amber Master Craftsmen Guild",
+    "sustainableNote": "Hand-reeled raw matka silk utilizing organic sericulture."
+   }
+  },
+  {
+   "id": "prod-5",
+   "title": "Textured Khadi Pleated Trousers",
+   "slug": "textured-khadi-pleated-trousers",
+   "subtitle": "Relaxed high-waisted tailored pants with self-fabric side adjusters",
+   "gender": "men",
+   "category": "Trousers",
+   "collection": "Minimalist Resort",
+   "price": 3450,
+   "mrp": 4490,
+   "discountPercent": 23,
+   "colors": [
+    {
+     "name": "Raw Ecru",
+     "hex": "#EBE5D8",
+     "images": [
+      "https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Charcoal Black",
+     "hex": "#232323",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "30",
+     "inStock": true
+    },
+    {
+     "size": "32",
+     "inStock": true
+    },
+    {
+     "size": "34",
+     "inStock": true,
+     "stockCount": 1
+    },
+    {
+     "size": "36",
+     "inStock": true
+    },
+    {
+     "size": "38",
+     "inStock": false
+    }
+   ],
+   "fit": "High-Rise Relaxed Taper",
+   "fabric": "Hand-spun Handwoven Khadi Cotton",
+   "care": [
+    "Gentle cold wash with similar light colors",
+    "Hang dry in shade"
+   ],
+   "occasion": "Everyday Luxury & Casual",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "6'1\" (185 cm)",
+    "wearingSize": "32"
+   },
+   "details": [
+    "Double forward pleats allowing effortless thigh movement",
+    "Side waist cinch buckles eliminate the need for a belt",
+    "Deep slanted front pockets and back buttoned jetted pockets",
+    "Pre-shrunk organic cotton cloth with natural slub yarn variation"
+   ],
+   "fitNotes": "Sits slightly higher on natural waist. Tapers gently toward a clean 2-inch cuff.",
+   "styleNotes": "Team with our Linen Mandarin Overshirt and woven huarache sandals or leather slip-ons.",
+   "manufacturing": {
+    "origin": "Vardha, Maharashtra",
+    "artisanCluster": "Khadi Gramodyog Weaver Collective",
+    "sustainableNote": "Zero electricity consumed in spinning and weaving of this fabric."
+   }
+  },
+  {
+   "id": "prod-6",
+   "title": "Mulberry Silk Draped Halter Dress",
+   "slug": "mulberry-silk-draped-halter-dress",
+   "subtitle": "Bias-cut slip silhouette with fluid Indian cowl neckline and open back tie",
+   "gender": "women",
+   "category": "Dresses",
+   "collection": "Evening Solstice",
+   "price": 5900,
+   "mrp": 7990,
+   "discountPercent": 26,
+   "colors": [
+    {
+     "name": "Crimson Rose",
+     "hex": "#962E3B",
+     "images": [
+      "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1566174053879-31528523f8ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Moonlit Ivory",
+     "hex": "#F5F2EC",
+     "images": [
+      "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 3
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": false
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Fluid Bias-Cut",
+   "fabric": "Pure Mulberry Silk Satin (19 Momme)",
+   "care": [
+    "Specialist dry clean only",
+    "Store hung on velvet padded hanger"
+   ],
+   "occasion": "Cocktail & Evening Soiree",
+   "badges": [
+    "NEW",
+    "LIMITED"
+   ],
+   "modelInfo": {
+    "height": "5'9\" (176 cm)",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Self-fabric halter straps that tie in an adjustable bow at the nape",
+    "Deep cowled back with French seam finishes throughout",
+    "Cut on true 45-degree bias to hug the contour effortlessly without restricting motion"
+   ],
+   "fitNotes": "Bias cut provides natural mechanical stretch. Skims gracefully without clinging.",
+   "styleNotes": "Accentuate the open back with hair swept up and delicate antique gold shoulder dusters.",
+   "manufacturing": {
+    "origin": "Bengaluru Silk Silk Valley, Karnataka",
+    "artisanCluster": "Vanya Silk Guild",
+    "sustainableNote": "Cruelty-free ahimsa silk harvesting practices."
+   }
+  },
+  {
+   "id": "prod-7",
+   "title": "Crinkled Chiffon Pre-Draped Modern Saree",
+   "slug": "crinkled-chiffon-pre-draped-saree",
+   "subtitle": "Ready-to-wear pleated silhouette with woven metallic jacquard bustier",
+   "gender": "women",
+   "category": "Sarees & Drapes",
+   "collection": "The Festive Silk Edit",
+   "price": 7200,
+   "mrp": 9500,
+   "discountPercent": 24,
+   "colors": [
+    {
+     "name": "Dusty Rose",
+     "hex": "#C6939A",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Emerald Moss",
+     "hex": "#2F4F3E",
+     "images": [
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Pre-Stitched Contoured Drape",
+   "fabric": "Micro-Crinkle Georgette & Banarasi Metallic Weave",
+   "care": [
+    "Dry clean only",
+    "Do not press crinkled drape sections directly"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'7\" (170 cm)",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Pre-stitched pleats with concealed zip fastening at waistband—drapes in 60 seconds",
+    "Includes padded hand-woven Banarasi sweetheart blouse with adjustable back ties",
+    "Fluid pallu can be styled over the shoulder or cinched at waist"
+   ],
+   "fitNotes": "Waistband has hidden 2-inch extension allowance. Skirt length accommodates up to 4-inch heels comfortably.",
+   "styleNotes": "Pair with statement polki studs and a minimal potli clutch.",
+   "manufacturing": {
+    "origin": "Varanasi, Uttar Pradesh",
+    "artisanCluster": "Varanasi Master Handloom Guild",
+    "sustainableNote": "Supports 4 generations of traditional jacquard pit-loom weavers."
+   }
+  },
+  {
+   "id": "prod-8",
+   "title": "Relaxed Tussar Silk Mandarin Kurta",
+   "slug": "relaxed-tussar-silk-mandarin-kurta",
+   "subtitle": "Breathable wild silk featuring hand-carved bone buttons and side slits",
+   "gender": "men",
+   "category": "Kurtas & Sets",
+   "collection": "The Festive Silk Edit",
+   "price": 4200,
+   "mrp": 5500,
+   "discountPercent": 23,
+   "colors": [
+    {
+     "name": "Raw Ochre",
+     "hex": "#D09E5A",
+     "images": [
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Moonlit Ivory",
+     "hex": "#F4F1EA",
+     "images": [
+      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    },
+    {
+     "size": "XXL",
+     "inStock": false
+    }
+   ],
+   "fit": "Relaxed Straight Fit",
+   "fabric": "Bhagalpur Wild Tussar Silk",
+   "care": [
+    "Mild hand wash or dry clean",
+    "Low heat press"
+   ],
+   "occasion": "Festive & Contemporary Rituals",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'0\" (183 cm)",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Natural rich slub texture unique to wild tussar cocoons",
+    "Subtle contrast kantha stitch running down the placket",
+    "Dual reinforced side seam pockets designed to hold modern smartphones without sagging"
+   ],
+   "fitNotes": "Cut with 3 inches of ease across the chest for all-day festive comfort.",
+   "styleNotes": "Style under our Matka Raw Silk Bandhgala or wear standalone with our Pleated Khadi Trousers.",
+   "manufacturing": {
+    "origin": "Bhagalpur, Bihar",
+    "artisanCluster": "Tussar Handloom Cooperative",
+    "sustainableNote": "Wild forest collected cocoons; supporting tribal artisan families."
+   }
+  },
+  {
+   "id": "prod-9",
+   "title": "Embroidered Silk Kurta Set",
+   "slug": "embroidered-silk-kurta-set",
+   "subtitle": "Hand-loomed mulberry silk kurta with micro-zari threadwork and matching churidar",
+   "gender": "men",
+   "category": "Kurtas & Sets",
+   "collection": "The Festive Silk Edit",
+   "price": 4200,
+   "mrp": 5800,
+   "discountPercent": 28,
+   "colors": [
+    {
+     "name": "Cream Gold",
+     "hex": "#EADFCB",
+     "images": [
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Olive Sage",
+     "hex": "#5B6E58",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Desert Tan",
+     "hex": "#C49F73",
+     "images": [
+      "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 14
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 5
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 2
+    }
+   ],
+   "fit": "Tailored Traditional",
+   "fabric": "Pure Mulberry Silk-Cotton",
+   "care": [
+    "Dry clean recommended",
+    "Steam press on low"
+   ],
+   "occasion": "Festive & Ceremonial",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "6'1\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Fine zari thread embroidery on cuffs and collar",
+    "Includes matching elasticated churidar",
+    "Two deep side pockets"
+   ],
+   "fitNotes": "Structured silhouette with comfortable armhole movement.",
+   "styleNotes": "Pair with raw silk mojaris and a gold-tone wrist watch.",
+   "manufacturing": {
+    "origin": "Varanasi",
+    "artisanCluster": "Banaras Silk Guild",
+    "sustainableNote": "AZO-free eco dyes used."
+   }
+  },
+  {
+   "id": "prod-10",
+   "title": "Jacquard Festive Silk Nehru Jacket",
+   "slug": "jacquard-festive-silk-nehru-jacket",
+   "subtitle": "Woven brocade Nehru jacket with custom matte gold button closure",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "The Festive Silk Edit",
+   "price": 5900,
+   "mrp": 7900,
+   "discountPercent": 25,
+   "colors": [
+    {
+     "name": "Antique Gold",
+     "hex": "#D1AC66",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Royal Maroon",
+     "hex": "#6B1F2D",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Midnight Navy",
+     "hex": "#1B263B",
+     "images": [
+      "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    },
+    {
+     "size": "XXL",
+     "inStock": true
+    }
+   ],
+   "fit": "Fitted Structured",
+   "fabric": "Brocade Jacquard Silk",
+   "care": [
+    "Dry clean only"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'2\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Intricate floral jaal pattern",
+    "Interior pocket with pen holder",
+    "Double vent back for comfort"
+   ],
+   "fitNotes": "True to jacket size, designed to be worn over kurtas or shirts.",
+   "styleNotes": "Layer over our ivory tussar kurta for reception attire.",
+   "manufacturing": {
+    "origin": "Surat",
+    "artisanCluster": "Heritage Jacquard Weavers",
+    "sustainableNote": "Zero water discharge facility."
+   }
+  },
+  {
+   "id": "prod-11",
+   "title": "Mercerized Cotton Silk Polo",
+   "slug": "mercerized-cotton-silk-polo",
+   "subtitle": "Knit from fine 80s 2-ply Egyptian cotton and silk blend with knit collar",
+   "gender": "men",
+   "category": "Shirts & Overshirts",
+   "collection": "Minimalist Resort",
+   "price": 2499,
+   "mrp": 3499,
+   "discountPercent": 28,
+   "colors": [
+    {
+     "name": "Dark Forest",
+     "hex": "#2B3D2E",
+     "images": [
+      "https://images.unsplash.com/photo-1581655353564-df123a1eb820?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Deep Navy",
+     "hex": "#182436",
+     "images": [
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Obsidian Black",
+     "hex": "#141414",
+     "images": [
+      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    },
+    {
+     "size": "XXL",
+     "inStock": true
+    }
+   ],
+   "fit": "Modern Tailored Fit",
+   "fabric": "85% Long-Staple Cotton, 15% Mulberry Silk",
+   "care": [
+    "Gentle machine wash cold",
+    "Lay flat to dry"
+   ],
+   "occasion": "Resort & Casual Chic",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'0\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Lustrous silk finish that resists pilling",
+    "Seamless knitted collar",
+    "Mother of pearl buttons"
+   ],
+   "fitNotes": "Athletic cut through the chest with clean sleeve taper.",
+   "styleNotes": "Wear with our pleated khadi trousers or linen shorts.",
+   "manufacturing": {
+    "origin": "Tiruppur",
+    "artisanCluster": "Fine Knitwear Guild",
+    "sustainableNote": "OEKO-TEX certified organic yarns."
+   }
+  },
+  {
+   "id": "prod-12",
+   "title": "Raw Matka Silk Ceremonial Sherwani",
+   "slug": "raw-matka-silk-ceremonial-sherwani",
+   "subtitle": "Grand ceremonial outerwear with architectural cut and vintage bullion buttons",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "The Festive Silk Edit",
+   "price": 14500,
+   "mrp": 18900,
+   "discountPercent": 23,
+   "colors": [
+    {
+     "name": "Royal Ivory",
+     "hex": "#F5F2EB",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Midnight Prussian",
+     "hex": "#152238",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    },
+    {
+     "size": "XXL",
+     "inStock": true
+    }
+   ],
+   "fit": "Ceremonial Royal Cut",
+   "fabric": "100% Handloom Matka Silk",
+   "care": [
+    "Strictly professional dry clean"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "LIMITED"
+   ],
+   "modelInfo": {
+    "height": "6'2\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Heavy matka slub with rich drape weight",
+    "Pure silver zari bullion buttons",
+    "Concealed inner passport pocket"
+   ],
+   "fitNotes": "Structured horsehair-interfaced chest piece.",
+   "styleNotes": "Pair with matching Matka silk churidar and hand-embroidered pashmina stole.",
+   "manufacturing": {
+    "origin": "Murshidabad",
+    "artisanCluster": "Matka Silk Weavers",
+    "sustainableNote": "100% handspun and hand-loomed."
+   }
+  },
+  {
+   "id": "prod-13",
+   "title": "Draped Khadi Dhoti Trousers",
+   "slug": "draped-khadi-dhoti-trousers",
+   "subtitle": "Contemporary pre-pleated cowl trousers engineered with modern waistband closure",
+   "gender": "men",
+   "category": "Pleated Trousers",
+   "collection": "The Festive Silk Edit",
+   "price": 3200,
+   "mrp": 4200,
+   "discountPercent": 24,
+   "colors": [
+    {
+     "name": "Chalk Ivory",
+     "hex": "#F8F6F0",
+     "images": [
+      "https://images.unsplash.com/photo-1490114538077-0a7f8cb49891?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Jet Black",
+     "hex": "#1A1816",
+     "images": [
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Fluid Tapered Dhoti",
+   "fabric": "Handspun Fine Organic Khadi Cotton",
+   "care": [
+    "Gentle wash",
+    "Steam press"
+   ],
+   "occasion": "Festive & Ceremonial",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'0\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Pre-stitched asymmetric cowl drapes",
+    "Flat front waistband with side elastication",
+    "Dual side zip pockets"
+   ],
+   "fitNotes": "Effortless slip-on design with authentic dhoti silhouette.",
+   "styleNotes": "Wear with short silk kurtas or structured bandhgalas.",
+   "manufacturing": {
+    "origin": "Ahmedabad",
+    "artisanCluster": "Sabarmati Khadi Ashram",
+    "sustainableNote": "Zero-carbon handspun cotton."
+   }
+  },
+  {
+   "id": "prod-14",
+   "title": "Chanderi Silk Brocade Waistcoat",
+   "slug": "chanderi-silk-brocade-waistcoat",
+   "subtitle": "Sleeveless celebratory waistcoat with miniature floral booties",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "The Festive Silk Edit",
+   "price": 4800,
+   "mrp": 6200,
+   "discountPercent": 22,
+   "colors": [
+    {
+     "name": "Emerald Green",
+     "hex": "#1E4331",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Burgundy Wine",
+     "hex": "#581825",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Slim Tailored",
+   "fabric": "Chanderi Silk & Zari Weave",
+   "care": [
+    "Dry clean only"
+   ],
+   "occasion": "Festive & Occasion",
+   "badges": [
+    "POPULAR"
+   ],
+   "modelInfo": {
+    "height": "6'1\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Mandarin stand collar",
+    "Hand-stitched welt pockets",
+    "Pure silk lining"
+   ],
+   "fitNotes": "Snug tailored fit through torso.",
+   "styleNotes": "Layer over white linen shirts for destination weddings.",
+   "manufacturing": {
+    "origin": "Chanderi, MP",
+    "artisanCluster": "Chanderi Weavers Guild",
+    "sustainableNote": "Direct-from-weaver GI certified."
+   }
+  },
+  {
+   "id": "prod-15",
+   "title": "European Flax Tailored Shorts",
+   "slug": "european-flax-tailored-shorts",
+   "subtitle": "Bespoke pleated linen shorts tailored with extended waistband and coin pocket",
+   "gender": "men",
+   "category": "Pleated Trousers",
+   "collection": "Minimalist Resort",
+   "price": 2850,
+   "mrp": 3600,
+   "discountPercent": 21,
+   "colors": [
+    {
+     "name": "Warm Ecru",
+     "hex": "#EFE7DA",
+     "images": [
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Terracotta Rust",
+     "hex": "#B75D43",
+     "images": [
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Relaxed Tailored Bermuda",
+   "fabric": "100% Normandy Flax Linen (60 Lea)",
+   "care": [
+    "Machine wash cold",
+    "Line dry in shade"
+   ],
+   "occasion": "Resort & Casual Chic",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'0\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Double forward pleats",
+    "Side adjusters with brass buckles",
+    "7.5-inch inseam"
+   ],
+   "fitNotes": "Mid-rise waist designed for breezy tropical temperatures.",
+   "styleNotes": "Wear with our linen overshirts and woven leather sandals.",
+   "manufacturing": {
+    "origin": "Coimbatore",
+    "artisanCluster": "Southern Textile Hub",
+    "sustainableNote": "Rain-fed European flax fibers."
+   }
+  },
+  {
+   "id": "prod-16",
+   "title": "Artisanal Hand-Stitched Mojaris",
+   "slug": "artisanal-hand-stitched-mojaris",
+   "subtitle": "Supple handcrafted vegetable-tanned leather footwear with cushioned footbed",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "The Festive Silk Edit",
+   "price": 3950,
+   "mrp": 4990,
+   "discountPercent": 20,
+   "colors": [
+    {
+     "name": "Cognac Tan",
+     "hex": "#8C532E",
+     "images": [
+      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Antique Black",
+     "hex": "#1E1D1B",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Molds to Foot Contour",
+   "fabric": "Vegetable Tanned Leather & Memory Foam",
+   "care": [
+    "Wipe clean with dry cloth",
+    "Condition with neutral leather balm"
+   ],
+   "occasion": "Festive & Ceremonial",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "6'1\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Ergonomic cushioned footbed prevents festive fatigue",
+    "Pure leather sole with non-slip heel rubber tap",
+    "Tone-on-tone corded embroidery"
+   ],
+   "fitNotes": "Fits snug initially and gently stretches to your exact foot shape within 2 wears.",
+   "styleNotes": "The definitive finishing touch for any VANYA bandhgala or kurta ensemble.",
+   "manufacturing": {
+    "origin": "Jodhpur",
+    "artisanCluster": "Mojari Leather Guild",
+    "sustainableNote": "Naturally tanned with babool tree bark extracts."
+   }
+  },
+  {
+   "id": "prod-17",
+   "title": "Banarasi Zari Hand-Woven Katan Saree",
+   "slug": "banarasi-zari-hand-woven-katan-saree",
+   "subtitle": "Heirloom pit-loom pure silk saree with kadhwa gold and silver motifs",
+   "gender": "women",
+   "category": "Modern Sarees",
+   "collection": "The Festive Silk Edit",
+   "price": 12800,
+   "mrp": 16500,
+   "discountPercent": 22,
+   "colors": [
+    {
+     "name": "Crimson Wine",
+     "hex": "#6B1F2D",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Deep Plum",
+     "hex": "#3D1A2E",
+     "images": [
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Fluid Traditional Drape",
+   "fabric": "Pure Mulberry Katan Silk",
+   "care": [
+    "Dry clean only",
+    "Store wrapped in cotton muslin"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'8\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Takes 28 days to hand-weave on traditional pit-looms",
+    "Includes unstitched blouse piece in matching silk",
+    "Certified Silk Mark guaranteed"
+   ],
+   "fitNotes": "Generous 5.5-meter length with 1-meter blouse piece.",
+   "styleNotes": "Pair with temple gold jewelry and fresh jasmine flowers.",
+   "manufacturing": {
+    "origin": "Varanasi",
+    "artisanCluster": "Master Pit-Loom Guild",
+    "sustainableNote": "Preserves 400-year-old handloom techniques."
+   }
+  },
+  {
+   "id": "prod-18",
+   "title": "Embroidered Velvet Festive Cape Set",
+   "slug": "embroidered-velvet-festive-cape-set",
+   "subtitle": "Dramatic floor-sweeping velvet cape paired with tailored raw silk trousers",
+   "gender": "women",
+   "category": "Co-ords & Sets",
+   "collection": "The Festive Silk Edit",
+   "price": 8900,
+   "mrp": 11900,
+   "discountPercent": 25,
+   "colors": [
+    {
+     "name": "Midnight Navy",
+     "hex": "#182436",
+     "images": [
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Rich Crimson",
+     "hex": "#7A1F2D",
+     "images": [
+      "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    }
+   ],
+   "fit": "Structured Flowing Silhouette",
+   "fabric": "Micro-Velvet & Raw Mulberry Silk",
+   "care": [
+    "Dry clean only"
+   ],
+   "occasion": "Cocktail & Contemporary Festive",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "5'9\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Marodi and dori embroidery along cape lapel",
+    "Includes matching raw silk bustier top",
+    "High-waisted straight-leg trousers with concealed zip"
+   ],
+   "fitNotes": "Cape cut loosely to drape over shoulders gracefully.",
+   "styleNotes": "Style with modern geometric polki earrings and sleek stilettos.",
+   "manufacturing": {
+    "origin": "Jaipur",
+    "artisanCluster": "Royal Zardozi Atelier",
+    "sustainableNote": "Hand-embroidered by women artisan collectives."
+   }
+  },
+  {
+   "id": "prod-19",
+   "title": "Pleated Tissue Silk Anarkali Gown",
+   "slug": "pleated-tissue-silk-anarkali-gown",
+   "subtitle": "Luminescent tissue silk gown with accordion pleats and gota-edged dupatta",
+   "gender": "women",
+   "category": "Dresses",
+   "collection": "The Festive Silk Edit",
+   "price": 9400,
+   "mrp": 12500,
+   "discountPercent": 24,
+   "colors": [
+    {
+     "name": "Champagne Gold",
+     "hex": "#DEC6A5",
+     "images": [
+      "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Rose Gold",
+     "hex": "#D4A49C",
+     "images": [
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    }
+   ],
+   "fit": "Empire Waist Flared",
+   "fabric": "Handwoven Tissue Silk & Pure Organza",
+   "care": [
+    "Dry clean only",
+    "Do not steam accordion pleats directly"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "POPULAR"
+   ],
+   "modelInfo": {
+    "height": "5'7\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Sunray accordion pleated kalis create 6-meter flair",
+    "Keyhole back with handcrafted latkans",
+    "Delicate organza dupatta with hand-beaten gota"
+   ],
+   "fitNotes": "Fitted through bust, generous flare from waist down.",
+   "styleNotes": "Pair with vintage chandeliers and metallic block heels.",
+   "manufacturing": {
+    "origin": "Chanderi",
+    "artisanCluster": "Tissue Silk Weaving Cooperative",
+    "sustainableNote": "Hand-reeled silk yarns."
+   }
+  },
+  {
+   "id": "prod-20",
+   "title": "Sculpted Raw Silk Bustier & Palazzo Co-ord",
+   "slug": "sculpted-raw-silk-bustier-palazzo-coord",
+   "subtitle": "Architectural corset-inspired crop top with wide-leg handloom silk palazzos",
+   "gender": "women",
+   "category": "Co-ords & Sets",
+   "collection": "Minimalist Resort",
+   "price": 6400,
+   "mrp": 8200,
+   "discountPercent": 21,
+   "colors": [
+    {
+     "name": "Moonlit Ivory",
+     "hex": "#F4F1EA",
+     "images": [
+      "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Emerald Green",
+     "hex": "#1C3B2B",
+     "images": [
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    }
+   ],
+   "fit": "Contoured Bustier with Fluid Palazzos",
+   "fabric": "Pure Raw Matka Silk",
+   "care": [
+    "Dry clean recommended"
+   ],
+   "occasion": "Resort & Casual Chic",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "5'8\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Soft-boned bodice offers natural structure without stiffness",
+    "Flowing wide-leg trousers with slant pockets",
+    "Smocked elastic back panel for adaptive fit"
+   ],
+   "fitNotes": "Bustier adapts up to 1.5 inches around the ribcage.",
+   "styleNotes": "Style with chunky gold cuffs and a minimalist silk blazer.",
+   "manufacturing": {
+    "origin": "Bengal",
+    "artisanCluster": "Bengal Handloom Hub",
+    "sustainableNote": "100% natural plant-dyed raw silk."
+   }
+  },
+  {
+   "id": "prod-21",
+   "title": "Bandhani Crinkled Georgette Saree",
+   "slug": "bandhani-crinkled-georgette-saree",
+   "subtitle": "Hand-knotted artisanal bandhani tie-dye with mirrorwork sculpted blouse",
+   "gender": "women",
+   "category": "Modern Sarees",
+   "collection": "The Festive Silk Edit",
+   "price": 6850,
+   "mrp": 9200,
+   "discountPercent": 26,
+   "colors": [
+    {
+     "name": "Ruby Vermilion",
+     "hex": "#9E2A2B",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Mustard Ochre",
+     "hex": "#D49B28",
+     "images": [
+      "https://images.unsplash.com/photo-1596783074918-c84cb06531ca?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Midnight Indigo",
+     "hex": "#1B2A4A",
+     "images": [
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true,
+     "stockCount": 5
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 12
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 4
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 2
+    }
+   ],
+   "fit": "Fluid Traditional Drape",
+   "fabric": "Pure Crinkled Bemberg Georgette",
+   "care": [
+    "Dry clean only",
+    "Do not iron directly over bandhani knots"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "NEW",
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'8\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Authentic micro-dot tie-dye hand-knotted by artisans in Kutch, Gujarat",
+    "Accompanied by custom-tailored sweetheart neck blouse with hand-cut mirrorwork",
+    "Natural crinkled texture creates flattering fall without requiring heavy pleat pins"
+   ],
+   "fitNotes": "Standard 5.5-meter saree length with stitched fall and complimentary unstitched blouse fabric.",
+   "styleNotes": "Pair with antique silver kadas and a sleek bun with fresh gajra flowers.",
+   "manufacturing": {
+    "origin": "Bhuj, Gujarat",
+    "artisanCluster": "Kutch Bandhani Collective",
+    "sustainableNote": "AZO-free eco plant dyes."
+   }
+  },
+  {
+   "id": "prod-22",
+   "title": "Chanderi Hand-Block Anarkali & Churidar Set",
+   "slug": "chanderi-hand-block-anarkali-churidar-set",
+   "subtitle": "Flared kalidar silhouette with hand-carved teak block motifs and zari borders",
+   "gender": "women",
+   "category": "Festive Silk Edit",
+   "collection": "The Festive Silk Edit",
+   "price": 5490,
+   "mrp": 7500,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Sage Willow",
+     "hex": "#78866B",
+     "images": [
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Dusty Rose",
+     "hex": "#C08081",
+     "images": [
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 10
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 14
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 7
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 3
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 2
+    }
+   ],
+   "fit": "Empire Waist Flared",
+   "fabric": "Pure Chanderi Silk-Cotton with Mulmul Lining",
+   "care": [
+    "Gentle hand wash or dry clean",
+    "Steam iron reverse side"
+   ],
+   "occasion": "Festive & Occasion",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'9\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "16-kali kalidar flared cut engineered for sweeping fluidity without heavy stiffness",
+    "Hand-carved botanical floral buttis printed using natural vegetable pigments",
+    "Includes breathable stretch-cotton churidar and fine zari-bordered silk dupatta"
+   ],
+   "fitNotes": "Fitted across the bust and high ribcage, cascading into a 5-meter hemline flare.",
+   "styleNotes": "Style with delicate chandbalis and handcrafted mojari juttis.",
+   "manufacturing": {
+    "origin": "Sanganer, Rajasthan",
+    "artisanCluster": "Master Block Printers Guild",
+    "sustainableNote": "Pure natural block printing with rainwater recycling."
+   }
+  },
+  {
+   "id": "prod-23",
+   "title": "Asymmetric Silk Cape & Draped Dhoti Set",
+   "slug": "asymmetric-silk-cape-draped-dhoti-set",
+   "subtitle": "High-fashion fluid Indo-Western coordinates in luminous spun silk",
+   "gender": "women",
+   "category": "Co-ords & Sets",
+   "collection": "Minimalist Resort",
+   "price": 5950,
+   "mrp": 8200,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Burnt Terracotta",
+     "hex": "#C06C52",
+     "images": [
+      "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Midnight Emerald",
+     "hex": "#1C3B2B",
+     "images": [
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Modern Drape Co-ord",
+   "fabric": "Handloom Spun Mulberry Silk",
+   "care": [
+    "Dry clean only"
+   ],
+   "occasion": "Cocktail & Contemporary Festive",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "5'10\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Sculptural one-shoulder cape with asymmetrical handkerchief hem",
+    "Pre-stitched pleated dhoti trousers with side seam pockets and soft waistband",
+    "Internal non-slip silicone tape along bustline for confident movement"
+   ],
+   "fitNotes": "Dhoti trousers fit comfortably at the natural waistline with elasticated back.",
+   "styleNotes": "Pair with sculptural brass cuffs and metallic strappy heels.",
+   "manufacturing": {
+    "origin": "Bengaluru",
+    "artisanCluster": "Spun Silk Guild",
+    "sustainableNote": "Cruelty-free Ahimsa silk yarns."
+   }
+  },
+  {
+   "id": "prod-24",
+   "title": "Organza Tiered Festive Lehenga Skirt & Blouse",
+   "slug": "organza-tiered-festive-lehenga-skirt-blouse",
+   "subtitle": "Sculpted micro-pleated blouse paired with ethereal three-tiered organza lehenga",
+   "gender": "women",
+   "category": "Co-ords & Sets",
+   "collection": "The Festive Silk Edit",
+   "price": 9450,
+   "mrp": 13500,
+   "discountPercent": 30,
+   "colors": [
+    {
+     "name": "Lavender Lilac",
+     "hex": "#A58BB0",
+     "images": [
+      "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Ivory Gold",
+     "hex": "#F4EEDC",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Sculpted Waist with Voluminous Flare",
+   "fabric": "Pure Silk Organza & Raw Silk Lining",
+   "care": [
+    "Dry clean only"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "LIMITED EDITION"
+   ],
+   "modelInfo": {
+    "height": "5'9\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Three cascading tiered circular tiers framed with micro-horsehair hemlines for structural bounce",
+    "Backless blouse with crisscross dori and hand-beaten gold bell tassels",
+    "Dual hidden side pockets integrated into the lehenga side seams"
+   ],
+   "fitNotes": "Adjustable drawstring waistband accommodates a range of waist sizes effortlessly.",
+   "styleNotes": "Pair with statement uncut diamond polki necklace and soft beach waves.",
+   "manufacturing": {
+    "origin": "Varanasi & Delhi",
+    "artisanCluster": "Heritage Couture Atelier",
+    "sustainableNote": "Zero-waste pattern cutting."
+   }
+  },
+  {
+   "id": "prod-25",
+   "title": "Crushed Tissue Silk Peplum & Sharara Set",
+   "slug": "crushed-tissue-silk-peplum-sharara-set",
+   "subtitle": "Luminescent metallic sheen with flared knee-gathered tiered sharara pants",
+   "gender": "women",
+   "category": "Festive Silk Edit",
+   "collection": "The Festive Silk Edit",
+   "price": 6250,
+   "mrp": 8800,
+   "discountPercent": 29,
+   "colors": [
+    {
+     "name": "Warm Champagne",
+     "hex": "#DEC6A5",
+     "images": [
+      "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Rosewood Plum",
+     "hex": "#9A4858",
+     "images": [
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    },
+    {
+     "size": "XXL",
+     "inStock": true
+    }
+   ],
+   "fit": "Tailored Peplum & Flared Sharara",
+   "fabric": "Loom-Crushed Metallic Tissue Silk",
+   "care": [
+    "Dry clean only"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'8\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Empire-line cinched peplum top with concealed side zipper and organza sleeve cuffs",
+    "Double-flared sharara trousers lined with mulmul cotton for zero irritation",
+    "Artisanal hand-beaten gold marodi embroidery along neck and hem"
+   ],
+   "fitNotes": "Peplum fits tailored at the bust; sharara is generously cut for ease of movement.",
+   "styleNotes": "Style with emerald drop earrings and metallic platform heels.",
+   "manufacturing": {
+    "origin": "Chanderi",
+    "artisanCluster": "Tissue Silk Weavers",
+    "sustainableNote": "Certified natural silk."
+   }
+  },
+  {
+   "id": "prod-26",
+   "title": "Draped Crepe Silk Cowl Jumpsuit",
+   "slug": "draped-crepe-silk-cowl-jumpsuit",
+   "subtitle": "Effortless one-piece statement silhouette with handcrafted leather-corded belt",
+   "gender": "women",
+   "category": "Dresses",
+   "collection": "Contemporary Atelier",
+   "price": 4750,
+   "mrp": 6500,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Midnight Olive",
+     "hex": "#404E3B",
+     "images": [
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Onyx Black",
+     "hex": "#1A1816",
+     "images": [
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Fluid Relaxed Tailored",
+   "fabric": "Heavy Pure Crepe de Chine Silk",
+   "care": [
+    "Dry clean only",
+    "Cool iron on reverse"
+   ],
+   "occasion": "Cocktail & Contemporary Festive",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "5'10\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Sculptural cowl neckline drapes effortlessly across the collarbone",
+    "Tapered pleat trousers with concealed side zipper and slant pockets",
+    "Detachable hand-braided leather and silk corded belt with brass aglets"
+   ],
+   "fitNotes": "True to size with an easy draped fit through torso and hips.",
+   "styleNotes": "Pair with bold gold hoops and sleek pointed mules.",
+   "manufacturing": {
+    "origin": "Mumbai",
+    "artisanCluster": "Contemporary Draping Guild",
+    "sustainableNote": "Ethical boutique manufacturing."
+   }
+  },
+  {
+   "id": "prod-27",
+   "title": "Kanjeevaram Minimalist Silk Saree",
+   "slug": "kanjeevaram-minimalist-silk-saree",
+   "subtitle": "Lightweight pure mulberry silk woven with subtle matte silver zari borders",
+   "gender": "women",
+   "category": "Modern Sarees",
+   "collection": "The Festive Silk Edit",
+   "price": 11200,
+   "mrp": 15000,
+   "discountPercent": 25,
+   "colors": [
+    {
+     "name": "Peacock Teal",
+     "hex": "#1F4E5B",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Royal Magenta",
+     "hex": "#8E2856",
+     "images": [
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Fluid Traditional Drape",
+   "fabric": "Pure Kanchipuram Mulberry Silk (Silk Mark Certified)",
+   "care": [
+    "Dry clean only",
+    "Store in pure unbleached muslin"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'8\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Re-engineered lightweight 3-ply silk construction for contemporary 8-hour ease",
+    "Matte antique silver zari pallu with subtle chevron geometric motifs",
+    "Includes 1-meter contrast unstitched blouse fabric"
+   ],
+   "fitNotes": "Full 5.5-meter drape that pleats crisply and stays in place effortlessly.",
+   "styleNotes": "Pair with heirloom heritage jewels or minimalist diamond studs.",
+   "manufacturing": {
+    "origin": "Kanchipuram, Tamil Nadu",
+    "artisanCluster": "Weavers Handloom Society",
+    "sustainableNote": "Supports 12 master weaver households."
+   }
+  },
+  {
+   "id": "prod-28",
+   "title": "Raw Matka Silk Sleeveless Draped Gown",
+   "slug": "raw-matka-silk-sleeveless-draped-gown",
+   "subtitle": "Architectural floor-length column dress with side gathering and walking slit",
+   "gender": "women",
+   "category": "Dresses",
+   "collection": "Minimalist Resort",
+   "price": 5200,
+   "mrp": 7200,
+   "discountPercent": 28,
+   "colors": [
+    {
+     "name": "Sand Dunes",
+     "hex": "#D2BBA0",
+     "images": [
+      "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Charcoal Slate",
+     "hex": "#2F353B",
+     "images": [
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true
+    },
+    {
+     "size": "S",
+     "inStock": true
+    },
+    {
+     "size": "M",
+     "inStock": true
+    },
+    {
+     "size": "L",
+     "inStock": true
+    },
+    {
+     "size": "XL",
+     "inStock": true
+    }
+   ],
+   "fit": "Contoured Column Drape",
+   "fabric": "Organic Handspun Matka Silk",
+   "care": [
+    "Dry clean only"
+   ],
+   "occasion": "Resort & Casual Chic",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "5'9\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Grecian cowl gathering at the hip conceals an internal supportive corsetry tier",
+    "High modest boatneck collar paired with deep armholes and clean knife edges",
+    "Discreet side walking slit allows uninhibited stride"
+   ],
+   "fitNotes": "Fits sleek through the hips and thighs while leaving room for walking.",
+   "styleNotes": "Pair with woven raffia clutch and sculptural hammered brass cuffs.",
+   "manufacturing": {
+    "origin": "Murshidabad, Bengal",
+    "artisanCluster": "Raw Silk Handloom Hub",
+    "sustainableNote": "Spun by women artisans on amber charkhas."
+   }
+  },
+  {
+   "id": "prod-29",
+   "title": "Hand-Loomed Linen Bandhgala in Natural Oatmeal",
+   "slug": "hand-loomed-linen-bandhgala-natural-oatmeal",
+   "subtitle": "Breathable tailored summer jacket with natural horn buttons and chest welt pocket",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "Contemporary Atelier",
+   "price": 6450,
+   "mrp": 8900,
+   "discountPercent": 28,
+   "colors": [
+    {
+     "name": "Natural Oatmeal",
+     "hex": "#E2D9CC",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Slate Navy",
+     "hex": "#243342",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 11
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 9
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 4
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 2
+    }
+   ],
+   "fit": "Structured Tailored Fit",
+   "fabric": "100% Normandy European Flax Linen (320 GSM)",
+   "care": [
+    "Dry clean only",
+    "Store on contoured cedar hanger"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "BESTSELLER",
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'1\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Semi-canvassed chest piece conforms naturally to your physique with body warmth",
+    "Dual side vents provide easy access to trouser pockets and comfort while seated",
+    "Authentic carved water-buffalo horn buttons with matte brushed finish",
+    "Half-lined in pure unbleached cotton mulmul for effortless summer breathability"
+   ],
+   "fitNotes": "True tailored silhouette. Cut close to the torso while allowing easy shoulder articulation.",
+   "styleNotes": "Pair with our Pleated Khadi Trousers and handcrafted leather mojaris for garden celebrations.",
+   "manufacturing": {
+    "origin": "Jaipur & Delhi",
+    "artisanCluster": "Master Tailoring Guild",
+    "sustainableNote": "Flax requires zero irrigation or pesticides."
+   }
+  },
+  {
+   "id": "prod-30",
+   "title": "Mulberry Silk Pintuck Evening Kurta Set",
+   "slug": "mulberry-silk-pintuck-evening-kurta-set",
+   "subtitle": "Delicate needle-pintuck bib with concealed placket and pure cotton silk churidar",
+   "gender": "men",
+   "category": "Kurtas",
+   "collection": "The Festive Silk Edit",
+   "price": 4850,
+   "mrp": 6600,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Ivory Cream",
+     "hex": "#F6F3EC",
+     "images": [
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Royal Emerald",
+     "hex": "#1B3F2E",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 14
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 10
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 5
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 3
+    }
+   ],
+   "fit": "Classic Tailored Fit",
+   "fabric": "Pure Mulberry Silk & Fine Cotton Blend",
+   "care": [
+    "Dry clean only",
+    "Steam iron on low setting"
+   ],
+   "occasion": "Festive & Ceremonial",
+   "badges": [
+    "POPULAR"
+   ],
+   "modelInfo": {
+    "height": "6'0\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Micro-pintuck needlework spaced at exact 2mm intervals across front chest yoke",
+    "Concealed placket with mother-of-pearl buttons under fabric flap",
+    "Accompanied by matching cotton-silk churidar with adjustable drawstring"
+   ],
+   "fitNotes": "Designed with 3 inches of chest ease for relaxed ceremonial comfort.",
+   "styleNotes": "Layer beneath our Chanderi Brocade Waistcoat for reception dinners.",
+   "manufacturing": {
+    "origin": "Bhagalpur",
+    "artisanCluster": "Silk Weaving Society",
+    "sustainableNote": "Ethical mulberry silk farm sourcing."
+   }
+  },
+  {
+   "id": "prod-31",
+   "title": "Regal Embroidered Raw Silk Achkan Sherwani",
+   "slug": "regal-embroidered-raw-silk-achkan-sherwani",
+   "subtitle": "Ceremonial heirloom long jacket with tone-on-tone resham botanical embroidery",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "The Festive Silk Edit",
+   "price": 12800,
+   "mrp": 17500,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Royal Ivory",
+     "hex": "#F5EFE6",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Deep Sapphire",
+     "hex": "#1A2538",
+     "images": [
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 4
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 3
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 1
+    }
+   ],
+   "fit": "Regal Tailored Silhouette",
+   "fabric": "Pure Bhagalpur Raw Matka Silk",
+   "care": [
+    "Dry clean only",
+    "Store in cotton garment bag"
+   ],
+   "occasion": "Weddings & Celebrations",
+   "badges": [
+    "EXCLUSIVE",
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "6'2\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Master artisan hand embroidery requiring 45 uninterrupted hours per garment",
+    "Custom gold-enamelled buttons cast with Mughal royal coin relief motifs",
+    "High side slits allow comfortable sitting during long wedding rituals"
+   ],
+   "fitNotes": "Fitted through shoulders and chest, falling straight past the knees.",
+   "styleNotes": "Wear with a contrasting silk safa turban and embroidered leather juttis.",
+   "manufacturing": {
+    "origin": "Lucknow & Delhi",
+    "artisanCluster": "Royal Zardozi Atelier",
+    "sustainableNote": "Supports endangered ancestral embroidery techniques."
+   }
+  },
+  {
+   "id": "prod-32",
+   "title": "Relaxed European Flax Linen Gurkha Trousers",
+   "slug": "relaxed-european-flax-linen-gurkha-trousers",
+   "subtitle": "Double inward pleats with self-fabric adjustable buckled waistband",
+   "gender": "men",
+   "category": "Pleated Trousers",
+   "collection": "Minimalist Resort",
+   "price": 3450,
+   "mrp": 4800,
+   "discountPercent": 28,
+   "colors": [
+    {
+     "name": "Desert Khaki",
+     "hex": "#C5B49D",
+     "images": [
+      "https://images.unsplash.com/photo-1490114538077-0a7f8cb49891?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Off-White Ecru",
+     "hex": "#ECE5D8",
+     "images": [
+      "https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 9
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 16
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 12
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 7
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 4
+    }
+   ],
+   "fit": "High-Rise Relaxed Taper",
+   "fabric": "Pre-Washed Pure European Linen (240 GSM)",
+   "care": [
+    "Machine wash gentle in cold water",
+    "Line dry in shade"
+   ],
+   "occasion": "Resort & Casual Chic",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "6'1\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Extended Gurkha crossover waistband with dual solid brass side-cinch buckles",
+    "Deep inward double pleats create an elegant drape while moving or seated",
+    "Finished with 1.75-inch cuffs at the hem that break cleanly over loafers"
+   ],
+   "fitNotes": "High-waisted fit. Waistband expands and contracts up to 2 inches using the side buckles.",
+   "styleNotes": "Tuck in a lightweight mandarin linen shirt for an effortless Riviera aesthetic.",
+   "manufacturing": {
+    "origin": "Coimbatore",
+    "artisanCluster": "Precision Weavers Mill",
+    "sustainableNote": "OEKO-TEX Standard 100 certified."
+   }
+  },
+  {
+   "id": "prod-33",
+   "title": "Ahimsa Organza Hand-Embroidered Anarkali Ensemble",
+   "slug": "ahimsa-organza-hand-embroidered-anarkali-ensemble",
+   "subtitle": "Floor-skimming flared silhouette with beaten zardozi yoke and sheer mulmul stole",
+   "gender": "women",
+   "category": "Dresses",
+   "collection": "Festive Silk Edit",
+   "price": 6850,
+   "mrp": 9200,
+   "discountPercent": 25,
+   "colors": [
+    {
+     "name": "Amber Ochre",
+     "hex": "#D49B42",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Rosewater Blush",
+     "hex": "#DEB3AD",
+     "images": [
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true,
+     "stockCount": 4
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 11
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 15
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 5
+    },
+    {
+     "size": "XXL",
+     "inStock": false,
+     "stockCount": 0
+    }
+   ],
+   "fit": "Voluminous Flared Silhouette with Fitted Empire Bodice",
+   "fabric": "100% Handloom Ahimsa Organza & Organic Mulmul Cotton Lining",
+   "care": [
+    "Specialist dry clean only",
+    "Store in unbleached cotton bag with cedar balls"
+   ],
+   "occasion": "Ceremonial Sangeet & Festive Soirée",
+   "badges": [
+    "EXCLUSIVE",
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "5'9\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "32-panel circular kalidar flare creates an expansive 5.5-meter swirling circumference",
+    "Hand-stitched real silver threadwork along the neckline, cuff edges, and empire waist",
+    "Includes dyed-to-match pre-draped organza dupatta with scalloped hand-cut borders"
+   ],
+   "fitNotes": "True to bespoke sizing across shoulders and bust; free-flowing from under the bust down.",
+   "styleNotes": "Accessorize with polki chandelier earrings and raw silk embroidered juttis.",
+   "manufacturing": {
+    "origin": "Varanasi & Lucknow",
+    "artisanCluster": "Mubarakpur Master Weavers Guild",
+    "sustainableNote": "Ethical Ahimsa sericulture where silkworms complete natural life cycle."
+   }
+  },
+  {
+   "id": "prod-34",
+   "title": "Yeola Paithani Brocade Corset & Tiered Leheriya Skirt",
+   "slug": "yeola-paithani-brocade-corset-tiered-leheriya-skirt",
+   "subtitle": "Sculpted boned bodice featuring handwoven peacock motifs with flowy silk leheriya skirt",
+   "gender": "women",
+   "category": "Co-ords & Sets",
+   "collection": "Modern Heritage",
+   "price": 7400,
+   "mrp": 9900,
+   "discountPercent": 25,
+   "colors": [
+    {
+     "name": "Peacock Teal",
+     "hex": "#1B5B66",
+     "images": [
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Saffron Vermilion",
+     "hex": "#C84B31",
+     "images": [
+      "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true,
+     "stockCount": 3
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 7
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 12
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 3
+    }
+   ],
+   "fit": "Sculpted Boned Silhouette with A-Line Tiered Skirt",
+   "fabric": "Pure Mulberry Paithani Brocade & Hand-Dyed Chiffon Silk",
+   "care": [
+    "Dry clean only",
+    "Keep away from direct heat and water spray"
+   ],
+   "occasion": "Cocktail Gala & Festive Evenings",
+   "badges": [
+    "LIMITED EDITION"
+   ],
+   "modelInfo": {
+    "height": "5'8\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Structured corset top engineered with 10 flexible comfort-stays for regal posture",
+    "Pure metallic tested zari pallu motifs individually hand-interlocked into the weave",
+    "Tiered skirt features concealed waistband with hand-braided silk drawstrings"
+   ],
+   "fitNotes": "Corset includes back lace-up closure enabling half-size expansion or cinch.",
+   "styleNotes": "Pair with minimal architectural gold cuffs and an emerald choker.",
+   "manufacturing": {
+    "origin": "Yeola, Maharashtra",
+    "artisanCluster": "Godavari Traditional Silk Weavers",
+    "sustainableNote": "Supports 6th-generation pit-loom weavers preserving ancient tapestries."
+   }
+  },
+  {
+   "id": "prod-35",
+   "title": "Tissue Georgette Gota Patti Pre-Draped Saree",
+   "slug": "tissue-georgette-gota-patti-pre-draped-saree",
+   "subtitle": "Effortless 30-second zip-and-hook drape with hand-appliqued silver gota ribbonwork",
+   "gender": "women",
+   "category": "Modern Sarees",
+   "collection": "The Festive Edit",
+   "price": 6200,
+   "mrp": 8500,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Champagne Gold",
+     "hex": "#D8C596",
+     "images": [
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Dusty Mauve",
+     "hex": "#A48B96",
+     "images": [
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 14
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 20
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 12
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 5
+    }
+   ],
+   "fit": "Pre-Pleated Ergonomic Silhouette with Adjustable Hook Waistband",
+   "fabric": "Lightweight Shimmer Tissue Georgette with Pure Silver Lurex Weft",
+   "care": [
+    "Gentle dry clean",
+    "Iron on reverse over parchment paper"
+   ],
+   "occasion": "Destination Weddings & Receptions",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "5'10\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Engineered pleated fall falls uniformly without needing any safety pins",
+    "Authentic Jaipur Gota Patti hand-cut and hammered into geometric borders",
+    "Includes structured matching sleeveless blouse with padded cups and side zipper"
+   ],
+   "fitNotes": "Fits waist circumferences between 24 and 38 inches with 3-tier hook settings.",
+   "styleNotes": "Drape the pallu over your forearm and wear with minimalist dewy makeup.",
+   "manufacturing": {
+    "origin": "Jaipur, Rajasthan",
+    "artisanCluster": "Hawa Mahal Gota Guild",
+    "sustainableNote": "Zero fabric wastage during precise pattern cutting."
+   }
+  },
+  {
+   "id": "prod-36",
+   "title": "Superfine Khadi Mulmul Chikan Embroidered Overlay Gown",
+   "slug": "superfine-khadi-mulmul-chikan-embroidered-overlay-gown",
+   "subtitle": "Bespoke Lucknowi shadow-work embroidery on gossamer handspun khadi cotton",
+   "gender": "women",
+   "category": "Dresses",
+   "collection": "Artisanal Elegance",
+   "price": 4600,
+   "mrp": 6200,
+   "discountPercent": 26,
+   "colors": [
+    {
+     "name": "Ivory Pearl",
+     "hex": "#F7F4EE",
+     "images": [
+      "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Soft Pistachio",
+     "hex": "#D3DFD2",
+     "images": [
+      "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "XS",
+     "inStock": true,
+     "stockCount": 5
+    },
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 13
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 17
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 9
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 4
+    }
+   ],
+   "fit": "Empire-Cut Floating Silhouette with Fluid Hem",
+   "fabric": "100% Hand-Spun 120s Count Organic Khadi Mulmul",
+   "care": [
+    "Hand wash cold with gentle organic detergent",
+    "Dry in shade"
+   ],
+   "occasion": "Daytime Mehendi & Elegant Luncheons",
+   "badges": [
+    "POPULAR"
+   ],
+   "modelInfo": {
+    "height": "5'7\"",
+    "wearingSize": "S"
+   },
+   "details": [
+    "Features 32 traditional chikan stitches including Bakhiya, Phanda, and Keel Kangan",
+    "Inner detached modal silk slip provides smooth coverage while remaining breathable",
+    "Fine mother-of-pearl buttons run down the center back closure"
+   ],
+   "fitNotes": "Relaxed breezy fit with flattering contoured shoulders.",
+   "styleNotes": "Pair with antique silver temple jewelry and woven mojris.",
+   "manufacturing": {
+    "origin": "Lucknow, Uttar Pradesh",
+    "artisanCluster": "Awadh Women Craft Consortium",
+    "sustainableNote": "Certified Fair Trade supporting 120 rural women artisans with direct living wages."
+   }
+  },
+  {
+   "id": "prod-37",
+   "title": "Raw Tussar Silk Angrakha Jacket & Wide-Leg Palazzo Set",
+   "slug": "raw-tussar-silk-angrakha-jacket-wide-leg-palazzo-set",
+   "subtitle": "Cross-over Mughal court silhouette with contrast pipings and fluid silk trousers",
+   "gender": "women",
+   "category": "Co-ords & Sets",
+   "collection": "Modern Heritage",
+   "price": 5800,
+   "mrp": 7900,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Burnt Terracotta",
+     "hex": "#B85D43",
+     "images": [
+      "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Deep Onyx",
+     "hex": "#211F20",
+     "images": [
+      "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 16
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 10
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 3
+    }
+   ],
+   "fit": "Tailored Wrap Jacket with Dramatic Wide-Leg Trouser",
+   "fabric": "Wild Cultivated Bhagalpur Tussar Silk (220 GSM)",
+   "care": [
+    "Professional dry clean recommended",
+    "Steam iron with protective press cloth"
+   ],
+   "occasion": "Art Openings & Formal Cultural Evenings",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "5'9\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Angrakha wrap fastened by hand-spun silk tassels with beaten brass beads",
+    "Natural slub texture unique to wild tussar cocoons with organic gold sheen",
+    "Trousers engineered with clean front waistband and hidden elastic back panel"
+   ],
+   "fitNotes": "Adjustable wrap tie fits close to the torso while pants drape effortlessly.",
+   "styleNotes": "Style with geometric brass earrings and a structured mini potli.",
+   "manufacturing": {
+    "origin": "Bhagalpur & Maheshwar",
+    "artisanCluster": "Tussar Handloom Federation",
+    "sustainableNote": "Naturally harvested wild forest silk dyed with pomegranate rind."
+   }
+  },
+  {
+   "id": "prod-38",
+   "title": "Kashmiri Aari Needle-Embroidered Pashmina Bandhgala",
+   "slug": "kashmiri-aari-needle-embroidered-pashmina-bandhgala",
+   "subtitle": "Micro-needle hand embroidery along mandarin collar and cuffs on pure Himalayan cashmere",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "Ceremonial & Evening",
+   "price": 9500,
+   "mrp": 13500,
+   "discountPercent": 30,
+   "colors": [
+    {
+     "name": "Obsidian Jet",
+     "hex": "#1A1918",
+     "images": [
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Regal Navy",
+     "hex": "#18233C",
+     "images": [
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 5
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 11
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 14
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 4
+    }
+   ],
+   "fit": "Structured Tailored Italian-Indian Bespoke Silhouette",
+   "fabric": "100% Changthangi Mountain Pashmina Cashmere (320 GSM)",
+   "care": [
+    "Specialist dry clean only",
+    "Store in breathable cedar-lined garment bag"
+   ],
+   "occasion": "Grand Wedding Reception & Black-Tie Gala",
+   "badges": [
+    "EXCLUSIVE",
+    "LIMITED"
+   ],
+   "modelInfo": {
+    "height": "6'2\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Hand-embroidered using an ultra-fine aari hooked needle over 80 artisan hours",
+    "Internal full canvas construction creates a lasting, contouring chest roll",
+    "Handmade brass antique lion crest buttons sourced from Old Delhi coin-smiths"
+   ],
+   "fitNotes": "Tailored fit through the chest and waist with padded natural shoulders.",
+   "styleNotes": "Pair with ivory silk breeches and polished black Oxford shoes.",
+   "manufacturing": {
+    "origin": "Srinagar, Kashmir",
+    "artisanCluster": "Downtown Srinagar Master Karigar Guild",
+    "sustainableNote": "Certified GI-tagged Pashmina ethically combed from nomadic Changpa herds."
+   }
+  },
+  {
+   "id": "prod-39",
+   "title": "Murshidabad Mulberry Silk Asymmetric Pintuck Kurta",
+   "slug": "murshidabad-mulberry-silk-asymmetric-pintuck-kurta",
+   "subtitle": "Hand-pleated micro pintucks running obliquely across luminous handloom silk",
+   "gender": "men",
+   "category": "Kurtas",
+   "collection": "The Festive Edit",
+   "price": 4200,
+   "mrp": 5800,
+   "discountPercent": 28,
+   "colors": [
+    {
+     "name": "Moonlit Ivory",
+     "hex": "#FAF6F0",
+     "images": [
+      "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Deep Jamun Plum",
+     "hex": "#3C1B33",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 7
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 15
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 18
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 10
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 5
+    }
+   ],
+   "fit": "Modern Slim-Straight Silhouette with Asymmetric Hemline",
+   "fabric": "Pure Handwoven Murshidabad Mulberry Silk",
+   "care": [
+    "Dry clean or gentle hand wash with reetha soapnut",
+    "Line dry in shade"
+   ],
+   "occasion": "Festive Sangeet & Intimate Cocktails",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "6'0\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Diagonal knife-pleats meticulously pressed by hand prior to garment tailoring",
+    "Concealed placket with hidden Japanese mother-of-pearl buttons",
+    "Side slits reinforced with hand-tacked bar tacks for effortless movement"
+   ],
+   "fitNotes": "Straight clean drape with modern ease around the arms and chest.",
+   "styleNotes": "Wear over slim ecru churidar bottoms or pleated tapered linen trousers.",
+   "manufacturing": {
+    "origin": "Murshidabad, West Bengal",
+    "artisanCluster": "Ganges Silk Weaver Cooperative",
+    "sustainableNote": "Traditional wooden pit-loom weaving with zero electrical power consumed."
+   }
+  },
+  {
+   "id": "prod-40",
+   "title": "Handspun Khadi & Ghicha Silk Reversible Nehru Gilet",
+   "slug": "handspun-khadi-ghicha-silk-reversible-nehru-gilet",
+   "subtitle": "Dual-tone ceremonial vest with contrast welt pockets and genuine horn buttons",
+   "gender": "men",
+   "category": "Bandhgalas & Jackets",
+   "collection": "Artisanal Essentials",
+   "price": 3800,
+   "mrp": 5200,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Sandstone / Forest",
+     "hex": "#C8B89E",
+     "images": [
+      "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Slate Charcoal / Crimson",
+     "hex": "#414144",
+     "images": [
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 6
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 14
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 16
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 9
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 4
+    }
+   ],
+   "fit": "Structured Classic Sleeveless Nehru Silhouette",
+   "fabric": "50% Handspun Cotton Khadi, 50% Organic Ghicha Wild Silk",
+   "care": [
+    "Dry clean recommended",
+    "Steam iron warm"
+   ],
+   "occasion": "Festive Luncheons & Evening Celebrations",
+   "badges": [
+    "NEW"
+   ],
+   "modelInfo": {
+    "height": "6'1\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Completely reversible dual-side construction with clean piped seams",
+    "Structured mandarin stand collar that maintains its shape all evening",
+    "Dual welt chest pocket designed to hold bespoke folded silk pocket squares"
+   ],
+   "fitNotes": "Tailored fit that layers comfortably over kurtas or collared shirts.",
+   "styleNotes": "Reverse the gilet from daytime sandstone to night-time jewel tones.",
+   "manufacturing": {
+    "origin": "Wardha, Maharashtra",
+    "artisanCluster": "Gramodaya Khadi Weaver Ashram",
+    "sustainableNote": "Spun on 8-spindle Amber Charkhas; 100% carbon-neutral fabrication."
+   }
+  },
+  {
+   "id": "prod-41",
+   "title": "Normandy Flax Linen Mandarin Safari Overshirt",
+   "slug": "normandy-flax-linen-mandarin-safari-overshirt",
+   "subtitle": "Long-staple European linen with bellowed chest pockets and mother-of-pearl buttons",
+   "gender": "men",
+   "category": "Linen & Silk Shirts",
+   "collection": "Minimalist Resort",
+   "price": 3600,
+   "mrp": 4900,
+   "discountPercent": 27,
+   "colors": [
+    {
+     "name": "Olive Sage",
+     "hex": "#6B7A66",
+     "images": [
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1490114538077-0a7f8cb49891?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Marine Indigo",
+     "hex": "#283C5A",
+     "images": [
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 9
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 18
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 15
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 7
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 5
+    }
+   ],
+   "fit": "Relaxed Tailored Over-Shirt Fit",
+   "fabric": "100% Pure Normandy Flax Linen (60s Lea Count)",
+   "care": [
+    "Machine wash cold on gentle",
+    "Warm iron while slightly damp"
+   ],
+   "occasion": "Resort Weekends & Casual Dinners",
+   "badges": [
+    "POPULAR"
+   ],
+   "modelInfo": {
+    "height": "6'0\"",
+    "wearingSize": "M"
+   },
+   "details": [
+    "Pre-washed garment enzyme finish gives an ultra-soft vintage drape",
+    "Gusseted dual chest pockets with button-down flaps",
+    "Curved hemline designed to be worn untucked over trousers or shorts"
+   ],
+   "fitNotes": "Slightly relaxed in the body to allow easy layering over a crew neck.",
+   "styleNotes": "Wear open over a white supima cotton tee or buttoned up to the neck.",
+   "manufacturing": {
+    "origin": "Normandy & New Delhi Atelier",
+    "artisanCluster": "Atelier Tailoring Guild",
+    "sustainableNote": "Rain-irrigated flax cultivated without synthetic fertilizers or GMOs."
+   }
+  },
+  {
+   "id": "prod-42",
+   "title": "Belgian Linen & Matka Silk Double-Pleated Bandmaster Trousers",
+   "slug": "belgian-linen-matka-silk-double-pleated-bandmaster-trousers",
+   "subtitle": "High-waisted tailored trousers with side adjusters and a gentle architectural taper",
+   "gender": "men",
+   "category": "Pleated Trousers",
+   "collection": "Artisanal Essentials",
+   "price": 3900,
+   "mrp": 5400,
+   "discountPercent": 28,
+   "colors": [
+    {
+     "name": "Espresso Charcoal",
+     "hex": "#2C2725",
+     "images": [
+      "https://images.unsplash.com/photo-1490114538077-0a7f8cb49891?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=1200&q=80"
+     ]
+    },
+    {
+     "name": "Sand Dune",
+     "hex": "#C8BAA6",
+     "images": [
+      "https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=1200&q=80"
+     ]
+    }
+   ],
+   "sizes": [
+    {
+     "size": "S",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "M",
+     "inStock": true,
+     "stockCount": 17
+    },
+    {
+     "size": "L",
+     "inStock": true,
+     "stockCount": 14
+    },
+    {
+     "size": "XL",
+     "inStock": true,
+     "stockCount": 8
+    },
+    {
+     "size": "XXL",
+     "inStock": true,
+     "stockCount": 4
+    }
+   ],
+   "fit": "High-Rise Tailored Taper with Forward Deep Pleats",
+   "fabric": "65% Belgian Linen, 35% Handspun Matka Silk (260 GSM)",
+   "care": [
+    "Dry clean or wash cold delicate",
+    "Steam press inside-out"
+   ],
+   "occasion": "Formal Cocktail Evenings & Summer Weddings",
+   "badges": [
+    "BESTSELLER"
+   ],
+   "modelInfo": {
+    "height": "6'2\"",
+    "wearingSize": "L"
+   },
+   "details": [
+    "Extended tab closure with hidden hook and horn button backing",
+    "Subtle slub of raw matka silk gives the linen an opulent textured sheen",
+    "Finished with 2-inch cuffs that create a sharp crease and drape over loafers"
+   ],
+   "fitNotes": "High-waisted fit; side buckle tabs allow 1.5 inches of waist adjustment.",
+   "styleNotes": "Pair with an asymmetric silk kurta or a tucked-in linen shirt.",
+   "manufacturing": {
+    "origin": "Bengaluru & Delhi",
+    "artisanCluster": "Master Tailoring Atelier",
+    "sustainableNote": "Zero-microplastic blend; certified unbleached pocket linings."
+   }
+  }
+ ],
+ "reels": [
+  {
+   "id": "reel-1",
+   "title": "The Jaipur Evening Set • Styling Look 01",
+   "caption": "How we style our handloom Chanderi wrap kurta for intimate cocktail dinners in the Pink City.",
+   "creator": {
+    "name": "Ananya Varma",
+    "handle": "@ananyastyle",
+    "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"
+   },
+   "thumbnail": "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=700&q=80",
+   "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-fashion-model-in-a-pink-and-orange-dress-41130-large.mp4",
+   "taggedProductIds": [
+    "prod-1",
+    "prod-6"
+   ]
+  },
+  {
+   "id": "reel-2",
+   "title": "Modern Indian Menswear • Layering Linen & Raw Silk",
+   "caption": "Ditching boring suits for breathable handwoven luxury. Bandhgala paired with 60 lea flax linen.",
+   "creator": {
+    "name": "Kabir & Co.",
+    "handle": "@kabir_vanya",
+    "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80"
+   },
+   "thumbnail": "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=700&q=80",
+   "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-young-man-walking-wearing-a-fashion-coat-41619-large.mp4",
+   "taggedProductIds": [
+    "prod-2",
+    "prod-4",
+    "prod-5"
+   ]
+  },
+  {
+   "id": "reel-3",
+   "title": "The 60-Second Saree Drape In Motion",
+   "caption": "Zero pins, zero stress. Moving freely in our pre-draped crinkled georgette drape.",
+   "creator": {
+    "name": "Tara Sethi",
+    "handle": "@tarasethi",
+    "avatar": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80"
+   },
+   "thumbnail": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=700&q=80",
+   "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-model-posing-in-a-studio-setting-42777-large.mp4",
+   "taggedProductIds": [
+    "prod-7",
+    "prod-3"
+   ]
+  },
+  {
+   "id": "reel-4",
+   "title": "Golden Hour in Wild Tussar Silk",
+   "caption": "Natural Indian handlooms made for golden hour breezes. Relaxed mandarin drape.",
+   "creator": {
+    "name": "VANYA Studio",
+    "handle": "@vanya.editorial",
+    "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80"
+   },
+   "thumbnail": "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?auto=format&fit=crop&w=700&q=80",
+   "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-man-posing-with-a-fashionable-suit-41618-large.mp4",
+   "taggedProductIds": [
+    "prod-8",
+    "prod-5"
+   ]
+  }
+ ]
+}

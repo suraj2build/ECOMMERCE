@@ -93,16 +93,25 @@ Keep the window open while you review. Press **Ctrl+C** to stop.
 | **Admin** | Sign in with the printed email and password. The orders you place appear under Orders, where you can view them, cancel lines, and record the COD collection after delivery. Products, stock, collections, promotions, content and analytics are all there too. |
 | **Edit and check** | Publish, unpublish, re-price a product, or edit a collection in the admin, then reload the storefront. Changes show at once. |
 
-Demo data:
+Demo data (the approved AI Studio design's own catalogue, loaded through
+the real staff API from `scripts/demo-data/aistudio-catalogue.json`):
 
-- 12 products with colours and sizes (some sizes sold out, and one
-  product sold out entirely);
-- two price markdowns;
-- versioned size charts;
-- three collections and three Watch & Shop posts;
+- the design's 42 products (21 men's, 21 women's) with their colours,
+  sizes, stock, prices and badges;
+- the design's size guide tables as size charts;
+- its collections and four Watch & Shop reels;
+- the design's editorial photographs (gateway, home heroes, category
+  bubbles, occasion banners, tastemaker photos) as CMS banners;
 - five serviceable PIN codes: 110001, 400001, 560001, 600001 and 700001.
 
-The product images are generated placeholders marked "DEMO IMAGE".
+The photographs and reel videos are the design's own and load from
+`images.unsplash.com` and `assets.mixkit.co`, so the computer running the
+demo needs normal internet access. They are preview data only: production
+catalogue media and banners come from the admin. No reviews or ratings are
+loaded, so products show "No reviews yet" until someone writes one.
+
+When this catalogue changes (or a demo from an earlier version is found),
+`npm run demo` rebuilds the demo database once by itself.
 
 ## How the demo differs from the real shop
 

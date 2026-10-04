@@ -189,8 +189,16 @@ async function adminDb(sql, { query = false } = {}) {
 }
 
 step('Demo database');
-if (flag('reset')) {
-  say('  --reset: removing the demo database and its search index');
+// A new demo catalogue (scripts/demo-data) replaces the old one: the demo
+// database is rebuilt once, the same way --reset does it.
+const catalogueVersion = JSON.parse(readFileSync(path.join(ROOT, 'scripts/demo-data/aistudio-catalogue.json'), 'utf8')).version;
+const catalogueFile = path.join(STATE, 'catalogue.json');
+const loadedCatalogue = existsSync(catalogueFile) ? JSON.parse(readFileSync(catalogueFile, 'utf8')).version : null;
+// A demo database without a recorded version holds an earlier catalogue.
+const hadDatabase = (await adminDb(`SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'`, { query: true })).length > 0;
+const newCatalogue = hadDatabase && loadedCatalogue !== catalogueVersion;
+if (flag('reset') || newCatalogue) {
+  say(newCatalogue ? '  The demo catalogue has changed: rebuilding the demo database' : '  --reset: removing the demo database and its search index');
   await adminDb(`DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)`);
   await fetch('http://127.0.0.1:7700/indexes/styles', { method: 'DELETE' }).catch(() => undefined);
 }
@@ -268,7 +276,7 @@ step('Demo catalogue');
 const seed = spawnSync(process.execPath, ['scripts/seed-demo.mjs'], {
   cwd: ROOT,
   encoding: 'utf8',
-  env: { ...process.env, ...apiEnv, DEMO_SEED_ALLOWED: 'preview', DEMO_API_URL: `http://127.0.0.1:${PORTS.api}`, DEMO_ASSET_BASE: url(PORTS.storefront) },
+  env: { ...process.env, ...apiEnv, DEMO_SEED_ALLOWED: 'preview', DEMO_API_URL: `http://127.0.0.1:${PORTS.api}`, },
 });
 writeFileSync(path.join(LOGS, 'demo-seed.log'), `${seed.stdout}${seed.stderr}`);
 if (seed.status !== 0) {
@@ -278,19 +286,31 @@ if (seed.status !== 0) {
 // The search engine may hold products from another database (development,
 // tests, an earlier demo): the reindex rebuilds it from the demo database
 // alone and refreshes the storefront's cached pages (DEPLOYMENT.md runbook).
-const login = await fetch(`http://127.0.0.1:${PORTS.api}/api/v1/auth/staff/login`, {
+// Loading the catalogue uses the rate-limited staff API, so these calls
+// wait out the limit window instead of failing.
+async function apiCall(url, init) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const res = await fetch(url, init).catch(() => null);
+    if (res?.status !== 429) return res;
+    const seconds = Number(res.headers.get('retry-after')) || Number(/retry in (\d+)/.exec(await res.text())?.[1]) || 5;
+    await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
+  }
+  return null;
+}
+const login = await apiCall(`http://127.0.0.1:${PORTS.api}/api/v1/auth/staff/login`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ email: settings.adminEmail, password: settings.adminPassword }),
-}).then((r) => r.json()).catch(() => ({}));
+}).then((r) => r?.json() ?? {}).catch(() => ({}));
 const reindex = login.token
-  ? await fetch(`http://127.0.0.1:${PORTS.api}/api/v1/search/reindex`, { method: 'POST', headers: { authorization: `Bearer ${login.token}` } }).catch(() => null)
+  ? await apiCall(`http://127.0.0.1:${PORTS.api}/api/v1/search/reindex`, { method: 'POST', headers: { authorization: `Bearer ${login.token}` } })
   : null;
 if (!reindex?.ok) {
   stop();
   fail(`Rebuilding the search index failed. See ${path.join(LOGS, 'api.log')}`);
 }
-say('  12 products, 3 collections and Watch & Shop are loaded; search index rebuilt.');
+writeFileSync(catalogueFile, JSON.stringify({ version: catalogueVersion }, null, 2));
+say('  The design\'s catalogue (42 products), collections, Watch & Shop and editorial images are loaded; search index rebuilt.');
 
 say(`
 ────────────────────────────────────────────────────────────

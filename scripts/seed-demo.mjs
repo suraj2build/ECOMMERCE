@@ -1,95 +1,149 @@
-// Representative demo catalogue for previews: categories matching the
-// approved VANYA navigation, sizes, versioned size charts, 12 styles with
-// colour/size variants and stock (including sold-out sizes and one sold-out
-// style), two markdowns, three collections and three Watch & Shop posts.
+// Preview catalogue for the local demo (LR-010): the approved AI Studio
+// design's own catalogue (scripts/demo-data/aistudio-catalogue.json, exported
+// from Stitch-Spark_Ai_Studio src/data/mockData.ts) loaded through the real
+// staff API - the same paths an operator uses - so the demo shows the
+// approved products, prices, colours and photographs on the real backend.
 //
-// Uses the real staff API (the same paths an operator uses), plus Prisma
-// only for reference data that has no staff route (categories, sizes,
-// SKU size-chart links). Images are the generated, visibly marked demo
-// images in apps/storefront/public/demo. No reviews or ratings are created.
+// Prisma is used only for reference data with no staff route (categories,
+// sizes, SKU size-chart links). Not copied from the prototype: reviews,
+// ratings, view counts and likes (never invented, LR-001). The photographs
+// are the design's Unsplash images, loaded by the shopper's browser from
+// images.unsplash.com; they are preview content, never production catalogue.
 //
-//   DEMO_SEED_ALLOWED=preview DEMO_API_URL=http://localhost:4000 \
-//   DEMO_ASSET_BASE=http://localhost:3000 DATABASE_URL=... \
+//   DEMO_SEED_ALLOWED=preview DEMO_API_URL=http://localhost:4000 DATABASE_URL=... \
 //   SEED_SUPER_ADMIN_EMAIL=... SEED_SUPER_ADMIN_PASSWORD=... node scripts/seed-demo.mjs
 //
-// Re-running is safe: existing demo styles (style code prefix VNY-DEMO-) and
-// collections are left as they are.
+// Re-running is safe: existing demo styles (style code prefix VNY-AIS-),
+// collections, media and banners are left as they are.
+import { readFileSync } from 'node:fs';
 import { PrismaClient } from '@fcp/db';
 
-// A hosted preview runs as NODE_ENV=production with DEPLOYMENT_STAGE=preview
+// A preview runs as NODE_ENV=production with DEPLOYMENT_STAGE=preview
 // (LR-010); the real production stage is always refused.
 const productionStage = process.env.NODE_ENV === 'production' && process.env.DEPLOYMENT_STAGE !== 'preview';
 if (process.env.DEMO_SEED_ALLOWED !== 'preview' || productionStage) {
   throw new Error('Demo data is for preview environments only. Set DEMO_SEED_ALLOWED=preview (never in production).');
 }
 const API = `${process.env.DEMO_API_URL ?? 'http://localhost:4000'}/api/v1`;
-const ASSETS = `${process.env.DEMO_ASSET_BASE ?? 'http://localhost:3000'}/demo`;
+const { version: CATALOGUE_VERSION, products: PRODUCTS, reels: REELS } = JSON.parse(readFileSync(new URL('./demo-data/aistudio-catalogue.json', import.meta.url), 'utf8'));
 const prisma = new PrismaClient();
 
-async function call(method, path, body, token) {
+async function call(method, path, body, token, attempt = 0) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const text = await res.text();
+  // The catalogue is loaded through the real staff API, which rate-limits
+  // writes; wait out the window instead of failing the demo start.
+  if (res.status === 429 && attempt < 10) {
+    const seconds = Number(res.headers.get('retry-after')) || Number(/retry in (\d+)/.exec(text)?.[1]) || 5;
+    await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000));
+    return call(method, path, body, token, attempt + 1);
+  }
   if (res.status >= 300) throw new Error(`${method} ${path} -> ${res.status} ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : null;
 }
 
-const CATEGORIES = [
-  ['festive-ceremonial', 'Festive & Ceremonial'], ['bandhgalas-jackets', 'Bandhgalas & Jackets'],
-  ['linen-silk-shirts', 'Linen & Silk Shirts'], ['kurtas', 'Kurtas'], ['trousers', 'Trousers'],
-  ['festive-silk-edit', 'Festive Silk Edit'], ['modern-sarees', 'Modern Sarees'],
-  ['co-ords-sets', 'Co-ords & Sets'], ['dresses', 'Dresses'],
-];
-const SIZES = [['XS', 1], ['S', 2], ['M', 3], ['L', 4], ['XL', 5], ['FREE', 9]];
-const COLOUR = {
-  ivory: ['Ivory', '#ECE2D0'], maroon: ['Maroon', '#6E1C28'], navy: ['Navy', '#1E2A4A'], olive: ['Olive', '#5C6238'],
-  sand: ['Sand', '#C6AA80'], rust: ['Rust', '#A44C2C'], teal: ['Teal', '#205C60'], rose: ['Rose', '#C47A84'],
-  black: ['Black', '#201E1E'], mustard: ['Mustard', '#C4962C'], sage: ['Sage', '#94A484'], indigo: ['Indigo', '#34366E'],
-};
-// [image slug, name, category, gender, colours, sizes, chart, mrp, selling, markdown, stock per size (null = sold out)]
-const STYLES = [
-  ['festive-silk-kurta', 'Festive Silk Kurta', 'festive-ceremonial', 'men', ['ivory', 'maroon'], ['S', 'M', 'L', 'XL'], 'men-top', 6990, 6990, false, [4, 8, 6, 0]],
-  ['heritage-bandhgala', 'Heritage Bandhgala', 'bandhgalas-jackets', 'men', ['navy', 'black'], ['S', 'M', 'L', 'XL'], 'men-top', 14990, 14990, false, [2, 5, 5, 2]],
-  ['linen-camp-shirt', 'Linen Camp Shirt', 'linen-silk-shirts', 'men', ['sand', 'olive'], ['S', 'M', 'L', 'XL'], 'men-top', 3490, 2790, true, [10, 12, 9, 4]],
-  ['silk-blend-shirt', 'Silk Blend Shirt', 'linen-silk-shirts', 'men', ['teal', 'ivory'], ['M', 'L', 'XL'], 'men-top', 4290, 4290, false, [6, 6, 3]],
-  ['pleated-trousers', 'Pleated Trousers', 'trousers', 'men', ['sand', 'black'], ['S', 'M', 'L', 'XL'], 'men-bottom', 3990, 3990, false, [5, 7, 7, 3]],
-  ['everyday-cotton-kurta', 'Everyday Cotton Kurta', 'kurtas', 'men', ['sage', 'indigo'], ['S', 'M', 'L', 'XL'], 'men-top', 2490, 2490, false, null],
-  ['chanderi-saree', 'Chanderi Saree', 'modern-sarees', 'women', ['rose', 'mustard'], ['FREE'], 'saree', 8990, 8990, false, [6]],
-  ['banarasi-silk-saree', 'Banarasi Silk Saree', 'festive-silk-edit', 'women', ['maroon', 'teal'], ['FREE'], 'saree', 18990, 18990, false, [3]],
-  ['linen-coord-set', 'Linen Co-ord Set', 'co-ords-sets', 'women', ['rust', 'ivory'], ['XS', 'S', 'M', 'L'], 'women-top', 5990, 4790, true, [3, 6, 6, 2]],
-  ['festive-anarkali-dress', 'Festive Anarkali Dress', 'festive-silk-edit', 'women', ['indigo', 'rose'], ['XS', 'S', 'M', 'L'], 'women-top', 9490, 9490, false, [2, 4, 4, 0]],
-  ['midi-wrap-dress', 'Midi Wrap Dress', 'dresses', 'women', ['olive', 'black'], ['XS', 'S', 'M', 'L'], 'women-top', 4490, 4490, false, [5, 8, 8, 4]],
-  ['embroidered-kurta-set', 'Embroidered Kurta Set', 'co-ords-sets', 'women', ['mustard', 'sage'], ['XS', 'S', 'M', 'L'], 'women-top', 7490, 7490, false, [3, 5, 5, 3]],
-];
+const slugify = (value) => value.toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const unsplash = (id, width) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${width}&q=80`;
+
+// Every category the design's products and navigation use.
+const CATEGORY_NAMES = [...new Set([
+  'Festive & Ceremonial', 'Bandhgalas & Jackets', 'Linen & Silk Shirts', 'Kurtas', 'Pleated Trousers',
+  'Festive Silk Edit', 'Modern Sarees', 'Co-ords & Sets', 'Dresses',
+  ...PRODUCTS.map((p) => p.category),
+])];
+const SIZE_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '30', '32', '34', '36', '38', '38 (S)', '40 (M)', '42 (L)', '44 (XL)', 'FREE'];
+// The design's size guide tables (SizeGuideModal.tsx), as size charts.
 const CHARTS = {
-  'men-top': { name: 'Men kurtas, shirts and bandhgalas', gender: 'men', entries: [['S', { chestIn: 38, lengthIn: 41 }], ['M', { chestIn: 40, lengthIn: 42 }], ['L', { chestIn: 42, lengthIn: 43 }], ['XL', { chestIn: 44, lengthIn: 44 }]] },
-  'men-bottom': { name: 'Men trousers', gender: 'men', entries: [['S', { waistIn: 30, inseamIn: 31 }], ['M', { waistIn: 32, inseamIn: 31 }], ['L', { waistIn: 34, inseamIn: 32 }], ['XL', { waistIn: 36, inseamIn: 32 }]] },
-  'women-top': { name: 'Women dresses, kurtas and co-ords', gender: 'women', entries: [['XS', { bustIn: 32, waistIn: 26 }], ['S', { bustIn: 34, waistIn: 28 }], ['M', { bustIn: 36, waistIn: 30 }], ['L', { bustIn: 38, waistIn: 32 }]] },
-  saree: { name: 'Sarees', gender: 'women', entries: [['FREE', { sareeLengthM: 5.5, blousePieceM: 0.8 }]] },
+  women: {
+    name: 'Women · garment sizing and fit guide',
+    entries: [['XS', 32, 26, 36, 14], ['S', 34, 28, 38, 14.5], ['M', 36, 30, 40, 15], ['L', 38, 32, 42, 15.5], ['XL', 40, 34, 44, 16], ['XXL', 42, 36, 46, 16.5]]
+      .map(([sizeLabel, bustIn, waistIn, hipIn, shoulderIn]) => [sizeLabel, { bustIn, waistIn, hipIn, shoulderIn }]),
+  },
+  men: {
+    name: 'Men · garment sizing and fit guide',
+    entries: [['S', 38, '30-32', 38, 17], ['M', 40, '32-34', 40, 17.5], ['L', 42, '34-36', 42, 18], ['XL', 44, '36-38', 44, 18.5], ['XXL', 46, '38-40', 46, 19]]
+      .map(([sizeLabel, chestIn, waistIn, hipIn, shoulderIn]) => [sizeLabel, { chestIn, waistIn, hipIn, shoulderIn }]),
+  },
 };
-const COLLECTIONS = [
-  ['The Festive Edit', 'festive-edit', 'Silks and celebration wear for the season.', ['festive-silk-kurta', 'heritage-bandhgala', 'banarasi-silk-saree', 'festive-anarkali-dress']],
-  ['Linen Season', 'linen-season', 'Breathable linens for warm days.', ['linen-camp-shirt', 'linen-coord-set', 'pleated-trousers']],
-  ['Wedding Guest', 'wedding-guest', 'Considered looks for every function.', ['heritage-bandhgala', 'chanderi-saree', 'embroidered-kurta-set', 'silk-blend-shirt']],
-];
-const LOOKBOOKS = [
-  ['The Festive Edit — styled', 'lookbook-festive.jpg', ['festive-silk-kurta', 'banarasi-silk-saree', 'festive-anarkali-dress']],
-  ['Linen Season — on the move', 'lookbook-linen.jpg', ['linen-camp-shirt', 'linen-coord-set']],
-  ['Wedding Guest — three ways', 'lookbook-wedding.jpg', ['heritage-bandhgala', 'chanderi-saree', 'embroidered-kurta-set']],
-];
+const BADGES = { BESTSELLER: 'BESTSELLER', NEW: 'NEW_ARRIVAL' };
+
+// Editorial photographs from the design's gateway, home and story bubbles,
+// as CMS banners (placement per department; the storefront reads them).
+const BANNERS = {
+  men: {
+    gateway: [['Modern Indian Menswear', unsplash('1507679799987-c73779587ccf', 1800), '/']],
+    'home-hero': [['The Festive Edit', unsplash('1507679799987-c73779587ccf', 2200), '/category/men']],
+    'home-feature': [['Tradition Tailored for Today', unsplash('1602810318383-e386cc2a3ccf', 2000), '/category/men']],
+    'home-category': [
+      ['BANDHGALAS', unsplash('1507679799987-c73779587ccf', 400), '/category/bandhgalas-jackets'],
+      ['LINEN SHIRTS', unsplash('1602810318383-e386cc2a3ccf', 400), '/category/linen-silk-shirts'],
+      ['KURTAS', unsplash('1624378439575-d8705ad7ae80', 400), '/category/kurtas'],
+      ['TROUSERS', unsplash('1490114538077-0a7f8cb49891', 400), '/category/pleated-trousers'],
+      ['JACKETS', unsplash('1617137984095-74e4e5e3613f', 400), '/category/bandhgalas-jackets'],
+      ['POLOS', unsplash('1581655353564-df123a1eb820', 400), '/category/shirts-overshirts'],
+      ['FESTIVE EDIT', unsplash('1506794778202-cad84cf45f1d', 400), '/category/festive-ceremonial'],
+      ['ACCESSORIES', unsplash('1522335789203-aabd1fc54bc9', 400), '/category/men'],
+    ],
+    'home-occasion': [
+      ['For Work', unsplash('1602810318383-e386cc2a3ccf', 1000), '/category/linen-silk-shirts'],
+      ['For Celebration', unsplash('1624378439575-d8705ad7ae80', 1000), '/category/festive-ceremonial'],
+      ['For Travel', unsplash('1507679799987-c73779587ccf', 1000), '/category/pleated-trousers'],
+    ],
+    'home-tastemakers': [
+      ['Vikram in Structured Bandhgala, New Delhi', unsplash('1507679799987-c73779587ccf', 800)],
+      ['Arjun in European Flax Linen, Jaipur', unsplash('1602810318383-e386cc2a3ccf', 800)],
+      ['Kabir in Silk Chanderi Kurta, Udaipur', unsplash('1624378439575-d8705ad7ae80', 800)],
+      ['Dev in Ceremonial Nehru Jacket, Mumbai', unsplash('1617137984095-74e4e5e3613f', 800)],
+      ['Rohan in Khadi Pleated Trousers, Bangalore', unsplash('1490114538077-0a7f8cb49891', 800)],
+      ['Samar in Everyday Cotton Polo, Goa', unsplash('1500648767791-00dcc994a43e', 800)],
+    ],
+  },
+  women: {
+    gateway: [['Modern Indian Womenswear', unsplash('1610030469983-98e550d6193c', 1800), '/']],
+    'home-hero': [['The Festive Edit', unsplash('1610030469983-98e550d6193c', 2200), '/category/women']],
+    'home-feature': [['Tradition Tailored for Today', unsplash('1583391733956-3750e0ff4e8b', 2000), '/category/women']],
+    'home-category': [
+      ['MODERN SAREES', unsplash('1610030469983-98e550d6193c', 400), '/category/modern-sarees'],
+      ['CO-ORDS & SETS', unsplash('1583391733956-3750e0ff4e8b', 400), '/category/co-ords-sets'],
+      ['CHANDERI KURTAS', unsplash('1617627143750-d86bc21e42bb', 400), '/category/women'],
+      ['DRAPED DRESSES', unsplash('1515372039744-b8f02a3ae446', 400), '/category/dresses'],
+      ['CAPES & JACKETS', unsplash('1534528741775-53994a69daeb', 400), '/category/festive-silk-edit'],
+      ['SILK BLOUSES', unsplash('1529139574466-a303027c1d8b', 400), '/category/women'],
+      ['FESTIVE SILKS', unsplash('1509631179647-0177331693ae', 400), '/category/festive-silk-edit'],
+      ['JEWELRY & BAGS', unsplash('1535632066927-ab7c9ab60908', 400), '/category/women'],
+    ],
+    'home-occasion': [
+      ['For Work', unsplash('1602810318383-e386cc2a3ccf', 1000), '/category/co-ords-sets'],
+      ['For Celebration', unsplash('1624378439575-d8705ad7ae80', 1000), '/category/festive-silk-edit'],
+      ['For Travel', unsplash('1507679799987-c73779587ccf', 1000), '/category/dresses'],
+    ],
+    'home-tastemakers': [
+      ['Ananya in Chanderi Wrap Set, New Delhi', unsplash('1610030469983-98e550d6193c', 800)],
+      ['Tara in Pre-Draped Mulberry Saree, Jaipur', unsplash('1583391733956-3750e0ff4e8b', 800)],
+      ['Meera in Organza Coordinate Set, Udaipur', unsplash('1617627143750-d86bc21e42bb', 800)],
+      ['Rhea in Draped Cocktail Gown, Mumbai', unsplash('1534528741775-53994a69daeb', 800)],
+      ['Isha in Ahimsa Silk Kurta, Bangalore', unsplash('1515886657613-9f3515b0c78f', 800)],
+      ['Dia in Festive Handloom Silk, Kolkata', unsplash('1509631179647-0177331693ae', 800)],
+    ],
+  },
+};
 
 const { token } = await call('POST', '/auth/staff/login', { email: process.env.SEED_SUPER_ADMIN_EMAIL, password: process.env.SEED_SUPER_ADMIN_PASSWORD });
 const yesterday = new Date(Date.now() - 86_400_000).toISOString();
-const summary = { created: [], skipped: [] };
+const summary = { catalogue: CATALOGUE_VERSION, created: 0, skipped: 0 };
 
 // --- Reference data ---
 const categories = {};
-for (const [slug, name] of CATEGORIES) categories[slug] = await prisma.category.upsert({ where: { slug }, update: { name, isActive: true }, create: { slug, name } });
+for (const name of CATEGORY_NAMES) {
+  const slug = slugify(name);
+  categories[name] = await prisma.category.upsert({ where: { slug }, update: { name, isActive: true }, create: { slug, name } });
+}
 const sizes = {};
-for (const [label, sortOrder] of SIZES) sizes[label] = await prisma.size.upsert({ where: { label }, update: {}, create: { label, sortOrder } });
+for (const [index, label] of SIZE_ORDER.entries()) sizes[label] = await prisma.size.upsert({ where: { label }, update: { sortOrder: index + 1 }, create: { label, sortOrder: index + 1 } });
 
 let brand = await prisma.brand.findFirst({ where: { code: 'VANYA' } });
 if (!brand) brand = await call('POST', '/organization/brands', { code: 'VANYA', name: 'VANYA' }, token);
@@ -108,63 +162,101 @@ for (const [pincode, city, state] of [['110001', 'New Delhi', 'Delhi'], ['400001
 }
 
 const charts = {};
-for (const [key, chart] of Object.entries(CHARTS)) {
-  charts[key] = await prisma.sizeChart.findFirst({ where: { name: chart.name } })
-    ?? await call('POST', '/products/size-charts', { name: chart.name, gender: chart.gender, brandId: brand.id, entries: chart.entries.map(([sizeLabel, measurements]) => ({ sizeLabel, measurements })) }, token);
+for (const [gender, chart] of Object.entries(CHARTS)) {
+  charts[gender] = await prisma.sizeChart.findFirst({ where: { name: chart.name } })
+    ?? await call('POST', '/products/size-charts', { name: chart.name, gender, brandId: brand.id, entries: chart.entries.map(([sizeLabel, measurements]) => ({ sizeLabel, measurements })) }, token);
 }
+const chartLabels = Object.fromEntries(Object.entries(CHARTS).map(([gender, chart]) => [gender, new Set(chart.entries.map(([label]) => label))]));
 
 // --- Styles ---
 const styleIds = {};
-for (const [slug, name, category, gender, colours, sizeLabels, chart, mrp, selling, markdown, stock] of STYLES) {
-  const styleCode = `VNY-DEMO-${slug.toUpperCase()}`;
+for (const p of PRODUCTS) {
+  const styleCode = `VNY-AIS-${p.id.toUpperCase()}`;
   const existing = await prisma.style.findFirst({ where: { styleCode } });
-  if (existing) { styleIds[slug] = existing.id; summary.skipped.push(styleCode); continue; }
+  if (existing) { styleIds[p.id] = existing.id; summary.skipped += 1; continue; }
   const style = await call('POST', '/products/styles', {
-    styleCode, name, brandId: brand.id, categoryId: categories[category].id, season: 'AW26', collection: 'Demo',
-    department: gender === 'men' ? 'Menswear' : 'Womenswear', gender, fabric: name.includes('Linen') ? 'Linen' : name.includes('Silk') || name.includes('Banarasi') || name.includes('Chanderi') ? 'Silk blend' : 'Cotton',
-    washCare: 'Dry clean recommended', countryOfOrigin: 'India', hsnCode: '6211',
+    styleCode, name: p.title, brandId: brand.id, categoryId: categories[p.category].id,
+    season: 'Festive 2026', collection: p.collection,
+    department: p.gender === 'men' ? 'Menswear' : 'Womenswear', gender: p.gender,
+    fabric: p.fabric, fit: p.fit, occasion: p.occasion, washCare: p.care.join('. '),
+    countryOfOrigin: 'India', hsnCode: '6211',
+    customAttributes: {
+      subtitle: p.subtitle, details: p.details, fitNotes: p.fitNotes, styleNotes: p.styleNotes,
+      artisanCluster: p.manufacturing?.artisanCluster, sustainableNote: p.manufacturing?.sustainableNote,
+    },
   }, token);
-  styleIds[slug] = style.id;
+  styleIds[p.id] = style.id;
   const colourRows = [];
-  for (const key of colours) {
-    const [colourName, hex] = COLOUR[key];
-    colourRows.push(await call('POST', `/products/styles/${style.id}/colours`, { name: colourName, colourCode: key.slice(0, 3).toUpperCase(), hexSwatch: hex }, token));
+  for (const [index, colour] of p.colors.entries()) {
+    colourRows.push(await call('POST', `/products/styles/${style.id}/colours`, { name: colour.name, colourCode: `C${index + 1}`, hexSwatch: colour.hex }, token));
   }
-  const skus = await call('POST', `/products/styles/${style.id}/skus/generate`, { sizeIds: sizeLabels.map((label) => sizes[label].id) }, token);
-  await prisma.sku.updateMany({ where: { styleId: style.id }, data: { sizeChartId: charts[chart].id } });
-  for (const [index, key] of colours.entries()) {
-    await call('POST', `/products/styles/${style.id}/media`, { colourId: colourRows[index].id, url: `${ASSETS}/${slug}-${key}.jpg`, sortOrder: index, altText: `${name} in ${COLOUR[key][0]} (demo image)` }, token);
+  const skus = await call('POST', `/products/styles/${style.id}/skus/generate`, { sizeIds: p.sizes.map((s) => sizes[s.size].id) }, token);
+  if (p.sizes.every((s) => chartLabels[p.gender].has(s.size))) {
+    await prisma.sku.updateMany({ where: { styleId: style.id }, data: { sizeChartId: charts[p.gender].id } });
   }
-  await call('POST', '/catalog/prices', { styleId: style.id, mrp, sellingPrice: mrp }, token);
-  if (markdown) {
-    await call('POST', '/catalog/prices/markdown', { styleId: style.id, mrp, sellingPrice: selling, effectiveFrom: yesterday, effectiveTo: new Date(Date.now() + 90 * 86_400_000).toISOString() }, token);
-  }
-  if (stock) {
-    for (const sku of skus) {
-      const quantity = stock[sizeLabels.indexOf(sizeLabels.find((label) => sizes[label].id === sku.sizeId))];
-      if (quantity > 0) await call('POST', '/inventory/adjustments', { skuId: sku.skuId, locationId: location.id, quantityDelta: quantity, reason: 'Demo opening stock', idempotencyKey: `demo-stock-${sku.skuId}` }, token);
+  let sortOrder = 0;
+  for (const [index, colour] of p.colors.entries()) {
+    for (const url of colour.images) {
+      await call('POST', `/products/styles/${style.id}/media`, {
+        colourId: colourRows[index].id, url, sortOrder: sortOrder++,
+        altText: `${p.title} in ${colour.name}`,
+      }, token);
     }
   }
+  // The design's model note ("Model is 5'9\" wearing size S"); the staff
+  // media route has no field for it, so it is set on the lead photograph.
+  if (p.modelInfo) {
+    await prisma.productMedia.updateMany({ where: { styleId: style.id, sortOrder: 0 }, data: { modelInfo: p.modelInfo } });
+  }
+  await call('POST', '/catalog/prices', { styleId: style.id, mrp: p.mrp, sellingPrice: p.price }, token);
+  for (const sku of skus) {
+    const size = p.sizes.find((s) => sizes[s.size].id === sku.sizeId);
+    const quantity = size?.inStock ? (size.stockCount ?? 10) : 0;
+    if (quantity > 0) await call('POST', '/inventory/adjustments', { skuId: sku.skuId, locationId: location.id, quantityDelta: quantity, reason: 'Demo opening stock', idempotencyKey: `demo-stock-${sku.skuId}` }, token);
+  }
   for (const step of ['ready-for-enrichment', 'qa-check', 'publish']) await call('POST', `/products/styles/${style.id}/${step}`, undefined, token);
-  summary.created.push(styleCode);
+  for (const badge of new Set((p.badges ?? []).map((b) => BADGES[b]).filter(Boolean))) {
+    await call('POST', '/catalog/badges', { styleId: style.id, badgeType: badge, source: 'MANUAL' }, token);
+  }
+  summary.created += 1;
 }
 
-// --- Collections ---
-for (const [name, slug, description, members] of COLLECTIONS) {
-  if (await prisma.collection.findFirst({ where: { slug } })) { summary.skipped.push(`collection:${slug}`); continue; }
-  const collection = await call('POST', '/catalog/collections', { name, slug, description }, token);
+// --- Collections (the design's collection names) ---
+const collections = new Map();
+for (const p of PRODUCTS) collections.set(p.collection, [...(collections.get(p.collection) ?? []), p.id]);
+for (const [name, members] of collections) {
+  const slug = slugify(name);
+  if (await prisma.collection.findFirst({ where: { slug } })) { summary.skipped += 1; continue; }
+  const collection = await call('POST', '/catalog/collections', { name, slug, description: `${name} from VANYA.` }, token);
   for (const member of members) await call('POST', `/catalog/collections/${collection.id}/styles`, { styleId: styleIds[member] }, token);
   await call('POST', `/catalog/collections/${collection.id}/publish`, undefined, token);
-  summary.created.push(`collection:${slug}`);
+  summary.created += 1;
 }
 
-// --- Watch & Shop (internal shoppable media; not an Instagram connection) ---
-for (const [index, [title, image, members]] of LOOKBOOKS.entries()) {
-  if (await prisma.shoppableMedia.findFirst({ where: { title } })) { summary.skipped.push(`media:${title}`); continue; }
-  const media = await call('POST', '/content/shoppable-media', { title, mediaUrl: `${ASSETS}/${image}`, thumbnailUrl: `${ASSETS}/${image}`, creatorAttribution: 'VANYA studio (demo)', merchandisingPosition: index }, token);
-  for (const [sortOrder, member] of members.entries()) await call('POST', `/content/shoppable-media/${media.id}/tags`, { styleId: styleIds[member], sortOrder }, token);
+// --- Watch & Shop: the design's reels (internal shoppable media) ---
+for (const [index, reel] of REELS.entries()) {
+  if (await prisma.shoppableMedia.findFirst({ where: { title: reel.title } })) { summary.skipped += 1; continue; }
+  const media = await call('POST', '/content/shoppable-media', {
+    title: reel.title, mediaUrl: reel.videoUrl ?? reel.thumbnail, thumbnailUrl: reel.thumbnail,
+    creatorAttribution: `${reel.creator.name} · ${reel.creator.handle}`, merchandisingPosition: index,
+  }, token);
+  for (const [sortOrder, productId] of reel.taggedProductIds.entries()) {
+    if (styleIds[productId]) await call('POST', `/content/shoppable-media/${media.id}/tags`, { styleId: styleIds[productId], sortOrder }, token);
+  }
   await call('POST', `/content/shoppable-media/${media.id}/transition`, { toState: 'PUBLISHED' }, token);
-  summary.created.push(`media:${title}`);
+  summary.created += 1;
+}
+
+// --- Editorial imagery (CMS banners) ---
+for (const [department, placements] of Object.entries(BANNERS)) {
+  for (const [key, banners] of Object.entries(placements)) {
+    const placement = `${key}-${department}`;
+    if (await prisma.cmsBanner.findFirst({ where: { placement } })) { summary.skipped += 1; continue; }
+    for (const [sortOrder, [title, imageUrl, linkUrl]] of banners.entries()) {
+      await call('POST', '/cms/banners', { title, imageUrl, ...(linkUrl ? { linkUrl } : {}), placement, sortOrder }, token);
+    }
+    summary.created += 1;
+  }
 }
 
 await prisma.$disconnect();
