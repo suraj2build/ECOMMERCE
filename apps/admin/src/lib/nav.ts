@@ -16,11 +16,18 @@ export interface NavGroup {
 }
 
 export const NAV_GROUPS: NavGroup[] = [
-  { title: 'Dashboard', items: [{ href: '/dashboard', label: 'Overview', anyOf: [] }] },
+  {
+    title: 'Dashboard',
+    items: [
+      { href: '/dashboard', label: 'Overview', anyOf: [] },
+      { href: '/dashboard/setup', label: 'Setup & health', anyOf: ['org:manage'] },
+    ],
+  },
   {
     title: 'Merchandise',
     items: [
       { href: '/dashboard/products', label: 'Products', anyOf: ['product:read'] },
+      { href: '/dashboard/products/import', label: 'Import products', anyOf: ['product:write'] },
       { href: '/dashboard/collections', label: 'Collections', anyOf: ['product:read'] },
     ],
   },
@@ -72,7 +79,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard/cms/banners', label: 'Banners', anyOf: ['cms:read'] },
       { href: '/dashboard/cms/content-blocks', label: 'Content blocks', anyOf: ['cms:read'] },
-      { href: '/dashboard/cms/landing-pages', label: 'Landing pages', anyOf: ['cms:read'] },
+      { href: '/dashboard/cms/landing-pages', label: 'Content pages', anyOf: ['cms:read'] },
       { href: '/dashboard/cms/navigation-menus', label: 'Navigation menus', anyOf: ['cms:read'] },
     ],
   },

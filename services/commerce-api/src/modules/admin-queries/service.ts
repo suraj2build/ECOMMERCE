@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from '@fcp/db';
 import type { PermissionKey } from '@fcp/shared';
 import { availableAtLocation } from '../inventory/service.js';
+import { THUMBNAIL_MEDIA } from '../catalog/service.js';
 
 /**
  * Read models for the P1 Commerce Operations Console (apps/admin).
@@ -73,10 +74,13 @@ export class AdminQueryService {
   }
 
   /** Paginated style list with the brand/category names and counts a list screen needs. */
-  async listStyles(params: { q?: string; lifecycleState?: string; take?: number; skip?: number }) {
+  async listStyles(params: { q?: string; lifecycleState?: string; categoryId?: string; gender?: string; take?: number; skip?: number }) {
     const term = params.q?.trim();
     const where: Prisma.StyleWhereInput = {
       ...(params.lifecycleState ? { lifecycleState: params.lifecycleState as never } : {}),
+      // Admin Ops Phase 1: owner filters.
+      ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+      ...(params.gender ? { gender: params.gender } : {}),
       ...(term
         ? { OR: [{ styleCode: { contains: term, mode: 'insensitive' } }, { name: { contains: term, mode: 'insensitive' } }] }
         : {}),
@@ -93,7 +97,10 @@ export class AdminQueryService {
           publishedAt: true,
           updatedAt: true,
           brand: { select: { name: true } },
+          gender: true,
           category: { select: { name: true } },
+          // The listing photo, chosen exactly as the storefront chooses it.
+          media: { ...THUMBNAIL_MEDIA, select: { url: true } },
           _count: { select: { colours: true, skus: true, media: true } },
         },
         orderBy: { updatedAt: 'desc' },

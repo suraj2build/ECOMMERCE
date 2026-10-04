@@ -26,7 +26,7 @@ export class ApiError extends Error {
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const session = getStoredSession();
   const headers: Record<string, string> = {
-    ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    ...(init.body !== undefined && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
     ...(init.headers as Record<string, string> | undefined),
   };
   if (session) headers.authorization = `Bearer ${session.token}`;
@@ -48,6 +48,17 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 /** POST/PATCH/PUT helper: the body is always JSON, and an empty body is sent as `{}`. */
 export function apiSend<T>(method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
   return apiFetch<T>(path, { method, ...(method === 'DELETE' && body === undefined ? {} : { body: JSON.stringify(body ?? {}) }) });
+}
+
+/**
+ * Multipart upload (a photo from the owner's computer). Fields go before the
+ * file so the server can read them; the browser sets the boundary itself.
+ */
+export function apiUpload<T>(method: 'POST' | 'PUT', path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  form.append('file', file);
+  return apiFetch<T>(path, { method, body: form });
 }
 
 /** Query string from a params object, dropping empty values. */

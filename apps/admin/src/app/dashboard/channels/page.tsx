@@ -28,6 +28,7 @@ interface Channel {
   name: string;
   providerName: string;
   isActive: boolean;
+  config: { publishAll?: boolean } | null;
 }
 
 interface ChannelListing {
@@ -140,6 +141,7 @@ export default function ChannelsPage() {
 
       {channel && (
         <>
+          <ChannelSettings channel={channel} onSaved={channels.reload} />
           <Can anyOf={['channel:manage']}>
             <Section title={`Publish a SKU to ${channel.name}`}>
               <SkuPicker value={sku} onChange={setSku} />
@@ -315,5 +317,65 @@ function NewChannel({ onCreated }: { onCreated: () => void }) {
         </button>
       </form>
     </details>
+  );
+}
+
+/**
+ * Admin Ops Phase 1: what this channel sends, and pause/resume. "Every
+ * product that can be bought" is the existing publishAll setting (picked up
+ * by the scheduled channel sync); "Only products I send" leaves sending to
+ * the Publish button below. A paused channel sends nothing until resumed.
+ */
+function ChannelSettings({ channel, onSaved }: { channel: Channel; onSaved: () => void }) {
+  const action = useAction();
+  const canManage = useCan('channel:manage');
+  const [pausing, setPausing] = useState(false);
+  const publishAll = channel.config?.publishAll === true;
+  const save = async (patch: { isActive?: boolean; publishAll?: boolean }, message: string) => {
+    if (await action.run(() => apiSend('PATCH', `/channels/${channel.id}`, patch), message)) onSaved();
+  };
+  return (
+    <Section title={`${channel.name} settings`}>
+      <ActionMessage message={action.message} />
+      {!channel.isActive && <Notice kind="warning">Paused: nothing is sent to {channel.name} and its listings are not updated until you resume it.</Notice>}
+      {channel.providerName.startsWith('MOCK') && <Notice kind="info">This channel uses a test provider: nothing reaches a real marketplace. Production refuses test providers.</Notice>}
+      <fieldset className="fieldset" disabled={!canManage || action.busy}>
+        <legend>What it sends</legend>
+        <label className="check">
+          <input type="radio" name={`scope-${channel.id}`} checked={publishAll} onChange={() => void save({ publishAll: true }, 'This channel now sends every product that can be bought, from the next sync.')} /> Every product that can be bought
+          (sent on the next scheduled sync)
+        </label>
+        <label className="check">
+          <input type="radio" name={`scope-${channel.id}`} checked={!publishAll} onChange={() => void save({ publishAll: false }, 'This channel now sends only products you send by hand. Products already listed stay listed.')} /> Only products I send by hand
+        </label>
+      </fieldset>
+      {canManage && (
+        <div className="row">
+          {channel.isActive ? (
+            <button type="button" className="btn danger" disabled={action.busy} onClick={() => setPausing(true)}>
+              Pause channel
+            </button>
+          ) : (
+            <button type="button" className="primary" disabled={action.busy} onClick={() => void save({ isActive: true }, 'Resumed. The next sync brings its listings up to date.')}>
+              Resume channel
+            </button>
+          )}
+        </div>
+      )}
+      <ConfirmDialog
+        open={pausing}
+        title={`Pause ${channel.name}?`}
+        confirmLabel="Pause"
+        danger
+        busy={action.busy}
+        onCancel={() => setPausing(false)}
+        onConfirm={async () => {
+          await save({ isActive: false }, `${channel.name} paused.`);
+          setPausing(false);
+        }}
+      >
+        <p>Nothing new is sent and price or stock changes are not passed on while paused. Products already listed stay listed on {channel.name}; take them down below if needed.</p>
+      </ConfirmDialog>
+    </Section>
   );
 }

@@ -95,6 +95,8 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
       .object({
         q: z.string().trim().max(100).optional(),
         lifecycleState: z.enum(['DRAFT', 'READY_FOR_ENRICHMENT', 'READY_FOR_QA', 'PUBLISHED', 'UNPUBLISHED', 'ARCHIVED']).optional(),
+        categoryId: z.string().uuid().optional(),
+        gender: z.enum(['Men', 'Women']).optional(),
         ...page,
       })
       .parse(request.query);
