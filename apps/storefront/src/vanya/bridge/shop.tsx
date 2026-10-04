@@ -6,6 +6,7 @@
  * here the same handlers call the live cart, wishlist, product and tracking
  * APIs, so every price, stock check and order goes through the real domain.
  */
+import type { CmsNavItem } from '@/lib/cms-links';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { getProductDetailLive, type ProductDetail } from '@/lib/api';
@@ -41,6 +42,12 @@ export interface CategoryLink {
   slug: string;
 }
 
+export interface FooterMenus {
+  about: CmsNavItem[];
+  social: CmsNavItem[];
+}
+const NO_FOOTER_MENUS: FooterMenus = { about: [], social: [] };
+
 /** Shop-wide delivery and returns terms (GET /storefront/policies). A value
  * is null unless the shop has confirmed it, so no component shows a guess. */
 export interface ShopPolicies {
@@ -53,6 +60,8 @@ interface ShopContextValue {
   gender: 'men' | 'women';
   categories: CategoryLink[];
   policies: ShopPolicies;
+  /** Footer links published in the CMS navigation menus (cleaned, safe links only). */
+  footerMenus: FooterMenus;
   cart: CartView | null;
   cartItems: CartItem[];
   cartProducts: Product[];
@@ -87,7 +96,7 @@ export function slugify(name: string) {
   return name.toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-export function ShopProvider({ categories, policies, children }: { categories: CategoryLink[]; policies: ShopPolicies; children: React.ReactNode }) {
+export function ShopProvider({ categories, policies, footerMenus = NO_FOOTER_MENUS, children }: { categories: CategoryLink[]; policies: ShopPolicies; footerMenus?: FooterMenus; children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { department, chooseDepartment, clearDepartment } = useDepartment();
@@ -239,6 +248,7 @@ export function ShopProvider({ categories, policies, children }: { categories: C
       gender,
       categories,
       policies,
+      footerMenus,
       cart,
       cartItems: lines.map((l) => l.cartItem),
       cartProducts: lines.map((l) => l.product),
@@ -264,7 +274,7 @@ export function ShopProvider({ categories, policies, children }: { categories: C
       quickAdd,
       setQuickAdd,
     };
-  }, [gender, categories, policies, cart, wishlistItems, loyaltyPoints, navigate, hrefFor, addToBag, updateQuantity, removeItem, moveToWishlist, toggleWishlist, loadProduct, bagOpen, searchOpen, sizeGuide, quickAdd]);
+  }, [gender, categories, policies, footerMenus, cart, wishlistItems, loyaltyPoints, navigate, hrefFor, addToBag, updateQuantity, removeItem, moveToWishlist, toggleWishlist, loadProduct, bagOpen, searchOpen, sizeGuide, quickAdd]);
 
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }

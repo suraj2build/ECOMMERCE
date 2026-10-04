@@ -40,3 +40,26 @@ export const getLegalPage = unstable_cache(
   ['storefront-legal-page'],
   { revalidate: REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
 );
+
+/** A published CMS landing page (admin → Content → Landing pages), or null
+ * when it is missing or unpublished, so the page answers 404. */
+export const getCmsPage = unstable_cache(
+  (slug: string) => getOrNull<LegalPageContent>(`/api/v1/storefront/cms/landing-pages/${encodeURIComponent(slug)}`),
+  ['storefront-cms-page'],
+  { revalidate: REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+);
+
+/** A CMS navigation menu's items, or [] when the menu is not set up. A menu
+ * that cannot be loaded also yields [], so the footer never breaks the page. */
+export const getNavigationMenuItems = unstable_cache(
+  async (key: string): Promise<unknown[]> => {
+    try {
+      const menu = await getOrNull<{ items: unknown }>(`/api/v1/storefront/cms/navigation-menus/${encodeURIComponent(key)}`);
+      return Array.isArray(menu?.items) ? menu.items : [];
+    } catch {
+      return [];
+    }
+  },
+  ['storefront-cms-menu'],
+  { revalidate: REVALIDATE_SECONDS, tags: [CATALOG_CACHE_TAG] },
+);

@@ -16,9 +16,24 @@ import { ShieldCheck, RefreshCw, Truck, HeartHandshake, Coins, Award, ArrowRight
 import { PrivacyChoicesButton } from '@/components/consent/ConsentBanner';
 import { useShop } from '../bridge/shop';
 import { formatPrice } from '../utils/format';
+import { socialNetwork, type CmsNavItem, type SocialNetwork } from '@/lib/cms-links';
+
+const SOCIAL_ABBREVIATION: Record<SocialNetwork, string> = { instagram: 'IG', youtube: 'YT', pinterest: 'PIN', facebook: 'FB' };
+
+/** A CMS menu link: a site path stays in the app; an https URL opens in a new tab. */
+function FooterLink({ item, className, ariaLabel, children }: { item: CmsNavItem; className: string; ariaLabel?: string; children?: React.ReactNode }) {
+  if (item.url.startsWith('/')) {
+    return <Link href={item.url} className={className}>{children ?? item.label}</Link>;
+  }
+  return (
+    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={ariaLabel} className={className}>
+      {children ?? item.label}
+    </a>
+  );
+}
 
 export function Footer() {
-  const { gender: currentGender, policies, hrefFor, navigate, openSizeGuide } = useShop();
+  const { gender: currentGender, policies, footerMenus, hrefFor, navigate, openSizeGuide } = useShop();
   const { freeDeliveryAbove } = policies;
   const isMen = currentGender === 'men';
   const shop = (category: string) => hrefFor('plp', { gender: currentGender, category });
@@ -224,6 +239,12 @@ export function Footer() {
               <li>
                 <Link href="/collections" className="hover:text-white transition-colors cursor-pointer">Craft &amp; Collections</Link>
               </li>
+              {/* Pages staff publish in the "footer-about" CMS menu (Our Story, Journal, ...). */}
+              {footerMenus.about.map((item) => (
+                <li key={`${item.label}-${item.url}`}>
+                  <FooterLink item={item} className="hover:text-white transition-colors cursor-pointer" />
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -242,6 +263,27 @@ export function Footer() {
               <span>Choose email updates in your account</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
+
+            {/* Social links staff publish in the "footer-social" CMS menu, drawn as the
+                design's monospace labels (IG / YT / PIN / FB). Nothing shows until set. */}
+            {footerMenus.social.length > 0 && (
+              <ul aria-label="VANYA on social media" className="flex flex-wrap items-center gap-1 text-[#A89E92] pt-1">
+                {footerMenus.social.map((item) => {
+                  const network = socialNetwork(item.url);
+                  return (
+                    <li key={`${item.label}-${item.url}`}>
+                      <FooterLink
+                        item={item}
+                        ariaLabel={network ? `${item.label} (opens in a new tab)` : undefined}
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center hover:text-white transition-colors text-xs font-mono"
+                      >
+                        {network ? SOCIAL_ABBREVIATION[network] : item.label}
+                      </FooterLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </div>
       </div>

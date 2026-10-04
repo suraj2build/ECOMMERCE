@@ -47,7 +47,12 @@ export default function NavigationMenusPage() {
       <form onSubmit={onSave} className="card" style={{ maxWidth: 560, marginBottom: '1.5rem' }}>
         <div className="field">
           <label htmlFor="key">Menu key</label>
-          <input id="key" required value={key} onChange={(e) => setKey(e.target.value)} />
+          <input id="key" required value={key} onChange={(e) => setKey(e.target.value)} aria-describedby="key-help" />
+          <p id="key-help" className="muted" style={{ margin: '0.35rem 0 0', fontSize: '0.8rem' }}>
+            The storefront footer reads <code>footer-about</code> (links such as /pages/our-story) and{' '}
+            <code>footer-social</code> (https links to Instagram, YouTube, Pinterest or Facebook). Links must be a site
+            path or an https address; anything else is not shown.
+          </p>
         </div>
         <div className="field">
           <label htmlFor="items">Items (JSON array of {'{'}label, url, sortOrder{'}'})</label>

@@ -4,6 +4,8 @@ import { DepartmentProvider } from '@/components/layout/DepartmentContext';
 import { ConsentBanner } from '@/components/consent/ConsentBanner';
 import { PreviewBanner } from '@/components/layout/PreviewBanner';
 import { SITE_URL, getStorefrontCategories, getStorefrontPolicies } from '@/lib/api';
+import { FOOTER_MENU_KEYS, cleanMenu } from '@/lib/cms-links';
+import { getNavigationMenuItems } from '@/lib/lookups';
 import { ShopProvider, type ShopPolicies } from '@/vanya/bridge/shop';
 import { StoreShell } from '@/vanya/bridge/StoreShell';
 import './globals.css';
@@ -21,7 +23,14 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [categories, terms] = await Promise.all([getStorefrontCategories(), getStorefrontPolicies()]);
+  const [categories, terms, aboutItems, socialItems] = await Promise.all([
+    getStorefrontCategories(),
+    getStorefrontPolicies(),
+    getNavigationMenuItems(FOOTER_MENU_KEYS.about),
+    getNavigationMenuItems(FOOTER_MENU_KEYS.social),
+  ]);
+  // Footer About and social links are whatever staff publish in the CMS menus.
+  const footerMenus = { about: cleanMenu(aboutItems), social: cleanMenu(socialItems) };
   // Delivery figures are shown only once the shop has confirmed them.
   const confirmed = terms?.shipping.confirmed === true;
   const policies: ShopPolicies = {
@@ -34,7 +43,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" data-theme="women" className={`${inter.variable} ${playfair.variable}`}>
       <body>
         <DepartmentProvider>
-          <ShopProvider categories={categories.filter((c) => c.slug)} policies={policies}>
+          <ShopProvider categories={categories.filter((c) => c.slug)} policies={policies} footerMenus={footerMenus}>
             <PreviewBanner />
             <StoreShell>{children}</StoreShell>
             <ConsentBanner />

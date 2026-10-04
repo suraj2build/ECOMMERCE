@@ -352,6 +352,7 @@ export interface LegalPageContent {
   slug: string;
   title: string;
   metaDescription: string | null;
+  heroImageUrl?: string | null;
   publishedAt: string | null;
   updatedAt: string;
   blocks: { key: string; title: string; content: string }[];
