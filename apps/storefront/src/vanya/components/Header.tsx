@@ -151,10 +151,6 @@ export function Header() {
             : 'bg-white border-b border-[#F0ECE4]'
         }`}
       >
-        <a href="#main-content" className="sr-only-focusable absolute left-2 top-2 z-[60] rounded-full bg-[#181716] px-4 py-2 text-xs text-white">
-          Skip to content
-        </a>
-
         {/* Tier 1: Slim, Airy Utility Bar (Removes clutter from main row) */}
         <div className="hidden lg:block border-b border-[#F4EFE6] bg-[#FAF8F5]/80 text-[#7A7065] text-[11px] py-1.5 px-4 sm:px-8">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
