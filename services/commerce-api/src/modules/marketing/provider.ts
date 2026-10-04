@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CommunicationChannel } from '@fcp/db';
-import { loadEnv } from '@fcp/config';
+import { loadEnv, mockProvidersAllowed } from '@fcp/config';
 
 /**
  * Marketing message provider abstraction (M25, specs/24-marketing.md
@@ -102,7 +102,7 @@ const MARKETING_PROVIDERS: Record<MarketingProviderName, MarketingProvider> = {
  * production only - dev/test/CI are unaffected.
  */
 export function getMarketingProvider(name: string): MarketingProvider {
-  if (loadEnv().NODE_ENV === 'production' && name.startsWith('MOCK')) {
+  if (!mockProvidersAllowed(loadEnv()) && name.startsWith('MOCK')) {
     throw new Error(
       `Marketing provider "${name}" is a test double and may never be used in production - no real messaging-vendor integration is selected yet (MKT-001, blueprint/DECISION_REGISTER.md)`,
     );

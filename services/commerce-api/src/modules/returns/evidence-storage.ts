@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { loadEnv } from '@fcp/config';
+import { loadEnv, mockProvidersAllowed } from '@fcp/config';
 import { S3ObjectStore } from '../../lib/s3.js';
 
 export interface StoredEvidenceObject {
@@ -124,7 +124,8 @@ export function resolveEvidenceStorageProvider(): EvidenceStorageProvider {
   if (env.RETURN_EVIDENCE_STORAGE === 's3') return new S3EvidenceStorageProvider(env);
   // LR-005: a local directory is not shared between instances and does not
   // survive a redeploy, so production refuses it.
-  if (env.NODE_ENV === 'production') {
+  // A preview (LR-010) may keep test photos on its own disk.
+  if (!mockProvidersAllowed(env)) {
     throw new Error('Return evidence storage is local disk, which production refuses: set RETURN_EVIDENCE_STORAGE=s3 (DEPLOYMENT.md)');
   }
   return new LocalDiskEvidenceStorageProvider();

@@ -6,6 +6,7 @@ const original = process.env.SITE_INDEXING;
 afterEach(() => {
   if (original === undefined) delete process.env.SITE_INDEXING;
   else process.env.SITE_INDEXING = original;
+  delete process.env.DEPLOYMENT_STAGE;
 });
 
 describe('robots (LR-002)', () => {
@@ -13,6 +14,12 @@ describe('robots (LR-002)', () => {
     delete process.env.SITE_INDEXING;
     expect(robots()).toEqual({ rules: { userAgent: '*', disallow: '/' } });
     process.env.SITE_INDEXING = 'true'; // only the exact value opts in
+    expect(robots()).toEqual({ rules: { userAgent: '*', disallow: '/' } });
+  });
+
+  it('never lets a preview deployment be indexed, even with indexing switched on (LR-010)', () => {
+    process.env.SITE_INDEXING = 'enabled';
+    process.env.DEPLOYMENT_STAGE = 'preview';
     expect(robots()).toEqual({ rules: { userAgent: '*', disallow: '/' } });
   });
 

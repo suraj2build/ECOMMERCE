@@ -397,7 +397,9 @@ export function createAppMaintenance(app: FastifyInstance) {
   const leaseMs = env.MAINTENANCE_LEASE_SECONDS * 1000;
   return createMaintenanceRunner(appMaintenanceJobs(app), app.log, 60_000, {
     store: prismaMaintenanceStore(app.prisma, { leaseMs }),
-    alerts: env.MAINTENANCE_ALERT_WEBHOOK_URL ? webhookAlerts(env.MAINTENANCE_ALERT_WEBHOOK_URL, env.NODE_ENV) : logOnlyAlerts,
+    alerts: env.MAINTENANCE_ALERT_WEBHOOK_URL
+      ? webhookAlerts(env.MAINTENANCE_ALERT_WEBHOOK_URL, env.NODE_ENV === 'production' && env.DEPLOYMENT_STAGE === 'preview' ? 'preview' : env.NODE_ENV)
+      : logOnlyAlerts,
     heartbeatMs: Math.floor(leaseMs / 3),
   });
 }

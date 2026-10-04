@@ -8,6 +8,14 @@ import { z } from 'zod';
  */
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // LR-010: a hosted preview runs as production (NODE_ENV=production: real
+  // secrets, signed guest sessions, production rate limits) with
+  // DEPLOYMENT_STAGE=preview. A preview may use the mock OTP, carrier,
+  // messaging and channel providers and local-disk return evidence while
+  // those vendors are undecided (LR-008); it refuses live Razorpay keys and
+  // Meta server events outside Meta's test-events tool. The real production
+  // stage refuses every mock.
+  DEPLOYMENT_STAGE: z.enum(['production', 'preview']).default('production'),
 
   // --- Database ---
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -406,6 +414,15 @@ const validatedEnvSchema = envSchema
 
     if (env.NODE_ENV !== 'production') return;
 
+    if (env.DEPLOYMENT_STAGE === 'preview') {
+      if (env.RAZORPAY_KEY_ID && !env.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {
+        fail('RAZORPAY_KEY_ID', 'a preview takes only Razorpay test-mode keys (rzp_test_...), never live keys');
+      }
+      if (env.META_CAPI_ACCESS_TOKEN && !env.META_TEST_EVENT_CODE) {
+        fail('META_TEST_EVENT_CODE', 'is required on a preview that sends Meta server events, so they go to Events Manager "Test events" and never count as real conversions');
+      }
+    }
+
     if (env.STOREFRONT_REVALIDATE_SECRET && looksLikePlaceholderSecret(env.STOREFRONT_REVALIDATE_SECRET)) {
       fail('STOREFRONT_REVALIDATE_SECRET', 'must be a real secret in production, not a placeholder');
     }
@@ -445,6 +462,15 @@ const validatedEnvSchema = envSchema
   }));
 
 export type Env = z.infer<typeof validatedEnvSchema>;
+
+/**
+ * Whether test-double providers (console OTP, MOCK carrier, messaging and
+ * channel providers, local-disk return evidence) may run: everywhere except
+ * the real production stage (LR-010).
+ */
+export function mockProvidersAllowed(env: Pick<Env, 'NODE_ENV' | 'DEPLOYMENT_STAGE'>): boolean {
+  return env.NODE_ENV !== 'production' || env.DEPLOYMENT_STAGE === 'preview';
+}
 
 let cachedEnv: Env | undefined;
 

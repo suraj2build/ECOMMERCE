@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { loadEnv } from '@fcp/config';
+import { loadEnv, mockProvidersAllowed } from '@fcp/config';
 
 /** Minimal logger shape (satisfied by both @fcp/shared's pino Logger and Fastify's request-bound logger). */
 export interface MinimalLogger {
@@ -26,13 +26,15 @@ export class ConsoleOtpProvider implements OtpProvider {
   constructor(private readonly logger: MinimalLogger) {}
 
   async send(mobile: string, code: string): Promise<void> {
-    if (loadEnv().NODE_ENV === 'production') {
+    if (!mockProvidersAllowed(loadEnv())) {
       throw new Error('Console OTP delivery is unavailable in production; configure a real SMS provider before launch');
     }
     // Deliberately NOT logging the code itself in production-shaped logs
     // (logger redaction also covers this) - only a delivery confirmation.
     this.logger.info({ mobile: maskMobile(mobile) }, 'OTP dispatched (console provider)');
-    if (loadEnv().NODE_ENV !== 'production') {
+    // Development, tests and a hosted preview (LR-010, test accounts only):
+    // the code is printed so a tester can sign in without an SMS vendor.
+    if (mockProvidersAllowed(loadEnv())) {
       // eslint-disable-next-line no-console
       console.info(`[dev-only] OTP for ${maskMobile(mobile)}: ${code}`);
     }

@@ -16,7 +16,10 @@
 // collections are left as they are.
 import { PrismaClient } from '@fcp/db';
 
-if (process.env.DEMO_SEED_ALLOWED !== 'preview' || process.env.NODE_ENV === 'production') {
+// A hosted preview runs as NODE_ENV=production with DEPLOYMENT_STAGE=preview
+// (LR-010); the real production stage is always refused.
+const productionStage = process.env.NODE_ENV === 'production' && process.env.DEPLOYMENT_STAGE !== 'preview';
+if (process.env.DEMO_SEED_ALLOWED !== 'preview' || productionStage) {
   throw new Error('Demo data is for preview environments only. Set DEMO_SEED_ALLOWED=preview (never in production).');
 }
 const API = `${process.env.DEMO_API_URL ?? 'http://localhost:4000'}/api/v1`;

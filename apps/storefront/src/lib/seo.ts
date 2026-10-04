@@ -5,9 +5,16 @@
 import type { Metadata } from 'next';
 import { SITE_URL } from './api';
 
-/** Production must opt in explicitly; previews and staging never get indexed. */
+/** Production must opt in explicitly; previews and staging never get indexed,
+ * and a preview deployment (DEPLOYMENT_STAGE=preview, LR-010) cannot be
+ * indexed even if SITE_INDEXING is set by mistake. */
 export function indexingEnabled(): boolean {
-  return process.env.SITE_INDEXING === 'enabled';
+  return process.env.SITE_INDEXING === 'enabled' && !isPreviewDeployment();
+}
+
+/** LR-010: a hosted preview (test payments, mock providers). */
+export function isPreviewDeployment(): boolean {
+  return process.env.DEPLOYMENT_STAGE === 'preview';
 }
 
 /** Paths a crawler must never index (customer-only or transient). */

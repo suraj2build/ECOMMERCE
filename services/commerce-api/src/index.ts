@@ -21,6 +21,9 @@ async function main() {
 
   try {
     await startServer(app, { production: env.NODE_ENV === 'production', port: env.PORT, host: '0.0.0.0' });
+    if (env.NODE_ENV === 'production' && env.DEPLOYMENT_STAGE === 'preview') {
+      app.log.warn('PREVIEW deployment (LR-010): mock OTP, carrier, messaging and channel providers allowed; Razorpay test mode only; not for real customers');
+    }
     // Integration suites control clock/expiry explicitly; actual dev and
     // production servers always start maintenance without a manual cron.
     if (env.NODE_ENV !== 'test') {

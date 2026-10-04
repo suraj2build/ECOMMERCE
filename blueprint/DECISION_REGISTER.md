@@ -2747,3 +2747,33 @@ so and nothing is invented.
   credentials and webhook access. Once named, the adapter is built behind
   the existing interface; until then OTP sign-in and shipment booking
   cannot run in production (the mocks are refused there by design).
+
+#### LR-010 — Hosted review preview · **P1**
+- **Status:** DECIDED (engineering, within the Product Owner's direction of
+  2026-10-04: "Keep payments in test mode", "a reachable preview you can
+  review on your phone — not production go-live yet", secrets through the
+  host's secure environment settings). Hosting vendor: recommended, awaiting
+  the Product Owner's account (see below).
+- **Final decision:**
+  - A preview runs the production build with `NODE_ENV=production` and
+    `DEPLOYMENT_STAGE=preview`. Every production secret check, signed guest
+    sessions and production rate limits apply.
+  - Because LR-008 is undecided, a preview may use the clearly labelled test
+    doubles: console OTP (the code is printed in the host's access-controlled
+    logs so testers can sign in), the MOCK carrier, messaging and channel
+    providers, and return photos on the service's own disk. The production
+    stage (the default) still refuses all of them.
+  - A preview refuses live Razorpay keys (only `rzp_test_…`) and refuses Meta
+    server events unless `META_TEST_EVENT_CODE` routes them to Events
+    Manager's test tool. It is never indexed, even if `SITE_INDEXING` is set,
+    and every storefront page shows a "preview, test payments" banner.
+  - Preview data lives in its own database, cache, search index and disk;
+    nothing is shared with any future production environment.
+- **Hosting recommendation:** Render (managed Postgres, Key Value, private
+  Meilisearch service with a disk, HTTPS `*.onrender.com` URLs reachable from
+  a phone, encrypted environment settings), region Singapore. Blueprint:
+  `infra/preview/render.yaml`; plan, monthly cost and inputs:
+  `docs/deployment/PREVIEW.md`. Choosing a different host does not change
+  the application; only the blueprint would be rewritten.
+- **Choice needed:** confirm the host and create the account (the Product
+  Owner's, so billing and access stay with the business).

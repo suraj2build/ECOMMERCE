@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { loadEnv } from '@fcp/config';
+import { loadEnv, mockProvidersAllowed } from '@fcp/config';
 import { GoogleMerchantProvider, MetaCatalogProvider } from './feed-providers.js';
 
 /**
@@ -152,7 +152,7 @@ export function getChannelProvider(name: string): ChannelProvider {
   if (!provider) {
     throw new Error(`Unknown channel provider "${name}" - no such provider is registered`);
   }
-  if (loadEnv().NODE_ENV === 'production' && name.startsWith('MOCK')) {
+  if (!mockProvidersAllowed(loadEnv()) && name.startsWith('MOCK')) {
     throw new Error(
       `Channel provider "${name}" is a test double and may never be used in production - no real channel integration is authorized (CHAN-001)`,
     );

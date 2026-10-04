@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { loadEnv } from '@fcp/config';
+import { loadEnv, mockProvidersAllowed } from '@fcp/config';
 
 /**
  * Carrier provider abstraction (ADR-0020, specs/16-shipping-tracking.md
@@ -241,7 +241,7 @@ const providerRegistry: Record<CarrierName, () => ShippingProvider> = {
  * loudly instead, in production only - dev/test/CI are unaffected.
  */
 export function resolveShippingProvider(name: string): ShippingProvider {
-  if (loadEnv().NODE_ENV === 'production' && name.startsWith('MOCK')) {
+  if (!mockProvidersAllowed(loadEnv()) && name.startsWith('MOCK')) {
     throw new Error(
       `Shipping provider "${name}" is a test double and may never be used in production - no real carrier integration is selected yet (SHIP-001, blueprint/DECISION_REGISTER.md)`,
     );

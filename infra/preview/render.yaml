@@ -1,0 +1,165 @@
+# Hosted review preview (LR-010) on Render: storefront, admin, API,
+# Postgres, Key Value (Redis) and Meilisearch. Not production.
+#
+# Create it from the Render dashboard: New > Blueprint, pick this repository
+# and branch, Blueprint file path "infra/preview/render.yaml". Every value
+# marked `sync: false` is asked for on creation and stored in Render's
+# encrypted environment settings; nothing secret lives in this file.
+# Full steps, costs and the values to enter: docs/deployment/PREVIEW.md.
+#
+# The preview runs as production code (NODE_ENV=production) with
+# DEPLOYMENT_STAGE=preview: production secret checks and rate limits apply,
+# Razorpay takes test keys only, the storefront is never indexed and shows a
+# preview banner, and the mock OTP, carrier and messaging providers stand in
+# for the vendors still undecided (LR-008).
+
+databases:
+  - name: vanya-preview-db
+    plan: basic-256mb
+    region: singapore
+    postgresMajorVersion: "16"
+    ipAllowList: [] # reachable only from the services below
+
+services:
+  - type: keyvalue
+    name: vanya-preview-cache
+    plan: starter
+    region: singapore
+    maxmemoryPolicy: noeviction # staff sessions and rate-limit counters
+    ipAllowList: []
+
+  - type: pserv
+    name: vanya-preview-search
+    runtime: image
+    image:
+      url: docker.io/getmeili/meilisearch:v1.10
+    plan: starter
+    region: singapore
+    disk:
+      name: meili-data
+      mountPath: /meili_data
+      sizeGB: 1
+    envVars:
+      - key: MEILI_ENV
+        value: production
+      - key: MEILI_NO_ANALYTICS
+        value: "true"
+      - key: MEILI_HTTP_ADDR
+        value: 0.0.0.0:7700
+      - key: MEILI_MASTER_KEY
+        generateValue: true
+
+  - type: web
+    name: vanya-preview-api
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: claude/loving-fermat-cyucke
+    autoDeploy: false
+    # Dev dependencies are kept so the pre-deploy step can run Prisma and the seed.
+    buildCommand: npm ci --include=dev && npm run build --workspace=services/commerce-api
+    preDeployCommand: npm run db:migrate:deploy && npm run db:seed
+    startCommand: npm run start --workspace=services/commerce-api
+    healthCheckPath: /health
+    disk:
+      name: return-evidence
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: DEPLOYMENT_STAGE
+        value: preview
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vanya-preview-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: vanya-preview-cache
+          property: connectionString
+      - key: MEILISEARCH_API_KEY
+        fromService:
+          type: pserv
+          name: vanya-preview-search
+          envVarKey: MEILI_MASTER_KEY
+      - key: MEILISEARCH_HOST # http://<search service internal hostname>:7700, shown on its Render page
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: GUEST_SESSION_SIGNING_SECRET
+        generateValue: true
+      - key: STOREFRONT_REVALIDATE_SECRET
+        generateValue: true
+      - key: MFA_SECRET_ENCRYPTION_KEY # 64 hex characters: openssl rand -hex 32
+        sync: false
+      - key: SEED_SUPER_ADMIN_EMAIL
+        sync: false
+      - key: SEED_SUPER_ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS # https://<storefront host>,https://<admin host>
+        sync: false
+      - key: STOREFRONT_REVALIDATE_URL # https://<storefront host>/api/revalidate/product
+        sync: false
+      - key: STOREFRONT_PUBLIC_URL # https://<storefront host>
+        sync: false
+      - key: RETURN_EVIDENCE_STORAGE_DIR
+        value: /var/data/return-evidence
+      - key: MAINTENANCE_ALERT_WEBHOOK_URL # optional; when set, failing jobs post here (it takes precedence)
+        sync: false
+      - key: MAINTENANCE_ALERT_LOG_ONLY # until a webhook exists, alerts are error lines in the Render logs
+        value: "true"
+      - key: RAZORPAY_KEY_ID # optional; rzp_test_... only (live keys are refused)
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+
+  - type: web
+    name: vanya-preview-storefront
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: claude/loving-fermat-cyucke
+    autoDeploy: false
+    buildCommand: npm ci --include=dev && npm run build --workspace=apps/storefront
+    startCommand: npm run start --workspace=apps/storefront
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: DEPLOYMENT_STAGE
+        value: preview
+      - key: NEXT_PUBLIC_API_URL # https://<api host>; read at build time
+        sync: false
+      - key: NEXT_PUBLIC_SITE_URL # https://<storefront host>
+        sync: false
+      - key: STOREFRONT_REVALIDATE_SECRET
+        fromService:
+          type: web
+          name: vanya-preview-api
+          envVarKey: STOREFRONT_REVALIDATE_SECRET
+
+  - type: web
+    name: vanya-preview-admin
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: claude/loving-fermat-cyucke
+    autoDeploy: false
+    buildCommand: npm ci --include=dev && npm run build --workspace=apps/admin
+    startCommand: cd apps/admin && npx next start -p $PORT
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL # https://<api host>; read at build time
+        sync: false
