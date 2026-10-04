@@ -86,7 +86,7 @@ export function HomeView({
       {/* ======================================================== */}
       {/* 1. HERO 1: THE FESTIVE EDIT (Matches Mockup Top Hero) */}
       {/* ======================================================== */}
-      <section className="relative w-full overflow-hidden bg-[#181716] min-h-[75vh] sm:min-h-[82vh] lg:min-h-[86vh] flex items-center">
+      <section className="relative w-full overflow-hidden bg-[#181716] min-h-[calc(100svh-58px-var(--preview-banner-h,0px))] sm:min-h-[calc(100svh-66px-var(--preview-banner-h,0px))] lg:min-h-[calc(100svh-114px-var(--preview-banner-h,0px))] flex items-center">
         {/* Full-bleed background image with subtle warm tone */}
         <div className="absolute inset-0">
           {editorial.hero && (

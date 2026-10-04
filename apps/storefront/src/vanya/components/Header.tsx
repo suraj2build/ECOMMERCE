@@ -6,9 +6,10 @@
  * Header.png") above the desktop navigation. Classes are the design's own.
  * Changes from the prototype, each for a real-data or accessibility reason:
  * links instead of in-memory view switches; real bag, wishlist and rewards
- * counts; the utility announcement uses the design's own department line
- * (AnnouncementBar.tsx) instead of an unapproved delivery/tailoring promise;
- * the phone header keeps search and bag on screen at 390px.
+ * counts; the phone header keeps search and bag on screen at 390px. The
+ * former separate utility row (department switch / tagline / track order /
+ * rewards) was folded into the icon cluster to keep the header compact -
+ * see desktopUtilityIcons.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
@@ -141,6 +142,41 @@ export function Header() {
     </>
   );
 
+  const desktopUtilityIcons = (
+    <>
+      {/* Choose Department */}
+      <button
+        type="button"
+        onClick={() => navigate('gateway')}
+        className="hidden xl:inline-flex p-1.5 text-[#3D3732] hover:text-[#181716] transition-colors cursor-pointer"
+        title="Choose Department (Men / Women)"
+        aria-label="Choose Department"
+      >
+        <Compass className="w-4 h-4 stroke-[1.6]" />
+      </button>
+
+      {/* Track Order */}
+      <Link
+        href="/orders"
+        className="hidden xl:inline-flex p-1.5 text-[#3D3732] hover:text-[#181716] transition-colors cursor-pointer"
+        title="Track Order"
+        aria-label="Track Order"
+      >
+        <Truck className="w-4 h-4 stroke-[1.6]" />
+      </Link>
+
+      {/* Rewards */}
+      <Link
+        href="/account/loyalty"
+        className="hidden xl:inline-flex p-1.5 text-[#3D3732] hover:text-[#181716] transition-colors cursor-pointer"
+        title={`Rewards${loyaltyPoints !== null ? ` (${loyaltyPoints.toLocaleString('en-IN')} Pts)` : ''}`}
+        aria-label="Rewards"
+      >
+        <Coins className="w-4 h-4 stroke-[1.6]" />
+      </Link>
+    </>
+  );
+
   return (
     <>
       <header
@@ -151,50 +187,10 @@ export function Header() {
             : 'bg-white border-b border-[#F0ECE4]'
         }`}
       >
-        {/* Tier 1: Slim, Airy Utility Bar (Removes clutter from main row) */}
-        <div className="hidden lg:block border-b border-[#F4EFE6] bg-[#FAF8F5]/80 text-[#7A7065] text-[11px] py-1.5 px-4 sm:px-8">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            {/* Left: Direct gateway link */}
-            <button
-              type="button"
-              onClick={() => navigate('gateway')}
-              className="flex items-center gap-1.5 hover:text-[#181716] transition-colors cursor-pointer tracking-wider uppercase font-light"
-              title="Return to Main Department Gateway to choose Men or Women"
-            >
-              <Compass className="w-3 h-3 text-[var(--color-primary)]" />
-              <span>← Atelier Portals (Choose Department)</span>
-            </button>
-
-            {/* Center: the design's department line (AnnouncementBar) */}
-            <p className="text-[11px] tracking-[0.16em] uppercase font-light text-[#756A5E]">
-              {isMen ? 'A Modern Indian Menswear Brand' : 'A Modern Indian Womenswear Atelier'}
-            </p>
-
-            {/* Right: Quick Utilities */}
-            <div className="flex items-center gap-5 tracking-wider uppercase font-light">
-              <Link
-                href="/orders"
-                className="flex items-center gap-1 hover:text-[#181716] transition-colors cursor-pointer"
-              >
-                <Truck className="w-3 h-3 text-[var(--color-primary)]" />
-                <span>Track Order</span>
-              </Link>
-
-              <Link
-                href="/account/loyalty"
-                className="flex items-center gap-1 hover:text-[#181716] transition-colors cursor-pointer font-medium text-[#705139]"
-              >
-                <Coins className="w-3 h-3 text-[var(--color-primary)]" />
-                <span>Rewards{loyaltyPoints !== null ? ` (${loyaltyPoints.toLocaleString('en-IN')} Pts)` : ''}</span>
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Tier 2: Main Spacious Haute Couture Navigation Bar */}
+        {/* Main Navigation Bar */}
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Approved separate brand row (desktop); on phones the original single row. */}
-          <div className="flex items-center justify-between h-16 sm:h-20 lg:h-24 gap-4 lg:justify-center lg:border-b lg:border-[#F4EFE6]">
+          {/* Brand row (desktop); on phones the original single row. */}
+          <div className="flex items-center justify-between h-14 sm:h-16 gap-4 lg:justify-center lg:border-b lg:border-[#F4EFE6]">
             {/* Mobile menu button */}
             <button
               id="btn-mobile-menu-toggle"
@@ -210,9 +206,9 @@ export function Header() {
 
             {/* Center Column: Prominent Luxury Brand Logo with Tagline.
                 A plain unmodified left-click switches department (same
-                navigate('gateway') the "Atelier Portals" utility link below
-                uses); Ctrl/Cmd/Shift/middle-click fall through to the real
-                href so opening in a new tab still works normally. */}
+                navigate('gateway') the Compass icon button uses); Ctrl/Cmd/
+                Shift/middle-click fall through to the real href so opening
+                in a new tab still works normally. */}
             <Link
               href="/"
               aria-label="VANYA — choose Men or Women"
@@ -224,7 +220,7 @@ export function Header() {
               className="text-center cursor-pointer select-none px-2 lg:px-4 shrink-0"
               title="Switch Department (Men / Women)"
             >
-              <span className="font-editorial text-2xl sm:text-3xl lg:text-[42px] tracking-[0.28em] font-normal uppercase text-[#181716] block hover:opacity-90 transition-opacity leading-none">
+              <span className="font-editorial text-xl sm:text-2xl lg:text-[28px] tracking-[0.28em] font-normal uppercase text-[#181716] block hover:opacity-90 transition-opacity leading-none">
                 VANYA
               </span>
               <span className="hidden sm:block text-[8px] sm:text-[9px] tracking-[0.28em] uppercase text-[#73685C] font-light mt-1">
@@ -236,7 +232,7 @@ export function Header() {
           </div>
 
           {/* Desktop navigation row */}
-          <div className="hidden lg:flex items-center justify-between h-14 gap-4">
+          <div className="hidden lg:flex items-center justify-between h-12 gap-4">
             {/* Left Nav: Primary Categories */}
             <nav aria-label="Primary" className="flex items-center gap-5 xl:gap-6 text-[11px] xl:text-[12px] tracking-[0.16em] uppercase font-medium whitespace-nowrap">
               <Link
@@ -274,8 +270,9 @@ export function Header() {
             </nav>
 
             {/* Right Column: Integrated Search, and Icons */}
-            <div className="flex items-center gap-3 sm:gap-4 lg:gap-5">
+            <div className="flex items-center gap-3 sm:gap-4 lg:gap-5 xl:gap-3 2xl:gap-5">
               {searchPill}
+              {desktopUtilityIcons}
               {icons}
             </div>
           </div>
