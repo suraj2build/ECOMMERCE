@@ -116,7 +116,7 @@ export const getMyOrder = (id: string) => ordersFetch<OrderView>(`/api/v1/storef
 
 /**
  * M18 (specs/17-cancellation.md, CAN-002 "customer self-service").
- * `idempotencyKey` is client-generated (same `crypto.randomUUID()`
+ * `idempotencyKey` is client-generated (same `randomUuid()`
  * pattern lib/checkout.ts's `retryPayment` already uses) so a network
  * retry of this exact call never double-cancels.
  */

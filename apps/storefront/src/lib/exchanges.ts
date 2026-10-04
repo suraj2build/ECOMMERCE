@@ -1,6 +1,7 @@
 'use client';
 
 import { getExistingGuestSessionToken } from './guest-session';
+import { randomUuid } from './random-id';
 
 /**
  * Exchanges client (M21, specs/20-exchanges.md). Same guest-or-customer
@@ -79,7 +80,7 @@ export const initiateMyExchange = (
 ) =>
   exchangesFetch<ExchangeView>('/api/v1/storefront/exchanges', {
     method: 'POST',
-    body: JSON.stringify({ orderId, orderLineId, replacementSkuId, reason, method, idempotencyKey: crypto.randomUUID() }),
+    body: JSON.stringify({ orderId, orderLineId, replacementSkuId, reason, method, idempotencyKey: randomUuid() }),
   });
 
 export const listMyExchanges = () => exchangesFetch<ExchangeView[]>('/api/v1/storefront/exchanges');

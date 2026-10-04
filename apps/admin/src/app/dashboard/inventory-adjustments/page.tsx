@@ -6,6 +6,7 @@ import { BalanceCard, useSkuLocationFromUrl } from '@/components/sku-location';
 import { ConfirmDialog, PageHeader, TextField } from '@/components/ui';
 import { apiSend, errorMessage } from '@/lib/api';
 import { useCan } from '@/lib/session';
+import { randomUuid } from '@/lib/random-id';
 
 /**
  * Manual inventory adjustment (M29, ADM-003; FLOW 20). Below-threshold
@@ -44,7 +45,7 @@ export default function InventoryAdjustmentsPage() {
     setConfirming(false);
     setMessage(null);
     setSubmitting(true);
-    const idempotencyKey = idempotencyKeyRef.current ?? crypto.randomUUID();
+    const idempotencyKey = idempotencyKeyRef.current ?? randomUuid();
     idempotencyKeyRef.current = idempotencyKey;
     try {
       await apiSend('POST', '/inventory/adjustments', {

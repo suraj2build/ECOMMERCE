@@ -1,6 +1,7 @@
 'use client';
 
 import { API_URL, getStoredSession, clearSession } from './staff-auth';
+import { randomUuid } from './random-id';
 
 export class ApiError extends Error {
   constructor(
@@ -69,8 +70,7 @@ export function errorMessage(err: unknown, fallback = 'Something went wrong.'): 
 
 /** A fresh idempotency key for one user-initiated action. Retrying the same action reuses it. */
 export function newIdempotencyKey(prefix: string): string {
-  const rand = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-  return `admin-${prefix}-${rand}`;
+  return `admin-${prefix}-${randomUuid()}`;
 }
 
 export interface Page<T> {

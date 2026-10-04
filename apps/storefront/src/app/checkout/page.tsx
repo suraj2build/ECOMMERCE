@@ -10,6 +10,7 @@ import { previewCheckout, startCheckout, type Address, type CheckoutPreview } fr
 import { INDIAN_STATES } from '@/lib/indian-states';
 import { getStoredSession } from '@/lib/customer-auth';
 import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance } from '@/lib/account';
+import { randomUuid } from '@/lib/random-id';
 
 const EMPTY_ADDRESS: Address = { line1: '', line2: '', landmark: '', city: '', state: '', stateCode: '', pincode: '' };
 
@@ -39,7 +40,7 @@ export default function CheckoutPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey] = useState(() => randomUuid());
 
   // M23 (specs/22-loyalty.md §8): only a signed-in customer has a
   // LoyaltyAccount to redeem against - a guest checkout simply never

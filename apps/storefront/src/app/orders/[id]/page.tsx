@@ -18,6 +18,7 @@ import {
   type ReplacementOption,
 } from '@/lib/exchanges';
 import { openRazorpayCheckout } from '@/lib/razorpay';
+import { randomUuid } from '@/lib/random-id';
 
 // M18 (specs/17-cancellation.md, CAN-001): "before shipment" - convenience
 // display only, the server (OrderService.performCancellation) is the sole
@@ -231,7 +232,7 @@ export default function OrderDetailPage() {
     setCancelError(null);
     setCancelInFlight(true);
     try {
-      await cancelMyOrderLine(order!.id, lineId, cancelReason.trim() || undefined, crypto.randomUUID());
+      await cancelMyOrderLine(order!.id, lineId, cancelReason.trim() || undefined, randomUuid());
       setCancellingLineId(null);
       setCancelReason('');
       await refresh();

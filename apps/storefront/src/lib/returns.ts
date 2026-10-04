@@ -1,6 +1,7 @@
 'use client';
 
 import { getExistingGuestSessionToken } from './guest-session';
+import { randomUuid } from './random-id';
 
 /**
  * Returns client (M19, specs/18-returns.md). Same guest-or-customer
@@ -78,7 +79,7 @@ export interface ReturnView {
 }
 
 /**
- * `idempotencyKey` is client-generated (same `crypto.randomUUID()`
+ * `idempotencyKey` is client-generated (same `randomUuid()`
  * pattern lib/orders.ts's `cancelMyOrderLine` already uses) so a network
  * retry of this exact call never double-initiates the same return.
  */
@@ -89,7 +90,7 @@ export const initiateMyReturn = (
 ) =>
   returnsFetch<ReturnView>('/api/v1/storefront/returns', {
     method: 'POST',
-    body: JSON.stringify({ orderId, lines, method, idempotencyKey: crypto.randomUUID() }),
+    body: JSON.stringify({ orderId, lines, method, idempotencyKey: randomUuid() }),
   });
 
 export const listMyReturns = () => returnsFetch<ReturnView[]>('/api/v1/storefront/returns');
