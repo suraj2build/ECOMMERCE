@@ -35,9 +35,12 @@ design (`suraj2build/Stitch-Spark_Ai_Studio`).
   the design's own catalogue and editorial photographs (preview data
   only) and resets itself when that catalogue changes.
 - **Exchange copy.** The footer no longer claims "7-Day Exchanges": that
-  number was the platform return window, and whether exchanges share it
-  (EXC-003) is an unconfirmed engineering default. It now reads "Size &
-  Colour Exchanges" (EXC-002).
+  number was the platform return window, which categories and products
+  can override. It now reads "Size & Colour Exchanges" (EXC-002).
+- **EXC-003 (decided, Product Owner, 2026-10-04).** Exchanges use the
+  return window with its category/product overrides and exclusions,
+  measured from delivery. The replacement must be a size or colour of the
+  same product, and the API now refuses any other product.
 - **Pending design features** (Notify me, newsletter, social links,
   Fit-First and the rest) are listed with what each needs in
   `docs/design/VANYA_VISUAL_PARITY.md` → "Pending functionality".

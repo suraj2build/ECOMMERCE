@@ -45,7 +45,11 @@ different size or colour.
   (release original SKU + reserve/allocate replacement SKU) — never a
   silent net-zero adjustment that loses the audit trail.
 - Exchange eligibility window matches the return window
-  (`specs/18-returns.md` `RET-001`), configured together.
+  (`specs/18-returns.md` `RET-001`), configured together: the same
+  category/product overrides and non-returnable exclusions apply, measured
+  from delivery (`EXC-003`, Product Owner, 2026-10-04).
+- The replacement MUST be an available size or colour of the same product;
+  a different product is refused (`EXC-002`/`EXC-003`).
 
 ## Remaining open items
 

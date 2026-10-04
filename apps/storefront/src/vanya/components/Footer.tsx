@@ -46,10 +46,9 @@ export function Footer() {
             <RefreshCw className="w-5 h-5 text-[#D4AF37] shrink-0 mt-0.5" />
             <div>
               <h5 className="text-xs uppercase tracking-widest font-semibold text-[#EDE6DC]">
-                {/* EXC-002 decides size and colour exchanges. No day count: whether
-                    exchanges share the return window (EXC-003) awaits Product Owner
-                    confirmation, and categories/products may override it; each product
-                    page shows its own window. */}
+                {/* EXC-002/EXC-003: size and colour exchanges of the same product,
+                    within the return window. No day count here: categories and
+                    products override the window, and each product page shows its own. */}
                 Size &amp; Colour Exchanges
               </h5>
               <p className="text-[11px] text-[#A69A8E] mt-0.5">

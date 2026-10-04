@@ -1495,34 +1495,39 @@ Not self-certified; awaiting independent re-review.
 
 #### EXC-003 — Exchange eligibility window · **P2**
 - **Question:** Same window as returns, or distinct?
-- **Dependencies:** RET-001
-- **Status:** DECIDED (engineering default) · **Decision date:** 2026-09-22
-- **Final decision:** Same window as returns (`RET-001`), configured together for consistency and simplicity.
+- **Dependencies:** RET-001, EXC-002
+- **Status:** **DECIDED** (Product Owner, 2026-10-04). It replaces the
+  2026-09-22 engineering default.
+- **Final decision:**
+  - An exchange uses the same effective eligibility window as a return:
+    the category and product overrides and the non-returnable exclusions
+    of `RET-001` apply, and the window is measured from delivery.
+  - The replacement must be an available size or colour of the same
+    product. A different product is not an exchange.
 - **Affected specs:** `specs/20-exchanges.md`
-- **Product Owner confirmation pending (2026-10-04):** this is an
-  engineering default, not a Product Owner decision. The code enforces it
-  (`ExchangeService` uses `resolveReturnPolicy`), and each product page
-  states that product's resolved window. The storefront makes no
-  site-wide exchange day-count claim: the footer reads "Size & Colour
-  Exchanges" (EXC-002) until this is confirmed.
-- **Proposed rule (review recommendation, 2026-10-04; not yet confirmed
-  by the Product Owner):**
-  - an exchange uses the same effective eligibility window as a return,
-    including category and product overrides and non-returnable
-    exclusions, measured from delivery;
-  - the replacement must be an available size or colour of the same
-    product.
-- **Gap against the proposal, found 2026-10-04 (unchanged until
-  confirmed):** the window half already matches the code
-  (`resolveReturnPolicy` plus `isWithinWindow` from delivery, with
-  non-returnable items refused). The same-product half does not:
-  - the storefront's exchange form offers only in-stock variants of the
-    same style;
-  - `ExchangeService.initiate` accepts any SKU with an active price, so a
-    direct API call could exchange for a different product.
+- **Implementation (2026-10-04):**
+  - The window already matched: `ExchangeService` resolves it through
+    `resolveReturnPolicy` (product, then category, then platform
+    default), refuses non-returnable items, and checks `isWithinWindow`
+    from `deliveredAt`.
+  - Same product: the storefront form offered only same-style variants,
+    but `ExchangeService.performInitiate` accepted any priced SKU. It now
+    refuses a replacement from another style (400, nothing reserved).
+- **Tests:** `services/commerce-api/test/integration/exchanges.test.ts`,
+  "EXC-003: same product, return window with overrides and exclusions":
+  - a cross-product replacement is refused and reserves nothing; run
+    against the code without the check, this test failed with a 201;
+  - a category window shorter than the default closes exchanges sooner;
+  - a product window longer than the default keeps them open;
+  - an excluded product cannot be exchanged.
 
-  If the rule is confirmed, the server must refuse a replacement from
-  another style, and a test must cover it.
+  Five existing price-difference tests had used a different product only
+  to get a different price. They now use a colour of the same product
+  with its own colour-level price.
+- **Storefront copy:** the footer still makes no site-wide day-count claim
+  ("Size & Colour Exchanges · On eligible items"), because the window
+  differs by category and product. Each product page states its own
+  window.
 
 #### EXC-004 — M21 exchange data model, payment integration, and scope boundaries · **P1**
 - **Question:** How does a first-class `Exchange` entity (`EXC-001`)

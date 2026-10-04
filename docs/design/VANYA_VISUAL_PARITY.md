@@ -148,7 +148,7 @@ Status key:
 |---|---|---|
 | C-1 | Prototype promises: free delivery above ₹999/₹1,999, complimentary express delivery and bespoke tailoring above ₹5,000, 7-day returns, coupon VANYA10. | **Not adopted.** Real policy values are shown where the API provides them (`policies.returns.windowDays`, confirmed `shipping.freeAboveAmount`); otherwise neutral wording. |
 | C-2 | Money "₹6990"; "1 styles", "1 items"; technical shopper copy. | **Fix** |
-| C-4 | Footer "7-Day Exchanges" (first restoration) used the platform return window. | **Fix**: the window, the per-category overrides and exchange eligibility are not one site-wide fact, and EXC-003 is unconfirmed. The footer now reads "Size & Colour Exchanges · On eligible items, from your orders"; the home trust bar's returns line reads "On eligible items, from delivery". |
+| C-4 | Footer "7-Day Exchanges" (first restoration) used the platform return window. | **Fix**: the window, the per-category overrides and exchange eligibility are not one site-wide fact, and it varies by category and product (EXC-003). The footer now reads "Size & Colour Exchanges · On eligible items, from your orders"; the home trust bar's returns line reads "On eligible items, from delivery". |
 | C-3 | Text contrast: several of the original's small grey labels (`#8C7F72`, `#8A7D71`, `#7E7468` and similar, 3.0–4.4:1), the theme primaries (`#8F6B4E`, `#866791`, 4.49:1 on their page colours) and the footer's legal row (`#786D61` on `#1A1816`, 3.5:1) are below WCAG AA for small text. | **Adjusted for accessibility.** Each is darkened to the nearest passing shade with the same hue (greys `#756A5E`; primaries `#876448` and `#7F6189`; on the dark footer, light tints `#B08D74`, `#B394BE` and `#A39789`). Layout, sizes and weights are unchanged; the shift is about one tone. |
 
 ## Admin (not governed by AI Studio)
@@ -224,7 +224,7 @@ or the Product Owner removes it from scope.
 | Rewards earning rates and tiers | Footer: rewards panel | Published rates | Product Owner approval to publish the loyalty rates (the engine has configurable rates; they are not shown to shoppers) |
 | Prototype promises (free delivery above ₹999/₹1,999, express delivery and tailoring above ₹5,000, coupon VANYA10) | Header, footer, bag | Approved policy | Shown only when the real policy service confirms them (C-1) |
 
-Related open decision: `EXC-003`, which says exchanges share the return
-window, is an engineering default awaiting Product Owner confirmation. Until
-it is confirmed, the footer says "Size & Colour Exchanges" (EXC-002) with no
-day count. Each product page states its own resolved window.
+`EXC-003` (decided 2026-10-04): exchanges share the return window,
+including overrides and exclusions, and stay within the same product. The
+footer says "Size & Colour Exchanges" with no day count, because the window
+differs by category and product. Each product page states its own window.
