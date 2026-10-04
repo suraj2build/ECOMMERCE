@@ -5,6 +5,7 @@ import { ValidationError } from '@fcp/shared';
 import { ProductService } from './service.js';
 import { ProductReadinessService } from './readiness.js';
 import { ProductMediaService } from './media-service.js';
+import { IMPORT_COLUMNS, ImportService, summarise, type ImportColumn } from './import-service.js';
 
 const createStyleSchema = z.object({
   styleCode: z.string().min(1),
@@ -87,6 +88,16 @@ const updateMediaSchema = z
   .object({ colourId: z.string().uuid().nullable().optional(), altText: z.string().max(300).nullable().optional(), isSwatch: z.boolean().optional() })
   .strict();
 const idParam = z.object({ id: z.string().uuid() });
+
+/** Bulk import rows: known columns only (no stock, no unknown fields), bounded batches. */
+const IMPORT_BATCH_MAX_ROWS = 500;
+const importRowSchema = z
+  .object({ row: z.number().int().positive(), ...Object.fromEntries(IMPORT_COLUMNS.map((c) => [c, z.string().max(2000).optional()])) } as unknown as Record<
+    'row' | ImportColumn,
+    z.ZodTypeAny
+  >)
+  .strict();
+const importRowsSchema = z.object({ rows: z.array(importRowSchema).min(1).max(IMPORT_BATCH_MAX_ROWS) });
 
 const productRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new ProductService(fastify);
@@ -332,6 +343,47 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
     await media.remove(id, request.staffUser!.id);
     if (existing) await refresh(existing.styleId);
     reply.status(204).send();
+  });
+
+  // --- Admin Ops Phase 1: bulk product import ---
+
+  const imports = new ImportService(fastify);
+  const canWritePrices = (request: import('fastify').FastifyRequest) => request.staffUser!.permissions.has('catalog:price:write');
+  type Rows = Parameters<ImportService['validate']>[0];
+
+  /** Dry run: per-row outcome of importing these rows. Reads only. */
+  fastify.post('/products/imports/validate', { preHandler: writeAuth }, async (request) => {
+    const { rows } = importRowsSchema.parse(request.body);
+    const results = await imports.validate(rows as Rows, canWritePrices(request));
+    return { summary: summarise(results), results };
+  });
+
+  fastify.post('/products/imports', { preHandler: writeAuth }, async (request, reply) => {
+    const body = z
+      .object({ fileName: z.string().min(1).max(200), totalRows: z.number().int().positive().max(1_000_000), totalBatches: z.number().int().positive().max(10_000) })
+      .parse(request.body);
+    reply.status(201).send(await imports.createRun(body, request.staffUser!.id));
+  });
+
+  fastify.get('/products/imports', { preHandler: readAuth }, async () => imports.listRuns());
+
+  fastify.get('/products/imports/:id', { preHandler: readAuth }, async (request) => {
+    const { id } = idParam.parse(request.params);
+    return imports.getRun(id);
+  });
+
+  /** Applies one batch of an import run. Safe to repeat: rows match by identifiers. */
+  fastify.post('/products/imports/:id/batches/:index', { preHandler: writeAuth }, async (request) => {
+    const { id, index } = z.object({ id: z.string().uuid(), index: z.coerce.number().int().nonnegative() }).parse(request.params);
+    const { rows } = importRowsSchema.parse(request.body);
+    // Refuse an unknown run or a batch number outside it before doing any work.
+    const run = await imports.getRun(id);
+    if (index >= run.totalBatches) throw new ValidationError(`Batch ${index + 1} is outside this import (it has ${run.totalBatches})`);
+    const { results, touchedStyleIds } = await imports.apply(rows as Rows, canWritePrices(request), request.staffUser!.id);
+    for (const styleId of touchedStyleIds) await fastify.searchIndex.indexStyle(styleId);
+    if (touchedStyleIds.length > 0) await fastify.storefrontCache.invalidateCatalog();
+    await imports.recordBatch(id, index, results, request.staffUser!.id);
+    return { summary: summarise(results), results };
   });
 
   // Public: the bytes of a product photo a product still uses. The storefront
