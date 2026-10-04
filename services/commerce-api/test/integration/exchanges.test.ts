@@ -119,7 +119,12 @@ describe('Exchanges (M21)', () => {
    * colour-exchange pair (same size, different colour) - EXC's own
    * "both size AND colour exchange" requirement.
    */
-  async function setupExchangeableStyle(sellingPrice: number, ctx?: Awaited<ReturnType<typeof seedContext>>) {
+  /**
+   * `whitePrice` sets a colour-level price on White, so a same-product
+   * colour exchange can carry a real price difference (EXC-002/003: an
+   * exchange is always another size or colour of the same product).
+   */
+  async function setupExchangeableStyle(sellingPrice: number, ctx?: Awaited<ReturnType<typeof seedContext>>, whitePrice?: number) {
     const token = await merchandisingToken();
     const seeded = ctx ?? (await seedContext());
     const hsnCode = '6109';
@@ -147,6 +152,10 @@ describe('Exchanges (M21)', () => {
     await app.inject({ method: 'POST', url: `/api/v1/products/styles/${styleId}/qa-check`, headers: { authorization: `Bearer ${token}` } });
     await app.inject({ method: 'POST', url: `/api/v1/products/styles/${styleId}/publish`, headers: { authorization: `Bearer ${token}` } });
     await app.inject({ method: 'POST', url: '/api/v1/catalog/prices', headers: { authorization: `Bearer ${token}` }, payload: { styleId, mrp: sellingPrice, sellingPrice } });
+    if (whitePrice !== undefined) {
+      const colourPrice = await app.inject({ method: 'POST', url: '/api/v1/catalog/prices', headers: { authorization: `Bearer ${token}` }, payload: { styleId, colourId: whiteId, mrp: whitePrice, sellingPrice: whitePrice } });
+      expect(colourPrice.statusCode).toBe(201);
+    }
 
     const blackM = await testPrisma.sku.findFirstOrThrow({ where: { styleId, colourId: blackId, sizeId: seeded.sizeId } });
     const blackL = await testPrisma.sku.findFirstOrThrow({ where: { styleId, colourId: blackId, sizeId: seeded.secondSizeId } });
@@ -306,13 +315,13 @@ describe('Exchanges (M21)', () => {
 
   it('collects the price difference online when the replacement costs more, completing once BOTH payment and QC settle (QC first, then payment)', async () => {
     const ctx = await seedContext();
-    const cheap = await setupExchangeableStyle(1000, ctx);
-    const pricey = await setupExchangeableStyle(1800, ctx);
-    const { orderId } = await prepaidCapturedOrder(cheap.blackM.id, `guest-pay-${counter}`, `idem-pay-${counter}`);
+    // Black at ₹1,000, White at ₹1,800: a colour exchange that costs more.
+    const fx = await setupExchangeableStyle(1000, ctx, 1800);
+    const { orderId } = await prepaidCapturedOrder(fx.blackM.id, `guest-pay-${counter}`, `idem-pay-${counter}`);
     const wT = await warehouseToken();
     const { lineId } = await deliverOrderLine(orderId, wT);
 
-    const res = await initiateExchange(orderId, lineId, pricey.blackM.id, wT, `exc-pay-${counter}`);
+    const res = await initiateExchange(orderId, lineId, fx.whiteM.id, wT, `exc-pay-${counter}`);
     expect(res.statusCode).toBe(201);
     const exchange = res.json();
     expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
@@ -344,12 +353,12 @@ describe('Exchanges (M21)', () => {
 
   it('completes once payment is captured BEFORE QC too - order of arrival must not matter', async () => {
     const ctx = await seedContext();
-    const cheap = await setupExchangeableStyle(1000, ctx);
-    const pricey = await setupExchangeableStyle(1800, ctx);
-    const { orderId } = await prepaidCapturedOrder(cheap.blackM.id, `guest-payfirst-${counter}`, `idem-payfirst-${counter}`);
+    // Black at ₹1,000, White at ₹1,800: a colour exchange that costs more.
+    const fx = await setupExchangeableStyle(1000, ctx, 1800);
+    const { orderId } = await prepaidCapturedOrder(fx.blackM.id, `guest-payfirst-${counter}`, `idem-payfirst-${counter}`);
     const wT = await warehouseToken();
     const { lineId } = await deliverOrderLine(orderId, wT);
-    const exchange = (await initiateExchange(orderId, lineId, pricey.blackM.id, wT, `exc-payfirst-${counter}`)).json();
+    const exchange = (await initiateExchange(orderId, lineId, fx.whiteM.id, wT, `exc-payfirst-${counter}`)).json();
 
     const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: `guest-payfirst-${counter}` } });
     const { providerOrderId } = payRes.json();
@@ -368,12 +377,12 @@ describe('Exchanges (M21)', () => {
 
   it('a failed price-difference payment does not complete the exchange silently, and the customer can retry without re-initiating', async () => {
     const ctx = await seedContext();
-    const cheap = await setupExchangeableStyle(1000, ctx);
-    const pricey = await setupExchangeableStyle(1800, ctx);
-    const { orderId } = await prepaidCapturedOrder(cheap.blackM.id, `guest-payfail-${counter}`, `idem-payfail-${counter}`);
+    // Black at ₹1,000, White at ₹1,800: a colour exchange that costs more.
+    const fx = await setupExchangeableStyle(1000, ctx, 1800);
+    const { orderId } = await prepaidCapturedOrder(fx.blackM.id, `guest-payfail-${counter}`, `idem-payfail-${counter}`);
     const wT = await warehouseToken();
     const { lineId } = await deliverOrderLine(orderId, wT);
-    const exchange = (await initiateExchange(orderId, lineId, pricey.blackM.id, wT, `exc-payfail-${counter}`)).json();
+    const exchange = (await initiateExchange(orderId, lineId, fx.whiteM.id, wT, `exc-payfail-${counter}`)).json();
     await receiveAndQc(exchange.id, wT, 'PASS');
 
     const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: `guest-payfail-${counter}` } });
@@ -403,13 +412,13 @@ describe('Exchanges (M21)', () => {
 
   it('issues store credit for the price difference when the replacement costs less, only after QC passes', async () => {
     const ctx = await seedContext();
-    const pricey = await setupExchangeableStyle(2000, ctx);
-    const cheap = await setupExchangeableStyle(1200, ctx);
+    // Black at ₹2,000, White at ₹1,200: a colour exchange that costs less.
+    const fx = await setupExchangeableStyle(2000, ctx, 1200);
     const guestId = `guest-credit-${counter}`;
-    const { orderId } = await codOrder(pricey.blackM.id, guestId, `idem-credit-${counter}`);
+    const { orderId } = await codOrder(fx.blackM.id, guestId, `idem-credit-${counter}`);
     const wT = await warehouseToken();
     const { lineId } = await deliverOrderLine(orderId, wT);
-    const exchange = (await initiateExchange(orderId, lineId, cheap.blackM.id, wT, `exc-credit-${counter}`)).json();
+    const exchange = (await initiateExchange(orderId, lineId, fx.whiteM.id, wT, `exc-credit-${counter}`)).json();
     expect(exchange.paymentDirection).toBe('STORE_CREDIT');
     expect(Number(exchange.priceDifference)).toBeLessThan(0);
     expect(exchange.paymentStatus).toBe('NOT_REQUIRED');
@@ -498,12 +507,12 @@ describe('Exchanges (M21)', () => {
 
   it('duplicate payment-capture webhook events are a safe no-op - never double-completes or double-allocates', async () => {
     const ctx = await seedContext();
-    const cheap = await setupExchangeableStyle(1000, ctx);
-    const pricey = await setupExchangeableStyle(1800, ctx);
-    const { orderId } = await prepaidCapturedOrder(cheap.blackM.id, `guest-dupwh-${counter}`, `idem-dupwh-${counter}`);
+    // Black at ₹1,000, White at ₹1,800: a colour exchange that costs more.
+    const fx = await setupExchangeableStyle(1000, ctx, 1800);
+    const { orderId } = await prepaidCapturedOrder(fx.blackM.id, `guest-dupwh-${counter}`, `idem-dupwh-${counter}`);
     const wT = await warehouseToken();
     const { lineId } = await deliverOrderLine(orderId, wT);
-    const exchange = (await initiateExchange(orderId, lineId, pricey.blackM.id, wT, `exc-dupwh-${counter}`)).json();
+    const exchange = (await initiateExchange(orderId, lineId, fx.whiteM.id, wT, `exc-dupwh-${counter}`)).json();
     await receiveAndQc(exchange.id, wT, 'PASS');
 
     const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: `guest-dupwh-${counter}` } });
@@ -516,7 +525,7 @@ describe('Exchanges (M21)', () => {
     expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(200);
 
-    const allocationTxns = await testPrisma.inventoryTransaction.findMany({ where: { skuId: pricey.blackM.id, type: 'ALLOCATION' } });
+    const allocationTxns = await testPrisma.inventoryTransaction.findMany({ where: { skuId: fx.whiteM.id, type: 'ALLOCATION' } });
     expect(allocationTxns).toHaveLength(1);
   });
 
@@ -594,6 +603,78 @@ describe('Exchanges (M21)', () => {
     const { lineId } = await deliverOrderLine(orderId, wT);
     const res = await initiateExchange(orderId, lineId, fixture.blackM.id, wT, `exc-same-${counter}`);
     expect(res.statusCode).toBe(400);
+  });
+
+  // --- 13b. EXC-002/EXC-003 (Product Owner, 2026-10-04) ---
+
+  describe('EXC-003: same product, return window with overrides and exclusions', () => {
+    async function expectNothingReserved(orderId: string, replacementSkuId: string) {
+      expect(await testPrisma.exchange.count({ where: { orderId } })).toBe(0);
+      expect(await testPrisma.inventoryTransaction.count({ where: { skuId: replacementSkuId, type: 'RESERVATION' } })).toBe(0);
+    }
+    async function setDeliveredDaysAgo(lineId: string, days: number) {
+      const fulfilment = await testPrisma.orderFulfilment.findFirstOrThrow({ where: { lines: { some: { id: lineId } } } });
+      await testPrisma.orderFulfilment.update({ where: { id: fulfilment.id }, data: { deliveredAt: new Date(Date.now() - days * 86_400_000) } });
+    }
+
+    it('rejects a replacement from a different product, even one in stock and priced, and reserves nothing', async () => {
+      const ctx = await seedContext();
+      const original = await setupExchangeableStyle(1500, ctx);
+      const other = await setupExchangeableStyle(1500, ctx);
+      const { orderId } = await codOrder(original.blackM.id, `guest-xstyle-${counter}`, `idem-xstyle-${counter}`);
+      const wT = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, wT);
+
+      const res = await initiateExchange(orderId, lineId, other.blackL.id, wT, `exc-xstyle-${counter}`);
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toMatch(/same product/);
+      await expectNothingReserved(orderId, other.blackL.id);
+
+      // The same line can still be exchanged for another size of its own product.
+      const ok = await initiateExchange(orderId, lineId, original.blackL.id, wT, `exc-xstyle-ok-${counter}`);
+      expect(ok.statusCode).toBe(201);
+    });
+
+    it('a category window shorter than the default closes exchanges sooner', async () => {
+      const ctx = await seedContext();
+      const fixture = await setupExchangeableStyle(1500, ctx);
+      await testPrisma.returnPolicy.create({ data: { categoryId: ctx.categoryId, windowDays: 2 } });
+      const { orderId } = await codOrder(fixture.blackM.id, `guest-catwin-${counter}`, `idem-catwin-${counter}`);
+      const wT = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, wT);
+      await setDeliveredDaysAgo(lineId, 4); // inside the 7-day default, outside the category's 2 days
+
+      const res = await initiateExchange(orderId, lineId, fixture.blackL.id, wT, `exc-catwin-${counter}`);
+      expect(res.statusCode).toBe(400);
+      await expectNothingReserved(orderId, fixture.blackL.id);
+    });
+
+    it('a product window longer than the default keeps exchanges open, measured from delivery', async () => {
+      const ctx = await seedContext();
+      const fixture = await setupExchangeableStyle(1500, ctx);
+      await testPrisma.returnPolicy.create({ data: { categoryId: ctx.categoryId, windowDays: 2 } });
+      await testPrisma.returnPolicy.create({ data: { styleId: fixture.styleId, windowDays: 30 } }); // product beats category
+      const { orderId } = await codOrder(fixture.blackM.id, `guest-stywin-${counter}`, `idem-stywin-${counter}`);
+      const wT = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, wT);
+      await setDeliveredDaysAgo(lineId, 20);
+
+      const res = await initiateExchange(orderId, lineId, fixture.blackL.id, wT, `exc-stywin-${counter}`);
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('a product excluded from returns cannot be exchanged', async () => {
+      const ctx = await seedContext();
+      const fixture = await setupExchangeableStyle(1500, ctx);
+      await testPrisma.returnPolicy.create({ data: { styleId: fixture.styleId, windowDays: 7, returnable: false } });
+      const { orderId } = await codOrder(fixture.blackM.id, `guest-excl-${counter}`, `idem-excl-${counter}`);
+      const wT = await warehouseToken();
+      const { lineId } = await deliverOrderLine(orderId, wT);
+
+      const res = await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-excl-${counter}`);
+      expect(res.statusCode).toBe(400);
+      await expectNothingReserved(orderId, fixture.whiteM.id);
+    });
   });
 
   // --- 14. Cross-domain: Return and Exchange are mutually exclusive per line ---
