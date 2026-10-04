@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getProductDetail, searchStorefront, SITE_URL } from '@/lib/api';
+import { buildProductBreadcrumb } from '@/vanya/lib/productBreadcrumb';
 import { PdpView } from '@/vanya/views/PdpView';
 import { safeJsonLd } from '@/lib/json-ld';
 import { sharing } from '@/lib/seo';
@@ -102,13 +103,9 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const similar = (await searchStorefront({ category: product.categorySlug, gender: department ?? undefined, pageSize: 5 }).catch(() => null))
     ?.hits.filter((hit) => hit.id !== product.id) ?? [];
 
-  // Matches the visible breadcrumb trail in the design (Home / department / category / product).
-  const breadcrumbItems = [
-    { name: 'Home', href: '/' },
-    ...(department ? [{ name: department === 'men' ? 'Men' : 'Women', href: `/category/${department}` }] : []),
-    { name: product.categoryName, href: `/category/${product.categorySlug}` },
-    { name: product.name, href: `/product/${product.id}` },
-  ];
+  // Single source of truth shared with the visible PDP breadcrumb
+  // (vanya/lib/productBreadcrumb.ts) so the two can never drift apart.
+  const breadcrumbItems = buildProductBreadcrumb(product);
 
   const breadcrumbStructuredData = {
     '@context': 'https://schema.org',
@@ -116,7 +113,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
     itemListElement: breadcrumbItems.map((item, index) => ({
       '@type': 'ListItem',
       position: index + 1,
-      name: item.name,
+      name: item.label,
       item: `${SITE_URL}${item.href}`,
     })),
   };

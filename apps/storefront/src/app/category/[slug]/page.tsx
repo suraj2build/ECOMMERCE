@@ -71,11 +71,23 @@ export default async function CategoryPage({ params, searchParams }: { params: P
   const title = resolved.preset?.gender
     ? query.categories.length === 1 ? categoryFacets.find((f) => f.value === query.categories[0])?.label ?? departmentTitle : departmentTitle
     : resolved.title;
+  // Breadcrumb mirrors the title logic above: a bare department root (no
+  // single category selected) shows as "Home / Men" with Men as the current
+  // crumb; a specific category (reached either via /category/men?category=X
+  // or directly via /category/X?gender=men) adds it as a third crumb.
+  const genderLabel = gender === 'men' ? 'Men' : gender === 'women' ? 'Women' : null;
+  const isDepartmentRootOnly = resolved.preset?.gender ? query.categories.length !== 1 : false;
+  const breadcrumbItems = [
+    { label: 'Home', href: '/' },
+    ...(genderLabel ? [{ label: genderLabel, href: isDepartmentRootOnly ? undefined : `/category/${gender}` }] : []),
+    ...(isDepartmentRootOnly ? [] : [{ label: title }]),
+  ];
   return (
     <PlpView
       title={title}
       eyebrow={gender === 'women' ? "Dedicated Women's Atelier" : gender === 'men' ? "Dedicated Men's Atelier" : 'VANYA Edit'}
       description={resolved.preset && !resolved.preset.gender ? resolved.preset.description : DESIGN_DESCRIPTION}
+      breadcrumbItems={breadcrumbItems}
       basePath={`/category/${slug}`}
       routeCategory={resolved.preset ? undefined : slug}
       query={query}

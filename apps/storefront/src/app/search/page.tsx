@@ -23,11 +23,18 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
     if (target) redirect(target);
   }
   const department = query.gender === 'women' ? "Women's Atelier" : query.gender === 'men' ? "Men's Atelier" : 'All Departments';
+  const genderLabel = query.gender === 'men' ? 'Men' : query.gender === 'women' ? 'Women' : null;
+  const breadcrumbItems = [
+    { label: 'Home', href: '/' },
+    ...(genderLabel ? [{ label: genderLabel, href: `/category/${query.gender}` }] : []),
+    { label: query.q ? `Search: "${query.q}"` : 'Shop all' },
+  ];
   return (
     <PlpView
       title={query.q ? `Search: “${query.q}”` : 'Shop all'}
       eyebrow={department}
       description={query.q ? 'Styles matching your search, with live prices and sizes.' : 'Every published style, with live prices and sizes.'}
+      breadcrumbItems={breadcrumbItems}
       basePath="/search"
       query={query}
       result={result}

@@ -11,7 +11,7 @@ test.describe('Storefront Home', () => {
     await page.goto('/');
     await expect(page.getByRole('button', { name: 'Enter WOMEN store' })).toBeVisible();
     await page.getByRole('button', { name: 'Enter WOMEN store' }).click();
-    await expect(page.getByRole('link', { name: 'VANYA home' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'VANYA — choose Men or Women' })).toBeVisible();
   }
 
   test('first visit presents the VANYA department gateway and remains mobile-safe', async ({ page }) => {
@@ -82,7 +82,7 @@ test.describe('Storefront Home', () => {
     for (const width of [1440, 1280, 1024, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/');
-      const brand = page.getByRole('link', { name: 'VANYA home' });
+      const brand = page.getByRole('link', { name: 'VANYA — choose Men or Women' });
       await expect(brand).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'men');
       const dimensions = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));

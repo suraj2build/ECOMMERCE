@@ -19,8 +19,8 @@ import { useModalFocus } from '@/components/layout/useModalFocus';
 import { TrackListView } from '@/components/consent/TrackListView';
 import { hitToProduct } from '../bridge/adapters';
 import { ShopProductCard } from '../bridge/ShopProductCard';
-import { useShop } from '../bridge/shop';
 import { entrance } from '../bridge/entrance';
+import { Breadcrumb, type BreadcrumbItem } from '../components/Breadcrumb';
 
 // Staggered entrance animation variants for editorial product browsing
 const gridContainerVariants = {
@@ -81,6 +81,7 @@ interface PlpViewProps {
   colourFacets: Facet[];
   listName: string;
   searchTerm?: string;
+  breadcrumbItems?: BreadcrumbItem[];
 }
 
 function hrefFor(path: string, query: ListingQuery, page?: number) {
@@ -98,7 +99,6 @@ function hrefFor(path: string, query: ListingQuery, page?: number) {
 
 export function PlpView({
   title,
-  eyebrow,
   description,
   basePath,
   routeCategory,
@@ -108,9 +108,9 @@ export function PlpView({
   colourFacets,
   listName,
   searchTerm,
+  breadcrumbItems = [{ label: 'Home', href: '/' }, { label: title }],
 }: PlpViewProps) {
   const router = useRouter();
-  const { navigate } = useShop();
   const gender = query.gender;
 
   // Mobile filter drawer state
@@ -158,46 +158,26 @@ export function PlpView({
   const categoryName = (slug: string) => categoryFacets.find((f) => f.value === slug)?.label ?? slug;
 
   return (
-    <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+    <div className="max-w-7xl 2xl:max-w-[1760px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
       <TrackListView
         listName={listName}
         searchTerm={searchTerm}
         items={result.hits.map((hit) => ({ styleCode: hit.styleCode, name: hit.name, price: hit.sellingPrice }))}
       />
-      {/* Category Editorial Banner & Title */}
-      <div className="mb-8 border-b border-[#EAE3D7] pb-6">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-[#756A5E] font-semibold">
-              <span>Atelier Catalog</span>
-              <span aria-hidden="true">•</span>
-              <span className="text-[var(--color-primary)] font-bold">{eyebrow}</span>
-            </div>
-            <h1 className="font-editorial text-3xl sm:text-5xl text-[#1A1816] font-normal mt-1">
-              {title}
-            </h1>
-            <p className="text-xs text-[#7A6F64] mt-1.5 max-w-xl">
-              {description}
-            </p>
-          </div>
+      {/* Breadcrumb + compact title/count/toolbar row */}
+      <Breadcrumb items={breadcrumbItems} className="text-xs text-[#756A5E] mb-2" />
 
-          {/* Department Switcher: Routes to Main Portal as requested */}
-          <button
-            type="button"
-            onClick={() => navigate('gateway')}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-[#F5EFE6] border border-[#DDD3C5] hover:border-[#1A1816] rounded-full text-xs uppercase tracking-wider font-medium text-[#5A5046] hover:text-[#1A1816] transition-all shadow-xs cursor-pointer self-start sm:self-auto"
-            title="Return to Main Gateway to switch between Men and Women"
-          >
-            <span className="text-[var(--color-primary)]">←</span>
-            <span>Switch Department (Main Portal)</span>
-          </button>
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-[#EAE3D7]">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h1 className="font-editorial text-xl sm:text-2xl text-[#1A1816] font-normal truncate">
+            {title}
+          </h1>
+          <span className="text-xs text-[#756A5E] shrink-0" role="status">
+            {total} {total === 1 ? 'style' : 'styles'}
+          </span>
         </div>
-      </div>
 
-      {/* Control Bar: Filter Trigger, Product Count, Sort & View Density */}
-      <div className="flex items-center justify-between gap-2 py-3 border-b border-[#EAE3D7] mb-6 text-xs text-[#52483E]">
-        {/* Left: Filter Toggle Button */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Mobile Filter Button */}
           <button
             id="btn-open-mobile-filter"
@@ -227,13 +207,6 @@ export function PlpView({
             )}
           </button>
 
-          <span className="hidden md:inline text-xs text-[#756A5E]" role="status">
-            Showing <strong className="text-[#1A1816] font-semibold">{total}</strong> {total === 1 ? 'style' : 'styles'}
-          </span>
-        </div>
-
-        {/* Right: Sort & Desktop Grid Density */}
-        <div className="flex items-center gap-3 min-w-0">
           {/* Sort Dropdown */}
           <div className="flex items-center gap-1.5 bg-white border border-[#DDD3C5] px-3.5 py-1.5 rounded-full shadow-xs min-w-0">
             <ArrowUpDown className="w-3.5 h-3.5 text-[#756A5E] shrink-0" aria-hidden="true" />
@@ -278,9 +251,14 @@ export function PlpView({
         </div>
       </div>
 
-      <p className="md:hidden -mt-3 mb-4 text-xs text-[#756A5E]">
-        Showing <strong className="text-[#1A1816] font-semibold">{total}</strong> {total === 1 ? 'style' : 'styles'}
-      </p>
+      {description && (
+        <details className="mb-4 text-xs text-[#7A6F64] max-w-xl">
+          <summary className="cursor-pointer select-none text-[#756A5E] hover:text-[#1A1816] list-none inline-flex items-center gap-1">
+            About this edit <span aria-hidden="true">▾</span>
+          </summary>
+          <p className="mt-1.5">{description}</p>
+        </details>
+      )}
 
       {/* Active Filter Chips */}
       {activeFiltersCount > 0 && (
@@ -338,10 +316,12 @@ export function PlpView({
       )}
 
       {/* Main Content Layout: Sidebar + Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Desktop Filter Sidebar */}
+      <div className="flex flex-col lg:flex-row gap-8 items-start">
+        {/* Desktop Filter Sidebar: fixed width (not a grid fraction) so the
+            product grid gets all the remaining space, letting it reach 5
+            columns at very wide viewports even with filters open. */}
         {desktopFilterOpen && (
-          <aside aria-label="Filters" className="hidden sm:block lg:col-span-4 space-y-6 bg-[var(--color-surface)]/30 p-5 rounded-2xl border border-[var(--color-border)] text-xs shadow-xs">
+          <aside aria-label="Filters" className="hidden sm:block lg:w-72 lg:shrink-0 space-y-6 bg-[var(--color-surface)]/30 p-5 rounded-2xl border border-[var(--color-border)] text-xs shadow-xs">
             <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
               <span className="font-semibold uppercase tracking-[0.16em] text-[#1A1816] text-[11px]">
                 Refine Selection
@@ -367,7 +347,7 @@ export function PlpView({
                   {categoryFacets.map((cat) => (
                     <label
                       key={cat.value}
-                      className="flex items-center gap-2 cursor-pointer hover:text-[#1A1816] text-[#554A40] py-0.5"
+                      className="flex items-center gap-2 cursor-pointer hover:text-[#1A1816] text-[#554A40] py-2 px-1 -mx-1 rounded hover:bg-[#FAF7F2]"
                     >
                       <input
                         type="checkbox"
@@ -389,7 +369,7 @@ export function PlpView({
                 <span className="font-semibold text-[#2D2722] block mb-2 uppercase tracking-wider text-[11px]">
                   Colour Palette
                 </span>
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-1.5">
                   {colourFacets.map((col) => {
                     const isSelected = selectedColors.includes(col.value);
                     return (
@@ -398,18 +378,21 @@ export function PlpView({
                         type="button"
                         aria-pressed={isSelected}
                         onClick={() => toggleColor(col.value)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] transition-all ${
+                        className={`flex items-center gap-2 w-full text-left py-2 px-1 -mx-1 rounded cursor-pointer transition-colors ${
                           isSelected
-                            ? 'border-[#1A1816] bg-white font-semibold shadow-xs'
-                            : 'border-[#DDD3C5] bg-white/60 text-[#695D51] hover:border-[#1A1816]'
+                            ? 'text-[#1A1816] font-semibold bg-[#F5EFE6]'
+                            : 'text-[#554A40] hover:text-[#1A1816] hover:bg-[#FAF7F2]'
                         }`}
                         title={col.value}
                       >
                         <span
-                          className="w-2.5 h-2.5 rounded-full border border-black/10 shrink-0"
+                          className={`w-3 h-3 rounded-full border shrink-0 ${
+                            isSelected ? 'border-[#1A1816] ring-2 ring-offset-1 ring-[#1A1816]/30' : 'border-black/10'
+                          }`}
                           style={{ backgroundColor: col.hex }}
                         />
                         <span>{col.label}</span>
+                        <span className="text-[#756A5E]">({col.count})</span>
                       </button>
                     );
                   })}
@@ -433,12 +416,7 @@ export function PlpView({
         )}
 
         {/* Product Grid Area */}
-        <section
-          aria-label="Products"
-          className={`${
-            desktopFilterOpen ? 'lg:col-span-8' : 'lg:col-span-12'
-          }`}
-        >
+        <section aria-label="Products" className="flex-1 min-w-0">
           {result.unavailable ? (
             <EmptyState title="Search is temporarily unavailable" body="Please try again shortly." />
           ) : products.length === 0 ? (
@@ -454,11 +432,13 @@ export function PlpView({
               initial={entrance('hidden')}
               animate="visible"
               className={`grid grid-cols-2 gap-3 sm:gap-6 ${
-                gridCols === 4 && !desktopFilterOpen
-                  ? 'sm:grid-cols-3 lg:grid-cols-4'
-                  : gridCols === 4 && desktopFilterOpen
-                  ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3'
-                  : 'sm:grid-cols-2 lg:grid-cols-3'
+                desktopFilterOpen
+                  ? gridCols === 4
+                    ? 'sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5'
+                    : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4'
+                  : gridCols === 4
+                  ? 'sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-5'
+                  : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4'
               }`}
             >
               {products.map((product) => (

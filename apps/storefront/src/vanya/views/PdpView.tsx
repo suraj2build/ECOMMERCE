@@ -40,6 +40,8 @@ import { getStoredSession } from '@/lib/customer-auth';
 import { track } from '@/lib/tracking';
 import { useModalFocus } from '@/components/layout/useModalFocus';
 import { formatPrice } from '../utils/format';
+import { Breadcrumb } from '../components/Breadcrumb';
+import { buildProductBreadcrumb } from '../lib/productBreadcrumb';
 import { ContextualLightingControl, LightingMode, LIGHTING_CONFIGS } from '../components/ContextualLightingControl';
 import { detailToProduct, hitToProduct, NO_SWATCH } from '../bridge/adapters';
 import { ShopProductCard } from '../bridge/ShopProductCard';
@@ -204,7 +206,6 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
   const policies = detail.policies;
   const shippingConfirmed = policies?.shipping.confirmed === true;
   const returns = policies?.returns;
-  const genderLabel = product.gender === 'unisex' ? null : product.gender;
   const images = currentColor.images;
   const ratingCount = detail.ratingSummary.reviewCount;
   const averageRating = detail.ratingSummary.averageRating ?? 0;
@@ -217,21 +218,10 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
   return (
     <div id="pdp-container" className="pb-20">
       {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 text-xs text-[#756A5E]">
-        <ol className="flex flex-wrap items-center gap-2">
-          <li><Link href="/" className="hover:text-[#1A1816]">Home</Link></li>
-          {genderLabel && (
-            <>
-              <li aria-hidden="true">/</li>
-              <li><Link href={`/category/${genderLabel}`} className="capitalize hover:text-[#1A1816]">{genderLabel}</Link></li>
-            </>
-          )}
-          <li aria-hidden="true">/</li>
-          <li><Link href={`/category/${detail.categorySlug}${genderLabel ? `?gender=${genderLabel}` : ''}`} className="hover:text-[#1A1816]">{product.category}</Link></li>
-          <li aria-hidden="true">/</li>
-          <li aria-current="page" className="text-[#1A1816] font-medium truncate max-w-[14rem] sm:max-w-xs">{product.title}</li>
-        </ol>
-      </nav>
+      <Breadcrumb
+        items={buildProductBreadcrumb(detail)}
+        className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 text-xs text-[#756A5E]"
+      />
 
       {/* Main PDP Grid: Media + Purchase Panel */}
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-2 pb-16">

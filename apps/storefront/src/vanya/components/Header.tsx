@@ -208,12 +208,21 @@ export function Header() {
               <Menu className="w-5 h-5" />
             </button>
 
-            {/* Center Column: Prominent Luxury Brand Logo with Tagline */}
+            {/* Center Column: Prominent Luxury Brand Logo with Tagline.
+                A plain unmodified left-click switches department (same
+                navigate('gateway') the "Atelier Portals" utility link below
+                uses); Ctrl/Cmd/Shift/middle-click fall through to the real
+                href so opening in a new tab still works normally. */}
             <Link
               href="/"
-              aria-label="VANYA home"
+              aria-label="VANYA — choose Men or Women"
+              onClick={(e) => {
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                navigate('gateway');
+              }}
               className="text-center cursor-pointer select-none px-2 lg:px-4 shrink-0"
-              title="Return to Atelier Home"
+              title="Switch Department (Men / Women)"
             >
               <span className="font-editorial text-2xl sm:text-3xl lg:text-[42px] tracking-[0.28em] font-normal uppercase text-[#181716] block hover:opacity-90 transition-opacity leading-none">
                 VANYA
