@@ -43,8 +43,9 @@ Thumbs.db
 infra/.data/
 dump.rdb
 
-# Return evidence local-disk storage (RETURN_EVIDENCE_STORAGE_DIR, M19
-# independent-review repair) - private uploaded content, never committed.
+# Return evidence and product photo local-disk storage
+# (RETURN_EVIDENCE_STORAGE_DIR, PRODUCT_MEDIA_STORAGE_DIR) - uploaded
+# content, never committed.
 services/commerce-api/var/
 
 # Generated test-load measurements

@@ -6,9 +6,17 @@ const ownOrigin = site
   ? [{ protocol: site.protocol.replace(':', ''), hostname: site.hostname, ...(site.port ? { port: site.port } : {}) }]
   : [];
 
+// Product photos uploaded in admin (Admin Ops Phase 1) are stored by the API
+// and recorded as /media/products/<file>, a path on the storefront's own
+// origin; this rewrite fetches them from the API's public media route.
+const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/$/, '');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async rewrites() {
+    return [{ source: '/media/products/:file', destination: `${apiUrl}/api/v1/media/products/:file` }];
+  },
   images: {
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost' },

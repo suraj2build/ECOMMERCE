@@ -215,6 +215,16 @@ const envSchema = z.object({
   RETURN_EVIDENCE_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(5_242_880), // 5 MiB
   RETURN_EVIDENCE_ALLOWED_MIME_TYPES: z.string().default('image/jpeg,image/png,image/webp'),
   RETURN_EVIDENCE_MAX_FILES_PER_LINE: z.coerce.number().int().positive().default(6),
+  // Admin Ops Phase 1: PUBLIC product photos uploaded in admin. A separate
+  // store from the private return evidence above (its own directory, or its
+  // own bucket/prefix), served to shoppers through the storefront's
+  // /media/products/<file> path. Production refuses local disk, as it does
+  // for return evidence (LR-005).
+  PRODUCT_MEDIA_STORAGE: z.enum(['local', 's3']).default('local'),
+  PRODUCT_MEDIA_STORAGE_DIR: z.string().default('var/product-media'),
+  PRODUCT_MEDIA_S3_BUCKET: z.string().min(3).default('product-media'),
+  PRODUCT_MEDIA_S3_PREFIX: z.string().default('product-media/'),
+  PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10_485_760), // 10 MiB
 
   // --- Refunds (M20 independent-review repair, finding 4) ---
   // Age-based recovery cutoff for a Refund stuck in PROCESSING (the

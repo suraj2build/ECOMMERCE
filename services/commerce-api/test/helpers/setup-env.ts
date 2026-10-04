@@ -15,3 +15,7 @@ process.env.INVENTORY_ADJUSTMENT_COAPPROVAL_THRESHOLD_UNITS ??= '50';
 process.env.GRN_EXCESS_TOLERANCE_PERCENT ??= '0';
 process.env.GRN_QC_FAIL_MANAGER_SIGNOFF_THRESHOLD_UNITS ??= '20';
 process.env.INVENTORY_RESERVATION_TTL_SECONDS ??= '900';
+// Admin Ops Phase 1: test uploads go to a throwaway directory, never the
+// demo's var/product-media (or return evidence) store.
+process.env.PRODUCT_MEDIA_STORAGE_DIR ??= `${process.env.TMPDIR ?? '/tmp'}/fcp-test-product-media`;
+process.env.RETURN_EVIDENCE_STORAGE_DIR ??= `${process.env.TMPDIR ?? '/tmp'}/fcp-test-return-evidence`;

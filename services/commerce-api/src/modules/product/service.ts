@@ -27,6 +27,19 @@ export interface CreateStyleInput {
   customAttributes?: Record<string, unknown>;
 }
 
+const REQUIRED_TEXT_FIELDS = ['name', 'season', 'collection'] as const;
+const OPTIONAL_TEXT_FIELDS = [
+  'department', 'gender', 'division', 'subcategory', 'fabric', 'fit', 'pattern', 'occasion', 'sleeve', 'neck', 'washCare', 'countryOfOrigin', 'hsnCode',
+] as const;
+const FIELD_LABELS: Record<(typeof REQUIRED_TEXT_FIELDS)[number], string> = { name: 'Product name', season: 'Season', collection: 'Collection' };
+
+export type UpdateStyleInput = Partial<Record<(typeof REQUIRED_TEXT_FIELDS)[number], string | null>> &
+  Partial<Record<(typeof OPTIONAL_TEXT_FIELDS)[number], string | null>> & {
+    brandId?: string;
+    categoryId?: string;
+    customAttributes?: Record<string, unknown>;
+  };
+
 export interface QaCompletenessResult {
   passed: boolean;
   reasons: string[];
@@ -169,10 +182,17 @@ export class ProductService {
     });
     const existingKeys = new Set(existingSkus.map((s) => `${s.colourId}:${s.sizeId}`));
 
+    // Admin Ops Phase 1: SKU codes are built from the size LABEL (readable
+    // on labels, pick lists and import files) instead of the first four
+    // characters of the size's internal id. Existing SKU codes never change.
+    const sizes = await this.prisma.size.findMany({ where: { id: { in: sizeIds } } });
+    const sizeById = new Map(sizes.map((size) => [size.id, size]));
+    for (const sizeId of sizeIds) if (!sizeById.has(sizeId)) throw new NotFoundError('Size', sizeId);
+
     for (const colour of style.colours) {
       for (const sizeId of sizeIds) {
         if (existingKeys.has(`${colour.id}:${sizeId}`)) continue;
-        const skuCode = `${style.styleCode}-${colour.colourCode}-${sizeId.slice(0, 4)}`.toUpperCase();
+        const skuCode = await this.uniqueSkuCode(`${style.styleCode}-${colour.colourCode}-${skuCodePart(sizeById.get(sizeId)!.label)}`);
         const sku = await this.createSku({ styleId, colourId: colour.id, sizeId, skuCode }, actorStaffId);
         created.push({ skuId: sku.id, colourId: colour.id, sizeId });
       }
@@ -380,6 +400,255 @@ export class ProductService {
     return updated;
   }
 
+  // --- Editing (Admin Ops Phase 1) ---
+
+  /** A SKU code no existing SKU uses: the base code, else base-2, base-3... */
+  async uniqueSkuCode(base: string): Promise<string> {
+    const code = base.toUpperCase();
+    const taken = new Set(
+      (await this.prisma.sku.findMany({ where: { skuCode: { startsWith: code } }, select: { skuCode: true } })).map((s) => s.skuCode),
+    );
+    if (!taken.has(code)) return code;
+    for (let n = 2; ; n += 1) if (!taken.has(`${code}-${n}`)) return `${code}-${n}`;
+  }
+
+  /**
+   * Edits a style's details. Fields left out are unchanged; an optional
+   * field sent as null is cleared; season, collection and name can be
+   * changed but never blanked (PROD-001). The style code is the product's
+   * stable identifier (imports match on it), so it cannot be edited here.
+   * customAttributes is merged key by key, and a key sent as null is
+   * removed. Archived styles are read-only.
+   */
+  async updateStyle(styleId: string, patch: UpdateStyleInput, actorStaffId: string) {
+    const style = await this.prisma.style.findUnique({ where: { id: styleId } });
+    if (!style) throw new NotFoundError('Style', styleId);
+    if (style.lifecycleState === 'ARCHIVED') throw new ConflictError('This product is archived and can no longer be edited');
+
+    const data: Prisma.StyleUncheckedUpdateInput = {};
+    const changed: string[] = [];
+    for (const key of REQUIRED_TEXT_FIELDS) {
+      const value = patch[key];
+      if (value === undefined) continue;
+      if (value === null || !value.trim()) throw new ValidationError(`${FIELD_LABELS[key]} cannot be blank`);
+      if (value.trim() !== style[key]) {
+        data[key] = value.trim();
+        changed.push(key);
+      }
+    }
+    for (const key of OPTIONAL_TEXT_FIELDS) {
+      const value = patch[key];
+      if (value === undefined) continue;
+      const next = value === null || !value.trim() ? null : value.trim();
+      if (next !== style[key]) {
+        data[key] = next;
+        changed.push(key);
+      }
+    }
+    if (patch.brandId !== undefined && patch.brandId !== style.brandId) {
+      const brand = await this.prisma.brand.findUnique({ where: { id: patch.brandId } });
+      if (!brand) throw new ValidationError('Choose an existing brand');
+      data.brandId = patch.brandId;
+      changed.push('brandId');
+    }
+    if (patch.categoryId !== undefined && patch.categoryId !== style.categoryId) {
+      const category = await this.prisma.category.findUnique({ where: { id: patch.categoryId } });
+      if (!category) throw new ValidationError('Choose an existing category');
+      data.categoryId = patch.categoryId;
+      changed.push('categoryId');
+    }
+    if (patch.customAttributes !== undefined) {
+      const current = style.customAttributes && typeof style.customAttributes === 'object' && !Array.isArray(style.customAttributes)
+        ? { ...(style.customAttributes as Record<string, unknown>) }
+        : {};
+      let attributesChanged = false;
+      for (const [key, value] of Object.entries(patch.customAttributes)) {
+        if (value === null) {
+          if (key in current) {
+            delete current[key];
+            attributesChanged = true;
+          }
+        } else if (JSON.stringify(current[key]) !== JSON.stringify(value)) {
+          current[key] = value;
+          attributesChanged = true;
+        }
+      }
+      if (attributesChanged) {
+        data.customAttributes = current as Prisma.InputJsonValue;
+        changed.push('customAttributes');
+      }
+    }
+
+    if (changed.length === 0) return { style: await this.getStyle(styleId), changed };
+    await this.prisma.style.update({ where: { id: styleId }, data });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'style.update',
+      entityType: 'Style',
+      entityId: styleId,
+      newValue: { changedFields: changed },
+    });
+    return { style: await this.getStyle(styleId), changed };
+  }
+
+  /** Renames a colour or changes its swatch. The colour code stays: SKU codes and imports use it. */
+  async updateColour(colourId: string, patch: { name?: string; hexSwatch?: string | null }, actorStaffId: string) {
+    const colour = await this.prisma.colour.findUnique({ where: { id: colourId }, include: { style: true } });
+    if (!colour) throw new NotFoundError('Colour', colourId);
+    if (colour.style.lifecycleState === 'ARCHIVED') throw new ConflictError('This product is archived and can no longer be edited');
+    if (patch.name !== undefined && !patch.name.trim()) throw new ValidationError('Colour name cannot be blank');
+    if (patch.hexSwatch && !/^#[0-9a-f]{6}$/i.test(patch.hexSwatch)) throw new ValidationError('Swatch must be a colour like #1A2B3C');
+    const updated = await this.prisma.colour.update({
+      where: { id: colourId },
+      data: {
+        ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+        ...(patch.hexSwatch !== undefined ? { hexSwatch: patch.hexSwatch || null } : {}),
+      },
+    });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'colour.update',
+      entityType: 'Colour',
+      entityId: colourId,
+      newValue: { changedFields: Object.keys(patch) },
+      reference: colour.styleId,
+    });
+    return updated;
+  }
+
+  /**
+   * Removes a colour that was added by mistake. Only a colour with no SKUs,
+   * prices or photos can go: anything else may already be in stock, on an
+   * order or on the storefront, so it is deactivated SKU by SKU instead.
+   */
+  async deleteColour(colourId: string, actorStaffId: string) {
+    const colour = await this.prisma.colour.findUnique({
+      where: { id: colourId },
+      include: { _count: { select: { skus: true, prices: true, media: true, shoppableMediaTags: true } } },
+    });
+    if (!colour) throw new NotFoundError('Colour', colourId);
+    const { skus, prices, media, shoppableMediaTags } = colour._count;
+    if (skus > 0) throw new ConflictError(`${colour.name} already has sizes (SKUs). Turn off the sizes you do not sell instead of removing the colour.`);
+    if (prices > 0) throw new ConflictError(`${colour.name} has its own price history, which is kept. It cannot be removed.`);
+    if (media > 0) throw new ConflictError(`${colour.name} has photos. Move or remove its photos first.`);
+    if (shoppableMediaTags > 0) throw new ConflictError(`${colour.name} is tagged in Watch & Shop. Remove those tags first.`);
+    await this.prisma.colour.delete({ where: { id: colourId } });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'colour.delete',
+      entityType: 'Colour',
+      entityId: colourId,
+      oldValue: { name: colour.name, colourCode: colour.colourCode },
+      reference: colour.styleId,
+    });
+  }
+
+  /** Sets a SKU's barcode (null clears it) or turns the SKU on/off for sale. */
+  async updateSku(skuId: string, patch: { barcode?: string | null; isActive?: boolean }, actorStaffId: string) {
+    const sku = await this.prisma.sku.findUnique({ where: { id: skuId }, include: { style: true } });
+    if (!sku) throw new NotFoundError('Sku', skuId);
+    if (sku.style.lifecycleState === 'ARCHIVED') throw new ConflictError('This product is archived and can no longer be edited');
+    const barcode = patch.barcode === undefined ? undefined : patch.barcode?.trim() || null;
+    if (barcode && !/^[0-9A-Za-z-]{4,64}$/.test(barcode)) throw new ValidationError('A barcode is 4-64 letters, digits or dashes');
+    if (barcode) {
+      const other = await this.prisma.sku.findUnique({ where: { barcode } });
+      if (other && other.id !== skuId) throw new ConflictError(`Barcode ${barcode} is already used by ${other.skuCode}`);
+    }
+    const updated = await withUniqueConstraintCheck(
+      () =>
+        this.prisma.sku.update({
+          where: { id: skuId },
+          data: { ...(barcode !== undefined ? { barcode } : {}), ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}) },
+          include: { colour: true, size: true },
+        }),
+      'Sku',
+    );
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'sku.update',
+      entityType: 'Sku',
+      entityId: skuId,
+      oldValue: { barcode: sku.barcode, isActive: sku.isActive },
+      newValue: { barcode: updated.barcode, isActive: updated.isActive },
+      reference: sku.styleId,
+    });
+    return updated;
+  }
+
+  /** Links every SKU of a style to one size chart (its measurements), or unlinks them (null). */
+  async assignSizeChart(styleId: string, sizeChartId: string | null, actorStaffId: string) {
+    await this.getStyle(styleId);
+    if (sizeChartId) {
+      const chart = await this.prisma.sizeChart.findUnique({ where: { id: sizeChartId } });
+      if (!chart || !chart.isActive) throw new ValidationError('Choose an active size chart');
+    }
+    const { count } = await this.prisma.sku.updateMany({ where: { styleId }, data: { sizeChartId } });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'style.size_chart',
+      entityType: 'Style',
+      entityId: styleId,
+      newValue: { sizeChartId, skus: count },
+    });
+    return { updated: count };
+  }
+
+  /** Brands, categories (with product type), sizes and size charts for the product workspace. */
+  async getReferenceData() {
+    const [brands, categories, sizes, sizeCharts] = await Promise.all([
+      this.prisma.brand.findMany({ where: { isActive: true }, orderBy: { name: 'asc' }, select: { id: true, code: true, name: true } }),
+      this.prisma.category.findMany({
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, slug: true, productType: true, parentId: true },
+      }),
+      this.prisma.size.findMany({ orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }], select: { id: true, label: true, sortOrder: true } }),
+      this.prisma.sizeChart.findMany({
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, gender: true, category: true, entries: { select: { sizeLabel: true, measurements: true } } },
+      }),
+    ]);
+    return { brands, categories, sizes, sizeCharts };
+  }
+
+  /** Adds a size label (e.g. "UK 8", "100 ml") to the shared size list. */
+  async createSize(label: string, actorStaffId: string) {
+    const clean = label.trim().replace(/\s+/g, ' ');
+    if (!clean || clean.length > 20) throw new ValidationError('A size label is 1-20 characters');
+    const existing = await this.prisma.size.findFirst({ where: { label: { equals: clean, mode: 'insensitive' } } });
+    if (existing) throw new ConflictError(`Size ${existing.label} already exists`);
+    const last = await this.prisma.size.aggregate({ _max: { sortOrder: true } });
+    const size = await withUniqueConstraintCheck(
+      () => this.prisma.size.create({ data: { label: clean, sortOrder: (last._max.sortOrder ?? 0) + 1 } }),
+      'Size',
+    );
+    await recordAudit(this.prisma, { actorType: 'STAFF', actorStaffId, action: 'size.create', entityType: 'Size', entityId: size.id, newValue: { label: clean } });
+    return size;
+  }
+
+  /** Sets which attributes and sizes the workspace offers for a category. */
+  async updateCategoryProductType(categoryId: string, productType: 'APPAREL' | 'FOOTWEAR' | 'BELT' | 'FRAGRANCE', actorStaffId: string) {
+    const category = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    if (!category) throw new NotFoundError('Category', categoryId);
+    const updated = await this.prisma.category.update({ where: { id: categoryId }, data: { productType } });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'category.product_type',
+      entityType: 'Category',
+      entityId: categoryId,
+      oldValue: { productType: category.productType },
+      newValue: { productType },
+    });
+    return updated;
+  }
+
   // --- Bulk operations foundation (PROD-006) ---
 
   async bulkCreateStyles(
@@ -409,4 +678,10 @@ export class ProductService {
 
     return { succeeded, failed };
   }
+}
+
+/** Upper-case letters and digits of a size label, e.g. "UK 8" -> "UK8", "100 ml" -> "100ML". */
+export function skuCodePart(label: string): string {
+  const part = label.toUpperCase().replace(/[^A-Z0-9]+/g, '');
+  return part || 'SIZE';
 }

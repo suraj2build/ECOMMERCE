@@ -206,6 +206,7 @@ model StaffUser {
   updatedCmsNavigationMenus     CmsNavigationMenu[]
   disabledGiftCards             GiftCard[]                  @relation("GiftCardDisabledBy")
   giftCardLedgerEntriesActed    GiftCardLedgerEntry[]       @relation("GiftCardLedgerEntryActor")
+  productImportRuns             ProductImportRun[]
 
   @@map("staff_users")
 }
@@ -323,6 +324,10 @@ model Category {
   slug     String  @unique
   parentId String?
   isActive Boolean @default(true)
+  // Admin Ops Phase 1: which attributes and sizes the product workspace
+  // offers for this category (apparel, shoes, belts, perfume). Guidance
+  // for data entry only - it never restricts what the server accepts.
+  productType ProductType @default(APPAREL)
 
   parent       Category?           @relation("CategoryTree", fields: [parentId], references: [id])
   children     Category[]          @relation("CategoryTree")
@@ -501,6 +506,13 @@ enum MediaType {
   VIDEO
 }
 
+enum ProductType {
+  APPAREL
+  FOOTWEAR
+  BELT
+  FRAGRANCE
+}
+
 model ProductMedia {
   id          String    @id @default(uuid())
   styleId     String
@@ -516,7 +528,19 @@ model ProductMedia {
   // Never required, never fabricated - null when not captured by
   // merchandising, exactly reflecting what was actually entered.
   modelInfo   Json?
+  // Admin Ops Phase 1: set only for a file uploaded through admin, which
+  // lives in the PUBLIC product-media store (never the private return-
+  // evidence store). Null for media referenced by URL.
+  // Admin Ops Phase 1: the owner's chosen listing photo. Listing cards
+  // show it before the existing order (all-colour photos first, then
+  // sortOrder); at most one per style (partial unique index in SQL).
+  // False everywhere by default, so existing listings are unchanged.
+  isCover     Boolean   @default(false)
+  storageKey  String?   @unique
+  mimeType    String?
+  byteSize    Int?
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   style  Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
   colour Colour? @relation(fields: [colourId], references: [id], onDelete: Cascade)
@@ -4261,4 +4285,26 @@ model MaintenanceJobState {
   updatedAt     DateTime  @default(now()) @db.Timestamptz(3)
 
   @@map("maintenance_job_states")
+}
+
+/// Admin Ops Phase 1: one bulk product import (a file the owner uploaded),
+/// applied in bounded batches. Each batch's per-row outcomes are kept so the
+/// owner can come back to the results, download errors and retry; rows are
+/// matched by stable identifiers, so a retried batch never duplicates work.
+model ProductImportRun {
+  id               String   @id @default(uuid())
+  fileName         String
+  totalRows        Int
+  totalBatches     Int
+  // { "<batchIndex>": [{ row, styleCode, outcome, message, changes }] } -
+  // a retried batch replaces its own entry.
+  batchResults     Json     @default("{}")
+  createdByStaffId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@map("product_import_runs")
 }

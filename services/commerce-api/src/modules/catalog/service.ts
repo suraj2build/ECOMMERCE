@@ -9,7 +9,9 @@ import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
  * normal way to load them) otherwise showed blank cards in listings. */
 export const THUMBNAIL_MEDIA = {
   where: { type: 'IMAGE' as const },
-  orderBy: [{ colourId: { sort: 'asc' as const, nulls: 'first' as const } }, { sortOrder: 'asc' as const }],
+  // isCover (Admin Ops Phase 1) first: the owner's chosen listing photo.
+  // It is false on every row until chosen, so the order is otherwise unchanged.
+  orderBy: [{ isCover: 'desc' as const }, { colourId: { sort: 'asc' as const, nulls: 'first' as const } }, { sortOrder: 'asc' as const }],
   take: 1,
 };
 
