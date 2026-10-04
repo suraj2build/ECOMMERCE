@@ -182,7 +182,7 @@ export function HomeView({
                 <h4 className="text-xs uppercase tracking-wider font-semibold text-[#181716]">
                   {policies.returnWindowDays !== null ? `${policies.returnWindowDays} DAY RETURNS` : 'EASY RETURNS'}
                 </h4>
-                <p className="text-[11px] text-[#7A7065] font-light">Easy &amp; hassle free</p>
+                <p className="text-[11px] text-[#7A7065] font-light">On eligible items, from delivery</p>
               </div>
             </div>
 

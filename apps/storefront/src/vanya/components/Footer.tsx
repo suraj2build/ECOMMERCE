@@ -19,7 +19,7 @@ import { formatPrice } from '../utils/format';
 
 export function Footer() {
   const { gender: currentGender, policies, hrefFor, navigate, openSizeGuide } = useShop();
-  const { freeDeliveryAbove, returnWindowDays } = policies;
+  const { freeDeliveryAbove } = policies;
   const isMen = currentGender === 'men';
   const shop = (category: string) => hrefFor('plp', { gender: currentGender, category });
 
@@ -46,10 +46,14 @@ export function Footer() {
             <RefreshCw className="w-5 h-5 text-[#D4AF37] shrink-0 mt-0.5" />
             <div>
               <h5 className="text-xs uppercase tracking-widest font-semibold text-[#EDE6DC]">
-                {returnWindowDays !== null ? `${returnWindowDays}-Day Exchanges` : 'Easy Exchanges'}
+                {/* EXC-002 decides size and colour exchanges. No day count: whether
+                    exchanges share the return window (EXC-003) awaits Product Owner
+                    confirmation, and categories/products may override it; each product
+                    page shows its own window. */}
+                Size &amp; Colour Exchanges
               </h5>
               <p className="text-[11px] text-[#A69A8E] mt-0.5">
-                Size &amp; style exchanges from your orders
+                On eligible items, from your orders
               </p>
             </div>
           </div>
