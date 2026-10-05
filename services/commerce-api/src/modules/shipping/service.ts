@@ -202,7 +202,7 @@ export class ShippingService {
 
     if (fulfilment.status !== 'READY_TO_SHIP') {
       throw new ValidationError(
-        `Cannot create a shipment for a fulfilment in status '${fulfilment.status}' - it must be READY_TO_SHIP first`,
+        `Mark the package ready to ship before booking it with a courier; it is ${fulfilment.status.toLowerCase().replace(/_/g, ' ')} now.`,
       );
     }
 

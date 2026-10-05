@@ -45,6 +45,7 @@ export default function PickQueuePage() {
   const labels = useApi<{ orders: Record<string, string> }>(canOrders && orderIds.length ? `/admin/lookup/labels${qs({ orderIds: orderIds.join(',') })}` : null);
   const [picking, setPicking] = useState<PickTask | null>(null);
   const [queuedFor, setQueuedFor] = useState<string | null>(null);
+  const [lastPicked, setLastPicked] = useState<string | null>(null);
 
   return (
     <div>
@@ -69,6 +70,11 @@ export default function PickQueuePage() {
           }}
         />
       </div>
+      {lastPicked && !queuedFor && (
+        <Notice kind="success">
+          Picked: {lastPicked}. When every item of an order is picked, create its package on <Link href="/dashboard/fulfilments">Pack &amp; ship</Link>.
+        </Notice>
+      )}
       {queuedFor && (
         <Notice kind="info">
           Sent to {queuedFor} for approval. The pick is recorded, and the shortfall written off, only when they approve it on their Approvals page.
@@ -81,7 +87,15 @@ export default function PickQueuePage() {
               caption="Pick tasks"
               rows={data.items}
               rowKey={(t) => t.id}
-              empty="No pick tasks match."
+              empty={
+                status === 'PENDING' ? (
+                  <>
+                    Nothing left to pick. Picked orders wait for a package on <Link href="/dashboard/fulfilments">Pack &amp; ship</Link>.
+                  </>
+                ) : (
+                  'No pick tasks match.'
+                )
+              }
               columns={[
                 {
                   header: 'For',
@@ -136,6 +150,7 @@ export default function PickQueuePage() {
           <PickForm
             task={picking}
             onDone={(waitingFor) => {
+              setLastPicked(waitingFor ? null : `${picking.styleName} · ${picking.colourName} · ${picking.sizeLabel}`);
               setPicking(null);
               setQueuedFor(waitingFor);
               tasks.reload();
@@ -157,6 +172,10 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: (queuedFor: string
   const [reason, setReason] = useState('');
   const [coApprover, setCoApprover] = useState('');
   const [scanned, setScanned] = useState('');
+  // Checked when the scanner presses Enter, so a wrong item shows at once;
+  // the server checks again when the pick is recorded.
+  const [scanChecked, setScanChecked] = useState(false);
+  const scanMatches = task.barcode !== null && scanned.trim() === task.barcode;
   const session = useSession();
   const selfApproval = useSelfApproval();
   const approvingOwn = coApprover !== '' && coApprover === session.staffUserId;
@@ -201,10 +220,20 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: (queuedFor: string
           <TextField
             label="Scan the item's barcode"
             value={scanned}
-            onChange={setScanned}
+            onChange={(v) => {
+              setScanned(v);
+              setScanChecked(false);
+            }}
             hint={`Confirms you picked the right item${task.barcode ? '' : ' (this size has no barcode yet; add one in the product workspace)'}.`}
-            onEnter={() => undefined}
+            onEnter={() => setScanChecked(scanned.trim() !== '')}
           />
+          {scanChecked && task.barcode && (
+            <Notice kind={scanMatches ? 'success' : 'error'}>
+              {scanMatches
+                ? `Right item: ${task.styleName} · ${task.colourName} · ${task.sizeLabel}.`
+                : `Wrong item: this barcode is not ${task.styleName} · ${task.colourName} · ${task.sizeLabel}. Put it back and scan the right one.`}
+            </Notice>
+          )}
           <TextField label="Picked quantity" type="number" min={1} value={picked} onChange={setPicked} />
         </>
       )}

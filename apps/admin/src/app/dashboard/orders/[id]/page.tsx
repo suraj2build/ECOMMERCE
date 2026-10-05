@@ -199,11 +199,14 @@ export default function OrderDetailPage() {
             breadcrumbs={[{ label: 'Orders' }, { label: 'Orders', href: '/dashboard/orders' }, { label: o.orderNumber }]}
             actions={
               <>
-                <Can anyOf={['order:rto']}>
-                  <button type="button" className="btn danger" onClick={() => openOrder('rto')}>
-                    Mark RTO
-                  </button>
-                </Can>
+                {/* RTO applies once every active line has shipped (the server's rule). */}
+                {o.status !== 'RTO' && o.lines.some((l) => l.status === 'SHIPPED') && o.lines.every((l) => l.status === 'SHIPPED' || l.status === 'CANCELLED') && (
+                  <Can anyOf={['order:rto']}>
+                    <button type="button" className="btn danger" onClick={() => openOrder('rto')}>
+                      Mark RTO
+                    </button>
+                  </Can>
+                )}
                 {o.invoiceStatus === 'FAILED' && (
                   <Can anyOf={['invoice:create']}>
                     <button type="button" className="btn" onClick={() => openOrder('invoice')}>
@@ -358,33 +361,45 @@ export default function OrderDetailPage() {
                 {
                   header: 'Actions',
                   cell: (l) => (
+                    // Only the actions the server allows for a line in this
+                    // status: cancel and exceptions before shipping, exchange
+                    // after delivery, refund for a cancelled prepaid line or
+                    // a delivered (returnable) one.
                     <span className="row">
-                      <Can anyOf={['order:cancel']}>
-                        <button type="button" className="btn small" onClick={() => openLine({ kind: 'cancel', line: l })}>
-                          Cancel
-                        </button>
-                      </Can>
+                      {!['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && (
+                        <Can anyOf={['order:cancel']}>
+                          <button type="button" className="btn small" onClick={() => openLine({ kind: 'cancel', line: l })}>
+                            Cancel
+                          </button>
+                        </Can>
+                      )}
                       <Can anyOf={['order:exception:manage']}>
                         {l.status === 'EXCEPTION' ? (
                           <button type="button" className="btn small" onClick={() => openLine({ kind: 'resolve', line: l })}>
                             Resolve exception
                           </button>
                         ) : (
-                          <button type="button" className="btn small" onClick={() => openLine({ kind: 'exception', line: l })}>
-                            Flag exception
-                          </button>
+                          !['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && (
+                            <button type="button" className="btn small" onClick={() => openLine({ kind: 'exception', line: l })}>
+                              Flag exception
+                            </button>
+                          )
                         )}
                       </Can>
-                      <Can anyOf={['exchange:initiate']}>
-                        <button type="button" className="btn small" onClick={() => openLine({ kind: 'exchange', line: l })}>
-                          Exchange
-                        </button>
-                      </Can>
-                      <Can anyOf={['payment:refund']}>
-                        <button type="button" className="btn small" onClick={() => openLine({ kind: 'refund', line: l })}>
-                          Refund
-                        </button>
-                      </Can>
+                      {l.status === 'DELIVERED' && (
+                        <Can anyOf={['exchange:initiate']}>
+                          <button type="button" className="btn small" onClick={() => openLine({ kind: 'exchange', line: l })}>
+                            Exchange
+                          </button>
+                        </Can>
+                      )}
+                      {(l.status === 'DELIVERED' || (l.status === 'CANCELLED' && o.paymentMethod === 'PREPAID' && o.refundRequired)) && (
+                        <Can anyOf={['payment:refund']}>
+                          <button type="button" className="btn small" onClick={() => openLine({ kind: 'refund', line: l })}>
+                            Refund
+                          </button>
+                        </Can>
+                      )}
                     </span>
                   ),
                 },

@@ -59,10 +59,26 @@ export function Section({ title, actions, children }: { title: string; actions?:
 
 // ---------------------------------------------------------------- states
 
-export function Notice({ kind, children }: { kind: 'success' | 'error' | 'info' | 'warning'; children: ReactNode }) {
+export function Notice({
+  kind,
+  children,
+  reveal,
+}: {
+  kind: 'success' | 'error' | 'info' | 'warning';
+  children: ReactNode;
+  /** For errors: scroll the notice into view when it appears and whenever this value changes (pass the new message or result). */
+  reveal?: unknown;
+}) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  // On a long form the notice can sit far above the button that was pressed; an error the
+  // operator never sees reads as "nothing happened". 'nearest' leaves the page alone when the
+  // notice is already visible.
+  useEffect(() => {
+    if (kind === 'error') ref.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [kind, reveal]);
   // Errors interrupt (alert); everything else is announced politely (status).
   return (
-    <p className={`${kind}-banner`} role={kind === 'error' ? 'alert' : 'status'}>
+    <p ref={ref} className={`${kind}-banner`} role={kind === 'error' ? 'alert' : 'status'}>
       {children}
     </p>
   );
@@ -70,7 +86,11 @@ export function Notice({ kind, children }: { kind: 'success' | 'error' | 'info' 
 
 export function ActionMessage({ message }: { message: { kind: 'success' | 'error'; text: string } | null }) {
   if (!message) return null;
-  return <Notice kind={message.kind}>{message.text}</Notice>;
+  return (
+    <Notice kind={message.kind} reveal={message}>
+      {message.text}
+    </Notice>
+  );
 }
 
 export function LoadingState({ label = 'Loading…' }: { label?: string }) {
@@ -452,6 +472,7 @@ export function ConfirmDialog({
   danger,
   busy,
   requireText,
+  confirmDisabled,
   onConfirm,
   onCancel,
 }: {
@@ -462,6 +483,8 @@ export function ConfirmDialog({
   danger?: boolean;
   busy?: boolean;
   requireText?: string;
+  /** Keeps the confirm button disabled (the dialog explains why). */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -497,7 +520,7 @@ export function ConfirmDialog({
         <button type="button" className="btn" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <button type="button" className={danger ? 'btn danger' : 'primary'} onClick={onConfirm} disabled={busy || !ready}>
+        <button type="button" className={danger ? 'btn danger' : 'primary'} onClick={onConfirm} disabled={busy || !ready || confirmDisabled}>
           {busy ? 'Working…' : confirmLabel}
         </button>
       </div>

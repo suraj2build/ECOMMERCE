@@ -137,6 +137,7 @@ describe('Admin query endpoints (P1)', () => {
     { url: () => '/admin/promotion-types', permission: 'promotion:read' },
     { url: () => '/admin/orders', permission: 'order:read' },
     { url: () => '/admin/fulfilments', permission: 'order:read' },
+    { url: () => '/admin/fulfilments/ready-to-pack', permission: 'order:read' },
     { url: () => '/admin/purchase-orders/00000000-0000-4000-8000-000000000000/lines', permission: 'po:read' },
   ];
 
@@ -558,10 +559,76 @@ describe('Admin query endpoints (P1)', () => {
     const warehouse = await staff('WAREHOUSE_OPERATOR', ['warehouse:read', 'order:read']);
     const res = await get('/admin/dashboard/workload', warehouse.token);
     expect(res.statusCode).toBe(200);
-    expect(Object.keys(res.json()).sort()).toEqual(['orders', 'warehouse']);
+    expect(Object.keys(res.json()).sort()).toEqual(['dispatch', 'orders', 'warehouse']);
     expect(res.json().warehouse).toEqual({ pendingPicks: 0, pickExceptions: 0 });
+    expect(res.json().dispatch).toEqual({ readyToPack: 0, toPackOrShip: 0, awaitingCollection: 0 });
+
+    // Someone who can be named as an approver also sees what waits for them.
+    const approver = await staff('FINANCE', ['inventory:adjust:coapprove']);
+    expect((await get('/admin/dashboard/workload', approver.token)).json()).toEqual({ approvals: { waitingForYou: 0 } });
 
     const none = await staff('MARKETING', ['cms:read']);
     expect((await get('/admin/dashboard/workload', none.token)).json()).toEqual({});
+  });
+
+  it('dispatch queue follows a parcel from picked to handed over: ready to pack, in progress, awaiting collection', async () => {
+    const ctx = await seedContext();
+    const sku = await checkoutableSku(ctx, `DSP-${counter}`, 'Dispatch Polo');
+    await stock(sku.skuId, ctx.locationId, 5);
+    const headers = { [GUEST_HEADER]: `guest-dispatch-q-${counter}` };
+    expect((await app.inject({ method: 'POST', url: '/api/v1/storefront/cart/items', headers, payload: { skuId: sku.skuId, quantity: 2 } })).statusCode).toBe(201);
+    const address = { line1: '1 Test Street', city: 'New Delhi', state: 'Delhi', stateCode: 'DL', pincode: SERVICEABLE_PINCODE };
+    const checkout = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: { contactName: 'Jane Doe', contactMobile: '9876543210', billingAddress: address, shippingAddress: address, paymentMethod: 'COD', idempotencyKey: `dspq-${counter}` },
+    });
+    expect(checkout.statusCode).toBe(201);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: checkout.json().id }, include: { lines: true } });
+    const lineId = order.lines[0]!.id;
+    const wh = await staff('WAREHOUSE_MANAGER', ['order:read', 'order:fulfil', 'warehouse:read', 'warehouse:pick', 'shipping:manage']);
+    const hw = { authorization: `Bearer ${wh.token}` };
+    const dispatch = async () => (await get('/admin/dashboard/workload', wh.token)).json().dispatch;
+    const inProgress = async () => (await get('/admin/fulfilments?status=IN_PROGRESS', wh.token)).json();
+
+    // Allocated but not picked: nothing to pack yet.
+    expect((await get('/admin/fulfilments/ready-to-pack', wh.token)).json()).toEqual({ total: 0, orders: [] });
+
+    const task = await testPrisma.pickTask.findUniqueOrThrow({ where: { orderLineId: lineId } });
+    const picked = await app.inject({ method: 'POST', url: `/api/v1/warehouse/pick-tasks/${task.id}/pick`, headers: hw, payload: { idempotencyKey: `pick-${lineId}`, outcome: 'FULL', pickedQuantity: 2 } });
+    expect(picked.statusCode).toBe(200);
+
+    // Picked with no package: listed by order, with the lines to put in one.
+    const ready = (await get('/admin/fulfilments/ready-to-pack', wh.token)).json();
+    expect(ready.total).toBe(1);
+    expect(ready.orders).toHaveLength(1);
+    expect(ready.orders[0]).toMatchObject({ orderId: order.id, orderNumber: order.orderNumber, lineIds: [lineId], pickedLines: 1, linesStillToPick: 0 });
+    expect(await dispatch()).toEqual({ readyToPack: 1, toPackOrShip: 0, awaitingCollection: 0 });
+
+    const created = await app.inject({ method: 'POST', url: `/api/v1/orders/${order.id}/fulfilments`, headers: hw, payload: { lineIds: ready.orders[0].lineIds } });
+    expect(created.statusCode).toBe(201);
+    const fulfilmentId = created.json().id as string;
+    expect((await get('/admin/fulfilments/ready-to-pack', wh.token)).json().total).toBe(0);
+    expect((await inProgress()).items.map((f: { id: string }) => f.id)).toEqual([fulfilmentId]);
+    expect(await dispatch()).toEqual({ readyToPack: 0, toPackOrShip: 1, awaitingCollection: 0 });
+
+    for (const step of ['pack', 'ready-to-ship']) {
+      expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/${step}`, headers: hw })).statusCode, step).toBe(200);
+    }
+    const booked = await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/shipment`, headers: hw, payload: { idempotencyKey: `dspq-ship-${counter}` } });
+    expect(booked.statusCode).toBe(201);
+
+    // Booked but not collected: still in progress, now awaiting collection.
+    expect((await inProgress()).items.map((f: { id: string }) => f.id)).toEqual([fulfilmentId]);
+    expect(await dispatch()).toEqual({ readyToPack: 0, toPackOrShip: 0, awaitingCollection: 1 });
+
+    const shipment = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId } });
+    expect((await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: hw, payload: { shipmentIds: [shipment.id] } })).statusCode).toBe(200);
+
+    // Handed over: off the in-progress list and the collection tile.
+    expect((await inProgress()).total).toBe(0);
+    expect(await dispatch()).toEqual({ readyToPack: 0, toPackOrShip: 0, awaitingCollection: 0 });
+    expect((await get('/admin/fulfilments?status=SHIPPED', wh.token)).json().items[0]).toMatchObject({ id: fulfilmentId });
   });
 });

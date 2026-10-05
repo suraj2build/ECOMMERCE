@@ -159,7 +159,7 @@ export function BasicsForm({
   return (
     <form onSubmit={submit} noValidate aria-label="Product basics">
       <ActionMessage message={action.message} />
-      {Object.keys(errors).length > 0 && <Notice kind="error">Some details need attention - see the highlighted fields.</Notice>}
+      {Object.keys(errors).length > 0 && <Notice kind="error" reveal={errors}>Some details need attention - see the highlighted fields.</Notice>}
       <div className="form-row">
         {isNew ? (
           <TextField label="Style code" required value={form.styleCode ?? ''} onChange={set('styleCode')} hint={err('styleCode') ?? 'Permanent: used on labels, in imports and SKU codes. e.g. MSH-OXF-01'} />

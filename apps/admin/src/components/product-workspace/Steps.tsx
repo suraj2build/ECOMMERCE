@@ -35,8 +35,9 @@ export function PricingStep({ style, readiness, onChanged }: StepProps) {
   const selling = Number(form.sellingPrice);
   const formError = form.mrp && form.sellingPrice && selling > mrp ? 'Selling price cannot be above MRP.' : null;
 
+  // Stacked rather than side by side: the price history has six columns and was cut off in half a page.
   return (
-    <div className="grid-2">
+    <div className="stack">
       <Section title="Prices in effect">
         {pricingIssues.length === 0 ? (
           <Notice kind="success">Every {profile.colourLabel.toLowerCase()} has a price.</Notice>
@@ -136,6 +137,11 @@ export function ReadinessStep({ style, readiness, goTo }: StepProps) {
       <StatusCards style={style} readiness={readiness} />
       <Section title={blocking.length ? `${blocking.length} thing${blocking.length === 1 ? '' : 's'} to do before shoppers can buy this` : 'Nothing blocking'}>
         {blocking.length === 0 && <Notice kind="success">All required steps are done.</Notice>}
+        {blocking.length === 0 && readiness.stock.availableUnits === 0 && (
+          <Notice kind="warning">
+            No stock yet: shoppers will see every size as sold out. <Link href="/dashboard/receiving">Receive goods</Link> to make it buyable.
+          </Notice>
+        )}
         <IssueList issues={blocking} goTo={goTo} />
         {advice.length > 0 && (
           <>
@@ -171,6 +177,8 @@ export function ReadinessStep({ style, readiness, goTo }: StepProps) {
 
 export function StatusCards({ style, readiness }: { style: StepProps['style']; readiness: NonNullable<StepProps['readiness']> }) {
   const channelsListed = readiness.channels.filter((c) => c.sizesListed > 0).length;
+  // Listed and priced but nothing on hand: shoppers see the product, with every size sold out.
+  const soldOut = readiness.stock.availableUnits === 0;
   return (
     <div className="status-cards" aria-label="Product status">
       <div className={`status-card ${readiness.published ? 'ok' : 'todo'}`}>
@@ -180,10 +188,16 @@ export function StatusCards({ style, readiness }: { style: StepProps['style']; r
           <StatusBadge status={readiness.lifecycleState} />
         </span>
       </div>
-      <div className={`status-card ${readiness.purchasable.ok ? 'ok' : 'todo'}`}>
+      <div className={`status-card ${readiness.purchasable.ok && !soldOut ? 'ok' : 'todo'}`}>
         <span className="status-label">Can be bought</span>
-        <strong>{readiness.purchasable.ok ? 'Yes' : 'No'}</strong>
-        <span className="muted small">{readiness.purchasable.ok ? 'On the storefront' : readiness.purchasable.reasons.join('; ')}</span>
+        <strong>{!readiness.purchasable.ok ? 'No' : soldOut ? 'Not yet' : 'Yes'}</strong>
+        <span className="muted small">
+          {!readiness.purchasable.ok
+            ? readiness.purchasable.reasons.join('; ')
+            : soldOut
+              ? 'On the storefront, but every size shows as sold out until stock is received'
+              : 'On the storefront'}
+        </span>
       </div>
       <div className={`status-card ${readiness.stock.availableUnits > 0 ? 'ok' : 'todo'}`}>
         <span className="status-label">In stock</span>

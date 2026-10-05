@@ -30,6 +30,23 @@ export interface DispatchDocuments {
   shipment: { provider: string; trackingRef: string | null; bookedAt: string | null; handedOverAt: string | null; handoverReference: string | null } | null;
 }
 
+/** True when the sender address can be printed (line, city and PIN code). */
+function hasAddress(a: DispatchAddress | null): boolean {
+  return Boolean(a && a.line1 && a.city && a.pincode);
+}
+
+/** Shown on screen only: a document printed without a sender address has no return address. */
+function MissingSenderAddress() {
+  return (
+    <div className="no-print">
+      <Notice kind="warning">
+        The warehouse address is not set up, so this document has no sender or return address. Add it in{' '}
+        <Link href="/dashboard/business">Business &amp; warehouse</Link> before printing.
+      </Notice>
+    </div>
+  );
+}
+
 function Address({ a }: { a: DispatchAddress }) {
   return (
     <address style={{ fontStyle: 'normal' }}>
@@ -83,6 +100,7 @@ export default function DispatchDocumentsPage() {
         {(d) =>
           doc === 'slip' ? (
             <article aria-label="Packing slip">
+              {!hasAddress(d.shipFrom) && <MissingSenderAddress />}
               <h1>Packing slip</h1>
               <p>
                 Order <strong className="mono">{d.reference}</strong> · placed <DateText value={d.orderDate} />
@@ -170,6 +188,7 @@ export default function DispatchDocumentsPage() {
                   <Address a={d.shipFrom} />
                 </section>
               )}
+              {!hasAddress(d.shipFrom) && <MissingSenderAddress />}
               {!d.shipment && <Notice kind="info">Not booked with a courier yet; the tracking reference appears here after booking.</Notice>}
             </article>
           )

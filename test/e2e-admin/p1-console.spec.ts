@@ -154,7 +154,7 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await page.getByRole('button', { name: 'Submit for approval' }).click();
     await confirmDialog(page, 'Submit for approval');
-    await expect(page.getByText('Submit for approval: done.')).toBeVisible();
+    await expect(page.getByText('Submitted for approval. Once it is approved, receive the goods on this page.')).toBeVisible();
 
     // Segregation of duties: a different person (Finance) approves.
     await loginAs(page, 'FINANCE');
@@ -163,7 +163,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await page.getByRole('button', { name: 'Approve', exact: true }).click();
     await page.getByRole('dialog').getByLabel('Comment (optional)').fill('Within budget');
     await confirmDialog(page, 'Approve');
-    await expect(page.getByText('Approve: done.')).toBeVisible();
+    await expect(page.getByText('Approved. Receive the goods below as they arrive.')).toBeVisible();
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
     await page.goto('/dashboard/receiving');
@@ -623,17 +623,28 @@ test.describe('P1 Commerce Operations Console', () => {
     await expect(drawer).toBeHidden();
     expect((await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } })).scannedBarcode).toBe(barcode);
 
+    // The picked order waits on Pack & ship for its package (walkthrough W-14).
+    await page.goto('/dashboard/fulfilments');
+    const waiting = page.getByRole('table', { name: 'Picked orders waiting for a package' }).getByRole('row').filter({ hasText: order.orderNumber });
+    await waiting.getByRole('button', { name: 'Create package' }).click();
+    await expect(page.getByText(`Package created for ${order.orderNumber}. Pack it below.`)).toBeVisible();
+    await expect(waiting).toHaveCount(0);
+
     // Pack: scan the unit and record the parcel.
     await openOrder(page, order.orderNumber);
-    await page.getByLabel(new RegExp(`^Select ${escape(tee.name)}`)).check();
-    await page.getByRole('button', { name: 'Create fulfilment from selected' }).click();
-    await confirmDialog(page, 'Create fulfilment');
     await page.getByRole('button', { name: 'Mark packed', exact: true }).first().click();
     const pack = page.getByRole('dialog').last();
     const scan = pack.getByLabel(/Scan item barcode/);
+    // A unit that does not belong in the parcel is named as such and can be undone.
+    await scan.fill('0000000000000');
+    await scan.press('Enter');
+    await expect(pack.getByText(/Not in this package: 0000000000000/)).toBeVisible();
+    await pack.getByRole('button', { name: 'Undo last scan' }).click();
+    await expect(pack.getByText(/Not in this package/)).toHaveCount(0);
     await scan.fill(barcode);
     await scan.press('Enter');
-    await expect(pack.getByText(`Scanned 1: ${barcode}`)).toBeVisible();
+    await expect(pack.getByRole('list', { name: 'Items in this package' })).toContainText(`${tee.name}`);
+    await expect(pack.getByRole('list', { name: 'Items in this package' })).toContainText('1 of 1 scanned');
     await pack.getByLabel(/Parcel weight/).fill('420');
     await pack.getByLabel('Length (cm)').fill('30');
     await pack.getByLabel('Width (cm)').fill('22');

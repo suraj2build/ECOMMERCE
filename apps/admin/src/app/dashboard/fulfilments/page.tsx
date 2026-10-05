@@ -28,18 +28,27 @@ interface FulfilmentRow {
 
 const TAKE = 50;
 
+interface ReadyToPack {
+  total: number;
+  orders: Array<{ orderId: string; orderNumber: string; placedAt: string; lineIds: string[]; pickedLines: number; linesStillToPick: number }>;
+}
+
 /**
  * Pack & ship: every fulfilment (order- or exchange-sourced) by status.
  * Each package's transitions call the same order/shipping routes as the
  * order page.
  */
 export default function FulfilmentsPage() {
-  const [status, setStatus, ready] = useUrlFilter('status', 'PENDING');
+  // Opens on everything that still needs someone to act; finished
+  // packages are one filter away.
+  const [status, setStatus, ready] = useUrlFilter('status', 'IN_PROGRESS');
   const [skip, setSkip] = useState(0);
   const rows = useApi<Page<FulfilmentRow>>(ready ? `/admin/fulfilments${qs({ status, take: TAKE, skip })}` : null);
   const [open, setOpen] = useState<FulfilmentRow | null>(null);
   const poll = useAction();
   const [updated, setUpdated] = useState<string | null>(null);
+  const toPack = useApi<ReadyToPack>('/admin/fulfilments/ready-to-pack');
+  const create = useAction();
 
   return (
     <div>
@@ -53,7 +62,19 @@ export default function FulfilmentsPage() {
               className="btn"
               disabled={poll.busy}
               onClick={async () => {
-                if (await poll.run(() => apiSend('POST', '/shipments/poll'), 'Carrier tracking polled.')) rows.reload();
+                let result: { polled: number; updated: number } | undefined;
+                const ok = await poll.run(async () => {
+                  result = await apiSend<{ polled: number; updated: number }>('POST', '/shipments/poll');
+                });
+                if (ok && result) {
+                  poll.clear();
+                  setUpdated(
+                    result.polled === 0
+                      ? 'No parcels are out with the courier, so there was nothing to check.'
+                      : `Checked ${result.polled} parcel(s) with the courier: ${result.updated === 0 ? 'no new tracking updates' : `${result.updated} updated`}.`,
+                  );
+                  rows.reload();
+                }
               }}
             >
               Poll carrier tracking
@@ -63,12 +84,72 @@ export default function FulfilmentsPage() {
       />
       <ActionMessage message={poll.message} />
       {updated && <Notice kind="success">{updated}</Notice>}
+      {/* Outside the list: creating the last package empties (and hides) it. */}
+      <ActionMessage message={create.message} />
+      <DataState state={toPack}>
+        {(tp) =>
+          tp.total > 0 ? (
+            <section className="card" aria-label="Picked, waiting for a package" style={{ marginBottom: '1rem' }}>
+              <h2 style={{ marginTop: 0 }}>Picked, waiting for a package ({tp.total})</h2>
+              <p className="muted" style={{ marginTop: 0 }}>
+                These orders have picked items that are not in a package yet. Create the package, then pack it below.
+              </p>
+              <DataTable
+                caption="Picked orders waiting for a package"
+                rows={tp.orders}
+                rowKey={(o) => o.orderId}
+                columns={[
+                  {
+                    header: 'Order',
+                    cell: (o) => (
+                      <Link href={`/dashboard/orders/${o.orderId}`}>
+                        <Ident>{o.orderNumber}</Ident>
+                      </Link>
+                    ),
+                  },
+                  { header: 'Picked items', numeric: true, cell: (o) => o.pickedLines },
+                  {
+                    header: 'Still to pick',
+                    cell: (o) => (o.linesStillToPick > 0 ? `${o.linesStillToPick} item(s): packing now sends this order in more than one parcel` : '—'),
+                  },
+                  {
+                    header: 'Actions',
+                    cell: (o) => (
+                      <Can anyOf={['order:fulfil']}>
+                        <button
+                          type="button"
+                          className="btn small primary"
+                          disabled={create.busy}
+                          onClick={async () => {
+                            const ok = await create.run(
+                              () => apiSend('POST', `/orders/${o.orderId}/fulfilments`, { lineIds: o.lineIds }),
+                              `Package created for ${o.orderNumber}. Pack it below.`,
+                            );
+                            if (ok) {
+                              toPack.reload();
+                              setStatus('IN_PROGRESS');
+                              rows.reload();
+                            }
+                          }}
+                        >
+                          Create package
+                        </button>
+                      </Can>
+                    ),
+                  },
+                ]}
+              />
+            </section>
+          ) : null
+        }
+      </DataState>
       <div className="filter-bar">
         <SelectField
           label="Status"
           value={status}
           placeholder="All statuses"
           options={[
+            { value: 'IN_PROGRESS', label: 'In progress (not yet with the courier)' },
             { value: 'PENDING', label: 'Pending' },
             { value: 'PACKED', label: 'Packed' },
             { value: 'READY_TO_SHIP', label: 'Ready to ship' },
@@ -90,7 +171,7 @@ export default function FulfilmentsPage() {
               caption="Fulfilments"
               rows={data.items}
               rowKey={(f) => f.id}
-              empty="No packages in this status."
+              empty={status === 'IN_PROGRESS' ? 'Nothing to pack or ship right now.' : 'No packages in this status.'}
               columns={[
                 {
                   header: 'For',

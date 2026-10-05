@@ -944,7 +944,7 @@ export class OrderService {
       const locked = await this.lockFulfilment(tx, fulfilmentId);
       if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (locked.status !== 'READY_TO_SHIP') {
-        throw new ValidationError(`Cannot ship a fulfilment in status '${locked.status}' - it must be READY_TO_SHIP first`);
+        throw new ValidationError(`Mark the package ready to ship before marking it shipped; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`);
       }
 
       // Safe to read the lines only now that the fulfilment row lock is

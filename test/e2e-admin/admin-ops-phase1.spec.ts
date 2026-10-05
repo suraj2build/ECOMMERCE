@@ -390,6 +390,10 @@ test.describe('Admin Ops Phase 1: owner workflows', () => {
     // receiving, which owns stock; the workspace never changes it.
     await expect(cards.getByText('0 units')).toBeVisible();
     await expect(cards.getByRole('link', { name: 'Receive goods' })).toHaveAttribute('href', '/dashboard/receiving');
+    // Published and priced but with nothing on hand is not "can be bought" yet:
+    // shoppers see every size sold out (walkthrough W-5).
+    await expect(cards.getByText('Not yet')).toBeVisible();
+    await expect(page.getByText(/No stock yet: shoppers will see every size as sold out/)).toBeVisible();
     await shot(page, '12-readiness');
     await page.goto(`/dashboard/products/${published.styleId}?step=preview`);
     await shot(page, '13-preview');

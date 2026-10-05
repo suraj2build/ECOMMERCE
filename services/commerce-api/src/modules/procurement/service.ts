@@ -110,7 +110,7 @@ export class ProcurementService {
   async submitPurchaseOrder(poId: string, actorStaffId: string) {
     const po = await this.getPurchaseOrder(poId);
     if (po.status !== 'DRAFT') {
-      throw new ValidationError(`Cannot submit a purchase order from status '${po.status}'`);
+      throw new ValidationError(`Only a draft purchase order can be submitted; this one is ${poStatusWords(po.status)}`);
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -145,7 +145,7 @@ export class ProcurementService {
   async approvePurchaseOrder(poId: string, actorStaffId: string, comment?: string, selfApproval?: SelfApprovalInput) {
     const po = await this.getPurchaseOrder(poId);
     if (po.status !== 'SUBMITTED') {
-      throw new ValidationError(`Cannot approve a purchase order from status '${po.status}'`);
+      throw new ValidationError(`Only a purchase order submitted for approval can be approved; this one is ${poStatusWords(po.status)}`);
     }
     const decision = await new ApprovalPolicyService(this.prisma).decide({
       kind: 'PURCHASE_ORDER',
@@ -188,7 +188,7 @@ export class ProcurementService {
   async rejectPurchaseOrder(poId: string, actorStaffId: string, comment?: string) {
     const po = await this.getPurchaseOrder(poId);
     if (po.status !== 'SUBMITTED') {
-      throw new ValidationError(`Cannot reject a purchase order from status '${po.status}'`);
+      throw new ValidationError(`Only a purchase order submitted for approval can be rejected; this one is ${poStatusWords(po.status)}`);
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -214,7 +214,7 @@ export class ProcurementService {
   async cancelPurchaseOrder(poId: string, actorStaffId: string) {
     const po = await this.getPurchaseOrder(poId);
     if (!['DRAFT', 'SUBMITTED', 'APPROVED'].includes(po.status)) {
-      throw new ValidationError(`Cannot cancel a purchase order from status '${po.status}'`);
+      throw new ValidationError(`A purchase order that is ${poStatusWords(po.status)} cannot be cancelled`);
     }
     const anyReceived = po.lines.some((l) => l.receivedQty > 0);
     if (anyReceived) {
@@ -303,4 +303,19 @@ export class ProcurementService {
 
     return before;
   }
+}
+
+/** A purchase order status in words, for messages people read. */
+export function poStatusWords(status: string): string {
+  const words: Record<string, string> = {
+    DRAFT: 'still a draft (submit it for approval first)',
+    SUBMITTED: 'waiting for approval',
+    APPROVED: 'already approved',
+    REJECTED: 'rejected',
+    PARTIALLY_RECEIVED: 'partly received',
+    FULLY_RECEIVED: 'fully received',
+    CLOSED: 'closed',
+    CANCELLED: 'cancelled',
+  };
+  return words[status] ?? status.toLowerCase().replace(/_/g, ' ');
 }

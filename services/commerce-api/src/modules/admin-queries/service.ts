@@ -221,8 +221,12 @@ export class AdminQueryService {
   async listFulfilments(params: { status?: string; take?: number; skip?: number }) {
     // AO-D5: a booked package is SHIPPED whether or not the courier has
     // collected it; these two filters split it by the recorded handover.
+    // IN_PROGRESS: everything that still needs someone to act - not yet
+    // shipped, or booked and waiting for the courier to collect it.
     const where: Prisma.OrderFulfilmentWhereInput =
-      params.status === 'BOOKED_AWAITING_COLLECTION'
+      params.status === 'IN_PROGRESS'
+        ? { OR: [{ status: { in: ['PENDING', 'PACKED', 'READY_TO_SHIP'] } }, { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } }] }
+        : params.status === 'BOOKED_AWAITING_COLLECTION'
         ? { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } }
         : params.status === 'HANDED_OVER'
           ? { status: 'SHIPPED', shipment: { is: { handedOverAt: { not: null } } } }
@@ -255,6 +259,43 @@ export class AdminQueryService {
       this.prisma.orderFulfilment.count({ where }),
     ]);
     return { items: items.map((f) => ({ ...f, dispatchStage: dispatchStage(f.status, f.shipment) })), total };
+  }
+
+  /**
+   * Orders with picked lines that are not in a package yet: the step
+   * between the pick queue and Pack & ship. A package is made from the
+   * picked lines (POST /orders/:id/fulfilments).
+   */
+  async readyToPack(params: { take?: number }) {
+    const lines = await this.prisma.orderLine.findMany({
+      where: { status: 'PICKED', fulfilmentId: null },
+      select: { id: true, orderId: true, order: { select: { orderNumber: true, createdAt: true } } },
+      orderBy: { order: { createdAt: 'asc' } },
+      take: 2000,
+    });
+    const byOrder = new Map<string, { orderId: string; orderNumber: string; placedAt: Date; lineIds: string[] }>();
+    for (const l of lines) {
+      const entry = byOrder.get(l.orderId) ?? { orderId: l.orderId, orderNumber: l.order.orderNumber, placedAt: l.order.createdAt, lineIds: [] };
+      entry.lineIds.push(l.id);
+      byOrder.set(l.orderId, entry);
+    }
+    const orders = [...byOrder.values()];
+    // The total counts every order waiting, not only those in the lines read above.
+    const total =
+      lines.length < 2000
+        ? orders.length
+        : (await this.prisma.orderLine.groupBy({ by: ['orderId'], where: { status: 'PICKED', fulfilmentId: null } })).length;
+    // Lines of the same order still waiting to be picked: packing now would
+    // split the order into more than one parcel.
+    const stillToPick = orders.length
+      ? await this.prisma.orderLine.groupBy({ by: ['orderId'], where: { orderId: { in: orders.map((o) => o.orderId) }, status: 'ALLOCATED' }, _count: { _all: true } })
+      : [];
+    const waiting = new Map(stillToPick.map((g) => [g.orderId, g._count._all]));
+    const take = boundedTake(params.take, MAX_PAGE, 50);
+    return {
+      total,
+      orders: orders.slice(0, take).map((o) => ({ ...o, pickedLines: o.lineIds.length, linesStillToPick: waiting.get(o.orderId) ?? 0 })),
+    };
   }
 
   /** Staff who hold `holds`, for the co-approver / sign-off pickers. Identity only - never credentials. */
@@ -553,7 +594,7 @@ export class AdminQueryService {
    * Workload counts for the dashboard. Only sections the caller may read
    * are computed; each count is a plain COUNT over existing statuses.
    */
-  async workload(permissions: Set<PermissionKey>) {
+  async workload(permissions: Set<PermissionKey>, staffUserId?: string) {
     const out: Record<string, Record<string, number>> = {};
     const p = this.prisma;
     const tasks: Promise<void>[] = [];
@@ -576,6 +617,22 @@ export class AdminQueryService {
       pendingPicks: p.pickTask.count({ where: { status: 'PENDING' } }),
       pickExceptions: p.pickTask.count({ where: { status: { in: ['EXCEPTION', 'SHORT_PICKED'] } } }),
     });
+    section('dispatch', 'order:read', {
+      readyToPack: p.orderLine
+        .findMany({ where: { status: 'PICKED', fulfilmentId: null }, distinct: ['orderId'], select: { orderId: true } })
+        .then((rows) => rows.length),
+      toPackOrShip: p.orderFulfilment.count({ where: { status: { in: ['PENDING', 'PACKED', 'READY_TO_SHIP'] } } }),
+      awaitingCollection: p.orderFulfilment.count({ where: { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } } }),
+    });
+    if (staffUserId && (permissions.has('inventory:adjust:coapprove') || permissions.has('grn:qc:manager_signoff'))) {
+      // Approval requests waiting for this person (only people who can be
+      // named as an approver get the tile).
+      tasks.push(
+        (async () => {
+          out.approvals = { waitingForYou: await p.approvalRequest.count({ where: { approverStaffId: staffUserId, status: 'PENDING' } }) };
+        })(),
+      );
+    }
     section('returns', 'return:read', {
       requested: p.return.count({ where: { status: 'REQUESTED' } }),
       inTransit: p.return.count({ where: { status: { in: ['PICKUP_SCHEDULED', 'PICKED_UP'] } } }),

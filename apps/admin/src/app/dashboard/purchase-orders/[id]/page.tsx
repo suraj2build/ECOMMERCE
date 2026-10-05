@@ -58,12 +58,56 @@ interface Grn {
 }
 
 type Decision = 'submit' | 'approve' | 'reject' | 'cancel';
-const DECISIONS: Record<Decision, { label: string; perm: string; danger?: boolean; comment?: boolean; body: string }> = {
-  submit: { label: 'Submit for approval', perm: 'po:submit', body: 'The order is locked for editing and sent for approval.' },
-  approve: { label: 'Approve', perm: 'po:approve', comment: true, body: 'Approval must come from someone other than the submitter, unless owner approval is on (Approvals page); the server enforces it and the approval threshold.' },
-  reject: { label: 'Reject', perm: 'po:approve', comment: true, danger: true, body: 'The order returns to the buyer as rejected.' },
-  cancel: { label: 'Cancel order', perm: 'po:create', danger: true, body: 'Cancelled orders cannot be received against.' },
+const DECISIONS: Record<Decision, { label: string; perm: string; danger?: boolean; comment?: boolean; body: string; done: string }> = {
+  submit: {
+    label: 'Submit for approval',
+    perm: 'po:submit',
+    body: 'The order is locked for editing and sent for approval.',
+    done: 'Submitted for approval. Once it is approved, receive the goods on this page.',
+  },
+  approve: {
+    label: 'Approve',
+    perm: 'po:approve',
+    comment: true,
+    body: 'Approval must come from someone other than the submitter, unless owner approval is on (Approvals page); the server enforces it and the approval threshold.',
+    done: 'Approved. Receive the goods below as they arrive.',
+  },
+  reject: { label: 'Reject', perm: 'po:approve', comment: true, danger: true, body: 'The order returns to the buyer as rejected.', done: 'Rejected.' },
+  cancel: { label: 'Cancel order', perm: 'po:create', danger: true, body: 'Cancelled orders cannot be received against.', done: 'Order cancelled.' },
 };
+
+/** The steps that apply to an order in this status, in the order they happen. */
+function decisionsFor(status: string, anythingReceived: boolean): Decision[] {
+  switch (status) {
+    case 'DRAFT':
+      return ['submit', 'cancel'];
+    case 'SUBMITTED':
+      return ['approve', 'reject', 'cancel'];
+    case 'APPROVED':
+      return anythingReceived ? [] : ['cancel'];
+    default:
+      return [];
+  }
+}
+
+const RECEIVABLE = ['APPROVED', 'PARTIALLY_RECEIVED'];
+
+/** What happens next, in one sentence, for each status. */
+const NEXT_STEP: Record<string, { kind: 'info' | 'success' | 'warning'; text: string }> = {
+  DRAFT: { kind: 'info', text: 'Draft: check the lines, then submit it for approval. Goods can be received once it is approved.' },
+  SUBMITTED: { kind: 'info', text: 'Waiting for approval. Goods can be received once it is approved.' },
+  APPROVED: { kind: 'info', text: 'Approved: record the goods below as they arrive.' },
+  PARTIALLY_RECEIVED: { kind: 'info', text: 'Partly received: record the rest below as it arrives.' },
+  FULLY_RECEIVED: { kind: 'success', text: 'Everything on this order has been received.' },
+  CLOSED: { kind: 'success', text: 'This order is closed.' },
+  REJECTED: { kind: 'warning', text: 'This order was rejected. Create a new purchase order if the goods are still needed.' },
+  CANCELLED: { kind: 'warning', text: 'This order was cancelled; nothing can be received against it.' },
+};
+
+interface ApprovalPolicy {
+  ownerApprovalEnabled: boolean;
+  viewerIsOwner: boolean;
+}
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -77,6 +121,10 @@ export default function PurchaseOrderDetail() {
   const session = useSession();
   const selfApproval = useSelfApproval();
   const approvingOwn = lines.data?.submittedBy?.id === session.staffUserId;
+  const policy = useApi<ApprovalPolicy>(approvingOwn ? '/approvals/policy' : null);
+  // Approving your own order is only possible through owner approval; when
+  // that is not available the dialog explains why and does not send.
+  const ownApprovalBlocked = approvingOwn && Boolean(policy.data) && !(policy.data!.ownerApprovalEnabled && policy.data!.viewerIsOwner);
 
   const reloadAll = () => {
     po.reload();
@@ -84,19 +132,34 @@ export default function PurchaseOrderDetail() {
     grns.reload();
   };
 
+  function openDecision(d: Decision) {
+    action.clear();
+    setDecision(d);
+  }
+
+  function closeDecision() {
+    action.clear();
+    setDecision(null);
+    setComment('');
+    selfApproval.reset();
+  }
+
   async function decide(d: Decision) {
     const ok = await action.run(
       () =>
         apiSend('POST', `/procurement/purchase-orders/${id}/${d}`, {
           ...(DECISIONS[d].comment ? { comment: comment || undefined } : {}),
-          ...(d === 'approve' && approvingOwn ? { selfApproval: selfApproval.value } : {}),
+          ...(d === 'approve' && approvingOwn && !ownApprovalBlocked ? { selfApproval: selfApproval.value } : {}),
         }),
-      `${DECISIONS[d].label}: done.`,
+      DECISIONS[d].done,
     );
+    // A refusal keeps the dialog open with what was typed (reason,
+    // password, comment) and shows the reason there.
+    if (!ok) return;
     setDecision(null);
     setComment('');
     selfApproval.reset();
-    if (ok) reloadAll();
+    reloadAll();
   }
 
   return (
@@ -111,15 +174,21 @@ export default function PurchaseOrderDetail() {
               </>
             }
             breadcrumbs={[{ label: 'Procurement' }, { label: 'Purchase orders', href: '/dashboard/purchase-orders' }, { label: p.poNumber }]}
-            actions={(Object.keys(DECISIONS) as Decision[]).map((d) => (
+            actions={decisionsFor(p.status, (lines.data?.lines ?? []).some((l) => l.receivedQty > 0)).map((d, i) => (
               <Can key={d} anyOf={[DECISIONS[d].perm]}>
-                <button type="button" className={DECISIONS[d].danger ? 'btn danger' : 'btn'} onClick={() => setDecision(d)} disabled={action.busy}>
+                <button
+                  type="button"
+                  className={DECISIONS[d].danger ? 'btn danger' : i === 0 ? 'primary' : 'btn'}
+                  onClick={() => openDecision(d)}
+                  disabled={action.busy}
+                >
                   {DECISIONS[d].label}
                 </button>
               </Can>
             ))}
           />
-          <ActionMessage message={action.message} />
+          {decision === null && <ActionMessage message={action.message} />}
+          {NEXT_STEP[p.status] && <Notice kind={NEXT_STEP[p.status]!.kind}>{NEXT_STEP[p.status]!.text}</Notice>}
 
           <div className="grid-2">
             <Section title="Summary">
@@ -188,7 +257,7 @@ export default function PurchaseOrderDetail() {
           </Section>
 
           <Can anyOf={['grn:create']}>
-            {lines.data && <ReceiveForm po={p} lines={lines.data.lines} onReceived={reloadAll} />}
+            {lines.data && RECEIVABLE.includes(p.status) && <ReceiveForm po={p} lines={lines.data.lines} onReceived={reloadAll} />}
           </Can>
 
           <Can anyOf={['grn:read']}>
@@ -231,10 +300,12 @@ export default function PurchaseOrderDetail() {
             confirmLabel={decision ? DECISIONS[decision].label : 'Confirm'}
             danger={decision ? DECISIONS[decision].danger : false}
             busy={action.busy}
-            onCancel={() => setDecision(null)}
+            confirmDisabled={decision === 'approve' && ownApprovalBlocked}
+            onCancel={closeDecision}
             onConfirm={() => decision && void decide(decision)}
           >
             <p>{decision && DECISIONS[decision].body}</p>
+            <ActionMessage message={action.message} />
             {decision && DECISIONS[decision].comment && <TextArea label="Comment (optional)" value={comment} onChange={setComment} />}
             {decision === 'approve' && approvingOwn && <SelfApprovalFields what="purchase order" state={selfApproval} />}
           </ConfirmDialog>

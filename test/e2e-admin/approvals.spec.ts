@@ -84,7 +84,7 @@ test.describe.serial('Approvals (AO-D4)', () => {
     await dialog.getByLabel('Reason').fill('Sole owner; no second approver yet');
     await dialog.getByLabel('Your password').fill(OWNER_PASSWORD);
     await confirmDialog(page, 'Approve');
-    await expect(page.getByText('Approve: done.')).toBeVisible();
+    await expect(page.getByText('Approved. Receive the goods below as they arrive.')).toBeVisible();
     expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po.id } })).status).toBe('APPROVED');
 
     // The log lists it as a self-approval with the reason.

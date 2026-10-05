@@ -4,7 +4,7 @@ import { loadEnv } from '@fcp/config';
 import { formatSequenceNumber, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { ApprovalPolicyService, type ApprovalDecision, type SelfApprovalInput } from '../approvals/service.js';
-import { ProcurementService } from '../procurement/service.js';
+import { ProcurementService, poStatusWords } from '../procurement/service.js';
 import { InventoryService } from '../inventory/service.js';
 
 export interface GrnLineInput {
@@ -76,7 +76,7 @@ export class GrnService {
     const po = await this.prisma.purchaseOrder.findUnique({ where: { id: input.poId }, include: { lines: { include: { sku: { select: { skuCode: true } } } } } });
     if (!po) throw new NotFoundError('PurchaseOrder', input.poId);
     if (!['APPROVED', 'PARTIALLY_RECEIVED'].includes(po.status)) {
-      throw new ValidationError(`Cannot record a GRN against a purchase order in status '${po.status}'`);
+      throw new ValidationError(`Goods can only be received against an approved purchase order; this one is ${poStatusWords(po.status)}`);
     }
 
     const env = loadEnv();
@@ -137,7 +137,7 @@ export class GrnService {
     } else if (signoffFailedQty > 0) {
       if (!input.managerSignoffStaffId) {
         throw new ValidationError(
-          `QC-fail disposition of ${signoffFailedQty} units requires Warehouse Manager sign-off (managerSignoffStaffId)`,
+          `${signoffFailedQty} units on one line failed QC (damaged or rejected), which needs a manager's QC sign-off. Choose who signs off; they confirm from their own login (or sign off yourself if owner approval lets you).`,
         );
       }
       signoff = await new ApprovalPolicyService(this.prisma).decide({
