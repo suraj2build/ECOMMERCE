@@ -698,9 +698,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-te-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Use approved Riya identity; white #FAFAF7 regular-fit cotton crew-neck short-sleeve tee with straight stitched hem, untucked charcoal trousers. Front ecommerce portrait 4:5, head to upper thighs, neutral grey studio, soft even lighting, product unobstructed.",
+      "review": "Reviewed identity, garment visibility, cotton texture, front construction, hands, neutral backdrop. Slight natural head angle; no anatomical neck distortion.",
       "garmentMaster": "/products/launch-v1/women-te-01-c1-front.webp"
     },
     {
@@ -727,9 +727,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-te-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Exact approved white cotton crew tee garment master; back view; Riya identity and petite 152cm 32D-24-32 character proportions; grey studio soft neutral lighting, garment seams and texture visible.",
+      "review": "Reviewed exact tee continuity, stitched sleeves/hem, cotton texture, neckline, neutral background and natural petite proportions; detail shows collar and sleeve stitching.",
       "garmentMaster": "/products/launch-v1/women-te-01-c1-front.webp"
     },
     {
@@ -756,9 +756,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-te-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Exact approved white cotton crew tee garment master; side view; Riya identity and petite 152cm 32D-24-32 character proportions; grey studio soft neutral lighting, garment seams and texture visible.",
+      "review": "Reviewed exact tee continuity, stitched sleeves/hem, cotton texture, neckline, neutral background and natural petite proportions; detail shows collar and sleeve stitching.",
       "garmentMaster": "/products/launch-v1/women-te-01-c1-front.webp"
     },
     {
@@ -785,9 +785,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-te-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Exact approved white cotton crew tee garment master; detail view; Riya identity and petite 152cm 32D-24-32 character proportions; grey studio soft neutral lighting, garment seams and texture visible.",
+      "review": "Reviewed exact tee continuity, stitched sleeves/hem, cotton texture, neckline, neutral background and natural petite proportions; detail shows collar and sleeve stitching.",
       "garmentMaster": "/products/launch-v1/women-te-01-c1-front.webp"
     },
     {
@@ -814,9 +814,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-te-01-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce FRONT photograph. Reference1 garment design and studio framing; reference2 absolute Riya character sheet face and body authority. Change only tee colour to Sage Green #A8B5A2. Same exact regular-fit cotton smooth jersey crew-neck tee, straight short sleeves and stitched hip hem, untucked over charcoal trousers. Adult petite152cm slim32D-24-32 natural frame exactly as character sheet, short highlighted bob compact round face. Upright neck, level chin, symmetrical relaxed shoulders, head-to-upper-thigh framing, entire tee unobstructed, no logos. Preserve construction seams and fit, white balance neutral, grey seamless studio soft light.",
+      "review": "Reviewed garment construction, regular cotton fit, identity, natural frame, clean background and colour family. Studio shading means pixel values vary from catalogue hex.",
       "garmentMaster": "/products/launch-v1/women-te-01-c1-front.webp"
     },
     {
@@ -843,9 +843,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-te-01-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce BACK view of exact sage green regular-fit cotton crew neck short-sleeve tee. First reference garment master, second absolute Riya character authority. Match catalogue sage #A9B79C under neutral lighting. Preserve sleeves, stitched straight hip hem, shoulder seams, crew binding and smooth cotton jersey. Riya adult petite152cm naturally proportional32D-24-32, same face and highlighted bob; charcoal trousers. Full back facing camera, neck straight, short hair clear of back collar, arms relaxed off sides. Neutral grey studio even soft light, head to upper thigh same scale, no text or accessories.",
+      "review": "Reviewed sage tee colour/garment continuity, crew binding, sleeve and hem construction, Riya natural petite frame, clear product and neutral studio background.",
       "garmentMaster": "/products/launch-v1/women-te-01-c2-front.webp"
     },
     {
@@ -872,9 +872,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-te-01-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce SIDE view of exact sage green regular-fit cotton crew neck short-sleeve tee. First reference garment master, second absolute Riya character authority. Match catalogue sage #A9B79C under neutral lighting. Preserve sleeves, stitched straight hip hem, shoulder seams, crew binding and smooth cotton jersey. Riya adult petite152cm naturally proportional32D-24-32, same face and highlighted bob; charcoal trousers. True90degree side, torso/head turn together neck vertical, arm just behind torso to expose side seam. Neutral grey studio even soft light, head to upper thigh same scale, no text or accessories.",
+      "review": "Reviewed sage tee colour/garment continuity, crew binding, sleeve and hem construction, Riya natural petite frame, clear product and neutral studio background.",
       "garmentMaster": "/products/launch-v1/women-te-01-c2-front.webp"
     },
     {
@@ -901,9 +901,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-te-01-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce DETAIL view of exact sage green regular-fit cotton crew neck short-sleeve tee. First reference garment master, second absolute Riya character authority. Match catalogue sage #A9B79C under neutral lighting. Preserve sleeves, stitched straight hip hem, shoulder seams, crew binding and smooth cotton jersey. Riya adult petite152cm naturally proportional32D-24-32, same face and highlighted bob; charcoal trousers. Tight shoulder/collar/sleeve construction closeup face excluded, show weave and rib neck binding with double stitched sleeve. Neutral grey studio even soft light, close product framing, no text or accessories.",
+      "review": "Reviewed sage tee colour/garment continuity, crew binding, sleeve and hem construction, Riya natural petite frame, clear product and neutral studio background.",
       "garmentMaster": "/products/launch-v1/women-te-01-c2-front.webp"
     },
     {
@@ -930,9 +930,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-te-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce FRONT photograph. Reference1 garment design and studio framing; reference2 absolute Riya character sheet face and body authority. Change only tee colour to Dusty Mauve #B38B99. Same exact regular-fit cotton smooth jersey crew-neck tee, straight short sleeves and stitched hip hem, untucked over charcoal trousers. Adult petite152cm slim32D-24-32 natural frame exactly as character sheet, short highlighted bob compact round face. Upright neck, level chin, symmetrical relaxed shoulders, head-to-upper-thigh framing, entire tee unobstructed, no logos. Preserve construction seams and fit, white balance neutral, grey seamless studio soft light.",
+      "review": "Reviewed garment construction, regular cotton fit, identity, natural frame, clean background and colour family. Studio shading means pixel values vary from catalogue hex.",
       "garmentMaster": "/products/launch-v1/women-te-02-c1-front.webp"
     },
     {
@@ -959,9 +959,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-te-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone portrait4:5 ecommerce BACK product view. Image1 is exact Dusty Mauve tee garment master; image2 absolute adult Riya character sheet body/face. Exact plain regular-fit cotton short sleeve crew neck tee #B08A86, straight double-stitched hip hem, same sleeve seams and charcoal trousers. Riya petite152cm natural32D-24-32, same compact face highlighted bob. Fully back facing, upright straight neck, hair above collar, arms away from torso; head to upper thighs. Neutral grey seamless studio soft even neutral light, same product scale. No text or accessories.",
+      "review": "Reviewed cotton crew tee construction, colour continuity, sleeves/hem, natural Riya frame and identity, hand anatomy and uncluttered background; detail resolves stitching and jersey.",
       "garmentMaster": "/products/launch-v1/women-te-02-c1-front.webp"
     },
     {
@@ -988,9 +988,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-te-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone portrait4:5 ecommerce SIDE product view. Image1 is exact Dusty Mauve tee garment master; image2 absolute adult Riya character sheet body/face. Exact plain regular-fit cotton short sleeve crew neck tee #B08A86, straight double-stitched hip hem, same sleeve seams and charcoal trousers. Riya petite152cm natural32D-24-32, same compact face highlighted bob. True90degree side, head/torso turn together vertical neck; arm slightly behind seam; head to upper thighs. Neutral grey seamless studio soft even neutral light, same product scale. No text or accessories.",
+      "review": "Reviewed cotton crew tee construction, colour continuity, sleeves/hem, natural Riya frame and identity, hand anatomy and uncluttered background; detail resolves stitching and jersey.",
       "garmentMaster": "/products/launch-v1/women-te-02-c1-front.webp"
     },
     {
@@ -1017,9 +1017,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-te-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone portrait4:5 ecommerce DETAIL product view. Image1 is exact Dusty Mauve tee garment master; image2 absolute adult Riya character sheet body/face. Exact plain regular-fit cotton short sleeve crew neck tee #B08A86, straight double-stitched hip hem, same sleeve seams and charcoal trousers. Riya petite152cm natural32D-24-32, same compact face highlighted bob. Close collar shoulder and sleeve fabric detail, face excluded; show cotton jersey weave, ribbed neck binding and double stitched sleeve. Neutral grey seamless studio soft even neutral light, same product scale. No text or accessories.",
+      "review": "Reviewed cotton crew tee construction, colour continuity, sleeves/hem, natural Riya frame and identity, hand anatomy and uncluttered background; detail resolves stitching and jersey.",
       "garmentMaster": "/products/launch-v1/women-te-02-c1-front.webp"
     },
     {
@@ -1046,9 +1046,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-te-02-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce FRONT photograph. Reference1 garment design and studio framing; reference2 absolute Riya character sheet face and body authority. Change only tee colour to Black #171717. Same exact regular-fit cotton smooth jersey crew-neck tee, straight short sleeves and stitched hip hem, untucked over charcoal trousers. Adult petite152cm slim32D-24-32 natural frame exactly as character sheet, short highlighted bob compact round face. Upright neck, level chin, symmetrical relaxed shoulders, head-to-upper-thigh framing, entire tee unobstructed, no logos. Preserve construction seams and fit, white balance neutral, grey seamless studio soft light.",
+      "review": "Reviewed garment construction, regular cotton fit, identity, natural frame, clean background and colour family. Studio shading means pixel values vary from catalogue hex.",
       "garmentMaster": "/products/launch-v1/women-te-02-c1-front.webp"
     },
     {
@@ -1075,9 +1075,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-te-02-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone portrait4:5 ecommerce BACK product view. Image1 is exact Black tee garment master; image2 absolute adult Riya character sheet body/face. Exact plain regular-fit cotton short sleeve crew neck tee #1C1C1C, straight double-stitched hip hem, same sleeve seams and charcoal trousers. Riya petite152cm natural32D-24-32, same compact face highlighted bob. Fully back facing, upright straight neck, hair above collar, arms away from torso; head to upper thighs. Neutral grey seamless studio soft even neutral light, same product scale. No text or accessories.",
+      "review": "Reviewed cotton crew tee construction, colour continuity, sleeves/hem, natural Riya frame and identity, hand anatomy and uncluttered background; detail resolves stitching and jersey.",
       "garmentMaster": "/products/launch-v1/women-te-02-c2-front.webp"
     },
     {
@@ -1104,9 +1104,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-te-02-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone portrait4:5 ecommerce SIDE product view. Image1 is exact Black tee garment master; image2 absolute adult Riya character sheet body/face. Exact plain regular-fit cotton short sleeve crew neck tee #1C1C1C, straight double-stitched hip hem, same sleeve seams and charcoal trousers. Riya petite152cm natural32D-24-32, same compact face highlighted bob. True90degree side, head/torso turn together vertical neck; arm slightly behind seam; head to upper thighs. Neutral grey seamless studio soft even neutral light, same product scale. No text or accessories.",
+      "review": "Reviewed cotton crew tee construction, colour continuity, sleeves/hem, natural Riya frame and identity, hand anatomy and uncluttered background; detail resolves stitching and jersey.",
       "garmentMaster": "/products/launch-v1/women-te-02-c2-front.webp"
     },
     {
@@ -1133,9 +1133,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-te-02-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone portrait4:5 ecommerce DETAIL product view. Image1 is exact Black tee garment master; image2 absolute adult Riya character sheet body/face. Exact plain regular-fit cotton short sleeve crew neck tee #1C1C1C, straight double-stitched hip hem, same sleeve seams and charcoal trousers. Riya petite152cm natural32D-24-32, same compact face highlighted bob. Close collar shoulder and sleeve fabric detail, face excluded; show cotton jersey weave, ribbed neck binding and double stitched sleeve. Neutral grey seamless studio soft even neutral light, same product scale. No text or accessories.",
+      "review": "Reviewed cotton crew tee construction, colour continuity, sleeves/hem, natural Riya frame and identity, hand anatomy and uncluttered background; detail resolves stitching and jersey.",
       "garmentMaster": "/products/launch-v1/women-te-02-c2-front.webp"
     },
     {
@@ -1162,9 +1162,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-ek-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce FRONT catalogue product photo. Supplied original Deeksha character sheet is absolute authority for identity/body: adult Indian165cm, natural fit curvy34DDD-30-34 frame, oval refined face, fair natural skin, long dark brown soft waves. Preserve character-sheet proportions without slimming/enlarging or elongated limbs. PRODUCT: Mustard #C9A227 straight fit cotton knee-length everyday kurti, round neckline with short front button placket, three-quarter sleeves, side slits and straight hem. Plain solid cotton no embroidery. Wear neutral cream straight trousers and simple nude closed flats; no scarf, bag or jewellery. Product dominates. Head to feet full garment clearly visible with consistent margins; front standing upright straight neck, level chin/shoulders, arms relaxed slightly away to expose seams. Long hair behind shoulders so neckline not obscured. Neutral light-grey seamless studio, soft even neutral illumination, real material texture. No text, logos or scenery.",
+      "review": "Reviewed original Deeksha sheet identity and frame, complete garment length, neckline sleeves and hem, distinct cotton/rayon/embroidery appearance, hands and feet, neutral studio and proportional framing.",
       "garmentMaster": "/products/launch-v1/women-ek-01-c1-front.webp"
     },
     {
@@ -1394,9 +1394,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-ek-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce FRONT catalogue product photo. Supplied original Deeksha character sheet is absolute authority for identity/body: adult Indian165cm, natural fit curvy34DDD-30-34 frame, oval refined face, fair natural skin, long dark brown soft waves. Preserve character-sheet proportions without slimming/enlarging or elongated limbs. PRODUCT: Indigo #33475A small restrained ivory allover botanical print rayon knee-length A-line kurti, mandarin collar, three-quarter sleeves, A-line flare and functional side seam pockets. Wear neutral cream straight trousers and simple nude closed flats; no scarf, bag or jewellery. Product dominates. Head to feet full garment clearly visible with consistent margins; front standing upright straight neck, level chin/shoulders, arms relaxed slightly away to expose seams. Long hair behind shoulders so neckline not obscured. Neutral light-grey seamless studio, soft even neutral illumination, real material texture. No text, logos or scenery.",
+      "review": "Reviewed original Deeksha sheet identity and frame, complete garment length, neckline sleeves and hem, distinct cotton/rayon/embroidery appearance, hands and feet, neutral studio and proportional framing.",
       "garmentMaster": "/products/launch-v1/women-ek-02-c1-front.webp"
     },
     {
@@ -1510,9 +1510,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-ek-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "One standalone 4:5 ecommerce FRONT catalogue product photo. Supplied original Deeksha character sheet is absolute authority for identity/body: adult Indian165cm, natural fit curvy34DDD-30-34 frame, oval refined face, fair natural skin, long dark brown soft waves. Preserve character-sheet proportions without slimming/enlarging or elongated limbs. PRODUCT: White #F7F5EF opaque cotton straight knee-length everyday chikankari kurti, round neck, three-quarter sleeves, white subtle floral embroidered yoke, straight hem. No party embellishment. Wear neutral cream straight trousers and simple nude closed flats; no scarf, bag or jewellery. Product dominates. Head to feet full garment clearly visible with consistent margins; front standing upright straight neck, level chin/shoulders, arms relaxed slightly away to expose seams. Long hair behind shoulders so neckline not obscured. Neutral light-grey seamless studio, soft even neutral illumination, real material texture. No text, logos or scenery.",
+      "review": "Reviewed original Deeksha sheet identity and frame, complete garment length, neckline sleeves and hem, distinct cotton/rayon/embroidery appearance, hands and feet, neutral studio and proportional framing.",
       "garmentMaster": "/products/launch-v1/women-ek-03-c1-front.webp"
     },
     {
