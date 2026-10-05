@@ -301,9 +301,13 @@ export class ProductService {
   /** Runs the automated QA-completeness gate and records the result (PROD-002/003). */
   async runQaCheck(styleId: string, actorStaffId: string): Promise<QaCompletenessResult> {
     const style = await this.getStyle(styleId);
-    if (style.lifecycleState !== 'READY_FOR_ENRICHMENT' && style.lifecycleState !== 'READY_FOR_QA') {
+    // AO-D1 (Product Owner, 2026-10-05): an UNPUBLISHED product may be
+    // republished, but only through this check again; a pass returns it to
+    // READY_FOR_QA, from which the normal explicit publish applies.
+    // ARCHIVED stays final.
+    if (style.lifecycleState !== 'READY_FOR_ENRICHMENT' && style.lifecycleState !== 'READY_FOR_QA' && style.lifecycleState !== 'UNPUBLISHED') {
       throw new ValidationError(
-        `Cannot run QA check from state '${style.lifecycleState}' - style must be in READY_FOR_ENRICHMENT or READY_FOR_QA`,
+        `Cannot run QA check from state '${style.lifecycleState}' - style must be in READY_FOR_ENRICHMENT, READY_FOR_QA or UNPUBLISHED`,
       );
     }
 
@@ -358,8 +362,12 @@ export class ProductService {
     return updated;
   }
 
+  /**
+   * Unpublishing also clears the earlier QA pass, so a republish (AO-D1)
+   * must pass the completeness check again rather than reuse an old pass.
+   */
   async unpublish(styleId: string, actorStaffId: string) {
-    return this.transitionLifecycle(styleId, 'PUBLISHED', 'UNPUBLISHED', actorStaffId);
+    return this.transitionLifecycle(styleId, 'PUBLISHED', 'UNPUBLISHED', actorStaffId, { qaPassedAt: null });
   }
 
   async archive(styleId: string, actorStaffId: string) {
@@ -386,6 +394,7 @@ export class ProductService {
     fromState: string,
     toState: 'READY_FOR_ENRICHMENT' | 'UNPUBLISHED',
     actorStaffId: string,
+    extra: Prisma.StyleUpdateInput = {},
   ) {
     const style = await this.prisma.style.findUnique({ where: { id: styleId } });
     if (!style) throw new NotFoundError('Style', styleId);
@@ -394,7 +403,7 @@ export class ProductService {
     }
     const updated = await this.prisma.style.update({
       where: { id: styleId },
-      data: { lifecycleState: toState },
+      data: { ...extra, lifecycleState: toState },
     });
     await recordAudit(this.prisma, {
       actorType: 'STAFF',

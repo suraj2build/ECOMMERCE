@@ -347,10 +347,25 @@ export function PublishStep({ style, readiness, onChanged, goTo }: StepProps) {
         {state === 'PUBLISHED' ? (
           <p>This product is live. Edits to its details, photos and prices show on the storefront within a minute.</p>
         ) : state === 'UNPUBLISHED' ? (
-          <Notice kind="warning">
-            This product was unpublished. The current product lifecycle (PROD-003) has no way back to published; archive it, or ask for the
-            republish decision listed in docs/admin/ADMIN_OPS_PHASE1.md.
-          </Notice>
+          blocking.length > 0 ? (
+            <>
+              <p>This product is unpublished. Before it can go live again, finish these:</p>
+              <ul className="issue-list">
+                {blocking.map((i) => (
+                  <li key={i.message}>
+                    {i.message}{' '}
+                    <button type="button" className="link-button" onClick={() => goTo(i.step)}>
+                      Fix in {STEP_LABEL[i.step]}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>
+              This product is unpublished. Republishing runs the completeness check again and makes it visible on the storefront and in search.
+            </p>
+          )
         ) : state === 'ARCHIVED' ? (
           <p>This product is archived and read-only.</p>
         ) : blocking.length > 0 ? (
@@ -371,10 +386,10 @@ export function PublishStep({ style, readiness, onChanged, goTo }: StepProps) {
           <p>Everything required is in place. Publishing makes the product visible on the storefront and in search.</p>
         )}
         <div className="row">
-          {(state === 'DRAFT' || state === 'READY_FOR_ENRICHMENT' || state === 'READY_FOR_QA') && (
+          {(state === 'DRAFT' || state === 'READY_FOR_ENRICHMENT' || state === 'READY_FOR_QA' || state === 'UNPUBLISHED') && (
             <Can anyOf={['product:publish']}>
               <button type="button" className="primary" disabled={action.busy || blocking.length > 0} onClick={() => void publish()}>
-                {action.busy ? 'Publishing…' : 'Publish'}
+                {action.busy ? 'Publishing…' : state === 'UNPUBLISHED' ? 'Republish' : 'Publish'}
               </button>
             </Can>
           )}

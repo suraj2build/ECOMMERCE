@@ -39,7 +39,7 @@ describe('Admin Ops Phase 1: storefront configuration, channels and setup', () =
     await resetDatabase();
     await seedRbac();
     await grantPermissions('MARKETING', ['cms:manage', 'cms:read', 'channel:manage', 'channel:read']);
-    await grantPermissions('SUPER_ADMIN', ['org:manage', 'channel:read']);
+    await grantPermissions('SUPER_ADMIN', ['org:manage', 'channel:read', 'tax:manage', 'tax:read']);
     await grantPermissions('ANALYTICS', ['cms:read', 'channel:read']);
     cms = (await createAuthenticatedStaff(app, ['MARKETING'])).token;
     const o = await createAuthenticatedStaff(app, ['SUPER_ADMIN']);
@@ -221,6 +221,49 @@ describe('Admin Ops Phase 1: storefront configuration, channels and setup', () =
       expect((await app.inject({ method: 'GET', url: '/api/v1/admin/setup', headers: auth(viewer) })).statusCode).toBe(403);
       expect((await app.inject({ method: 'POST', url: '/api/v1/admin/setup/media-storage/test', headers: auth(cms) })).statusCode).toBe(403);
       expect((await app.inject({ method: 'GET', url: '/api/v1/admin/setup' })).statusCode).toBe(401);
+    });
+  });
+
+  describe('AO-D3 business and warehouse setup from admin', () => {
+    const send = (method: 'POST' | 'PATCH', url: string, payload: unknown, token = owner) => app.inject({ method, url: `/api/v1${url}`, headers: auth(token), payload: payload as object });
+
+    it('creates and edits the business details, clearing a field with null, and audits the change', async () => {
+      const created = await send('POST', '/tax/legal-entities', { legalName: 'Vanya Retail LLP', registeredCity: 'Jaipur' });
+      expect(created.statusCode).toBe(201);
+      const id = created.json().id;
+      const edited = await send('PATCH', `/tax/legal-entities/${id}`, { pan: 'AAAPL1234C', registeredAddressLine1: '4 MI Road', registeredState: 'Rajasthan', registeredPinCode: '302001', registeredCity: null });
+      expect(edited.statusCode).toBe(200);
+      expect(edited.json()).toMatchObject({ pan: 'AAAPL1234C', registeredAddressLine1: '4 MI Road', registeredPinCode: '302001', registeredCity: null });
+      expect((await send('PATCH', `/tax/legal-entities/${id}`, { registeredPinCode: '30200' })).statusCode).toBe(400);
+      expect((await send('PATCH', `/tax/legal-entities/${id}`, { legalName: '' })).statusCode).toBe(400);
+      expect((await send('PATCH', `/tax/legal-entities/${id}`, { gstin: 'x' })).statusCode).toBe(400);
+      expect((await send('PATCH', `/tax/legal-entities/${id}`, { pan: 'x' }, cms)).statusCode).toBe(403);
+      const audit = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'legal_entity.update', entityId: id } });
+      expect(audit.oldValue).toMatchObject({ pan: null, registeredCity: 'Jaipur' });
+      expect(audit.newValue).toMatchObject({ pan: 'AAAPL1234C', registeredCity: null });
+    });
+
+    it('changes a GST registration status, and saves the warehouse address with the registration it ships under', async () => {
+      const entity = (await send('POST', '/tax/legal-entities', { legalName: 'Vanya Retail LLP' })).json();
+      const reg = (await send('POST', '/tax/gst-registrations', { legalEntityId: entity.id, gstin: '08AAAPL1234C1Z5', stateCode: '08', stateName: 'Rajasthan', status: 'PENDING', effectiveFrom: '2026-04-01' })).json();
+      const active = await send('PATCH', `/tax/gst-registrations/${reg.id}`, { status: 'ACTIVE' });
+      expect(active.json()).toMatchObject({ status: 'ACTIVE', gstin: '08AAAPL1234C1Z5' });
+      expect((await send('PATCH', `/tax/gst-registrations/${reg.id}`, { effectiveTo: '2026-03-01' })).statusCode).toBe(400);
+      expect(await testPrisma.auditLog.count({ where: { action: 'gst_registration.update', entityId: reg.id } })).toBe(1);
+
+      const wh = await send('POST', '/organization/locations', { code: 'JPR1', name: 'Jaipur warehouse', type: 'WAREHOUSE', addressLine1: '22 Industrial Area', city: 'Jaipur', state: 'Rajasthan', pinCode: '302013' });
+      expect(wh.statusCode).toBe(201);
+      expect((await send('POST', '/organization/locations', { code: 'JPR2', name: 'Bad', pinCode: '3020' })).statusCode).toBe(400);
+      const moved = await send('PATCH', `/organization/locations/${wh.json().id}`, { addressLine1: '23 Industrial Area', addressLine2: 'Gate 2' });
+      expect(moved.json()).toMatchObject({ addressLine1: '23 Industrial Area', addressLine2: 'Gate 2' });
+      expect((await send('PATCH', `/organization/locations/${wh.json().id}`, { addressLine2: null })).json().addressLine2).toBeNull();
+      expect((await send('POST', `/tax/locations/${wh.json().id}/gst-registration`, { gstRegistrationId: reg.id })).statusCode).toBe(200);
+
+      // Setup & health now reads both areas as configured once the PAN is in.
+      await send('PATCH', `/tax/legal-entities/${entity.id}`, { pan: 'AAAPL1234C', registeredAddressLine1: '4 MI Road', registeredCity: 'Jaipur', registeredState: 'Rajasthan', registeredPinCode: '302001' });
+      const areas = (await app.inject({ method: 'GET', url: '/api/v1/admin/setup', headers: auth(owner) })).json().areas as Array<{ key: string; status: string }>;
+      expect(areas.find((a) => a.key === 'business')?.status).toBe('configured');
+      expect(areas.find((a) => a.key === 'warehouse')?.status).toBe('configured');
     });
   });
 });

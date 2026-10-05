@@ -447,4 +447,65 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
       }
     });
   });
+
+  describe('AO-D1 republish and AO-D2 product-page attributes', () => {
+    async function publishedStyle(customAttributes?: Record<string, unknown>, fabric?: string) {
+      const style = await createStyle();
+      if (customAttributes || fabric) await testPrisma.style.update({ where: { id: style.id }, data: { ...(customAttributes ? { customAttributes } : {}), ...(fabric ? { fabric } : {}) } });
+      const colour = await addColour(style.id);
+      await app.inject({ method: 'POST', url: `/api/v1/products/styles/${style.id}/skus/generate`, headers: auth(), payload: { sizeIds: [fixtures.size.id] } });
+      expect((await upload(style.id, PNG, { colourId: colour.id, altText: 'Front' })).statusCode).toBe(201);
+      await app.inject({ method: 'POST', url: '/api/v1/catalog/prices', headers: auth(), payload: { styleId: style.id, mrp: 1999, sellingPrice: 1499 } });
+      await app.inject({ method: 'POST', url: `/api/v1/products/styles/${style.id}/ready-for-enrichment`, headers: auth() });
+      expect((await app.inject({ method: 'POST', url: `/api/v1/products/styles/${style.id}/qa-check`, headers: auth() })).json().passed).toBe(true);
+      expect((await app.inject({ method: 'POST', url: `/api/v1/products/styles/${style.id}/publish`, headers: auth() })).statusCode).toBe(200);
+      return style;
+    }
+    const post = (id: string, step: string) => app.inject({ method: 'POST', url: `/api/v1/products/styles/${id}/${step}`, headers: auth() });
+
+    it('an unpublished product goes live again only through the QA check; archived stays final', async () => {
+      const style = await publishedStyle();
+      expect((await post(style.id, 'unpublish')).statusCode).toBe(200);
+      expect(await testPrisma.style.findUniqueOrThrow({ where: { id: style.id } })).toMatchObject({ lifecycleState: 'UNPUBLISHED', qaPassedAt: null });
+      // The old QA pass is gone: publishing straight away is refused.
+      expect((await post(style.id, 'publish')).statusCode).toBe(400);
+
+      // A failing check keeps it unpublished.
+      await testPrisma.productMedia.deleteMany({ where: { styleId: style.id } });
+      const failed = (await post(style.id, 'qa-check')).json();
+      expect(failed.passed).toBe(false);
+      expect((await testPrisma.style.findUniqueOrThrow({ where: { id: style.id } })).lifecycleState).toBe('UNPUBLISHED');
+
+      expect((await upload(style.id, PNG, { altText: 'Front' })).statusCode).toBe(201);
+      expect((await post(style.id, 'qa-check')).json().passed).toBe(true);
+      expect((await testPrisma.style.findUniqueOrThrow({ where: { id: style.id } })).lifecycleState).toBe('READY_FOR_QA');
+      expect((await post(style.id, 'publish')).statusCode).toBe(200);
+      expect((await testPrisma.style.findUniqueOrThrow({ where: { id: style.id } })).lifecycleState).toBe('PUBLISHED');
+      expect((await app.inject({ method: 'GET', url: `/api/v1/storefront/products/${style.id}` })).statusCode).toBe(200);
+
+      expect((await post(style.id, 'archive')).statusCode).toBe(200);
+      expect((await post(style.id, 'qa-check')).statusCode).toBe(400);
+      expect((await post(style.id, 'publish')).statusCode).toBe(400);
+    });
+
+    it('shows shoe, belt and perfume attributes in the product details, and nothing extra for clothing', async () => {
+      const shoe = await publishedStyle({ productType: 'footwear', closureType: 'Lace-up', internalNote: 'never shown' }, 'Genuine leather upper');
+      const belt = await publishedStyle({ productType: 'belt', material: 'Genuine Leather', buckleType: 'Pin Buckle' });
+      const perfume = await publishedStyle({ productType: 'fragrance', fragranceName: 'Citrus Woods', concentration: 'Eau de Toilette', topNotes: 'Bergamot, Lemon', heartNotes: ' ', baseNotes: 'Musk' });
+      const shirt = await publishedStyle(undefined, '100% cotton');
+      const pdp = async (id: string) => (await app.inject({ method: 'GET', url: `/api/v1/storefront/products/${id}` })).json();
+
+      expect(await pdp(shoe.id)).toMatchObject({ productType: 'FOOTWEAR', attributes: [{ label: 'Material', value: 'Genuine leather upper' }, { label: 'Closure', value: 'Lace-up' }] });
+      expect((await pdp(belt.id)).attributes).toEqual([{ label: 'Material', value: 'Genuine Leather' }, { label: 'Buckle', value: 'Pin Buckle' }]);
+      expect((await pdp(perfume.id)).attributes).toEqual([
+        { label: 'Fragrance', value: 'Citrus Woods' },
+        { label: 'Concentration', value: 'Eau de Toilette' },
+        { label: 'Top notes', value: 'Bergamot, Lemon' },
+        { label: 'Base notes', value: 'Musk' },
+      ]);
+      const shirtPdp = await pdp(shirt.id);
+      expect(shirtPdp).toMatchObject({ productType: 'APPAREL', attributes: [], fabric: '100% cotton' });
+      expect(JSON.stringify(await pdp(shoe.id))).not.toContain('never shown');
+    });
+  });
 });

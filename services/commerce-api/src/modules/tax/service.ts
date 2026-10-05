@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@fcp/db';
+import type { Prisma, PrismaClient } from '@fcp/db';
 import { NotFoundError, ValidationError, TaxConfigurationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
@@ -74,6 +74,45 @@ export class TaxConfigService {
       newValue: input,
     });
     return entity;
+  }
+
+  /** AO-D3: edit the business details from admin. A null clears an optional field. */
+  async updateLegalEntity(id: string, patch: Partial<Record<keyof CreateLegalEntityInput, string | null>>, actorStaffId: string) {
+    const existing = await this.prisma.legalEntity.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('LegalEntity', id);
+    if (patch.legalName !== undefined && !patch.legalName?.trim()) throw new ValidationError('legalName is required');
+    const data = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, typeof v === 'string' ? v.trim() || null : v])) as Prisma.LegalEntityUpdateInput;
+    const updated = await this.prisma.legalEntity.update({ where: { id }, data });
+    const changed = Object.keys(patch) as Array<keyof typeof existing>;
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'legal_entity.update',
+      entityType: 'LegalEntity',
+      entityId: id,
+      oldValue: Object.fromEntries(changed.map((k) => [k, existing[k]])),
+      newValue: Object.fromEntries(changed.map((k) => [k, updated[k]])),
+    });
+    return updated;
+  }
+
+  /** AO-D3: change a registration's status or end date from admin (the GSTIN itself never changes). */
+  async updateGstRegistration(id: string, patch: { status?: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CANCELLED'; effectiveTo?: Date | null }, actorStaffId: string) {
+    const existing = await this.prisma.gstRegistration.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('GstRegistration', id);
+    if (patch.effectiveTo && patch.effectiveTo <= existing.effectiveFrom) throw new ValidationError('effectiveTo must be after effectiveFrom');
+    const updated = await this.prisma.gstRegistration.update({ where: { id }, data: patch });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'gst_registration.update',
+      entityType: 'GstRegistration',
+      entityId: id,
+      oldValue: { status: existing.status, effectiveTo: existing.effectiveTo },
+      newValue: { status: updated.status, effectiveTo: updated.effectiveTo },
+      reference: existing.legalEntityId,
+    });
+    return updated;
   }
 
   async listLegalEntities() {

@@ -59,7 +59,7 @@ export class SetupService {
         summary: entity ? entity.legalName : 'Not set up',
         missing,
         impact: 'Tax invoices need the legal name, address and an active GSTIN; orders cannot be invoiced without them.',
-        next: missing.length ? { label: 'Enter business and GST details (Tax settings - no admin screen yet; done through the tax API with tax:manage)' } : null,
+        next: missing.length ? { label: 'Enter business and GST details', href: '/dashboard/business' } : null,
         details: [
           { label: 'Legal entities', value: String(entities.length) },
           { label: 'Active GST registrations', value: String(activeGst.length) },
@@ -84,7 +84,7 @@ export class SetupService {
         summary: warehouses.length ? warehouses.map((l) => l.name).join(', ') : 'No warehouse',
         missing,
         impact: 'Stock is held, picked and handed to couriers here; invoices take their place of supply from its GST registration.',
-        next: missing.length ? { label: 'Complete the warehouse (Organization locations - no admin screen yet; done through the organization API with org:manage)' } : null,
+        next: missing.length ? { label: 'Complete the warehouse address', href: '/dashboard/business' } : null,
         details: [{ label: 'Active locations', value: String(locations.length) }],
       });
     }

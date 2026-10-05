@@ -136,6 +136,9 @@ export interface ProductDetail {
   countryOfOrigin: string | null;
   /** Shopper-facing copy from the product master (only these keys). */
   copy?: { subtitle?: string; details?: string[]; fitNotes?: string; styleNotes?: string; artisanCluster?: string; sustainableNote?: string };
+  /** Product type (from the category, or the product's own) and its type-specific attributes (AO-D2). */
+  productType?: 'APPAREL' | 'FOOTWEAR' | 'BELT' | 'FRAGRANCE';
+  attributes?: Array<{ label: string; value: string }>;
   mrp: number;
   sellingPrice: number;
   currency: string;

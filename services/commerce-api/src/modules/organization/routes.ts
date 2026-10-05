@@ -4,19 +4,25 @@ import { OrganizationService } from './service.js';
 
 const createBrandSchema = z.object({ code: z.string().min(1), name: z.string().min(1) });
 const updateBrandSchema = z.object({ name: z.string().min(1).optional(), isActive: z.boolean().optional() });
+// AO-D3: the warehouse/pickup address is edited in admin (Business & warehouse).
+const pinCode = z.string().trim().regex(/^\d{6}$/, 'PIN code must be 6 digits');
 const createLocationSchema = z.object({
   code: z.string().min(1),
   name: z.string().min(1),
   type: z.enum(['WAREHOUSE', 'STORE']).optional(),
+  addressLine1: z.string().trim().min(1).max(200).optional(),
+  addressLine2: z.string().trim().max(200).optional(),
   city: z.string().optional(),
   state: z.string().optional(),
-  pinCode: z.string().optional(),
+  pinCode: pinCode.optional(),
 });
 const updateLocationSchema = z.object({
   name: z.string().min(1).optional(),
+  addressLine1: z.string().trim().max(200).nullable().optional(),
+  addressLine2: z.string().trim().max(200).nullable().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
-  pinCode: z.string().optional(),
+  pinCode: pinCode.optional(),
   isActive: z.boolean().optional(),
 });
 

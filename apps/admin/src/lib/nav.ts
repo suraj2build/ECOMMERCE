@@ -21,6 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard', label: 'Overview', anyOf: [] },
       { href: '/dashboard/setup', label: 'Setup & health', anyOf: ['org:manage'] },
+      { href: '/dashboard/business', label: 'Business & warehouse', anyOf: ['org:manage', 'tax:read', 'tax:manage'] },
       { href: '/dashboard/approvals', label: 'Approvals', anyOf: ['org:manage', 'audit:read'] },
     ],
   },
@@ -55,6 +56,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard/orders', label: 'Orders', anyOf: ['order:read'] },
       { href: '/dashboard/warehouse/picks', label: 'Pick queue', anyOf: ['warehouse:read'] },
       { href: '/dashboard/fulfilments', label: 'Pack & ship', anyOf: ['order:read'] },
+      { href: '/dashboard/fulfilments/handover', label: 'Courier handover', anyOf: ['shipping:manage'] },
     ],
   },
   {
