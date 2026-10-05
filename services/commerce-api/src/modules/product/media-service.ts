@@ -3,7 +3,7 @@ import type { ProductMedia } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
 import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
-import { sniffImageMimeType } from '../returns/evidence-storage.js';
+import { checkUploadedImage } from '../../lib/image-validation.js';
 import { newProductMediaKey, PRODUCT_MEDIA_KEY, productMediaUrl, resolveProductMediaStore, type ProductMediaStore } from './media-storage.js';
 
 export interface UploadedFile {
@@ -66,8 +66,9 @@ export class ProductMediaService {
     const max = loadEnv().PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES;
     if (file.buffer.length === 0) throw new ValidationError('The file is empty');
     if (file.buffer.length > max) throw new ValidationError(`The photo is larger than ${Math.round(max / 1048576)} MB`);
-    const mimeType = sniffImageMimeType(file.buffer);
-    if (!mimeType) throw new ValidationError('Upload a JPEG, PNG or WebP photo');
+    // Decoded in full before anything is stored: a corrupt, truncated,
+    // animated or oversized image never reaches storage.
+    const { mimeType, width, height } = await checkUploadedImage(file.buffer, 'photo');
     const storageKey = newProductMediaKey(mimeType);
     let store: ProductMediaStore;
     try {
@@ -81,7 +82,7 @@ export class ProductMediaService {
       this.fastify.log.error({ err }, 'product media store write failed');
       throw new ConflictError('The photo could not be saved to storage. Nothing was changed; try again or check Setup → Media storage.');
     }
-    return { storageKey, mimeType, byteSize: file.buffer.length, url: productMediaUrl(storageKey) };
+    return { storageKey, mimeType, byteSize: file.buffer.length, width, height, url: productMediaUrl(storageKey) };
   }
 
   async upload(styleId: string, file: UploadedFile, options: { colourId?: string | null; altText?: string | null }, actorStaffId: string): Promise<ProductMedia> {

@@ -540,6 +540,9 @@ model ProductMedia {
   storageKey  String?   @unique
   mimeType    String?
   byteSize    Int?
+  // Pixel size, read while the upload is decoded (null for URL media).
+  width       Int?
+  height      Int?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
 
@@ -4318,6 +4321,8 @@ model ContentAsset {
   storageKey       String   @unique
   mimeType         String
   byteSize         Int
+  width            Int?
+  height           Int?
   altText          String?
   createdByStaffId String
   createdAt        DateTime @default(now())

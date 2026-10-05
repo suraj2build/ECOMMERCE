@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
+import { claimedPng, cutShortJpeg, fakeJpeg, realJpeg, realPng } from '../helpers/images.js';
 
 process.env.RAZORPAY_KEY_ID = 'test_key_id';
 process.env.RAZORPAY_KEY_SECRET = 'test_key_secret';
@@ -899,8 +900,14 @@ describe('Returns (M19)', () => {
   // --- Evidence upload (independent-review repair, finding 2) ---
 
   describe('Return evidence upload', () => {
-    const FAKE_JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 0x11)]);
-    const FAKE_PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(200, 0x22)]);
+    // Real, decodable photos: uploads are decoded in full, so a file that
+    // only starts with image bytes is refused (see the damaged-file test).
+    let PHOTO_JPEG: Buffer;
+    let PHOTO_PNG: Buffer;
+    beforeAll(async () => {
+      PHOTO_JPEG = await realJpeg();
+      PHOTO_PNG = await realPng();
+    });
     // A Windows PE executable's real magic bytes ("MZ...") - declares
     // itself as image/jpeg in the multipart Content-Type to prove the
     // server never trusts that claim.
@@ -940,11 +947,11 @@ describe('Returns (M19)', () => {
     it('the owning customer can upload, list, and retrieve their own evidence on a mobile-friendly upload endpoint', async () => {
       const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
 
-      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_JPEG);
       expect(uploadRes.statusCode).toBe(201);
       const evidence = uploadRes.json();
       expect(evidence.mimeType).toBe('image/jpeg');
-      expect(evidence.sizeBytes).toBe(FAKE_JPEG.length);
+      expect(evidence.sizeBytes).toBe(PHOTO_JPEG.length);
       // Never a public URL/path - only an opaque server-generated id/key.
       expect(evidence.objectKey).toMatch(/^[0-9a-f-]{36}$/i);
       expect(JSON.stringify(evidence)).not.toContain('var/return-evidence');
@@ -961,12 +968,12 @@ describe('Returns (M19)', () => {
       });
       expect(contentRes.statusCode).toBe(200);
       expect(contentRes.headers['content-type']).toBe('image/jpeg');
-      expect(Buffer.compare(contentRes.rawPayload, FAKE_JPEG)).toBe(0);
+      expect(Buffer.compare(contentRes.rawPayload, PHOTO_JPEG)).toBe(0);
     });
 
     it('accepts a genuine PNG too, sniffed from its own byte signature', async () => {
       const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
-      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_PNG, 'condition.png', 'image/png');
+      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_PNG, 'condition.png', 'image/png');
       expect(res.statusCode).toBe(201);
       expect(res.json().mimeType).toBe('image/png');
     });
@@ -975,6 +982,21 @@ describe('Returns (M19)', () => {
       const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
       const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_EXECUTABLE, 'totally-a-photo.jpg', 'image/jpeg');
       expect(res.statusCode).toBe(400);
+      expect(await testPrisma.returnEvidence.count()).toBe(0);
+    });
+
+    it('rejects damaged, fake and oversized photos after decoding them, storing nothing', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const url = `/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`;
+      for (const [file, message] of [
+        [fakeJpeg(), /damaged or is not a complete image/],
+        [await cutShortJpeg(), /damaged or is not a complete image/],
+        [claimedPng(7000, 6000), /at most 40 million pixels/],
+      ] as const) {
+        const res = await uploadEvidence(url, headers, file);
+        expect(res.statusCode).toBe(400);
+        expect(res.json().error.message).toMatch(message);
+      }
       expect(await testPrisma.returnEvidence.count()).toBe(0);
     });
 
@@ -995,10 +1017,10 @@ describe('Returns (M19)', () => {
     it('enforces the configured maximum number of evidence files per line', async () => {
       const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
       for (let i = 0; i < 6; i++) {
-        const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG, `photo-${i}.jpg`);
+        const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_JPEG, `photo-${i}.jpg`);
         expect(res.statusCode).toBe(201);
       }
-      const overflowRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG, 'photo-overflow.jpg');
+      const overflowRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_JPEG, 'photo-overflow.jpg');
       expect(overflowRes.statusCode).toBe(400);
       expect(await testPrisma.returnEvidence.count({ where: { returnLineId } })).toBe(6);
     });
@@ -1007,7 +1029,7 @@ describe('Returns (M19)', () => {
       const { returnId, returnLineId } = await setupDeliveredReturnLine();
       const otherGuestHeaders = { [GUEST_HEADER]: `guest-evidence-intruder-${counter}` };
 
-      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, otherGuestHeaders, FAKE_JPEG);
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, otherGuestHeaders, PHOTO_JPEG);
       expect(uploadRes.statusCode).toBe(404);
 
       const listRes = await app.inject({ method: 'GET', url: `/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers: otherGuestHeaders });
@@ -1016,7 +1038,7 @@ describe('Returns (M19)', () => {
 
     it('rejects reading evidence content by a different guest even with a valid evidence id (IDOR on the content-download route)', async () => {
       const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
-      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_JPEG);
       const evidenceId = uploadRes.json().id as string;
 
       const otherGuestHeaders = { [GUEST_HEADER]: `guest-evidence-intruder2-${counter}` };
@@ -1030,7 +1052,7 @@ describe('Returns (M19)', () => {
 
     it('authorized staff can inspect (list and download) evidence uploaded by a customer, attributed correctly in the audit log', async () => {
       const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
-      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_JPEG);
       const evidenceId = uploadRes.json().id as string;
 
       const staffToken = await warehouseToken();
@@ -1051,7 +1073,7 @@ describe('Returns (M19)', () => {
 
     it('a staff member without return:read cannot inspect evidence', async () => {
       const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
-      await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_JPEG);
 
       await grantPermissions('MARKETING', ['marketing:manage']);
       const noPermToken = (await createAuthenticatedStaff(app, ['MARKETING'])).token;
@@ -1061,7 +1083,7 @@ describe('Returns (M19)', () => {
 
     it('rejects a completely unauthenticated evidence upload with 400 (no guest/customer identity presented at all) - the SAME precedent as every other storefront route', async () => {
       const { returnId, returnLineId } = await setupDeliveredReturnLine();
-      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, {}, FAKE_JPEG);
+      const uploadRes = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, {}, PHOTO_JPEG);
       // resolveCartIdentity (shared by every storefront route) rejects a
       // request with NEITHER a customer session NOR a guest-session
       // header as a 400 request-validation failure - distinct from the
@@ -1096,7 +1118,7 @@ describe('Returns (M19)', () => {
       const cancelRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/returns/${returnId}/cancel`, headers });
       expect(cancelRes.statusCode).toBe(200);
 
-      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, FAKE_JPEG);
+      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, PHOTO_JPEG);
       expect(res.statusCode).toBe(400);
     });
   });

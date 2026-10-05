@@ -5,6 +5,8 @@ import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPr
 import { createAuthenticatedStaff } from '../helpers/auth.js';
 import { ProductMediaService } from '../../src/modules/product/media-service.js';
 import type { ProductMediaStore } from '../../src/modules/product/media-storage.js';
+import { animatedWebp, claimedPng, cutShortJpeg, fakeJpeg, realJpeg, realPng, realWebp, truncatedPng } from '../helpers/images.js';
+import fs from 'node:fs/promises';
 
 /**
  * Admin Ops Phase 1 (docs/admin/ADMIN_OPS_PHASE1.md): product editing,
@@ -13,7 +15,16 @@ import type { ProductMediaStore } from '../../src/modules/product/media-storage.
  */
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 7)]);
+let JPEG: Buffer;
+
+/** Stored photo files (not their `.meta.json` sidecars) under the test storage directory. */
+async function filesIn(dir: string): Promise<number> {
+  try {
+    return (await fs.readdir(dir, { recursive: true, withFileTypes: true })).filter((e) => e.isFile() && !e.name.endsWith('.json')).length;
+  } catch {
+    return 0;
+  }
+}
 
 function multipart(fields: Record<string, string>, file: { buffer: Buffer; filename: string; contentType: string } | null) {
   const boundary = `----adminops${Math.random().toString(36).slice(2)}`;
@@ -61,6 +72,7 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    JPEG = await realJpeg();
   });
 
   afterAll(async () => {
@@ -281,6 +293,47 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json().error.message).toMatch(/larger than 10 MB/);
       expect(await testPrisma.productMedia.count()).toBe(0);
+    });
+
+    it('decodes every photo: damaged, cut-short, fake, animated and oversized files are refused before anything is stored', async () => {
+      const style = await createStyle();
+      const dir = process.env.PRODUCT_MEDIA_STORAGE_DIR!;
+      const filesBefore = await filesIn(dir);
+      const DAMAGED = /damaged or is not a complete image/;
+      const cases: Array<[string, Buffer, RegExp]> = [
+        ['only the JPEG start bytes', fakeJpeg(), DAMAGED],
+        ['a JPEG whose image data stops half way', await cutShortJpeg(), DAMAGED],
+        ['a PNG cut off part-way', await truncatedPng(), DAMAGED],
+        ['an animated WebP', await animatedWebp(), /Animated images are not accepted/],
+        ['a PNG claiming 8001 × 4 pixels', claimedPng(8001, 4), /longest side can be at most 8000 pixels/],
+        ['a PNG claiming 7000 × 6000 pixels', claimedPng(7000, 6000), /at most 40 million pixels/],
+      ];
+      for (const [label, file, message] of cases) {
+        const res = await upload(style.id, file);
+        expect(res.statusCode, label).toBe(400);
+        expect(res.json().error.message, label).toMatch(message);
+      }
+      // A replacement goes through the same check.
+      const good = (await upload(style.id, JPEG)).json();
+      const bad = multipart({}, { buffer: await cutShortJpeg(), filename: 'new.jpg', contentType: 'image/jpeg' });
+      const replaced = await app.inject({ method: 'PUT', url: `/api/v1/products/media/${good.id}/file`, headers: { ...auth(), 'content-type': bad.contentType }, payload: bad.payload });
+      expect(replaced.statusCode).toBe(400);
+      expect((await testPrisma.productMedia.findUniqueOrThrow({ where: { id: good.id } })).url).toBe(good.url);
+      expect(await testPrisma.productMedia.count({ where: { styleId: style.id } })).toBe(1);
+      expect(await filesIn(dir)).toBe(filesBefore + 1);
+    });
+
+    it('accepts real JPEG, PNG and WebP photos and records their pixel size', async () => {
+      const style = await createStyle();
+      for (const [file, mimeType, width, height] of [
+        [await realJpeg(120, 90), 'image/jpeg', 120, 90],
+        [await realPng(40, 60), 'image/png', 40, 60],
+        [await realWebp(200, 100), 'image/webp', 200, 100],
+      ] as const) {
+        const res = await upload(style.id, file);
+        expect(res.statusCode).toBe(201);
+        expect(res.json()).toMatchObject({ mimeType, width, height, byteSize: file.length });
+      }
     });
 
     it('replaces a photo keeping its colour, order and text; the old file stops being served', async () => {

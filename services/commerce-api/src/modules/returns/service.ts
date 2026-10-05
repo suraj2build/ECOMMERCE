@@ -10,6 +10,7 @@ import { NotificationService } from '../notifications/service.js';
 import { resolveShippingProvider, type ShippingProvider } from '../shipping/provider.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 import { resolveReturnPolicy, isWithinWindow } from './policy.js';
+import { inspectImage, type ImageMimeType } from '../../lib/image-validation.js';
 import { resolveEvidenceStorageProvider, generateEvidenceObjectKey, sniffImageMimeType, type EvidenceStorageProvider } from './evidence-storage.js';
 
 export interface InitiateReturnLineInput {
@@ -684,6 +685,8 @@ export class ReturnService {
     if (!sniffed || !allowed.has(sniffed)) {
       throw new ValidationError(`Unsupported or unrecognized evidence file type - allowed types: ${[...allowed].join(', ')}`);
     }
+    // Decoded in full: a file that only starts like an image is refused.
+    await inspectImage(file.buffer, sniffed as ImageMimeType);
     const mimeType = sniffed;
 
     const existingCount = await this.prisma.returnEvidence.count({ where: { returnLineId: lineId } });

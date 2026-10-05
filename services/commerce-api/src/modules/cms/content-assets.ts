@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { loadEnv } from '@fcp/config';
 import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
-import { sniffImageMimeType } from '../returns/evidence-storage.js';
+import { checkUploadedImage } from '../../lib/image-validation.js';
 import { newProductMediaKey, PRODUCT_MEDIA_KEY, resolveProductMediaStore, type ProductMediaStore } from '../product/media-storage.js';
 
 /** The URL stored on a banner or page: relative to the storefront, which proxies it to the API. */
@@ -31,8 +31,7 @@ export class ContentAssetService {
     const max = loadEnv().PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES;
     if (buffer.length === 0) throw new ValidationError('The file is empty');
     if (buffer.length > max) throw new ValidationError(`The image is larger than ${Math.round(max / 1048576)} MB`);
-    const mimeType = sniffImageMimeType(buffer);
-    if (!mimeType) throw new ValidationError('Upload a JPEG, PNG or WebP image');
+    const { mimeType, width, height } = await checkUploadedImage(buffer, 'image');
     const storageKey = newProductMediaKey(mimeType);
     try {
       await this.store.put(storageKey, buffer, mimeType);
@@ -41,9 +40,9 @@ export class ContentAssetService {
       throw new ConflictError('The image could not be saved to storage. Nothing was changed; check Setup → Media storage.');
     }
     const asset = await this.fastify.prisma.contentAsset.create({
-      data: { storageKey, mimeType, byteSize: buffer.length, altText: altText?.trim() || null, createdByStaffId: actorStaffId },
+      data: { storageKey, mimeType, byteSize: buffer.length, width, height, altText: altText?.trim() || null, createdByStaffId: actorStaffId },
     });
-    await recordAudit(this.fastify.prisma, { actorType: 'STAFF', actorStaffId, action: 'cms.asset.upload', entityType: 'ContentAsset', entityId: asset.id, newValue: { mimeType, byteSize: buffer.length } });
+    await recordAudit(this.fastify.prisma, { actorType: 'STAFF', actorStaffId, action: 'cms.asset.upload', entityType: 'ContentAsset', entityId: asset.id, newValue: { mimeType, byteSize: buffer.length, width, height } });
     return { ...asset, url: contentAssetUrl(storageKey) };
   }
 

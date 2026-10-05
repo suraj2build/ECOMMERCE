@@ -316,6 +316,16 @@ to an hour.
 | `PRODUCT_MEDIA_S3_BUCKET` | `product-media` | A separate bucket from return evidence. It does not need public access because files are read through the API. |
 | `PRODUCT_MEDIA_S3_PREFIX` | `product-media/` | Key prefix inside the bucket. |
 | `PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES` | `10485760` (10 MiB) | Larger uploads are refused. |
+| `IMAGE_UPLOAD_MAX_EDGE_PX` | `8000` | Longest side, in pixels, of any uploaded image (product photos, content images, return evidence). |
+| `IMAGE_UPLOAD_MAX_PIXELS` | `40000000` | Total pixels of any uploaded image. Checked from the file header before any pixel is decoded, so a small file claiming huge dimensions is refused without using the memory. |
+
+Every uploaded image is decoded in full before it is stored (`sharp`/libvips,
+`services/commerce-api/src/lib/image-validation.ts`). A file is refused if
+its bytes are not JPEG, PNG or WebP whatever it claims to be, if it does not
+decode completely without decoder warnings (truncated or corrupt data), if
+it is animated, or if it exceeds the limits above. Normal camera, phone and
+editor exports pass; a refused file is fixed by exporting it again. Product
+photos and content images record their width and height.
 
 S3 uses the same `S3_ENDPOINT`/`S3_REGION`/`S3_ACCESS_KEY`/`S3_SECRET_KEY`
 as return evidence. The credentials need `s3:PutObject`, `s3:GetObject`

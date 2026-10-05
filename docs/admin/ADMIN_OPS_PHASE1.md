@@ -235,9 +235,10 @@ Desktop walkthrough screenshots (1440 px, from the browser tests):
   promotion is active, which happens while `promotions.spec` runs in
   parallel. These belong to the storefront/catalogue work and were left
   for it.
-- File checks look at the file's first bytes (as return evidence does);
-  an image is not decoded, so a file that starts like a JPEG but is
-  corrupt is stored and simply does not display.
+- *(Closed in the review follow-up, 2026-10-05.)* File checks used to
+  look only at a file's first bytes, so a corrupt file that started like a
+  JPEG was stored. Every upload is now decoded in full; see "Review
+  follow-up" below.
 
 ## Not checked here
 

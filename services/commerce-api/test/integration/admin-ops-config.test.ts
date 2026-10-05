@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
+import { cutShortJpeg, realWebp, truncatedPng } from '../helpers/images.js';
 import { ChannelService } from '../../src/modules/channels/service.js';
 
 /**
@@ -127,6 +128,22 @@ describe('Admin Ops Phase 1: storefront configuration, channels and setup', () =
       expect((await app.inject({ method: 'POST', url: '/api/v1/cms/assets', headers: { ...auth(cms), 'content-type': lying.contentType }, payload: lying.payload })).statusCode).toBe(400);
       const viewerUpload = multipart({}, PNG);
       expect((await app.inject({ method: 'POST', url: '/api/v1/cms/assets', headers: { ...auth(viewer), 'content-type': viewerUpload.contentType }, payload: viewerUpload.payload })).statusCode).toBe(403);
+    });
+
+    it('decodes banner images: damaged files are refused and a real image records its pixel size', async () => {
+      const post = (file: Buffer) => {
+        const body = multipart({}, file);
+        return app.inject({ method: 'POST', url: '/api/v1/cms/assets', headers: { ...auth(cms), 'content-type': body.contentType }, payload: body.payload });
+      };
+      for (const file of [await cutShortJpeg(), await truncatedPng()]) {
+        const res = await post(file);
+        expect(res.statusCode).toBe(400);
+        expect(res.json().error.message).toMatch(/damaged or is not a complete image/);
+      }
+      expect(await testPrisma.contentAsset.count()).toBe(0);
+      const good = await post(await realWebp(320, 180));
+      expect(good.statusCode).toBe(201);
+      expect(good.json()).toMatchObject({ mimeType: 'image/webp', width: 320, height: 180 });
     });
   });
 

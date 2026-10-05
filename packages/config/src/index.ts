@@ -225,6 +225,12 @@ const envSchema = z.object({
   PRODUCT_MEDIA_S3_BUCKET: z.string().min(3).default('product-media'),
   PRODUCT_MEDIA_S3_PREFIX: z.string().default('product-media/'),
   PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10_485_760), // 10 MiB
+  // Every uploaded image (product photos, banner/page images, return
+  // evidence) is fully decoded before it is stored. These are engineering
+  // safety limits against oversized or decompression-bomb files, not a
+  // photography standard: longest edge and total pixel count.
+  IMAGE_UPLOAD_MAX_EDGE_PX: z.coerce.number().int().positive().default(8000),
+  IMAGE_UPLOAD_MAX_PIXELS: z.coerce.number().int().positive().default(40_000_000),
 
   // --- Refunds (M20 independent-review repair, finding 4) ---
   // Age-based recovery cutoff for a Refund stuck in PROCESSING (the

@@ -16,7 +16,11 @@ const STOREFRONT_URL = process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000
 const OWNER_EMAIL = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@example.com';
 const OWNER_PASSWORD = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe123!';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 9)]);
+// A real 8 × 8 JPEG: uploads are decoded in full, so start bytes alone are refused.
+const JPEG = Buffer.from(
+  '/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAgDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKAAcVP/2Q==',
+  'base64',
+);
 
 async function shot(page: Page, name: string) {
   const dir = process.env.WALKTHROUGH_DIR;
@@ -166,9 +170,12 @@ test.describe('Admin Ops Phase 1: owner workflows', () => {
       { name: 'front.png', mimeType: 'image/png', buffer: PNG },
       { name: 'back.png', mimeType: 'image/png', buffer: PNG },
       { name: 'not-a-photo.png', mimeType: 'image/png', buffer: Buffer.from('<html>not an image</html>') },
+      // Starts like a JPEG but stops before the image data: refused after decoding.
+      { name: 'damaged.jpg', mimeType: 'image/jpeg', buffer: JPEG.subarray(0, 200) },
     ]);
-    await expect(page.getByText('2 of 3 uploaded.')).toBeVisible();
+    await expect(page.getByText('2 of 4 uploaded.')).toBeVisible();
     await expect(page.getByText(/not-a-photo\.png: Upload a JPEG, PNG or WebP photo/)).toBeVisible();
+    await expect(page.getByText(/damaged\.jpg: The file is damaged or is not a complete image/)).toBeVisible();
 
     const uploaded = await prisma.productMedia.findMany({ where: { styleId: published.styleId, storageKey: { not: null } }, orderBy: { sortOrder: 'asc' } });
     expect(uploaded).toHaveLength(2);
