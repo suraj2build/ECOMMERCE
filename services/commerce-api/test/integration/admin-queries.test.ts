@@ -218,7 +218,7 @@ describe('Admin query endpoints (P1)', () => {
     expect((await get('/admin/purchase-orders?status=SUBMITTED', token)).statusCode).toBe(200);
   });
 
-  it('staff lookup lists only active holders of the approving permission, identity only, never the caller', async () => {
+  it('staff lookup lists only active holders of the approving permission, identity only, never the caller (outside owner approval)', async () => {
     await grantPermissions('FINANCE', ['inventory:adjust:coapprove']);
     const approver = await createAuthenticatedStaff(app, ['FINANCE']);
     const inactive = await createAuthenticatedStaff(app, ['FINANCE']);
@@ -228,7 +228,7 @@ describe('Admin query endpoints (P1)', () => {
     const requester = await staff('WAREHOUSE_MANAGER', ['inventory:adjust']);
     const res = await get('/admin/lookup/staff?capability=inventory-coapprover', requester.token);
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual([{ id: approver.staffUserId, fullName: 'Test Staff' }]);
+    expect(res.json()).toEqual([{ id: approver.staffUserId, fullName: 'Test Staff', self: false }]);
     expect(JSON.stringify(res.json())).not.toMatch(/passwordHash|mfaSecret|email/);
 
     expect((await get('/admin/lookup/staff?capability=everyone', requester.token)).statusCode).toBe(400);

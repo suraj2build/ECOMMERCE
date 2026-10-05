@@ -62,3 +62,21 @@ export async function seedBrandAndLocation() {
   const size = await testPrisma.size.create({ data: { label: 'M', sortOrder: 0 } });
   return { brand, location, category, size };
 }
+
+/**
+ * A staff member who may approve purchase orders (holds po:approve through
+ * the FINANCE role). Approvals check the approver's permission in the
+ * service as well as the route (AO-D4 approval policy).
+ */
+export async function createPoApprover(label = 'Approver') {
+  await grantPermissions('FINANCE', ['po:approve']);
+  const role = await testPrisma.role.findUniqueOrThrow({ where: { key: 'FINANCE' } });
+  return testPrisma.staffUser.create({
+    data: {
+      email: `po-approver-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`,
+      passwordHash: 'x',
+      fullName: label,
+      roles: { create: { roleId: role.id } },
+    },
+  });
+}

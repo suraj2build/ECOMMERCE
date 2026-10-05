@@ -21,6 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/dashboard', label: 'Overview', anyOf: [] },
       { href: '/dashboard/setup', label: 'Setup & health', anyOf: ['org:manage'] },
+      { href: '/dashboard/approvals', label: 'Approvals', anyOf: ['org:manage', 'audit:read'] },
     ],
   },
   {

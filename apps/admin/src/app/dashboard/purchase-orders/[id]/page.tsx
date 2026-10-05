@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { LocationSelect, StaffSelect } from '@/components/pickers';
+import { SelfApprovalFields, useSelfApproval } from '@/components/self-approval';
 import {
   ActionMessage,
   Can,
@@ -20,7 +21,7 @@ import {
   TextArea,
 } from '@/components/ui';
 import { apiSend, qs } from '@/lib/api';
-import { useAction, useApi, useCan } from '@/lib/session';
+import { useAction, useApi, useCan, useSession } from '@/lib/session';
 
 interface Po {
   id: string;
@@ -36,7 +37,7 @@ interface Po {
 }
 
 interface PoLines {
-  submittedBy: { fullName: string } | null;
+  submittedBy: { id: string; fullName: string } | null;
   approvedBy: { fullName: string } | null;
   lines: Array<{
     id: string;
@@ -59,7 +60,7 @@ interface Grn {
 type Decision = 'submit' | 'approve' | 'reject' | 'cancel';
 const DECISIONS: Record<Decision, { label: string; perm: string; danger?: boolean; comment?: boolean; body: string }> = {
   submit: { label: 'Submit for approval', perm: 'po:submit', body: 'The order is locked for editing and sent for approval.' },
-  approve: { label: 'Approve', perm: 'po:approve', comment: true, body: 'Approval must come from someone other than the submitter; the server enforces it and the approval threshold.' },
+  approve: { label: 'Approve', perm: 'po:approve', comment: true, body: 'Approval must come from someone other than the submitter, unless owner approval is on (Approvals page); the server enforces it and the approval threshold.' },
   reject: { label: 'Reject', perm: 'po:approve', comment: true, danger: true, body: 'The order returns to the buyer as rejected.' },
   cancel: { label: 'Cancel order', perm: 'po:create', danger: true, body: 'Cancelled orders cannot be received against.' },
 };
@@ -73,6 +74,9 @@ export default function PurchaseOrderDetail() {
   const action = useAction();
   const [decision, setDecision] = useState<Decision | null>(null);
   const [comment, setComment] = useState('');
+  const session = useSession();
+  const selfApproval = useSelfApproval();
+  const approvingOwn = lines.data?.submittedBy?.id === session.staffUserId;
 
   const reloadAll = () => {
     po.reload();
@@ -82,11 +86,16 @@ export default function PurchaseOrderDetail() {
 
   async function decide(d: Decision) {
     const ok = await action.run(
-      () => apiSend('POST', `/procurement/purchase-orders/${id}/${d}`, DECISIONS[d].comment ? { comment: comment || undefined } : {}),
+      () =>
+        apiSend('POST', `/procurement/purchase-orders/${id}/${d}`, {
+          ...(DECISIONS[d].comment ? { comment: comment || undefined } : {}),
+          ...(d === 'approve' && approvingOwn ? { selfApproval: selfApproval.value } : {}),
+        }),
       `${DECISIONS[d].label}: done.`,
     );
     setDecision(null);
     setComment('');
+    selfApproval.reset();
     if (ok) reloadAll();
   }
 
@@ -227,6 +236,7 @@ export default function PurchaseOrderDetail() {
           >
             <p>{decision && DECISIONS[decision].body}</p>
             {decision && DECISIONS[decision].comment && <TextArea label="Comment (optional)" value={comment} onChange={setComment} />}
+            {decision === 'approve' && approvingOwn && <SelfApprovalFields what="purchase order" state={selfApproval} />}
           </ConfirmDialog>
         </div>
       )}
@@ -252,6 +262,9 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
   const action = useAction();
   const [locationId, setLocationId] = useState(po.location.id);
   const [signoff, setSignoff] = useState('');
+  const session = useSession();
+  const selfApproval = useSelfApproval();
+  const signingOwn = signoff !== '' && signoff === session.staffUserId;
   const [rows, setRows] = useState<Record<string, ReceiveRow>>({});
   const [exceptions, setExceptions] = useState<Array<{ skuId: string; shortQty: number; excessQty: number; isExcessException: boolean }>>([]);
   const [recorded, setRecorded] = useState<string | null>(null);
@@ -297,6 +310,7 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
               poId: po.id,
               locationId,
               managerSignoffStaffId: signoff || undefined,
+              ...(signingOwn ? { selfApproval: selfApproval.value } : {}),
               lines: payloadLines,
             });
             setRecorded(res.grnNumber);
@@ -304,6 +318,7 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
           });
           if (ok) {
             setRows({});
+            selfApproval.reset();
             onReceived();
           }
         }}
@@ -318,6 +333,7 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
             hint="Needed when damaged + rejected units reach the configured threshold."
           />
         </div>
+        {signingOwn && <SelfApprovalFields what="receiving QC sign-off" state={selfApproval} />}
         <div className="table-wrap" style={{ marginBottom: '0.75rem' }}>
           <table>
             <caption className="sr-only">Quantities to receive</caption>

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
-import { resetDatabase, seedRbac, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
+import { resetDatabase, seedRbac, seedBrandAndLocation, testPrisma, createPoApprover } from '../helpers/db.js';
 import { GrnService } from '../../src/modules/grn/service.js';
 import { ProcurementService } from '../../src/modules/procurement/service.js';
 import { InventoryService } from '../../src/modules/inventory/service.js';
@@ -65,9 +65,7 @@ describe('GRN concurrency - PO line receipt roll-up (GRN concurrency)', () => {
       staffUser.id,
     );
     await procurement.submitPurchaseOrder(po.id, staffUser.id);
-    const approver = await testPrisma.staffUser.create({
-      data: { email: `grn-conc-approver-${Date.now()}@example.com`, passwordHash: 'x', fullName: 'Approver' },
-    });
+    const approver = await createPoApprover();
     await procurement.approvePurchaseOrder(po.id, approver.id);
 
     poId = po.id;

@@ -5,7 +5,8 @@ import { LocationSelect, SkuPicker, StaffSelect, type SkuOption } from '@/compon
 import { BalanceCard, useSkuLocationFromUrl } from '@/components/sku-location';
 import { ConfirmDialog, PageHeader, TextField } from '@/components/ui';
 import { apiSend, errorMessage } from '@/lib/api';
-import { useCan } from '@/lib/session';
+import { useCan, useSession } from '@/lib/session';
+import { SelfApprovalFields, useSelfApproval } from '@/components/self-approval';
 import { randomUuid } from '@/lib/random-id';
 
 /**
@@ -30,6 +31,9 @@ export default function InventoryAdjustmentsPage() {
   const [quantityDelta, setQuantityDelta] = useState('');
   const [reason, setReason] = useState('');
   const [coApproverStaffId, setCoApproverStaffId] = useState('');
+  const session = useSession();
+  const selfApproval = useSelfApproval();
+  const approvingOwn = coApproverStaffId !== '' && coApproverStaffId === session.staffUserId;
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -54,8 +58,10 @@ export default function InventoryAdjustmentsPage() {
         quantityDelta: Number(quantityDelta),
         reason: reason || undefined,
         coApproverStaffId: coApproverStaffId || undefined,
+        ...(approvingOwn ? { selfApproval: selfApproval.value } : {}),
         idempotencyKey,
       });
+      selfApproval.reset();
       idempotencyKeyRef.current = null;
       setMessage({ kind: 'success', text: `Adjustment recorded for ${sku?.skuCode}.` });
       setQuantityDelta('');
@@ -135,6 +141,7 @@ export default function InventoryAdjustmentsPage() {
               setCoApproverStaffId(value);
             }}
           />
+          {approvingOwn && <SelfApprovalFields what="stock adjustment" state={selfApproval} />}
           <button className="primary" type="submit" disabled={submitting || !sku || !locationId}>
             {submitting ? 'Submitting...' : 'Submit adjustment'}
           </button>

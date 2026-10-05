@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient, type InventoryTxnType } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
 import { ConflictError, InsufficientStockError, InventoryIntegrityError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { ApprovalPolicyService, type ApprovalDecision } from '../approvals/service.js';
 
 export interface InventoryBalanceSnapshot {
   onHand: number;
@@ -1215,10 +1216,16 @@ export class InventoryService {
       actorStaffId: string;
       coApproverStaffId?: string;
       idempotencyKey?: string;
+      /** The approval-policy decision for the co-approver (AO-D4); recorded with the adjustment. */
+      approval?: ApprovalDecision;
     },
     externalTx?: Prisma.TransactionClient,
   ) {
     if (!params.reason?.trim()) throw new ValidationError('Adjustment reason is required');
+    if (params.coApproverStaffId && params.approval?.approvedByStaffId !== params.coApproverStaffId) {
+      // Every caller decides the co-approver through the approval policy first.
+      throw new ValidationError('The co-approver has not been checked against the approval policy');
+    }
     if (params.quantityDelta === 0) throw new ValidationError('Adjustment quantity delta cannot be zero');
     if (params.idempotencyKey !== undefined && !params.idempotencyKey.trim()) {
       throw new ValidationError('Adjustment idempotency key cannot be empty');
@@ -1316,6 +1323,13 @@ export class InventoryService {
         newValue: { quantityDelta: params.quantityDelta, reason: params.reason },
         reference: params.coApproverStaffId,
       });
+      if (params.approval) {
+        await ApprovalPolicyService.record(tx, params.approval, {
+          entityType: 'InventoryTransaction',
+          entityId: txnRow.id,
+          detail: { skuId: params.skuId, locationId: params.locationId, quantityDelta: params.quantityDelta, reason: params.reason },
+        });
+      }
 
       return txnRow;
     };

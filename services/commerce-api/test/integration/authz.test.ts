@@ -138,7 +138,7 @@ describe('Authorization enforcement', () => {
     });
 
     expect(approveRes.statusCode).toBe(400);
-    expect(approveRes.json().error.message).toMatch(/same staff member/i);
+    expect(approveRes.json().error.message).toMatch(/someone other than the person who made it/i);
     void staffUserId;
   });
 });

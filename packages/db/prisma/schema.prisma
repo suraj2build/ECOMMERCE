@@ -184,6 +184,11 @@ model StaffUser {
   coApprovedAdjustments         InventoryTransaction[]      @relation("InventoryAdjustmentCoApprover")
   publishedStyles               Style[]                     @relation("StylePublishedBy")
   auditLogEntries               AuditLog[]
+  approvalOwnerEntry            ApprovalOwner?              @relation("ApprovalOwnerStaff")
+  approvalOwnersAdded           ApprovalOwner[]             @relation("ApprovalOwnerAddedBy")
+  approvalPolicyUpdates         ApprovalPolicy[]
+  approvalsRequested            ApprovalRecord[]            @relation("ApprovalRequestedBy")
+  approvalsGiven                ApprovalRecord[]            @relation("ApprovalApprovedBy")
   moderatedShoppableMedia       ShoppableMedia[]            @relation("ShoppableMediaModeratedBy")
   moderatedReviews              Review[]                    @relation("ReviewModeratedBy")
   crossSellOverrides            CrossSellOverride[]
@@ -320,11 +325,11 @@ enum StyleLifecycleState {
 }
 
 model Category {
-  id       String  @id @default(uuid())
-  name     String
-  slug     String  @unique
-  parentId String?
-  isActive Boolean @default(true)
+  id          String      @id @default(uuid())
+  name        String
+  slug        String      @unique
+  parentId    String?
+  isActive    Boolean     @default(true)
   // Admin Ops Phase 1: which attributes and sizes the product workspace
   // offers for this category (apparel, shoes, belts, perfume). Guidance
   // for data entry only - it never restricts what the server accepts.
@@ -4331,4 +4336,68 @@ model ContentAsset {
 
   @@index([createdAt])
   @@map("content_assets")
+}
+
+// ---------------------------------------------------------------------------
+// Approval policy (AO-D4, Product Owner 2026-10-05; docs/admin/APPROVALS.md).
+// One rule for purchase-order approval, large stock adjustments, receiving
+// QC sign-off and large pick shortfalls: the approver must hold the
+// approving permission and be someone other than the requester, unless
+// owner approval is switched on and the requester is a named owner who
+// gives a reason and re-confirms with their password (and MFA code when
+// enrolled). Every approval of either kind is recorded here.
+// ---------------------------------------------------------------------------
+
+/// Single row (id = "default"). Owner approval is off until an org:manage
+/// holder turns it on.
+model ApprovalPolicy {
+  id                   String     @id @default("default")
+  ownerApprovalEnabled Boolean    @default(false)
+  updatedAt            DateTime   @updatedAt
+  updatedByStaffId     String?
+  updatedByStaff       StaffUser? @relation(fields: [updatedByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("approval_policies")
+}
+
+/// Staff members who may approve their own actions while owner approval is on.
+model ApprovalOwner {
+  staffUserId    String    @id
+  addedByStaffId String
+  createdAt      DateTime  @default(now())
+  staffUser      StaffUser @relation("ApprovalOwnerStaff", fields: [staffUserId], references: [id], onDelete: Restrict)
+  addedByStaff   StaffUser @relation("ApprovalOwnerAddedBy", fields: [addedByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("approval_owners")
+}
+
+enum ApprovalKind {
+  PURCHASE_ORDER
+  STOCK_ADJUSTMENT
+  RECEIVING_QC
+  PICK_SHORTFALL
+}
+
+/// Append-only record of every approval given under the policy.
+model ApprovalRecord {
+  id                 String       @id @default(uuid())
+  kind               ApprovalKind
+  entityType         String
+  entityId           String
+  requestedByStaffId String
+  approvedByStaffId  String
+  /// True when the requester approved their own action under owner approval.
+  selfApproved       Boolean
+  /// Required for a self-approval; null otherwise.
+  reason             String?
+  detail             Json?
+  createdAt          DateTime     @default(now())
+
+  requestedByStaff StaffUser @relation("ApprovalRequestedBy", fields: [requestedByStaffId], references: [id], onDelete: Restrict)
+  approvedByStaff  StaffUser @relation("ApprovalApprovedBy", fields: [approvedByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([selfApproved, createdAt])
+  @@index([entityType, entityId])
+  @@map("approval_records")
 }

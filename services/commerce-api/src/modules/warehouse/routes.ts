@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { WarehouseService } from './service.js';
+import { ApprovalPolicyService, selfApprovalSchema } from '../approvals/service.js';
 
 const listQuerySchema = z.object({
   status: z.enum(['PENDING', 'PICKED', 'SHORT_PICKED', 'EXCEPTION', 'CANCELLED']).optional(),
@@ -18,6 +19,7 @@ const pickOutcomeSchema = z
     exceptionType: z.enum(['STOCK_NOT_FOUND', 'INSUFFICIENT_STOCK', 'DAMAGED', 'WRONG_SKU_FOUND', 'OTHER']).optional(),
     exceptionReason: z.string().min(1).max(2000).optional(),
     coApproverStaffId: z.string().uuid().optional(),
+    selfApproval: selfApprovalSchema.optional(),
   })
   .refine((v) => v.outcome === 'EXCEPTION' || v.pickedQuantity !== undefined, {
     message: 'pickedQuantity is required for FULL/SHORT outcomes',
@@ -61,6 +63,19 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/warehouse/pick-tasks/:id/pick', { preHandler: pickAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = pickOutcomeSchema.parse(request.body);
+    // A shortfall at/above the threshold writes off stock and needs a
+    // co-approver under the same approval policy as stock adjustments
+    // (AO-D4): someone else holding inventory:adjust:coapprove, or the
+    // picker themselves only under owner approval with reason + password.
+    const approval = body.coApproverStaffId
+      ? await new ApprovalPolicyService(fastify.prisma).decide({
+          kind: 'PICK_SHORTFALL',
+          requestedByStaffId: request.staffUser!.id,
+          approverStaffId: body.coApproverStaffId,
+          permission: 'inventory:adjust:coapprove',
+          selfApproval: body.selfApproval,
+        })
+      : undefined;
     reply.status(200).send(
       await warehouseService.recordPickOutcome({
         pickTaskId: id,
@@ -71,6 +86,7 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify) => {
         exceptionType: body.exceptionType,
         exceptionReason: body.exceptionReason,
         coApproverStaffId: body.coApproverStaffId,
+        approval,
       }),
     );
   });

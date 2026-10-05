@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient, type PickTaskStatus, type PickExceptionType 
 import { NotFoundError, ValidationError, ConflictError, InventoryIntegrityError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { recordAudit } from '../audit/service.js';
+import type { ApprovalDecision } from '../approvals/service.js';
 
 export interface PickTaskLineSnapshot {
   id: string;
@@ -20,6 +21,8 @@ export interface RecordPickOutcomeParams {
   exceptionType?: PickExceptionType;
   exceptionReason?: string;
   coApproverStaffId?: string;
+  /** Approval-policy decision for the co-approver (AO-D4), made by the caller. */
+  approval?: ApprovalDecision;
 }
 
 /**
@@ -426,6 +429,7 @@ export class WarehouseService {
             reason: adjustmentReason,
             actorStaffId: params.staffId,
             coApproverStaffId: params.coApproverStaffId,
+            approval: params.approval,
             idempotencyKey: `pick-adjust:${task.id}:${params.idempotencyKey}`,
           },
           tx,

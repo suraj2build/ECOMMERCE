@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { ProcurementService } from './service.js';
+import { selfApprovalSchema } from '../approvals/service.js';
 
 const createPoSchema = z.object({
   supplierId: z.string().uuid(),
@@ -62,8 +63,8 @@ const procurementRoutes: FastifyPluginAsync = async (fastify) => {
     { preHandler: approveAuth },
     async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-      const { comment } = commentSchema.parse(request.body ?? {});
-      reply.status(200).send(await service.approvePurchaseOrder(id, request.staffUser!.id, comment));
+      const { comment, selfApproval } = commentSchema.extend({ selfApproval: selfApprovalSchema.optional() }).parse(request.body ?? {});
+      reply.status(200).send(await service.approvePurchaseOrder(id, request.staffUser!.id, comment, selfApproval));
     },
   );
 

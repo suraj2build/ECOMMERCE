@@ -178,6 +178,13 @@ books.
 
 ## Solo-owner approvals
 
+> **Decided (AO-D4, Product Owner, 2026-10-05) and implemented:** an
+> explicit owner policy (option 2 below, with a password re-confirmation
+> and a required reason), one approval rule across PO, adjustments,
+> receiving and picking, and the pick co-approver gap closed. See
+> `docs/admin/APPROVALS.md`. The table below records the state found
+> before that change.
+
 Rules found where a second person is required:
 
 | Rule | Where enforced | Same person allowed? | Effect on a one-person business |

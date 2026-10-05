@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient, QcResult } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
 import { formatSequenceNumber, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { ApprovalPolicyService, type ApprovalDecision, type SelfApprovalInput } from '../approvals/service.js';
 import { ProcurementService } from '../procurement/service.js';
 import { InventoryService } from '../inventory/service.js';
 
@@ -21,6 +22,8 @@ export interface CreateGrnInput {
   locationId: string;
   lines: GrnLineInput[];
   managerSignoffStaffId?: string;
+  /** Owner approval details when the receiver signs off their own QC failure (AO-D4). */
+  selfApproval?: SelfApprovalInput;
 }
 
 /**
@@ -71,6 +74,7 @@ export class GrnService {
     }
 
     const env = loadEnv();
+    let signoffFailedQty = 0;
 
     for (const line of input.lines) {
       const poLine = po.lines.find((l) => l.id === line.poLineId);
@@ -90,9 +94,26 @@ export class GrnService {
       }
 
       const failedQty = line.damagedQty + line.rejectedQty;
-      if (failedQty >= env.GRN_QC_FAIL_MANAGER_SIGNOFF_THRESHOLD_UNITS) {
-        await this.assertManagerSignoff(input.managerSignoffStaffId, failedQty);
+      if (failedQty >= env.GRN_QC_FAIL_MANAGER_SIGNOFF_THRESHOLD_UNITS) signoffFailedQty = Math.max(signoffFailedQty, failedQty);
+    }
+    // QC-fail dispositions at/above the threshold need a named sign-off
+    // (GRN-004) under the shared approval policy (AO-D4): someone holding
+    // grn:qc:manager_signoff other than the receiver, or the receiver only
+    // under owner approval with a reason and password.
+    let signoff: ApprovalDecision | undefined;
+    if (signoffFailedQty > 0) {
+      if (!input.managerSignoffStaffId) {
+        throw new ValidationError(
+          `QC-fail disposition of ${signoffFailedQty} units requires Warehouse Manager sign-off (managerSignoffStaffId)`,
+        );
       }
+      signoff = await new ApprovalPolicyService(this.prisma).decide({
+        kind: 'RECEIVING_QC',
+        requestedByStaffId: actorStaffId,
+        approverStaffId: input.managerSignoffStaffId,
+        permission: 'grn:qc:manager_signoff',
+        selfApproval: input.selfApproval,
+      });
     }
 
     const { created, preparedLines } = await this.prisma.$transaction(async (tx) => {
@@ -176,6 +197,9 @@ export class GrnService {
         }
       }
 
+      if (signoff) {
+        await ApprovalPolicyService.record(tx, signoff, { entityType: 'GoodsReceipt', entityId: grn.id, detail: { grnNumber: grn.grnNumber, failedQty: signoffFailedQty } });
+      }
       return { created: grn, preparedLines: prepared };
     });
 
@@ -214,27 +238,6 @@ export class GrnService {
           isExcessException: l.isExcessException,
         })),
     };
-  }
-
-  /** QC-fail dispositions at/above the configured threshold require a named staff member holding grn:qc:manager_signoff (GRN-004). */
-  private async assertManagerSignoff(managerSignoffStaffId: string | undefined, failedQty: number): Promise<void> {
-    if (!managerSignoffStaffId) {
-      throw new ValidationError(
-        `QC-fail disposition of ${failedQty} units requires Warehouse Manager sign-off (managerSignoffStaffId)`,
-      );
-    }
-    const manager = await this.prisma.staffUser.findUnique({
-      where: { id: managerSignoffStaffId },
-      include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } },
-    });
-    const hasSignoff = manager?.roles.some((ur) =>
-      ur.role.permissions.some((rp) => rp.permission.key === 'grn:qc:manager_signoff'),
-    );
-    if (!manager || !hasSignoff) {
-      throw new ValidationError(
-        'managerSignoffStaffId must reference a staff user with grn:qc:manager_signoff permission',
-      );
-    }
   }
 
   async getGoodsReceipt(id: string) {

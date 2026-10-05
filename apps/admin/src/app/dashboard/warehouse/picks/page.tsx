@@ -5,7 +5,8 @@ import { useState } from 'react';
 import { LocationSelect, StaffSelect } from '@/components/pickers';
 import { ActionMessage, Can, DataState, DataTable, DateText, Drawer, Ident, PageHeader, Pagination, SelectField, StatusBadge, TextArea, TextField } from '@/components/ui';
 import { apiSend, newIdempotencyKey, qs, type Page } from '@/lib/api';
-import { useAction, useApi, useCan, useUrlFilter } from '@/lib/session';
+import { useAction, useApi, useCan, useSession, useUrlFilter } from '@/lib/session';
+import { SelfApprovalFields, useSelfApproval } from '@/components/self-approval';
 
 interface PickTask {
   id: string;
@@ -140,6 +141,9 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
   const [exceptionType, setExceptionType] = useState('STOCK_NOT_FOUND');
   const [reason, setReason] = useState('');
   const [coApprover, setCoApprover] = useState('');
+  const session = useSession();
+  const selfApproval = useSelfApproval();
+  const approvingOwn = coApprover !== '' && coApprover === session.staffUserId;
 
   return (
     <form
@@ -153,6 +157,7 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
             exceptionType: outcome === 'EXCEPTION' ? exceptionType : undefined,
             exceptionReason: reason || undefined,
             coApproverStaffId: coApprover || undefined,
+            ...(approvingOwn ? { selfApproval: selfApproval.value } : {}),
           }),
         );
         if (ok) onDone();
@@ -186,6 +191,7 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
             onChange={setCoApprover}
             hint="A shortfall writes off stock; large shortfalls need a co-approver (the server applies the threshold)."
           />
+          {approvingOwn && <SelfApprovalFields what="pick shortfall write-off" state={selfApproval} />}
         </>
       )}
       <button className="primary" type="submit" disabled={action.busy}>

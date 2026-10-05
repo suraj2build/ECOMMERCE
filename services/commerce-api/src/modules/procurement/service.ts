@@ -4,6 +4,7 @@ import { loadEnv } from '@fcp/config';
 import { formatSequenceNumber } from '@fcp/shared';
 import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import { ApprovalPolicyService, type SelfApprovalInput } from '../approvals/service.js';
 
 export interface CreatePurchaseOrderInput {
   supplierId: string;
@@ -136,17 +137,23 @@ export class ProcurementService {
   }
 
   /**
-   * Segregation of duties (PO-001): the staff member who submitted a PO
-   * may not also approve it, regardless of permission grants.
+   * Segregation of duties (PO-001): the approver must be someone other than
+   * the submitter. The one exception is owner approval (AO-D4): a named
+   * owner, with owner approval switched on, may approve their own PO with a
+   * reason and a password re-confirmation (ApprovalPolicyService.decide).
    */
-  async approvePurchaseOrder(poId: string, actorStaffId: string, comment?: string) {
+  async approvePurchaseOrder(poId: string, actorStaffId: string, comment?: string, selfApproval?: SelfApprovalInput) {
     const po = await this.getPurchaseOrder(poId);
     if (po.status !== 'SUBMITTED') {
       throw new ValidationError(`Cannot approve a purchase order from status '${po.status}'`);
     }
-    if (po.submittedByStaffId === actorStaffId) {
-      throw new ValidationError('A purchase order may not be approved by the same staff member who submitted it');
-    }
+    const decision = await new ApprovalPolicyService(this.prisma).decide({
+      kind: 'PURCHASE_ORDER',
+      requestedByStaffId: po.submittedByStaffId ?? actorStaffId,
+      approverStaffId: actorStaffId,
+      permission: 'po:approve',
+      selfApproval,
+    });
 
     const env = loadEnv();
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -161,6 +168,7 @@ export class ProcurementService {
       await tx.purchaseOrderApproval.create({
         data: { poId, staffId: actorStaffId, action: 'APPROVED', comment },
       });
+      await ApprovalPolicyService.record(tx, decision, { entityType: 'PurchaseOrder', entityId: poId, detail: { poNumber: po.poNumber, totalCost: Number(po.totalCost) } });
       return result;
     });
 

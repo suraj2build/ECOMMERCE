@@ -1,11 +1,13 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { GrnService } from './service.js';
+import { selfApprovalSchema } from '../approvals/service.js';
 
 const createGrnSchema = z.object({
   poId: z.string().uuid(),
   locationId: z.string().uuid(),
   managerSignoffStaffId: z.string().uuid().optional(),
+  selfApproval: selfApprovalSchema.optional(),
   lines: z
     .array(
       z.object({

@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from '@fcp/db';
 import type { PermissionKey } from '@fcp/shared';
 import { availableAtLocation } from '../inventory/service.js';
 import { THUMBNAIL_MEDIA } from '../catalog/service.js';
+import { ApprovalPolicyService } from '../approvals/service.js';
 
 /**
  * Read models for the P1 Commerce Operations Console (apps/admin).
@@ -247,17 +248,27 @@ export class AdminQueryService {
   }
 
   /** Staff who hold `holds`, for the co-approver / sign-off pickers. Identity only - never credentials. */
-  async lookupStaffWithPermission(holds: PermissionKey, excludeStaffId: string) {
-    return this.prisma.staffUser.findMany({
+  /**
+   * Staff who may approve the caller's action: everyone else holding the
+   * approving permission, plus the caller themselves (marked `self`) only
+   * while owner approval is on, they are a named owner and they hold the
+   * permission (AO-D4). The API re-checks all of this on submit.
+   */
+  async lookupStaffWithPermission(holds: PermissionKey, callerStaffId: string) {
+    const holders = await this.prisma.staffUser.findMany({
       where: {
         isActive: true,
-        id: { not: excludeStaffId },
         roles: { some: { role: { permissions: { some: { permission: { key: holds } } } } } },
       },
       select: { id: true, fullName: true },
       orderBy: { fullName: 'asc' },
-      take: MAX_LOOKUP,
+      take: MAX_LOOKUP + 1,
     });
+    const callerIsHolder = holders.some((h) => h.id === callerStaffId);
+    const selfAllowed = callerIsHolder && (await new ApprovalPolicyService(this.prisma).ownerApprovalAllowedFor(callerStaffId));
+    const others = holders.filter((h) => h.id !== callerStaffId).slice(0, MAX_LOOKUP).map((h) => ({ ...h, self: false }));
+    const me = holders.find((h) => h.id === callerStaffId);
+    return selfAllowed && me ? [{ ...me, self: true }, ...others] : others;
   }
 
   async listPurchaseOrders(params: { q?: string; status?: string; supplierId?: string; take?: number; skip?: number }) {
