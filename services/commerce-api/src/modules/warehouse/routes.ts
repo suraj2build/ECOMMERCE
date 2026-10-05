@@ -20,6 +20,7 @@ const pickOutcomeSchema = z
     exceptionReason: z.string().min(1).max(2000).optional(),
     coApproverStaffId: z.string().uuid().optional(),
     selfApproval: selfApprovalSchema.optional(),
+    scannedBarcode: z.string().trim().min(1).max(64).optional(),
   })
   .refine((v) => v.outcome === 'EXCEPTION' || v.pickedQuantity !== undefined, {
     message: 'pickedQuantity is required for FULL/SHORT outcomes',
@@ -87,6 +88,7 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify) => {
         exceptionReason: body.exceptionReason,
         coApproverStaffId: body.coApproverStaffId,
         approval,
+        scannedBarcode: body.scannedBarcode,
       }),
     );
   });

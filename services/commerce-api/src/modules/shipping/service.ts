@@ -127,6 +127,10 @@ export class ShippingService {
       orderNumber: order.orderNumber,
       fulfilmentId,
       destinationPincode: address?.pincode ?? '',
+      ...(fulfilment.parcelWeightGrams ? { weightGrams: fulfilment.parcelWeightGrams } : {}),
+      ...(fulfilment.parcelLengthCm && fulfilment.parcelWidthCm && fulfilment.parcelHeightCm
+        ? { dimensionsCm: { length: fulfilment.parcelLengthCm, width: fulfilment.parcelWidthCm, height: fulfilment.parcelHeightCm } }
+        : {}),
     });
 
     if (booking.status === 'UNAVAILABLE') {
@@ -471,6 +475,13 @@ export class ShippingService {
         if (deliveryAttempts >= shipment.maxDeliveryAttempts) {
           finalStatus = 'RTO_INITIATED';
         }
+      }
+      // AO-D5: the carrier's first movement event records the handover when
+      // staff have not confirmed it on the handover manifest first. Stock is
+      // unaffected (the SALE was posted at booking).
+      if (!shipment.handedOverAt && ['IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'DELIVERY_FAILED'].includes(normalizedStatus)) {
+        data.handedOverAt = occurredAt;
+        data.handoverSource = 'CARRIER_EVENT';
       }
       if (normalizedStatus === 'DELIVERED') data.deliveredAt = occurredAt;
       if (finalStatus === 'RTO_INITIATED') data.rtoInitiatedAt = occurredAt;

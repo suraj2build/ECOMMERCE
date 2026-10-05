@@ -316,6 +316,7 @@ export function TextField({
   min,
   step,
   autoComplete,
+  onEnter,
 }: {
   label: string;
   value: string;
@@ -327,6 +328,8 @@ export function TextField({
   min?: number;
   step?: string;
   autoComplete?: string;
+  /** Called on Enter instead of submitting the form (barcode scanners end each scan with Enter). */
+  onEnter?: () => void;
 }) {
   const id = useId();
   return (
@@ -342,6 +345,16 @@ export function TextField({
         autoComplete={autoComplete}
         aria-describedby={hint ? `${id}-hint` : undefined}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={
+          onEnter
+            ? (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onEnter();
+                }
+              }
+            : undefined
+        }
       />
     </Field>
   );

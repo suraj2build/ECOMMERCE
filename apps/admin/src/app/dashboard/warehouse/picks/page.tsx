@@ -14,6 +14,7 @@ interface PickTask {
   orderLineId: string | null;
   exchangeId: string | null;
   skuId: string;
+  barcode: string | null;
   styleName: string;
   colourName: string;
   sizeLabel: string;
@@ -141,6 +142,7 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
   const [exceptionType, setExceptionType] = useState('STOCK_NOT_FOUND');
   const [reason, setReason] = useState('');
   const [coApprover, setCoApprover] = useState('');
+  const [scanned, setScanned] = useState('');
   const session = useSession();
   const selfApproval = useSelfApproval();
   const approvingOwn = coApprover !== '' && coApprover === session.staffUserId;
@@ -157,6 +159,7 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
             exceptionType: outcome === 'EXCEPTION' ? exceptionType : undefined,
             exceptionReason: reason || undefined,
             coApproverStaffId: coApprover || undefined,
+            scannedBarcode: scanned.trim() || undefined,
             ...(approvingOwn ? { selfApproval: selfApproval.value } : {}),
           }),
         );
@@ -177,7 +180,18 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
           { value: 'EXCEPTION', label: 'Exception - could not pick' },
         ]}
       />
-      {outcome !== 'EXCEPTION' && <TextField label="Picked quantity" type="number" min={1} value={picked} onChange={setPicked} />}
+      {outcome !== 'EXCEPTION' && (
+        <>
+          <TextField
+            label="Scan the item's barcode"
+            value={scanned}
+            onChange={setScanned}
+            hint={`Confirms you picked the right item${task.barcode ? '' : ' (this size has no barcode yet; add one in the product workspace)'}.`}
+            onEnter={() => undefined}
+          />
+          <TextField label="Picked quantity" type="number" min={1} value={picked} onChange={setPicked} />
+        </>
+      )}
       {outcome === 'EXCEPTION' && (
         <SelectField label="Exception type" value={exceptionType} onChange={setExceptionType} options={EXCEPTION_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ').toLowerCase() }))} />
       )}

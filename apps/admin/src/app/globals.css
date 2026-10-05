@@ -1056,3 +1056,40 @@ input.compact {
     grid-template-columns: 1fr;
   }
 }
+
+/* Dispatch documents and manifests (AO-D5): print only the document. */
+.print-only {
+  display: none;
+}
+.address-label {
+  max-width: 100mm;
+  border: 1px solid #000;
+  padding: 6mm;
+}
+@media print {
+  .no-print,
+  .sidebar,
+  .mobile-bar,
+  .nav-backdrop,
+  .skip-link {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  .shell {
+    display: block;
+  }
+  .main {
+    padding: 0;
+  }
+  .print-doc table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .print-doc th,
+  .print-doc td {
+    border: 1px solid #000;
+    padding: 2mm;
+  }
+}

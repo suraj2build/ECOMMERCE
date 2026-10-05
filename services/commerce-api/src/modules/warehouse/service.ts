@@ -4,6 +4,7 @@ import { NotFoundError, ValidationError, ConflictError, InventoryIntegrityError 
 import { InventoryService } from '../inventory/service.js';
 import { recordAudit } from '../audit/service.js';
 import type { ApprovalDecision } from '../approvals/service.js';
+import { checkPickScan } from '../dispatch/service.js';
 
 export interface PickTaskLineSnapshot {
   id: string;
@@ -23,6 +24,8 @@ export interface RecordPickOutcomeParams {
   coApproverStaffId?: string;
   /** Approval-policy decision for the co-approver (AO-D4), made by the caller. */
   approval?: ApprovalDecision;
+  /** Barcode scanned at pick (docs/admin/DISPATCH.md); checked against the SKU. */
+  scannedBarcode?: string;
 }
 
 /**
@@ -190,6 +193,9 @@ export class WarehouseService {
       orderLineId: task.orderLineId,
       exchangeId: task.exchangeId,
       skuId: task.skuId,
+      skuCode: task.sku?.skuCode,
+      barcode: task.sku?.barcode ?? null,
+      scannedBarcode: task.scannedBarcode,
       styleName: task.sku?.style?.name,
       colourName: task.sku?.colour?.name,
       sizeLabel: task.sku?.size?.label,
@@ -322,6 +328,12 @@ export class WarehouseService {
         }
       }
 
+      // Dispatch scan check: a scan must be this size's barcode; whether one
+      // is required is the owner's setting (docs/admin/DISPATCH.md). An
+      // EXCEPTION, or a SHORT pick of nothing, picks no unit to scan.
+      const picksNothing = params.outcome === 'EXCEPTION' || (params.outcome === 'SHORT' && params.pickedQuantity === 0);
+      const scannedBarcode = picksNothing ? null : await checkPickScan(tx, task.skuId, params.scannedBarcode);
+
       let status: PickTaskStatus;
       let pickedQuantity = 0;
       let shortfall = 0;
@@ -363,6 +375,7 @@ export class WarehouseService {
           pickedByStaffId: params.staffId,
           pickedAt: new Date(),
           idempotencyKey: params.idempotencyKey,
+          scannedBarcode,
         },
       });
 

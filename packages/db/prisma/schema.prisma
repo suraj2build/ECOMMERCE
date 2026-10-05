@@ -1967,6 +1967,8 @@ model PickTask {
   idempotencyKey    String?
   pickedByStaffId   String?
   pickedAt          DateTime?
+  /// The barcode scanned at pick, when one was (checked against the SKU's barcode).
+  scannedBarcode    String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
@@ -2180,17 +2182,25 @@ model OrderLine {
 // preserving every existing orderId-scoped index/query/RTO-lookup
 // unchanged.
 model OrderFulfilment {
-  id          String           @id @default(uuid())
-  orderId     String
-  exchangeId  String?          @unique
-  status      FulfilmentStatus @default(PENDING)
-  carrierName String?
-  trackingRef String?
-  packedAt    DateTime?
-  shippedAt   DateTime?
-  deliveredAt DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id                 String           @id @default(uuid())
+  orderId            String
+  exchangeId         String?          @unique
+  status             FulfilmentStatus @default(PENDING)
+  carrierName        String?
+  trackingRef        String?
+  packedAt           DateTime?
+  shippedAt          DateTime?
+  deliveredAt        DateTime?
+  // Dispatch (docs/admin/DISPATCH.md): measured at pack, sent with the
+  // courier booking. Gross weight in grams, dimensions in whole cm.
+  parcelWeightGrams  Int?
+  parcelLengthCm     Int?
+  parcelWidthCm      Int?
+  parcelHeightCm     Int?
+  /// Set when every unit was scanned into the parcel and matched the package.
+  packScanVerifiedAt DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
   exchange Exchange?   @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
@@ -2280,6 +2290,13 @@ model Shipment {
   deliveredAt         DateTime?
   rtoInitiatedAt      DateTime?
   rtoDeliveredAt      DateTime?
+  // AO-D5: handover to the courier, recorded separately from booking (the
+  // stock SALE is still posted at booking). Source: STAFF (handover
+  // manifest) or CARRIER_EVENT (first in-transit tracking event).
+  handedOverAt        DateTime?
+  handoverSource      String?
+  handedOverByStaffId String?
+  handoverReference   String?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
 
@@ -4400,4 +4417,17 @@ model ApprovalRecord {
   @@index([selfApproved, createdAt])
   @@index([entityType, entityId])
   @@map("approval_records")
+}
+
+/// Dispatch checks the owner chooses (B-2, B-3 in docs/admin/NEXT_PHASES_RESEARCH.md);
+/// all off by default. Single row, id = "default".
+model DispatchSettings {
+  id                        String   @id @default("default")
+  requireScanAtPick         Boolean  @default(false)
+  requireScanAtPack         Boolean  @default(false)
+  requireParcelMeasurements Boolean  @default(false)
+  updatedByStaffId          String?
+  updatedAt                 DateTime @updatedAt
+
+  @@map("dispatch_settings")
 }

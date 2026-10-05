@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { OrderService } from './service.js';
 import { CodCollectionService } from './cod-collection-service.js';
 import { resolveCartIdentity } from '../cart/identity.js';
+import { DispatchService } from '../dispatch/service.js';
 
 const assignFulfilmentSchema = z.object({ lineIds: z.array(z.string().uuid()).min(1) });
 const shipSchema = z.object({ carrierName: z.string().optional(), trackingRef: z.string().optional() });
@@ -114,7 +115,21 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/orders/fulfilments/:fulfilmentId/pack', { preHandler: fulfilAuth }, async (request, reply) => {
     const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
-    reply.status(200).send(await orderService.markFulfilmentPacked(fulfilmentId, request.staffUser!.id));
+    const positive = z.number().int().positive().max(1_000_000).optional();
+    const body = z
+      .object({
+        scannedBarcodes: z.array(z.string().trim().min(1).max(64)).max(1000).optional(),
+        parcel: z.object({ weightGrams: positive, lengthCm: positive, widthCm: positive, heightCm: positive }).strict().optional(),
+      })
+      .strict()
+      .parse(request.body ?? {});
+    reply.status(200).send(await orderService.markFulfilmentPacked(fulfilmentId, request.staffUser!.id, body));
+  });
+
+  // Packing slip / address label data (docs/admin/DISPATCH.md).
+  fastify.get('/orders/fulfilments/:fulfilmentId/documents', { preHandler: readAuth }, async (request) => {
+    const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
+    return new DispatchService(fastify.prisma).documents(fulfilmentId);
   });
 
   // M16: the explicit warehouse/shipping hand-off boundary between

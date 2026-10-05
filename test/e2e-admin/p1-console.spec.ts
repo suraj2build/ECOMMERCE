@@ -557,6 +557,80 @@ test.describe('P1 Commerce Operations Console', () => {
     // No raw JSON dump remains.
     await expect(page.locator('pre')).toHaveCount(0);
   });
+
+  test('AO-10 dispatch: pick scan, pack scans with parcel measurements, documents, booking and courier handover', async ({ page }) => {
+    // Barcodes on the tee's sizes (scanners read these).
+    const sku = tee.skus[0]!;
+    const barcode = `89${String(Date.now()).slice(-10)}`;
+    await prisma.sku.update({ where: { id: sku.skuId }, data: { barcode } });
+    const order = await placeCodOrder(fx, sku.skuId, nextMobile());
+    const saleBefore = await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } });
+
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    // Pick: a wrong scan is refused, the right one is accepted.
+    await page.getByRole('link', { name: 'Pick queue' }).click();
+    await page.getByLabel('Location', { exact: true }).selectOption({ label: `${fx.locationA.name} (${fx.locationA.code})` });
+    await page.getByRole('row').filter({ hasText: order.orderNumber }).getByRole('button', { name: 'Record pick' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Record pick' });
+    await drawer.getByLabel("Scan the item's barcode").fill('0000000000000');
+    await drawer.getByRole('button', { name: 'Record pick' }).click();
+    await expect(drawer.getByText(/does not match/)).toBeVisible();
+    await drawer.getByLabel("Scan the item's barcode").fill(barcode);
+    await drawer.getByRole('button', { name: 'Record pick' }).click();
+    await expect(drawer).toBeHidden();
+    expect((await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } })).scannedBarcode).toBe(barcode);
+
+    // Pack: scan the unit and record the parcel.
+    await openOrder(page, order.orderNumber);
+    await page.getByLabel(new RegExp(`^Select ${escape(tee.name)}`)).check();
+    await page.getByRole('button', { name: 'Create fulfilment from selected' }).click();
+    await confirmDialog(page, 'Create fulfilment');
+    await page.getByRole('button', { name: 'Mark packed', exact: true }).first().click();
+    const pack = page.getByRole('dialog').last();
+    const scan = pack.getByLabel(/Scan item barcode/);
+    await scan.fill(barcode);
+    await scan.press('Enter');
+    await expect(pack.getByText(`Scanned 1: ${barcode}`)).toBeVisible();
+    await pack.getByLabel(/Parcel weight/).fill('420');
+    await pack.getByLabel('Length (cm)').fill('30');
+    await pack.getByLabel('Width (cm)').fill('22');
+    await pack.getByLabel('Height (cm)').fill('4');
+    await confirmDialog(page, 'Mark packed');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    const fulfilment = await prisma.orderFulfilment.findFirstOrThrow({ where: { orderId: order.orderId } });
+    expect(fulfilment).toMatchObject({ status: 'PACKED', parcelWeightGrams: 420, parcelLengthCm: 30, parcelWidthCm: 22, parcelHeightCm: 4 });
+    expect(fulfilment.packScanVerifiedAt).not.toBeNull();
+
+    // Packing slip and address label.
+    await page.goto(`/dashboard/fulfilments/${fulfilment.id}/documents?doc=slip`);
+    const slip = page.getByRole('article', { name: 'Packing slip' });
+    await expect(slip.getByText(sku.skuCode)).toBeVisible();
+    await expect(slip.getByText(barcode)).toBeVisible();
+    await expect(slip.getByText(/Parcel weight 420 g/)).toBeVisible();
+    await page.getByRole('link', { name: 'Address label' }).click();
+    await expect(page.getByRole('article', { name: 'Address label' }).getByText('9 Console Road')).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Address label' }).getByText(/Cash on delivery/)).toBeVisible();
+
+    // Book: the stock sale is still posted at booking (AO-D5), handover is separate.
+    await openOrder(page, order.orderNumber);
+    await fulfilmentStep(page, 'Ready to ship');
+    await fulfilmentStep(page, 'Book shipment with carrier');
+    const shipment = await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: fulfilment.id } });
+    expect(shipment.status).toBe('BOOKED');
+    expect(shipment.handedOverAt).toBeNull();
+    expect(await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } })).toBe(saleBefore + 1);
+
+    // Handover manifest: tick the parcel and confirm.
+    await page.getByRole('link', { name: 'Courier handover' }).click();
+    await page.getByLabel(`Handed over: ${order.orderNumber}`).check();
+    await page.getByLabel(/manifest or pickup reference/).fill(`PICKUP-${RUN}`);
+    await page.getByRole('button', { name: /Confirm handover of 1 parcel/ }).click();
+    await expect(page.getByText('1 parcel recorded as handed over.')).toBeVisible();
+    const handed = await prisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
+    expect(handed.handedOverAt).not.toBeNull();
+    expect(handed.handoverReference).toBe(`PICKUP-${RUN}`);
+    await expect(page.getByLabel(`Handed over: ${order.orderNumber}`)).toHaveCount(0);
+  });
 });
 
 // ---------------------------------------------------------------- helpers

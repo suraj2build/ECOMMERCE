@@ -42,6 +42,7 @@ import giftCardRoutes from './modules/gift-cards/routes.js';
 import promotionsRoutes from './modules/promotions/routes.js';
 import marketingRoutes from './modules/marketing/routes.js';
 import approvalRoutes from './modules/approvals/routes.js';
+import dispatchRoutes from './modules/dispatch/routes.js';
 import channelRoutes from './modules/channels/routes.js';
 import analyticsRoutes from './modules/analytics/routes.js';
 import conversionRoutes from './modules/conversions/routes.js';
@@ -200,6 +201,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(promotionsRoutes, { prefix: '/api/v1' });
   await app.register(marketingRoutes, { prefix: '/api/v1' });
   await app.register(approvalRoutes, { prefix: '/api/v1' });
+  await app.register(dispatchRoutes, { prefix: '/api/v1' });
   await app.register(channelRoutes, { prefix: '/api/v1' });
   await app.register(analyticsRoutes, { prefix: '/api/v1' });
   await app.register(conversionRoutes, { prefix: '/api/v1' });

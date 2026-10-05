@@ -11,6 +11,7 @@ import { GiftCardService } from '../gift-cards/service.js';
 import { NotificationService } from '../notifications/service.js';
 import { ConversionService } from '../conversions/service.js';
 import { recordAudit } from '../audit/service.js';
+import { checkPackScans, checkParcel, type ParcelInput } from '../dispatch/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
 /**
@@ -821,14 +822,50 @@ export class OrderService {
     });
   }
 
-  async markFulfilmentPacked(fulfilmentId: string, staffId: string) {
+  /** The units a package should contain: its order lines, or an exchange's replacement. */
+  async packageUnits(db: Prisma.TransactionClient | PrismaClient, fulfilmentId: string) {
+    const f = await db.orderFulfilment.findUniqueOrThrow({
+      where: { id: fulfilmentId },
+      select: {
+        exchangeId: true,
+        lines: { where: { status: { not: 'CANCELLED' } }, select: { quantity: true, sku: { select: { skuCode: true, barcode: true } } } },
+      },
+    });
+    if (f.exchangeId) {
+      const task = await db.pickTask.findUnique({ where: { exchangeId: f.exchangeId }, select: { pickedQuantity: true, allocatedQuantity: true, sku: { select: { skuCode: true, barcode: true } } } });
+      return task ? [{ skuCode: task.sku.skuCode, barcode: task.sku.barcode, quantity: task.pickedQuantity || task.allocatedQuantity }] : [];
+    }
+    return f.lines.map((l) => ({ skuCode: l.sku.skuCode, barcode: l.sku.barcode, quantity: l.quantity }));
+  }
+
+  /**
+   * PACKED. Dispatch checks (docs/admin/DISPATCH.md): scanned barcodes, when
+   * given, must match the package's units exactly; the parcel's gross
+   * weight and dimensions are stored for the courier booking. Whether
+   * scans/measurements are required is the owner's setting.
+   */
+  async markFulfilmentPacked(fulfilmentId: string, staffId: string, opts: { scannedBarcodes?: string[]; parcel?: ParcelInput } = {}) {
     return this.prisma.$transaction(async (tx) => {
       const fulfilment = await this.lockFulfilment(tx, fulfilmentId);
       if (!fulfilment) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (fulfilment.status !== 'PENDING') {
         throw new ValidationError(`Cannot pack a fulfilment in status '${fulfilment.status}'`);
       }
-      await tx.orderFulfilment.update({ where: { id: fulfilmentId }, data: { status: 'PACKED', packedAt: new Date() } });
+      const expected = await this.packageUnits(tx, fulfilmentId);
+      const scanVerified = await checkPackScans(tx, expected, opts.scannedBarcodes);
+      const parcel = await checkParcel(tx, opts.parcel);
+      await tx.orderFulfilment.update({
+        where: { id: fulfilmentId },
+        data: {
+          status: 'PACKED',
+          packedAt: new Date(),
+          packScanVerifiedAt: scanVerified ? new Date() : null,
+          parcelWeightGrams: parcel.weightGrams ?? null,
+          parcelLengthCm: parcel.lengthCm ?? null,
+          parcelWidthCm: parcel.widthCm ?? null,
+          parcelHeightCm: parcel.heightCm ?? null,
+        },
+      });
       await tx.orderLine.updateMany({ where: { fulfilmentId }, data: { status: 'PACKED' } });
       await recordAudit(tx, {
         actorType: 'STAFF',
