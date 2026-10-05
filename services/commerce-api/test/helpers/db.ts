@@ -56,7 +56,8 @@ export async function grantPermissions(roleKey: string, permKeys: string[]): Pro
 export async function seedBrandAndLocation() {
   const brand = await testPrisma.brand.create({ data: { code: 'TESTBR', name: 'Test Brand' } });
   const location = await testPrisma.location.create({
-    data: { code: 'TEST-WH-01', name: 'Test Warehouse', type: 'WAREHOUSE' },
+    // A full address: a courier booking needs it as the sender address.
+    data: { code: 'TEST-WH-01', name: 'Test Warehouse', type: 'WAREHOUSE', addressLine1: '1 Test Dock Road', city: 'New Delhi', state: 'Delhi', pinCode: '110001' },
   });
   const category = await testPrisma.category.create({ data: { name: 'Test Category', slug: 'test-category' } });
   const size = await testPrisma.size.create({ data: { label: 'M', sortOrder: 0 } });

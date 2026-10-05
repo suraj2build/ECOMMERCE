@@ -138,6 +138,37 @@ interface ShippingAddressJson {
   pincode?: string;
 }
 
+/**
+ * The sender and return address on a courier label is the address of the
+ * location the package is dispatched from. A booking is refused until that
+ * address is complete (Product Owner review after `6217031`): a parcel
+ * booked without it has no return address.
+ */
+export async function assertSenderAddress(db: Db, fulfilmentId: string) {
+  const line = await db.orderLine.findFirst({ where: { fulfilmentId, status: { not: 'CANCELLED' } }, select: { locationId: true } });
+  let locationId = line?.locationId ?? null;
+  if (!locationId) {
+    const f = await db.orderFulfilment.findUnique({ where: { id: fulfilmentId }, select: { exchangeId: true } });
+    if (f?.exchangeId) locationId = (await db.pickTask.findUnique({ where: { exchangeId: f.exchangeId }, select: { locationId: true } }))?.locationId ?? null;
+  }
+  const location = locationId
+    ? await db.location.findUnique({ where: { id: locationId }, select: { name: true, addressLine1: true, city: true, state: true, pinCode: true } })
+    : null;
+  if (!location) throw new ValidationError('This package has no dispatch location, so it has no sender address; it cannot be booked with a courier');
+  const missing = [
+    !location.addressLine1?.trim() && 'address line',
+    !location.city?.trim() && 'city',
+    !location.state?.trim() && 'state',
+    !location.pinCode?.trim() && 'PIN code',
+  ].filter((m): m is string => Boolean(m));
+  if (missing.length > 0) {
+    const list = missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
+    throw new ValidationError(
+      `Add the ${list} for ${location.name} on Business & warehouse before booking a courier: it is the sender and return address on the label.`,
+    );
+  }
+}
+
 export class DispatchService {
   constructor(private readonly prisma: PrismaClient) {}
 

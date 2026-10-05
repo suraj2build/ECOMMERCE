@@ -462,3 +462,67 @@ each finding and what was done, is
 - **Recommendations recorded, not approved:** AO-D5 option B and AO-D6
   metadata stripping, both still `DECISION_REQUIRED` in
   `blueprint/DECISION_REGISTER.md`. Neither has been built.
+
+## Review after `6217031` (2026-10-05)
+
+The reviewer's notes on the walkthrough named two details to fix and four
+next steps.
+
+**Done in this change:**
+
+- **Approval passwords are not kept.** After a refused approval the
+  dialog keeps the reason (and comment) but clears the password and
+  authenticator code. Both are also cleared on success, on closing, and
+  when the fields are hidden. This applies to purchase-order approval,
+  receiving QC sign-off, stock adjustments and pick shortfalls; the
+  owner-approval settings form already cleared them. See
+  [`APPROVALS.md`](APPROVALS.md).
+- **No courier booking without a sender address.** A package can be
+  booked only when its warehouse has a full address (address line, city,
+  state, PIN code). Otherwise the booking is refused before the courier
+  is called, and the refusal names what is missing and where to add it.
+  A retry of an existing booking still returns it. See
+  [`DISPATCH.md`](DISPATCH.md).
+- **Integration result stated precisely.** The walkthrough's full
+  integration run had 960 passed and 5 skipped. The 5 were then run
+  separately with the S3 emulator and passed (6 of 6 in that file).
+
+**Not done: waiting on the Product Owner.**
+
+- **AO-D5 (option B) and AO-D6 (strip metadata).** The reviewer
+  recommends both again. They stay `DECISION_REQUIRED` until the Product
+  Owner approves them.
+- **Courier (LR-008).** Not chosen. Real labels, pickup, cancellation,
+  tracking and delivery-area coverage depend on it.
+- **Staff management screen.** Proposed below; it needs the Product
+  Owner's go-ahead and a choice of reset method.
+
+### Proposal: staff management screen
+
+Today the API can only create a staff user, and only for a Super Admin
+(`rbac:manage`). An owner cannot list staff, change roles, deactivate
+anyone or reset a password without using the API, so independent approval
+is hard to set up. Proposed screen (Settings → Staff), behind
+`rbac:manage`:
+
+- **List** staff with their roles, active state and last sign-in.
+- **Add** a person: name, email, roles. They get a one-time temporary
+  password (see below).
+- **Change roles.** Their open sessions end, so the change applies at
+  once.
+- **Deactivate and reactivate.** Deactivating ends their sessions.
+  Nobody can deactivate themselves or remove the last active Super Admin
+  or owner.
+- **Reset password.** Options:
+  - **(a) Recommended. Temporary password, changed at next sign-in.** The
+    admin issues a random one-time password, shown once. The person must
+    choose a new password at their next sign-in, and their sessions end.
+    This works now, with no email or SMS service.
+  - **(b) Reset link by email.** Needs an email provider, which is not
+    chosen.
+- **Audit and limits.** Every action is audited. Passwords are never
+  logged or shown twice, and approval rules keep working because they read
+  the same roles.
+
+Option (a) needs a small schema change: a "must change password" flag,
+plus a password-change step at sign-in.

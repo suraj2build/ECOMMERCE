@@ -6,6 +6,28 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-05 (review after `6217031`): `APPROVAL SECRETS
+CLEARED AFTER REFUSAL AND SENDER ADDRESS REQUIRED FOR COURIER BOOKING ON
+claude/admin-ops-phase1 — AWAITING REVIEW; STAFF SCREEN, AO-D5 AND AO-D6
+AWAIT THE PRODUCT OWNER.`** Record: `docs/admin/ADMIN_OPS_PHASE1.md`
+("Review after `6217031`").
+
+- **Approval passwords.** After a refused approval, the password and
+  authenticator code are cleared and the reason is kept. They are also
+  cleared on success, close and hide (PO approval, receiving sign-off,
+  adjustments, pick shortfalls).
+- **Courier booking.** Refused until the dispatching warehouse has a full
+  address (address line, city, state, PIN code), before the courier is
+  called; a replay of an existing booking still converges. The demo
+  warehouse is left blank, not given an invented address.
+- **Still open.**
+  - The staff management screen: proposal in the record above; it needs
+    a go-ahead and a reset-method choice.
+  - AO-D5 option B and AO-D6, recommended again and still not approved.
+  - The courier (LR-008).
+
+Not self-certified; no go-live claimed.
+
 **Status as of 2026-10-05 (walkthrough): `SOLO-OWNER DESKTOP WALKTHROUGH
 RUN AND ITS SCREEN DEFECTS FIXED ON claude/admin-ops-phase1 — AWAITING
 REVIEW; AO-D5/AO-D6 RECOMMENDED BUT NOT APPROVED.`** After CI passed on

@@ -156,9 +156,12 @@ export default function PurchaseOrderDetail() {
         }),
       DECISIONS[d].done,
     );
-    // A refusal keeps the dialog open with what was typed (reason,
-    // password, comment) and shows the reason there.
-    if (!ok) return;
+    // A refusal keeps the dialog open with the reason and comment typed
+    // and shows why there; the password and code are cleared.
+    if (!ok) {
+      selfApproval.clearSecrets();
+      return;
+    }
     setDecision(null);
     setComment('');
     selfApproval.reset();
@@ -424,6 +427,8 @@ function ReceiveForm({
             setRows({});
             selfApproval.reset();
             onReceived(receipt);
+          } else {
+            selfApproval.clearSecrets();
           }
         }}
       >

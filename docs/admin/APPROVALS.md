@@ -124,6 +124,11 @@ withdraw). It is in the menu for anyone who can request or approve.
   failure is audited as `approval.confirmation_failed`.
 - After 5 failures in 15 minutes, further confirmations by that person are
   refused until the window passes.
+- The admin never keeps a typed password or authenticator code after an
+  attempt. After a refusal the dialog stays open with the reason (and any
+  comment) still filled in, but the password and code are cleared. They
+  are also cleared on success, when the dialog is closed, and when the
+  fields are hidden (for example, another approver is chosen).
 - Changing the policy also needs `org:manage` and the person's password.
   It is audited as `approval_policy.update` with the before and after
   owners.

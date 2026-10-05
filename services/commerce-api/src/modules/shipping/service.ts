@@ -4,6 +4,7 @@ import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
+import { assertSenderAddress } from '../dispatch/service.js';
 import {
   resolveShippingProvider,
   type ShippingProvider,
@@ -205,6 +206,9 @@ export class ShippingService {
         `Mark the package ready to ship before booking it with a courier; it is ${fulfilment.status.toLowerCase().replace(/_/g, ' ')} now.`,
       );
     }
+    // Checked only for a new booking: a replay of one already made still
+    // converges above, whatever the address is now.
+    await assertSenderAddress(this.prisma, fulfilment.id);
 
     const env = loadEnv();
     try {

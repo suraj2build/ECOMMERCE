@@ -75,6 +75,7 @@ export default function InventoryAdjustmentsPage() {
       setReason('');
       setVersion((v) => v + 1);
     } catch (err) {
+      selfApproval.clearSecrets();
       setMessage({ kind: 'error', text: errorMessage(err, 'Adjustment failed.') });
     } finally {
       setSubmitting(false);

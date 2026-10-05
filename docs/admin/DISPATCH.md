@@ -39,6 +39,16 @@ shipment is booked.
   own label format and barcode, and these come from the courier's system
   once one is chosen (LR-008). No courier format was invented.
 
+**Booking needs the sender address.** A package can be booked with a
+courier only when its warehouse (the location it is dispatched from) has
+a full address: address line, city, state and PIN code. That address is
+the sender and return address on the label. Without it, the booking is
+refused, nothing is sent to the courier, and the refusal names what is
+missing and where to add it (Business & warehouse). Setup & health shows
+the same gap. A retry of a booking that was already made still returns
+it. Marking a package shipped manually (outside the courier integration)
+is not affected. *(Product Owner review after `6217031`.)*
+
 **Courier handover (Orders → Courier handover).** This lists parcels
 booked with a courier but not yet collected, grouped by courier.
 1. Print the manifest. It has a signature line for "handed over by" and

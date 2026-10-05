@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Notice, TextArea, TextField } from '@/components/ui';
 import { useApi } from '@/lib/session';
 
@@ -16,11 +16,21 @@ interface Policy {
   minReasonLength: number;
 }
 
-/** Holds the owner-approval inputs for one form. */
+/**
+ * Holds the owner-approval inputs for one form. The password and
+ * authenticator code are never kept after an attempt: callers clear them
+ * after a refusal (`clearSecrets`, which keeps the reason) and on success
+ * or close (`reset`). The fields also clear themselves when they are
+ * hidden.
+ */
 export function useSelfApproval() {
   const [reason, setReason] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
+  const clearSecrets = useCallback(() => {
+    setPassword('');
+    setMfaCode('');
+  }, []);
   return {
     value: { reason, password, ...(mfaCode ? { mfaCode } : {}) } as SelfApproval,
     reason,
@@ -29,6 +39,7 @@ export function useSelfApproval() {
     setPassword,
     mfaCode,
     setMfaCode,
+    clearSecrets,
     reset: () => {
       setReason('');
       setPassword('');
@@ -45,6 +56,9 @@ export function useSelfApproval() {
  */
 export function SelfApprovalFields({ what, state }: { what: string; state: ReturnType<typeof useSelfApproval> }) {
   const policy = useApi<Policy>('/approvals/policy');
+  // Hidden (another approver chosen, dialog closed): drop the typed password.
+  const { clearSecrets } = state;
+  useEffect(() => clearSecrets, [clearSecrets]);
   if (!policy.data) return null;
   if (!policy.data.ownerApprovalEnabled || !policy.data.viewerIsOwner) {
     return (

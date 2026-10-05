@@ -189,6 +189,42 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
     const book = (fulfilmentId: string) =>
       app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${fulfilmentId}/shipment`, headers: auth(), payload: { idempotencyKey: `book-${fulfilmentId}` } });
 
+    it('refuses a courier booking until the warehouse has a full sender address; a replay of an existing booking still converges', async () => {
+      const { a, f } = await readyPackage();
+      await testPrisma.location.update({ where: { id: fixtures.location.id }, data: { addressLine1: null, pinCode: null } });
+      const carrier = vi.spyOn(MockCarrierProvider.prototype, 'initiateShipment');
+
+      const refused = await book(f.id);
+      expect(refused.statusCode).toBe(400);
+      expect(refused.json().error.message).toBe(
+        'Add the address line and PIN code for Test Warehouse on Business & warehouse before booking a courier: it is the sender and return address on the label.',
+      );
+      // Nothing was booked, recorded or sold, and the courier was never called.
+      expect(carrier).not.toHaveBeenCalled();
+      expect(await testPrisma.shipment.count({ where: { fulfilmentId: f.id } })).toBe(0);
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('READY_TO_SHIP');
+      expect(await testPrisma.inventoryTransaction.count({ where: { skuId: a.id, type: 'SALE' } })).toBe(0);
+
+      // Completing the address in Business & warehouse is enough.
+      const fixed = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/organization/locations/${fixtures.location.id}`,
+        headers: auth(owner.token),
+        payload: { addressLine1: '12 Godown Lane', pinCode: '110020' },
+      });
+      expect(fixed.statusCode, fixed.body).toBe(200);
+      const booked = await book(f.id);
+      expect(booked.statusCode, booked.body).toBe(201);
+      expect(carrier).toHaveBeenCalledTimes(1);
+      carrier.mockRestore();
+
+      // A retry of the same booking returns it, even if the address was blanked since.
+      await testPrisma.location.update({ where: { id: fixtures.location.id }, data: { addressLine1: '' } });
+      const replay = await book(f.id);
+      expect(replay.statusCode).toBe(201);
+      expect(replay.json().id).toBe(booked.json().id);
+    });
+
     it('sends the parcel weight and size with the booking; the SALE is still posted at booking; handover is separate', async () => {
       const { a, f } = await readyPackage();
       const spy = vi.spyOn(MockCarrierProvider.prototype, 'initiateShipment');

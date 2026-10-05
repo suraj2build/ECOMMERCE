@@ -82,6 +82,13 @@ test.describe.serial('Approvals (AO-D4)', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('group', { name: /Owner approval: you are approving your own purchase order/ })).toBeVisible();
     await dialog.getByLabel('Reason').fill('Sole owner; no second approver yet');
+    // A wrong password is refused in the dialog; the reason stays, the password is cleared.
+    await dialog.getByLabel('Your password').fill('not-the-password');
+    await confirmDialog(page, 'Approve');
+    await expect(dialog.getByText('The password is not correct')).toBeVisible();
+    await expect(dialog.getByLabel('Reason')).toHaveValue('Sole owner; no second approver yet');
+    await expect(dialog.getByLabel('Your password')).toHaveValue('');
+    expect((await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po.id } })).status).toBe('SUBMITTED');
     await dialog.getByLabel('Your password').fill(OWNER_PASSWORD);
     await confirmDialog(page, 'Approve');
     await expect(page.getByText('Approved. Receive the goods below as they arrive.')).toBeVisible();

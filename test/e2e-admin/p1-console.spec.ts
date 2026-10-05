@@ -663,6 +663,8 @@ test.describe('P1 Commerce Operations Console', () => {
     await expect(slip.getByText(/Parcel weight 420 g/)).toBeVisible();
     await page.getByRole('link', { name: 'Address label' }).click();
     await expect(page.getByRole('article', { name: 'Address label' }).getByText('9 Console Road')).toBeVisible();
+    // The warehouse's own address is the return address.
+    await expect(page.getByRole('article', { name: 'Address label' }).getByText('4 Dispatch Yard')).toBeVisible();
     await expect(page.getByRole('article', { name: 'Address label' }).getByText(/Cash on delivery/)).toBeVisible();
 
     // Book: the stock sale is still posted at booking (AO-D5), handover is separate.

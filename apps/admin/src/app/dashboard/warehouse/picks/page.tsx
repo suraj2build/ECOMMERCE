@@ -199,6 +199,7 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: (queuedFor: string
           queuedFor = res.pendingApproval?.approver ?? null;
         });
         if (ok) onDone(queuedFor);
+        else selfApproval.clearSecrets();
       }}
     >
       <p>
