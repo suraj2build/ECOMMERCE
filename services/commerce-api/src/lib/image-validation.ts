@@ -20,6 +20,33 @@ export interface CheckedImage {
 const DAMAGED = 'The file is damaged or is not a complete image. Export it again and upload the new file.';
 
 /**
+ * Full decodes run at most this many at a time. A 40-megapixel photo needs
+ * about 160 MB while it is decoded; without a limit, a burst of large
+ * uploads could exhaust the server's memory. Uploads beyond the limit wait
+ * their turn.
+ */
+export const MAX_CONCURRENT_DECODES = 2;
+let activeDecodes = 0;
+const waiting: Array<() => void> = [];
+
+async function withDecodeSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeDecodes >= MAX_CONCURRENT_DECODES) await new Promise<void>((resolve) => waiting.push(resolve));
+  else activeDecodes += 1;
+  try {
+    return await fn();
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else activeDecodes -= 1;
+  }
+}
+
+/** For tests: how many decodes are running and waiting right now. */
+export function decodeSlotsInUse() {
+  return { active: activeDecodes, waiting: waiting.length };
+}
+
+/**
  * Proves an upload is a real, complete still image within the size limits,
  * given the type already sniffed from its bytes (never the client's claim):
  *
@@ -43,8 +70,13 @@ export async function inspectImage(buffer: Buffer, mimeType: ImageMimeType): Pro
   } catch {
     throw new ValidationError(DAMAGED);
   }
-  const { width, height } = meta;
-  if (meta.format !== FORMAT[mimeType] || !width || !height) throw new ValidationError(DAMAGED);
+  if (meta.format !== FORMAT[mimeType] || !meta.width || !meta.height) throw new ValidationError(DAMAGED);
+  // A phone photo taken upright is often stored sideways with an EXIF
+  // orientation of 5-8; it is shown rotated, so its displayed width and
+  // height are swapped.
+  const rotated = (meta.orientation ?? 1) >= 5;
+  const width = rotated ? meta.height : meta.width;
+  const height = rotated ? meta.width : meta.height;
   if ((meta.pages ?? 1) > 1) throw new ValidationError('Animated images are not accepted. Upload a still photo.');
   const longest = Math.max(width, height);
   if (longest > env.IMAGE_UPLOAD_MAX_EDGE_PX) {
@@ -54,7 +86,7 @@ export async function inspectImage(buffer: Buffer, mimeType: ImageMimeType): Pro
     throw new ValidationError(`The image is ${width} × ${height} pixels; it can have at most ${Math.round(env.IMAGE_UPLOAD_MAX_PIXELS / 1_000_000)} million pixels.`);
   }
   try {
-    await sharp(buffer, { failOn: 'warning', limitInputPixels: env.IMAGE_UPLOAD_MAX_PIXELS }).stats();
+    await withDecodeSlot(() => sharp(buffer, { failOn: 'warning', limitInputPixels: env.IMAGE_UPLOAD_MAX_PIXELS }).stats());
   } catch {
     throw new ValidationError(DAMAGED);
   }
