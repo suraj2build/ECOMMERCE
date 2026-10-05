@@ -49,7 +49,25 @@ booked with a courier but not yet collected, grouped by courier.
 
 A carrier's first in-transit tracking event also records the handover
 automatically, if it arrives first. Recording a handover twice is
-harmless.
+harmless: the parcels are locked in a fixed order first, so two people
+confirming the same parcel at once record it (and audit it) once.
+
+The page shows up to 500 waiting parcels. When there are more, it says
+how many there are in total and that only the oldest 500 are listed.
+
+## Dispatch stage in the admin
+
+The admin distinguishes the two states a booked package can be in. Both
+are `SHIPPED` underneath, so this is a label, not a new status:
+
+| Stage | Shown as | Meaning |
+|---|---|---|
+| `BOOKED_AWAITING_COLLECTION` | **Booked — awaiting collection** | booked with a courier, not yet handed over |
+| `HANDED_OVER` | **Handed over** | the courier took it (staff handover or carrier event) |
+
+The stage shows on the Pack & ship list and on the order page. The Pack & ship list can be filtered by either stage. A booked
+package also says "Stock already deducted at booking", because that is
+still true (see below).
 
 ## Settings (Business & warehouse → Dispatch checks)
 
@@ -84,8 +102,17 @@ checked. When a check is on, packing or picking without it is refused.
   from carrier booking to handover"). The Product Owner asked for that
   review **before** the posting point moves, so it has not moved.
 - **What this means today:** a parcel that is booked but never collected
-  has already left stock in the ledger. The handover page is where to see
-  such parcels.
+  has already left stock in the ledger. The handover page and the
+  "Booked — awaiting collection" filter are where to see such parcels.
+- **AO-D5 is therefore partly implemented.** The review of what moving the
+  sale would change is `BOOKING_TO_HANDOVER_REVIEW.md`. It recommends
+  option B: the sale, the shipped status and the customer's shipped
+  message all move to handover, with a rule for cancelling a booked
+  parcel. It needs the Product Owner's decision before anything moves.
+- **Fixed while reviewing:** the "shipped" message to the customer (and
+  the "delivered" one) was sent from inside the booking transaction, so a
+  booking that then failed could still have told the customer it had
+  shipped. Both are now sent only after the change is committed.
 
 ## Not included (needs a courier or a decision)
 
@@ -104,6 +131,8 @@ checked. When a check is on, packing or picking without it is refused.
   unknown); parcel measurements stored and sent with the booking;
   settings requiring scans and measurements; documents content; handover
   by staff and by carrier event; repeat handover; SALE still posted at
-  booking; permissions.
+  booking; permissions; the dispatch stage and its filters; two
+  simultaneous handovers of one parcel; the list total beyond its limit;
+  the shipped message sent only after the booking commits.
 - Browser flow AO-10 in `test/e2e-admin/p1-console.spec.ts` (it reuses that
   file's order and pick fixtures).

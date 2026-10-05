@@ -2902,6 +2902,12 @@ Decided by the Product Owner in the review of Admin Ops Phase 1
   PO approval, stock adjustments, receiving and picking, with no
   accidental self-approval left in any route.
 - **Engineering:** `docs/admin/APPROVALS.md`.
+- **Follow-up (Product Owner, after `3e1149a`):** naming another person
+  recorded attribution but did not prove their approval. Adjustments,
+  receiving and picking now queue an approval request that the named
+  person approves from their own login; the action is applied, and
+  re-checked, only then. Owner self-approval remains a distinct,
+  immediate path. Purchase orders already worked this way.
 
 #### AO-D5 — Dispatch: booking vs handover
 - **Status:** DECIDED in part (Product Owner, 2026-10-05)
@@ -2915,6 +2921,30 @@ Decided by the Product Owner in the review of Admin Ops Phase 1
   open pending the consequences review listed in
   `docs/admin/NEXT_PHASES_RESEARCH.md` ("Proposal: move shipped from
   carrier booking to handover").
+- **Partly implemented.** The admin shows "Booked — awaiting collection"
+  and "Handed over" as distinct stages. The package still becomes
+  `SHIPPED`, and stock still leaves the ledger, at booking.
+- **Consequences review:** `docs/admin/BOOKING_TO_HANDOVER_REVIEW.md`
+  (complete). It recommends option B: post the sale, the shipped status
+  and the customer's shipped message at handover (staff confirmation or
+  the carrier's first movement, once), with a new "booked, awaiting
+  collection" package status and a rule for cancelling a booked parcel. **DECISION_REQUIRED** — the
+  Product Owner chooses A, B or C before the posting point moves. Any tax
+  consequence stays TAX/COMPLIANCE REVIEW REQUIRED.
 - **Still open (business):** B-2 (scan required at pick, pack or both) and
   B-3 (measured parcel weight vs product weights) are left to the owner as
   admin settings, off by default, rather than decided by engineering.
+
+#### AO-D6 — Camera metadata on public product photos
+- **Status:** DECISION_REQUIRED (found in the code review after `3e1149a`)
+- **Question:** should uploaded product and content photos have their
+  camera metadata (EXIF, which can include GPS location and device) removed
+  before they are served publicly?
+- **Why it matters:** photos taken on a phone in the warehouse or at home
+  can reveal that location to anyone who downloads them. Removing it means
+  re-encoding each upload, so the stored file is no longer the exact file
+  uploaded (slight quality change for JPEG; colour profile must be kept).
+- **Options:** (a) strip metadata on upload, keeping orientation and
+  colour profile; (b) keep files as uploaded and tell staff to remove
+  location before upload; (c) strip GPS only.
+- **Engineering:** nothing changed; uploads are stored as uploaded.

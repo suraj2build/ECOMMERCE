@@ -210,10 +210,12 @@ publishing.
 | Integration (22) | `services/commerce-api/test/integration/admin-ops-products.test.ts` | Style/colour/SKU editing rules, blank-vs-null, archived refusal, barcode duplicates, sizes and product types, readiness states, upload validation (decoded images, corrupt/truncated files, dimension and pixel limits, spoofed type, size, ownership), republish after unpublish (AO-D1), shoe/belt/perfume attributes on the product page (AO-D2), cover uniqueness, replace keeps the old file on failure, removal rules, public serving only while referenced, search refresh, permissions |
 | Integration (16) | `.../admin-ops-import.test.ts` | Dry run writes nothing, create/update/unchanged, blank cells, duplicate rows, bad references and barcodes, style skipped whole, batches and retry, no inventory changes, out-of-range batch refused, permissions; whole-product rollback on a mid-product failure, simultaneous imports of the same product, interrupted batch then retry, price history appended only on a real change |
 | Integration (12) | `.../admin-ops-config.test.ts` | Menu link validation, placements, draft banners, page edits, content images, channel scope and pause, setup statuses without secrets, storage test, permissions; business details, GST registrations and warehouse addresses from admin (AO-D3) |
-| Integration (11) | `.../approvals.test.ts` | One approval policy (AO-D4) across purchase orders, adjustments, receiving and picking: self-approval refused while the policy is off, owner approval with reason and confirmation, wrong password and lock-out, non-owner refused, approver without the permission refused, approval log |
-| Integration (9) | `.../dispatch.test.ts` | Pick and pack scans, parcel measurements sent with the booking, required-check settings, documents, handover by staff and by carrier event, sale still posted at booking, permissions |
+| Integration (21) | `.../approvals.test.ts` | One approval policy (AO-D4) across purchase orders, adjustments, receiving and picking: self-approval refused while the policy is off, owner approval with reason and confirmation, wrong password and lock-out (including a simultaneous burst), non-owner refused, approver without the permission refused, approval log; approval requests: queued not applied, only the named approver decides, simultaneous approvals apply once, reject/withdraw, re-validation at approval, database rules |
+| Integration (13) | `.../dispatch.test.ts` | Pick and pack scans, parcel measurements sent with the booking, required-check settings, documents, handover by staff and by carrier event, sale still posted at booking, permissions; dispatch stage and filters, simultaneous handover, list total, shipped message only after commit |
+| Unit (4) | `test/unit/image-validation.test.ts`, `logger-redaction.test.ts` | Rotated-photo dimensions, decode concurrency limit, password and code redaction in logs |
 | Browser (8) | `test/e2e-admin/admin-ops-phase1.spec.ts` | AO-01 shoe and perfume profiles; AO-02 draft restore, inline errors, edit reaching the storefront; AO-03 upload/cover/reorder/replace/remove with a bad file refused and the cover in storefront search; AO-04 import dry run, problem rows, import, retry with a corrected file, no stock; AO-05 menu editor reaching the storefront footer; AO-06 draft banner made live; AO-07 setup page, storage test, channel scope and pause; AO-08 readiness and preview |
 | Browser (1) | `test/e2e-admin/approvals.spec.ts` | AO-09 owner approval turned on, used on an own purchase order, listed in the log |
+| Browser (new) | `test/e2e-admin/p1-console.spec.ts` AO-11 | Approval queue: request, nothing moves, the approver approves from their own login, stock moves, requester sees the outcome |
 | Browser (new) | `test/e2e-admin/p1-console.spec.ts` AO-10 | Pick scan (wrong item refused), pack scans with parcel measurements, packing slip and label, booking, courier handover |
 | Browser (updated) | `test/e2e-admin/p1-console.spec.ts` P1-01 | Product creation now goes through the workspace and checks the storefront product page, price and photo |
 
@@ -315,3 +317,92 @@ closed before acceptance, then the next dispatch steps.
 
 Also from the review: the pick co-approver gap is closed by the shared
 approval policy (`docs/admin/APPROVALS.md`).
+
+## Second review (2026-10-05, after `3e1149a`)
+
+The Product Owner verified CI green on `3e1149a` (run 37264858214) and
+named two incomplete controls, plus a code review before merging.
+
+### Test record for `3e1149a` (correction)
+
+An earlier report quoted "944 passed and 1 failed". That was an
+intermediate run, not the final one. The final local run on `3e1149a`,
+the commit that was pushed:
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Unit (`commerce-api`) | 15 | 86 | 0 | 0 |
+| Unit (other workspaces) | 5 | 21 | 0 | 0 |
+| Integration, with the S3 emulator | 64 | 950 | 0 | 0 |
+| Browser (storefront, admin, API smoke) | — | 88 | 0 | 0 |
+
+Read-load and checkout-contention load checks passed. CI's own totals
+could not be read here: the log tool returns only the last 5,000 lines
+and the full log download is blocked by this sandbox's network policy.
+
+**Defect history.** The earlier full integration run on the dispatch work
+had 944 passed, 1 failed and 5 skipped:
+- the failure was `product-invariants` asserting an outdated readiness
+  message; the assertion was corrected to the new message in `a2dd690`
+  (the behaviour it checks was unchanged);
+- the 5 skipped were the S3 storage tests, which skip when no S3
+  emulator is running. The final run had the emulator up.
+
+### 1. Independent approval needs the approver's own login
+
+Fixed. Adjustments, receiving and picking now queue a request when
+another person is named; nothing is applied until that person approves it
+from their own login, and the action is re-checked at that moment. Owner
+self-approval remains a separate, immediate path. See
+`docs/admin/APPROVALS.md` → "Approval requests".
+
+### 2. Dispatch status
+
+The admin now shows **Booked — awaiting collection** and **Handed over**
+as distinct stages, with filters (`docs/admin/DISPATCH.md` → "Dispatch
+stage in the admin"). **AO-D5 remains partly implemented:** the package
+still becomes `SHIPPED` and stock still leaves the ledger at booking. The
+review of moving that to handover is
+`docs/admin/BOOKING_TO_HANDOVER_REVIEW.md`. It recommends option B (sale,
+shipped status and shipped message at handover, plus a rule for
+cancelling a booked parcel) and needs the Product Owner's decision.
+
+### 3. Code review before merging
+
+Reviewed in the code: approval paths, dispatch, credential handling,
+import transactions and image decoding.
+
+Fixed:
+
+| # | Area | Finding | Fix |
+|---|---|---|---|
+| A1 | Approvals | Naming another approver recorded attribution only | Approval requests (above) |
+| C1 | Credentials | Simultaneous wrong passwords could all be checked before the limit counted them | Each person's confirmations are serialised with a database lock; a burst gets exactly 5 checks |
+| C2 | Credentials | Logs redacted `password` only at the top level of a body | `password` and `mfaCode` redacted when nested too |
+| D1 | Dispatch | "Shipped" and "delivered" messages were sent inside the transaction, before commit | Sent after commit |
+| D2 | Dispatch | Two simultaneous handovers of one parcel could both audit it | Rows locked in a fixed order first |
+| D3 | Dispatch | The handover list stopped at 500 without saying so | Total shown with the limit |
+| I2 | Images | Many simultaneous large uploads could each decode at once (memory) | At most 2 decodes at a time; others wait |
+| I3 | Images | A rotated phone photo (EXIF orientation 5–8) was measured unrotated | Width and height swapped for those orientations |
+
+Import transactions: no defect found. Each product is written in one
+transaction under a per-product lock, nothing outside the database
+(search, storage) is called inside it, and search is refreshed after
+commit.
+
+Open, for a decision or a later pass:
+- **C3:** an authenticator code can be reused within its 30-second window,
+  at sign-in and for approval confirmation. This is existing sign-in
+  behaviour; closing it means recording used codes.
+- **I6:** public product photos keep their camera metadata (EXIF, which
+  can include GPS location). Stripping it means re-encoding every upload,
+  which changes the stored file. Recorded as `DECISION_REQUIRED`
+  (`AO-D6` in `blueprint/DECISION_REGISTER.md`).
+
+### Next, as asked
+
+1. The AO-D5 decision on moving stock posting to handover.
+2. A courier adapter for real labels, pickup and cancellation. **No
+   courier has been chosen** (`LR-008` is `DECISION_REQUIRED`), so this
+   cannot start until one is.
+3. Promotion templates, basket simulation and campaign configuration.

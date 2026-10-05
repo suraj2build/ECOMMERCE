@@ -6,6 +6,38 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-05 (second admin review): `INDEPENDENT APPROVAL
+QUEUE AND DISPATCH STAGES BUILT, CODE REVIEW FIXES APPLIED ON
+claude/admin-ops-phase1 — AWAITING IMPLEMENTATION REVIEW; AO-D5 AND AO-D6
+DECISION_REQUIRED.`** The Product Owner verified CI green on `3e1149a`
+and named two incomplete controls plus a pre-merge code review. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Second review"), `docs/admin/APPROVALS.md`,
+`docs/admin/DISPATCH.md`, `docs/admin/BOOKING_TO_HANDOVER_REVIEW.md`.
+
+- **Approval requests.** Naming another approver for an adjustment,
+  receipt QC sign-off or pick shortfall now queues a request; nothing is
+  applied until that person approves it from their own login, and the
+  action is re-checked then. Owner self-approval stays a separate,
+  immediate path. The service refuses an independent approval given on
+  someone else's behalf.
+- **Dispatch stages.** The admin shows "Booked — awaiting collection" and
+  "Handed over". **AO-D5 is partial:** the package still becomes SHIPPED
+  and stock still leaves the ledger at booking. The consequences review
+  recommends option B and needs the Product Owner's decision.
+- **Code review fixes:** confirmation-limit race, nested password/code log
+  redaction, shipped/delivered messages sent only after commit,
+  simultaneous handover, handover list total, decode concurrency limit,
+  rotated-photo dimensions. Open: authenticator code reuse within its
+  window (existing sign-in behaviour); photo camera metadata (AO-D6).
+- **Test record correction:** `3e1149a`'s final run was 950/950
+  integration (64 files), 86 + 21 unit, 88/88 browser; the earlier
+  944/1-failed run stays in the defect history.
+
+Next as asked: the AO-D5 decision; a courier adapter once a courier is
+chosen (LR-008, not chosen — nothing built speculatively); then promotion
+templates, basket simulation and campaign configuration. Not
+self-certified; no go-live claimed.
+
 **Status as of 2026-10-05 (admin review follow-up): `ADMIN OPS PHASE 1
 REVIEW ITEMS CLOSED AND NEXT DISPATCH STEPS BUILT ON
 claude/admin-ops-phase1 — AWAITING IMPLEMENTATION REVIEW.`** The
