@@ -37,9 +37,11 @@ const PRODUCT_TYPES: readonly ProductType[] = ['APPAREL', 'FOOTWEAR', 'BELT', 'F
  * The product's type: its own `customAttributes.productType` when valid,
  * otherwise its category's. Same rule as the admin workspace and readiness.
  */
-export function resolveProductType(customAttributes: unknown, categoryType: ProductType): ProductType {
+export function resolveProductType(customAttributes: unknown, categoryType: ProductType | null | undefined): ProductType {
   const own = customAttributes && typeof customAttributes === 'object' && !Array.isArray(customAttributes) ? (customAttributes as Record<string, unknown>).productType : undefined;
-  return typeof own === 'string' && (PRODUCT_TYPES as readonly string[]).includes(own.toUpperCase()) ? (own.toUpperCase() as ProductType) : categoryType;
+  if (typeof own === 'string' && (PRODUCT_TYPES as readonly string[]).includes(own.toUpperCase())) return own.toUpperCase() as ProductType;
+  // An unknown or missing category type reads as clothing, which adds no attributes.
+  return categoryType && PRODUCT_TYPES.includes(categoryType) ? categoryType : 'APPAREL';
 }
 
 /**
@@ -71,7 +73,7 @@ export function productAttributes(productType: ProductType, style: { fabric: str
   if (productType === 'APPAREL') return [];
   const custom = style.customAttributes && typeof style.customAttributes === 'object' && !Array.isArray(style.customAttributes) ? (style.customAttributes as Record<string, unknown>) : {};
   const out: Array<{ label: string; value: string }> = [];
-  for (const field of ATTRIBUTE_FIELDS[productType]) {
+  for (const field of ATTRIBUTE_FIELDS[productType] ?? []) {
     const raw = field.column ? style.fabric : custom[field.key];
     if (typeof raw === 'string' && raw.trim()) out.push({ label: field.label, value: raw.trim() });
   }
