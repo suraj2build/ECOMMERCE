@@ -118,6 +118,9 @@ export default function PurchaseOrderDetail() {
   const action = useAction();
   const [decision, setDecision] = useState<Decision | null>(null);
   const [comment, setComment] = useState('');
+  // Kept here rather than in the receiving form: a receipt that completes the
+  // order hides the form, and its confirmation must stay visible.
+  const [receipt, setReceipt] = useState<{ grnNumber: string; exceptions: string | null } | null>(null);
   const session = useSession();
   const selfApproval = useSelfApproval();
   const approvingOwn = lines.data?.submittedBy?.id === session.staffUserId;
@@ -188,6 +191,8 @@ export default function PurchaseOrderDetail() {
             ))}
           />
           {decision === null && <ActionMessage message={action.message} />}
+          {receipt && <Notice kind="success">Goods receipt {receipt.grnNumber} recorded.</Notice>}
+          {receipt?.exceptions && <Notice kind="warning">Receipt exceptions recorded: {receipt.exceptions}</Notice>}
           {NEXT_STEP[p.status] && <Notice kind={NEXT_STEP[p.status]!.kind}>{NEXT_STEP[p.status]!.text}</Notice>}
 
           <div className="grid-2">
@@ -257,7 +262,15 @@ export default function PurchaseOrderDetail() {
           </Section>
 
           <Can anyOf={['grn:create']}>
-            {lines.data && RECEIVABLE.includes(p.status) && <ReceiveForm po={p} lines={lines.data.lines} onReceived={reloadAll} />}
+            {lines.data && RECEIVABLE.includes(p.status) && <ReceiveForm
+                po={p}
+                lines={lines.data.lines}
+                onStart={() => setReceipt(null)}
+                onReceived={(r) => {
+                  setReceipt(r);
+                  reloadAll();
+                }}
+              />}
           </Can>
 
           <Can anyOf={['grn:read']}>
@@ -330,7 +343,17 @@ interface ReceiveRow {
  * the failed quantity needs a manager's sign-off; it computes short and
  * excess itself.
  */
-function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines']; onReceived: () => void }) {
+function ReceiveForm({
+  po,
+  lines,
+  onStart,
+  onReceived,
+}: {
+  po: Po;
+  lines: PoLines['lines'];
+  onStart: () => void;
+  onReceived: (receipt: { grnNumber: string; exceptions: string | null } | null) => void;
+}) {
   const action = useAction();
   const [locationId, setLocationId] = useState(po.location.id);
   const [signoff, setSignoff] = useState('');
@@ -338,8 +361,7 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
   const selfApproval = useSelfApproval();
   const signingOwn = signoff !== '' && signoff === session.staffUserId;
   const [rows, setRows] = useState<Record<string, ReceiveRow>>({});
-  const [exceptions, setExceptions] = useState<Array<{ skuId: string; shortQty: number; excessQty: number; isExcessException: boolean }>>([]);
-  const [recorded, setRecorded] = useState<string | null>(null);
+  type ReceiptException = { skuId: string; shortQty: number; excessQty: number; isExcessException: boolean };
   const [queuedFor, setQueuedFor] = useState<string | null>(null);
   const row = (lineId: string): ReceiveRow => rows[lineId] ?? { receivedQty: '', acceptedQty: '', damagedQty: '0', rejectedQty: '0', qcNotes: '' };
   const set = (lineId: string, k: keyof ReceiveRow, v: string) => setRows((r) => ({ ...r, [lineId]: { ...row(lineId), [k]: v } }));
@@ -351,18 +373,9 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
         post as damaged.
       </p>
       <ActionMessage message={action.message} />
-      {recorded && <Notice kind="success">Goods receipt {recorded} recorded.</Notice>}
       {queuedFor && (
         <Notice kind="info">
           Sent to {queuedFor} for QC sign-off. Nothing is received into stock until they approve it on their Approvals page.
-        </Notice>
-      )}
-      {exceptions.length > 0 && (
-        <Notice kind="warning">
-          Receipt exceptions recorded:{' '}
-          {exceptions
-            .map((x) => `${lines.find((l) => l.skuId === x.skuId)?.sku.skuCode ?? x.skuId}: short ${x.shortQty}, excess ${x.excessQty}${x.isExcessException ? ' (over tolerance)' : ''}`)
-            .join('; ')}
         </Notice>
       )}
       <form
@@ -382,10 +395,11 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
                 qcNotes: r.qcNotes || undefined,
               };
             });
-          setRecorded(null);
+          onStart();
           setQueuedFor(null);
+          let receipt: { grnNumber: string; exceptions: string | null } | null = null;
           const ok = await action.run(async () => {
-            const res = await apiSend<{ grnNumber: string; exceptions: typeof exceptions; pendingApproval?: { approver: string } }>('POST', '/grn', {
+            const res = await apiSend<{ grnNumber: string; exceptions: ReceiptException[]; pendingApproval?: { approver: string } }>('POST', '/grn', {
               poId: po.id,
               locationId,
               managerSignoffStaffId: signoff || undefined,
@@ -396,13 +410,20 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
               setQueuedFor(res.pendingApproval.approver);
               return;
             }
-            setRecorded(res.grnNumber);
-            setExceptions(res.exceptions);
+            receipt = {
+              grnNumber: res.grnNumber,
+              exceptions:
+                res.exceptions.length > 0
+                  ? res.exceptions
+                      .map((x) => `${lines.find((l) => l.skuId === x.skuId)?.sku.skuCode ?? x.skuId}: short ${x.shortQty}, excess ${x.excessQty}${x.isExcessException ? ' (over tolerance)' : ''}`)
+                      .join('; ')
+                  : null,
+            };
           });
           if (ok) {
             setRows({});
             selfApproval.reset();
-            onReceived();
+            onReceived(receipt);
           }
         }}
       >

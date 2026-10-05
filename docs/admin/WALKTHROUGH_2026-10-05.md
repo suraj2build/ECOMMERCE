@@ -131,11 +131,17 @@ listed under "Tests" below.
 - **Browser (`admin-ops-phase1.spec.ts`, AO-08).** Checks the "Not yet"
   readiness state and the no-stock warning.
 
-### Defect the browser tests found (fixed before push)
+### Defects the browser tests found in these fixes (fixed before push)
 
-The first browser run had 87 passed and 2 failed (AO-09 and P1-02). Both
-failed on the same real defect: after a purchase order was submitted or
-approved, the success message was rendered twice. One copy was on the
-page and the other inside the closed confirmation dialog, which a screen
-reader could also reach. The dialog now shows only a refusal. The whole
-browser suite was then rerun from a fresh database.
+- **Run 1: 87 passed, 2 failed (AO-09, P1-02).** After a purchase order
+  was submitted or approved, the success message was rendered twice. One
+  copy was on the page and the other inside the closed confirmation
+  dialog, which a screen reader could also reach. The dialog now shows
+  only a refusal.
+- **Run 2: 88 passed, 1 failed (P1-02).** The receiving form appears only
+  while goods can still be received (W-6). A receipt that completed the
+  order therefore hid the form, and the "Goods receipt … recorded"
+  confirmation inside it disappeared too. The confirmation, and any
+  receipt exceptions, now show at the top of the purchase order page.
+
+Each time, the whole browser suite was rerun from a fresh database.
