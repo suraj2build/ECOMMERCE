@@ -190,7 +190,8 @@ Each time, the whole browser suite was rerun from a fresh database.
 | Unit (other workspaces) | 5 | 21 | 0 | 0 |
 | Integration | 64 | 960 | 0 | 5 (S3 emulator only) |
 | Integration, S3 file with the emulator | 1 | 6 | 0 | 0 |
-| Browser (storefront, admin, API smoke), third run | — | 89 | 0 | 0 |
+| Browser (storefront, admin, API smoke), fourth run on the final head | — | 89 | 0 | 0 |
 
 Lint and typecheck are clean. The read-load and checkout-contention
-checks passed.
+checks passed. The commits after the integration run change only admin
+screens, browser tests and documents; no API code changed after it.
