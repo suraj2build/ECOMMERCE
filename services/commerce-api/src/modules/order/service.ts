@@ -11,7 +11,7 @@ import { GiftCardService } from '../gift-cards/service.js';
 import { NotificationService } from '../notifications/service.js';
 import { ConversionService } from '../conversions/service.js';
 import { recordAudit } from '../audit/service.js';
-import { checkPackScans, checkParcel, type ParcelInput } from '../dispatch/service.js';
+import { checkPackScans, checkParcel, dispatchStage, type ParcelInput } from '../dispatch/service.js';
 import type { CartOwnerIdentity } from '../cart/identity.js';
 
 /**
@@ -104,6 +104,8 @@ function buildOrderView(order: OrderWithViewIncludes) {
     fulfilments: order.fulfilments.map((f) => ({
       id: f.id,
       status: f.status,
+      // AO-D5: booked with a courier vs actually collected (see dispatchStage).
+      dispatchStage: dispatchStage(f.status, f.shipment),
       carrierName: f.carrierName,
       trackingRef: f.trackingRef,
       packedAt: f.packedAt,
@@ -123,6 +125,7 @@ function buildOrderView(order: OrderWithViewIncludes) {
             deliveryAttempts: f.shipment.deliveryAttempts,
             maxDeliveryAttempts: f.shipment.maxDeliveryAttempts,
             bookedAt: f.shipment.bookedAt,
+            handedOverAt: f.shipment.handedOverAt,
             deliveredAt: f.shipment.deliveredAt,
             rtoInitiatedAt: f.shipment.rtoInitiatedAt,
             rtoDeliveredAt: f.shipment.rtoDeliveredAt,
@@ -1007,20 +1010,23 @@ export class OrderService {
 
     const result = await (externalTx ? run(externalTx) : this.prisma.$transaction(run));
     // M29 (specs/29-notifications.md): fired after commit, never inside
-    // the transaction itself - same "authoritative state change already
-    // committed" discipline as notifyOrderConfirmed.
-    if (!result.exchangeId) {
-      const order = await this.prisma.order.findUnique({ where: { id: result.orderId }, select: { customerId: true, orderNumber: true } });
-      if (order?.customerId) {
-        await this.notifications.notify(
-          'ORDER_SHIPPED',
-          order.customerId,
-          result.id,
-          `Your order ${order.orderNumber} has shipped${opts?.trackingRef ? ` (tracking: ${opts.trackingRef})` : ''}.`,
-        );
-      }
-    }
+    // the transaction itself. With a caller's transaction (courier
+    // booking), that transaction has not committed yet, so the caller
+    // sends the message after its own commit (notifyFulfilmentShipped).
+    if (!externalTx) await this.notifyFulfilmentShipped(result.id, opts?.trackingRef);
     return result;
+  }
+
+  /** The customer's "shipped" message for a package. Call only after the shipping transaction has committed. */
+  async notifyFulfilmentShipped(fulfilmentId: string, trackingRef?: string | null) {
+    const f = await this.prisma.orderFulfilment.findUnique({ where: { id: fulfilmentId }, select: { exchangeId: true, status: true, order: { select: { customerId: true, orderNumber: true } } } });
+    if (!f || f.exchangeId || !f.order.customerId || (f.status !== 'SHIPPED' && f.status !== 'DELIVERED')) return;
+    await this.notifications.notify(
+      'ORDER_SHIPPED',
+      f.order.customerId,
+      fulfilmentId,
+      `Your order ${f.order.orderNumber} has shipped${trackingRef ? ` (tracking: ${trackingRef})` : ''}.`,
+    );
   }
 
   /**
@@ -1082,19 +1088,23 @@ export class OrderService {
     };
 
     const result = await (externalTx ? run(externalTx) : this.prisma.$transaction(run));
-    // M29 (specs/29-notifications.md): fired after commit only.
-    if (result.exchange?.status === 'COMPLETED') {
-      const order = await this.prisma.order.findUnique({ where: { id: result.orderId }, select: { customerId: true, orderNumber: true } });
-      if (order?.customerId) {
-        await this.notifications.notify(
-          'EXCHANGE_COMPLETED',
-          order.customerId,
-          result.exchange.id,
-          `Your exchange for order ${order.orderNumber} is complete - the replacement has been delivered.`,
-        );
-      }
-    }
+    // M29 (specs/29-notifications.md): fired after commit only. With a
+    // caller's transaction (a carrier delivery event), the caller sends it
+    // after its own commit (notifyFulfilmentDelivered).
+    if (!externalTx) await this.notifyFulfilmentDelivered(result.id);
     return result;
+  }
+
+  /** The customer's message when a delivered package completes an exchange. Call only after the delivery transaction has committed. */
+  async notifyFulfilmentDelivered(fulfilmentId: string) {
+    const f = await this.prisma.orderFulfilment.findUnique({ where: { id: fulfilmentId }, select: { exchange: { select: { id: true, status: true } }, order: { select: { customerId: true, orderNumber: true } } } });
+    if (f?.exchange?.status !== 'COMPLETED' || !f.order.customerId) return;
+    await this.notifications.notify(
+      'EXCHANGE_COMPLETED',
+      f.order.customerId,
+      f.exchange.id,
+      `Your exchange for order ${f.order.orderNumber} is complete - the replacement has been delivered.`,
+    );
   }
 
   /**

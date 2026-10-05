@@ -18,6 +18,18 @@ import { recordAudit } from '../audit/service.js';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+/**
+ * Where a package really is (AO-D5). A package is marked shipped when it is
+ * booked with a courier (the sale is posted then), so "shipped" alone does
+ * not say whether the courier has it. The admin shows this stage instead.
+ */
+export type DispatchStage = 'PENDING' | 'PACKED' | 'READY_TO_SHIP' | 'SHIPPED' | 'BOOKED_AWAITING_COLLECTION' | 'HANDED_OVER' | 'DELIVERED';
+
+export function dispatchStage(fulfilmentStatus: string, shipment: { handedOverAt: Date | null } | null | undefined): DispatchStage {
+  if (fulfilmentStatus === 'SHIPPED' && shipment) return shipment.handedOverAt ? 'HANDED_OVER' : 'BOOKED_AWAITING_COLLECTION';
+  return fulfilmentStatus as DispatchStage;
+}
+
 export interface DispatchSettingsValue {
   requireScanAtPick: boolean;
   requireScanAtPack: boolean;
@@ -30,6 +42,9 @@ export interface ParcelInput {
   widthCm?: number;
   heightCm?: number;
 }
+
+/** Most parcels the handover page lists at once (oldest first). */
+export const HANDOVER_LIST_LIMIT = 500;
 
 const DEFAULTS: DispatchSettingsValue = { requireScanAtPick: false, requireScanAtPack: false, requireParcelMeasurements: false };
 
@@ -189,18 +204,26 @@ export class DispatchService {
     };
   }
 
-  /** Parcels booked with a courier and not yet handed over, oldest first. */
+  /**
+   * Parcels booked with a courier and not yet handed over, oldest first.
+   * At most HANDOVER_LIST_LIMIT are listed; `total` says how many there are,
+   * so the page can say when it shows only the oldest.
+   */
   async awaitingHandover() {
+    const where = { status: 'BOOKED' as const, handedOverAt: null };
+    const total = await this.prisma.shipment.count({ where });
     const shipments = await this.prisma.shipment.findMany({
-      where: { status: 'BOOKED', handedOverAt: null },
+      where,
       orderBy: { bookedAt: 'asc' },
-      take: 500,
+      take: HANDOVER_LIST_LIMIT,
       include: {
         order: { select: { orderNumber: true } },
         fulfilment: { select: { id: true, parcelWeightGrams: true, exchange: { select: { exchangeNumber: true } }, lines: { where: { status: { not: 'CANCELLED' } }, select: { quantity: true } } } },
       },
     });
     return {
+      total,
+      limit: HANDOVER_LIST_LIMIT,
       shipments: shipments.map((s) => ({
         id: s.id,
         provider: s.provider,
@@ -224,6 +247,15 @@ export class DispatchService {
     const ids = [...new Set(shipmentIds)];
     if (ids.length === 0) throw new ValidationError('Choose at least one parcel');
     return this.prisma.$transaction(async (tx) => {
+      // Lock the parcels first (in a fixed order), so two people confirming
+      // the same parcels at once are serialised: the second sees them as
+      // already handed over and records nothing in their name.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM shipments WHERE id = ANY(${ids}::text[]) ORDER BY id FOR UPDATE`;
+      if (locked.length !== ids.length) {
+        const missingId = ids.find((id) => !locked.some((r) => r.id === id))!;
+        throw new NotFoundError('Shipment', missingId);
+      }
       const found = await tx.shipment.findMany({ where: { id: { in: ids } }, select: { id: true, status: true, handedOverAt: true, orderId: true } });
       const missing = ids.filter((id) => !found.some((s) => s.id === id));
       if (missing.length > 0) throw new NotFoundError('Shipment', missing[0]!);

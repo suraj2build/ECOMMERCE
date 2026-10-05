@@ -46,6 +46,8 @@ interface OrderLine {
 interface Fulfilment {
   id: string;
   status: string;
+  /** Booked with a courier vs actually collected (AO-D5). */
+  dispatchStage?: string;
   carrierName: string | null;
   trackingRef: string | null;
   packedAt: string | null;
@@ -396,7 +398,7 @@ export default function OrderDetailPage() {
               <div key={f.id} className="card" style={{ background: 'var(--color-surface-muted)' }}>
                 <div className="row" style={{ justifyContent: 'space-between' }}>
                   <strong>
-                    Package {i + 1} <StatusBadge status={f.status} />
+                    Package {i + 1} <StatusBadge status={f.dispatchStage ?? f.status} />
                   </strong>
                   <span className="muted">{o.lines.filter((l) => l.fulfilmentId === f.id).map((l) => `${l.styleName} ${l.sizeLabel}`).join(', ')}</span>
                 </div>

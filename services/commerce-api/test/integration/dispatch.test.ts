@@ -4,6 +4,7 @@ import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
 import { MockCarrierProvider } from '../../src/modules/shipping/provider.js';
+import { OrderService } from '../../src/modules/order/service.js';
 
 const GUEST_HEADER = 'x-guest-session-id';
 const PINCODE = '110001';
@@ -250,6 +251,71 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       expect((await app.inject({ method: 'GET', url: `/api/v1/orders/fulfilments/${f.id}/documents`, headers: auth(owner.token) })).statusCode).toBe(200);
       const outsider = await createAuthenticatedStaff(app, ['MARKETING']);
       expect((await app.inject({ method: 'GET', url: `/api/v1/orders/fulfilments/${f.id}/documents`, headers: auth(outsider.token) })).statusCode).toBe(403);
+    });
+
+    it('the admin shows "booked, awaiting collection" until the handover, then "handed over"; the filters split them', async () => {
+      const { o, f } = await readyPackage('8901000000127');
+      expect((await book(f.id)).statusCode).toBe(201);
+      const list = async (status: string) =>
+        (await app.inject({ method: 'GET', url: `/api/v1/admin/fulfilments?status=${status}`, headers: auth() })).json().items as Array<{ id: string; dispatchStage: string }>;
+      expect(await list('BOOKED_AWAITING_COLLECTION')).toEqual([expect.objectContaining({ id: f.id, dispatchStage: 'BOOKED_AWAITING_COLLECTION' })]);
+      expect(await list('HANDED_OVER')).toEqual([]);
+      const orderView = async () => (await app.inject({ method: 'GET', url: `/api/v1/orders/${o.id}`, headers: auth() })).json().fulfilments[0];
+      expect((await orderView()).dispatchStage).toBe('BOOKED_AWAITING_COLLECTION');
+
+      const shipment = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } });
+      await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [shipment.id] } });
+      expect(await list('BOOKED_AWAITING_COLLECTION')).toEqual([]);
+      expect(await list('HANDED_OVER')).toEqual([expect.objectContaining({ id: f.id, dispatchStage: 'HANDED_OVER' })]);
+      expect(await orderView()).toMatchObject({ status: 'SHIPPED', dispatchStage: 'HANDED_OVER' });
+      expect((await orderView()).shipment.handedOverAt).not.toBeNull();
+    });
+
+    it('two people confirming the same parcel at once record one handover, in one name', async () => {
+      const { f } = await readyPackage('8901000000134');
+      await book(f.id);
+      const shipment = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } });
+      const second = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
+      const results = await Promise.all(
+        [staff.token, second.token].map((t) => app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(t), payload: { shipmentIds: [shipment.id] } })),
+      );
+      const bodies = results.map((r) => r.json() as { recorded: number; alreadyHandedOver: number });
+      expect(bodies.map((b) => b.recorded).sort()).toEqual([0, 1]);
+      const audits = await testPrisma.auditLog.findMany({ where: { action: 'shipping.handover', entityId: shipment.id } });
+      expect(audits).toHaveLength(1);
+      expect(audits[0]!.actorStaffId).toBe((await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).handedOverByStaffId);
+    });
+
+    it('the handover list says how many parcels are waiting in all', async () => {
+      const { f } = await readyPackage('8901000000141');
+      await book(f.id);
+      const res = (await app.inject({ method: 'GET', url: '/api/v1/shipments/handover', headers: auth() })).json();
+      expect(res).toMatchObject({ total: 1, limit: 500 });
+      expect(res.shipments).toHaveLength(1);
+    });
+
+    it('the "shipped" message is sent after the booking commits, never for a booking that rolled back', async () => {
+      const { o, f } = await readyPackage('8901000000158');
+      const customer = await testPrisma.customer.create({ data: { mobile: `98${String(10_000_000 + counter).slice(0, 8)}`, fullName: 'Asha Rao' } });
+      await testPrisma.order.update({ where: { id: o.id }, data: { customerId: customer.id, guestSessionId: null } });
+
+      // The booking's own transaction fails after the package was marked shipped inside it.
+      const original = OrderService.prototype.markFulfilmentShipped;
+      const spy = vi.spyOn(OrderService.prototype, 'markFulfilmentShipped').mockImplementationOnce(async function (this: OrderService, ...args: Parameters<OrderService['markFulfilmentShipped']>) {
+        await original.apply(this, args);
+        throw new Error('simulated failure before the booking commits');
+      });
+      expect((await book(f.id)).statusCode).toBe(500);
+      spy.mockRestore();
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('READY_TO_SHIP');
+      expect(await testPrisma.notificationDelivery.count({ where: { event: 'ORDER_SHIPPED' } })).toBe(0);
+
+      // The retry books it, and the message goes out once.
+      expect((await book(f.id)).statusCode).toBe(201);
+      const sent = await testPrisma.notificationDelivery.findMany({ where: { event: 'ORDER_SHIPPED' } });
+      expect(sent.length).toBeGreaterThan(0);
+      expect(sent.every((d) => d.referenceId === f.id && d.customerId === customer.id)).toBe(true);
+      expect(sent.some((d) => d.status === 'SENT')).toBe(true);
     });
 
     it('refuses to hand over a parcel that is not booked', async () => {

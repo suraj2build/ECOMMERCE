@@ -12,6 +12,8 @@ interface FulfilmentRow {
   orderId: string;
   exchangeId: string | null;
   status: string;
+  /** Booked with a courier vs actually collected (AO-D5). */
+  dispatchStage: string;
   carrierName: string | null;
   trackingRef: string | null;
   packedAt: string | null;
@@ -20,7 +22,7 @@ interface FulfilmentRow {
   createdAt: string;
   order: { orderNumber: string };
   exchange: { exchangeNumber: string } | null;
-  shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number; maxDeliveryAttempts: number } | null;
+  shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number; maxDeliveryAttempts: number; bookedAt: string | null; handedOverAt: string | null } | null;
   _count: { lines: number };
 }
 
@@ -66,7 +68,15 @@ export default function FulfilmentsPage() {
           label="Status"
           value={status}
           placeholder="All statuses"
-          options={['PENDING', 'PACKED', 'READY_TO_SHIP', 'SHIPPED', 'DELIVERED'].map((s) => ({ value: s, label: s.replace(/_/g, ' ').toLowerCase() }))}
+          options={[
+            { value: 'PENDING', label: 'Pending' },
+            { value: 'PACKED', label: 'Packed' },
+            { value: 'READY_TO_SHIP', label: 'Ready to ship' },
+            { value: 'BOOKED_AWAITING_COLLECTION', label: 'Booked — awaiting collection' },
+            { value: 'HANDED_OVER', label: 'Handed over to the courier' },
+            { value: 'SHIPPED', label: 'Shipped (booked or handed over)' },
+            { value: 'DELIVERED', label: 'Delivered' },
+          ]}
           onChange={(v) => {
             setStatus(v);
             setSkip(0);
@@ -96,7 +106,20 @@ export default function FulfilmentsPage() {
                     ),
                 },
                 { header: 'Contents', cell: (f) => (f.exchangeId ? 'Exchange replacement' : `${f._count.lines} order line(s)`) },
-                { header: 'Status', cell: (f) => <StatusBadge status={f.status} /> },
+                {
+                  header: 'Status',
+                  cell: (f) => (
+                    <>
+                      <StatusBadge status={f.dispatchStage} />
+                      {f.dispatchStage === 'BOOKED_AWAITING_COLLECTION' && <div className="muted">Stock already deducted at booking</div>}
+                      {f.dispatchStage === 'HANDED_OVER' && f.shipment?.handedOverAt && (
+                        <div className="muted">
+                          <DateText value={f.shipment.handedOverAt} withTime />
+                        </div>
+                      )}
+                    </>
+                  ),
+                },
                 {
                   header: 'Shipment',
                   cell: (f) =>

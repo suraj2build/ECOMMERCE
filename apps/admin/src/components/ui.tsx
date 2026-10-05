@@ -151,6 +151,8 @@ const STATUS_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 
   PACKED: 'info',
   READY_TO_SHIP: 'info',
   SHIPPED: 'info',
+  BOOKED_AWAITING_COLLECTION: 'warning',
+  HANDED_OVER: 'info',
   IN_TRANSIT: 'info',
   OUT_FOR_DELIVERY: 'info',
   DELIVERED: 'success',
@@ -179,9 +181,14 @@ const STATUS_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 
   SUCCESS: 'success',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  BOOKED_AWAITING_COLLECTION: 'Booked — awaiting collection',
+  HANDED_OVER: 'Handed over',
+};
+
 export function StatusBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="muted">—</span>;
-  return <span className={`badge ${STATUS_TONES[status] ?? 'neutral'}`}>{humanize(status)}</span>;
+  return <span className={`badge ${STATUS_TONES[status] ?? 'neutral'}`}>{STATUS_LABELS[status] ?? humanize(status)}</span>;
 }
 
 export function YesNo({ value }: { value: boolean }) {

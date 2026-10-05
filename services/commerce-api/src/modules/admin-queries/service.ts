@@ -1,3 +1,4 @@
+import { dispatchStage } from '../dispatch/service.js';
 import type { Prisma, PrismaClient } from '@fcp/db';
 import type { PermissionKey } from '@fcp/shared';
 import { availableAtLocation } from '../inventory/service.js';
@@ -218,7 +219,16 @@ export class AdminQueryService {
 
   /** Fulfilment queue (pack / ready-to-ship / ship / deliver work), order- and exchange-sourced alike. */
   async listFulfilments(params: { status?: string; take?: number; skip?: number }) {
-    const where: Prisma.OrderFulfilmentWhereInput = params.status ? { status: params.status as never } : {};
+    // AO-D5: a booked package is SHIPPED whether or not the courier has
+    // collected it; these two filters split it by the recorded handover.
+    const where: Prisma.OrderFulfilmentWhereInput =
+      params.status === 'BOOKED_AWAITING_COLLECTION'
+        ? { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } }
+        : params.status === 'HANDED_OVER'
+          ? { status: 'SHIPPED', shipment: { is: { handedOverAt: { not: null } } } }
+          : params.status
+            ? { status: params.status as never }
+            : {};
     const [items, total] = await Promise.all([
       this.prisma.orderFulfilment.findMany({
         where,
@@ -235,7 +245,7 @@ export class AdminQueryService {
           createdAt: true,
           order: { select: { orderNumber: true } },
           exchange: { select: { exchangeNumber: true } },
-          shipment: { select: { id: true, provider: true, status: true, trackingRef: true, deliveryAttempts: true, maxDeliveryAttempts: true } },
+          shipment: { select: { id: true, provider: true, status: true, trackingRef: true, deliveryAttempts: true, maxDeliveryAttempts: true, bookedAt: true, handedOverAt: true, handoverSource: true } },
           _count: { select: { lines: true } },
         },
         orderBy: { createdAt: 'asc' },
@@ -244,7 +254,7 @@ export class AdminQueryService {
       }),
       this.prisma.orderFulfilment.count({ where }),
     ]);
-    return { items, total };
+    return { items: items.map((f) => ({ ...f, dispatchStage: dispatchStage(f.status, f.shipment) })), total };
   }
 
   /** Staff who hold `holds`, for the co-approver / sign-off pickers. Identity only - never credentials. */

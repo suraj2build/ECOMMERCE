@@ -26,7 +26,7 @@ const STEPS: Record<Step, { label: string; perm: string; body: string }> = {
   shipment: {
     label: 'Book shipment with carrier',
     perm: 'shipping:manage',
-    body: 'Books the shipment with the configured carrier. The parcel weight and size recorded at packing are sent with the booking. A retry uses the same request key, so it never double-books. Handing the parcel to the courier is confirmed separately on the Courier handover page.',
+    body: 'Books the shipment with the configured carrier. The parcel weight and size recorded at packing are sent with the booking. A retry uses the same request key, so it never double-books. Booking takes the units out of stock and marks the package shipped now; it shows as "Booked — awaiting collection" until the handover to the courier is confirmed on the Courier handover page.',
   },
   ship: { label: 'Mark shipped manually', perm: 'order:fulfil', body: 'Records a shipment handed over outside the carrier integration.' },
   deliver: { label: 'Mark delivered', perm: 'order:fulfil', body: 'Records delivery. Normally the carrier reports this.' },

@@ -138,7 +138,8 @@ export class ShippingService {
       throw new ValidationError(booking.message ?? `Carrier '${this.provider.name}' is currently unavailable - please retry`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    let claimedBooking = false;
+    const booked = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.shipment.updateMany({
         where: { id: shipment.id, status: 'CREATED' },
         data: {
@@ -150,6 +151,7 @@ export class ShippingService {
       });
 
       if (claimed.count > 0) {
+        claimedBooking = true;
         await this.order.markFulfilmentShipped(
           fulfilmentId,
           staffId,
@@ -163,6 +165,9 @@ export class ShippingService {
 
       return tx.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
     });
+    // Sent only now that the booking has committed (never from inside it).
+    if (claimedBooking) await this.order.notifyFulfilmentShipped(fulfilmentId, booking.trackingRef);
+    return booked;
   }
 
   private async resolveOrCreateShipmentIntent(
@@ -444,6 +449,7 @@ export class ShippingService {
    * COMPLETED.
    */
   private async applyTrackingUpdate(shipmentId: string, normalizedStatus: NormalizedTrackingStatus, occurredAt: Date): Promise<void> {
+    let deliveredFulfilmentId: string | null = null;
     await this.prisma.$transaction(async (tx) => {
       const shipment = await this.lockShipment(tx, shipmentId);
       if (!shipment) throw new NotFoundError('Shipment', shipmentId);
@@ -492,6 +498,7 @@ export class ShippingService {
 
       if (normalizedStatus === 'DELIVERED') {
         await this.order.markFulfilmentDelivered(shipment.fulfilmentId, null, tx);
+        deliveredFulfilmentId = shipment.fulfilmentId;
       }
 
       if (normalizedStatus === 'RTO_DELIVERED') {
@@ -529,6 +536,7 @@ export class ShippingService {
         }
       }
     });
+    if (deliveredFulfilmentId) await this.order.notifyFulfilmentDelivered(deliveredFulfilmentId);
   }
 
   /**
