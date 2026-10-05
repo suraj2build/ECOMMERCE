@@ -73,7 +73,8 @@ const NEXT_FOR: Record<string, string> = {
  * is decided by the server and its refusal is shown as-is. The same
  * controls serve order- and exchange-sourced fulfilments.
  */
-export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: FulfilmentLike; onChanged: () => void }) {
+/** `onChanged` receives the step's own confirmation, for screens that close their panel and show it elsewhere. */
+export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: FulfilmentLike; onChanged: (done: string) => void }) {
   const action = useAction();
   const [step, setStep] = useState<Step | null>(null);
   const [key, setKey] = useState('');
@@ -119,7 +120,7 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
       setScans([]);
       setWeight('');
       setDims({ l: '', w: '', h: '' });
-      onChanged();
+      onChanged(STEPS[s].done);
     }
   }
 

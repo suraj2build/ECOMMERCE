@@ -236,8 +236,8 @@ export default function FulfilmentsPage() {
             </p>
             <FulfilmentActions
               fulfilment={open}
-              onChanged={() => {
-                setUpdated(`Package for ${open.exchange ? open.exchange.exchangeNumber : open.order.orderNumber} updated.`);
+              onChanged={(done) => {
+                setUpdated(`${open.exchange ? open.exchange.exchangeNumber : open.order.orderNumber}: ${done}`);
                 setOpen(null);
                 rows.reload();
               }}

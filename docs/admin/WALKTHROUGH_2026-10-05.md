@@ -90,6 +90,42 @@ listed under "Tests" below.
 | W-23 | Staff | **Significant.** There is no screen to add staff, give them roles, deactivate them or reset a password. The API exists; its comment promised an admin screen that was never built. Without it, independent approval needs someone to use the API | **Report.** Needs your go-ahead to build |
 | W-24 | Approvals | A waiting request showed nowhere until the approver opened Approvals | **Fixed.** The Overview shows "Approvals waiting for you" to anyone who can be named as an approver |
 
+## Re-checked on the rebuilt app
+
+After the fixes, the key screens were driven again on the same
+walkthrough data, in the production build. Each item was seen on screen:
+
+- **Product basics.** A duplicate style code now shows "Style with this
+  style code already exists. Use a different style code." in view
+  alongside the Save button (W-2).
+- **Pricing.** The price history is full width with every column
+  readable (W-4).
+- **Purchase orders.**
+  - A new draft offers only Submit for approval and Cancel order, with a
+    "next step" line.
+  - After submitting, it offers Approve, Reject and Cancel order (W-6,
+    W-7).
+- **Picking.**
+  - A wrong scan reports "Wrong item: this barcode is not Pique Polo ·
+    Navy · S. Put it back and scan the right one." as soon as Enter is
+    pressed.
+  - The right scan is confirmed, and each recorded pick points to Pack &
+    ship (W-12, W-13).
+- **Pack & ship.**
+  - The picked order is listed under "Picked, waiting for a package", and
+    "Create package" works from there (W-14).
+  - In the pack dialog, each item shows "n of m scanned", and a unit
+    that is not in the package is named (W-17).
+  - The Overview shows the dispatch counts.
+
+**Two more gaps found in this pass, and fixed:**
+
+- Pack & ship confirmed every step with "Package for … updated.", so the
+  step's own next-step message was lost there. It now shows, e.g.,
+  "ORD-…: Packed. Next: mark it ready to ship."
+- The product header still read "Can be bought" with no stock. It now
+  reads "On sale, sold out", matching the readiness card.
+
 ## Not changed, and why
 
 - **AO-D5 (booking vs handover).** Your reviewer recommended option B on

@@ -70,7 +70,7 @@ export default function ProductWorkspace() {
                       {r && (
                         <>
                           {' '}
-                          · {r.purchasable.ok ? 'Can be bought' : 'Not on sale'} · {r.stock.availableUnits} in stock
+                          · {!r.purchasable.ok ? 'Not on sale' : r.stock.availableUnits === 0 ? 'On sale, sold out' : 'Can be bought'} · {r.stock.availableUnits} in stock
                         </>
                       )}
                     </>

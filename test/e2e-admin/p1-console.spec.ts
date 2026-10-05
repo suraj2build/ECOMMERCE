@@ -282,7 +282,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await page.getByRole('row').filter({ hasText: order.orderNumber }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: 'Book shipment with carrier' }).click();
     await confirmDialog(page, 'Book shipment with carrier');
-    await expect(page.getByText(`Package for ${order.orderNumber} updated.`)).toBeVisible();
+    await expect(page.getByText(`${order.orderNumber}: Booked with the courier. When they collect it, confirm the handover on the Courier handover page.`)).toBeVisible();
 
     const shipment = await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } });
     expect(shipment.provider).toBe('MOCK');
