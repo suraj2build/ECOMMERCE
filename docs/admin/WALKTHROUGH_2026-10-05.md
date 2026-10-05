@@ -125,3 +125,17 @@ listed under "Tests" below.
   - `grn-adversarial.test.ts`;
   - `approvals.spec.ts`;
   - `p1-console.spec.ts`.
+- **Browser (`p1-console.spec.ts`, AO-10).** The picked order is now
+  packaged from Pack & ship's "Picked, waiting for a package" list rather
+  than from the order page; the order-page route stays covered by P1-05.
+- **Browser (`admin-ops-phase1.spec.ts`, AO-08).** Checks the "Not yet"
+  readiness state and the no-stock warning.
+
+### Defect the browser tests found (fixed before push)
+
+The first browser run had 87 passed and 2 failed (AO-09 and P1-02). Both
+failed on the same real defect: after a purchase order was submitted or
+approved, the success message was rendered twice. One copy was on the
+page and the other inside the closed confirmation dialog, which a screen
+reader could also reach. The dialog now shows only a refusal. The whole
+browser suite was then rerun from a fresh database.

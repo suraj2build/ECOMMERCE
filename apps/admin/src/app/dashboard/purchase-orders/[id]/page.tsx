@@ -305,7 +305,8 @@ export default function PurchaseOrderDetail() {
             onConfirm={() => decision && void decide(decision)}
           >
             <p>{decision && DECISIONS[decision].body}</p>
-            <ActionMessage message={action.message} />
+            {/* Only a refusal belongs here: the dialog closes on success and the page shows the result. */}
+            {action.message?.kind === 'error' && <ActionMessage message={action.message} />}
             {decision && DECISIONS[decision].comment && <TextArea label="Comment (optional)" value={comment} onChange={setComment} />}
             {decision === 'approve' && approvingOwn && <SelfApprovalFields what="purchase order" state={selfApproval} />}
           </ConfirmDialog>
