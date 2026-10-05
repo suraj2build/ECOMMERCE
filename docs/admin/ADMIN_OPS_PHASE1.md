@@ -399,6 +399,26 @@ Open, for a decision or a later pass:
   which changes the stored file. Recorded as `DECISION_REQUIRED`
   (`AO-D6` in `blueprint/DECISION_REGISTER.md`).
 
+### Test record for this change
+
+Final local run on the pushed head of this change:
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Unit (`commerce-api`) | 17 | 90 | 0 | 0 |
+| Unit (other workspaces) | 5 | 21 | 0 | 0 |
+| Integration, with the S3 emulator | 64 | 964 | 0 | 0 |
+| Browser (storefront, admin, API smoke) | — | 89 | 0 | 0 |
+
+Lint and typecheck are clean in every workspace; read-load and
+checkout-contention load checks passed.
+
+**Defect history.** The first browser run had 88 passed and 1 failed:
+P1-06 selected the Pack & ship filter option "ready to ship", which this
+change renamed to "Ready to ship" when it added the dispatch stages. The
+test was updated to the new label (the step it checks is unchanged) and
+the whole browser suite was rerun from a fresh database.
+
 ### Next, as asked
 
 1. The AO-D5 decision on moving stock posting to handover.

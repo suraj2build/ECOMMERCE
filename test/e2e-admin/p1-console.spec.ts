@@ -278,7 +278,7 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
     await page.getByRole('link', { name: 'Pack & ship' }).click();
-    await page.getByLabel('Status').selectOption({ label: 'ready to ship' });
+    await page.getByLabel('Status').selectOption({ label: 'Ready to ship' });
     await page.getByRole('row').filter({ hasText: order.orderNumber }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: 'Book shipment with carrier' }).click();
     await confirmDialog(page, 'Book shipment with carrier');
