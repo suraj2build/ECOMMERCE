@@ -145,3 +145,16 @@ listed under "Tests" below.
   receipt exceptions, now show at the top of the purchase order page.
 
 Each time, the whole browser suite was rerun from a fresh database.
+
+### Test record (local, before push)
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Unit (`commerce-api`) | 17 | 90 | 0 | 0 |
+| Unit (other workspaces) | 5 | 21 | 0 | 0 |
+| Integration | 64 | 960 | 0 | 5 (S3 emulator only) |
+| Integration, S3 file with the emulator | 1 | 6 | 0 | 0 |
+| Browser (storefront, admin, API smoke), third run | — | 89 | 0 | 0 |
+
+Lint and typecheck are clean. The read-load and checkout-contention
+checks passed.
