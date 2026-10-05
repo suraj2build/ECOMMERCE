@@ -2931,6 +2931,14 @@ Decided by the Product Owner in the review of Admin Ops Phase 1
   collection" package status and a rule for cancelling a booked parcel. **DECISION_REQUIRED** — the
   Product Owner chooses A, B or C before the posting point moves. Any tax
   consequence stays TAX/COMPLIANCE REVIEW REQUIRED.
+- **Recommendation received (2026-10-05, after `57f0f53`), not an
+  approval:** the Product Owner's reviewer recommends option B — booking
+  only reserves the parcel; the actual handover posts the stock sale,
+  marks the package shipped and sends the customer's message; staff may
+  cancel a booked parcel before handover after confirming the courier
+  cancellation. The reviewer stated this is a recommendation, not an
+  approval recorded on the owner's behalf, so the status stays
+  **DECISION_REQUIRED** and nothing has been built for it yet.
 - **Still open (business):** B-2 (scan required at pick, pack or both) and
   B-3 (measured parcel weight vs product weights) are left to the owner as
   admin settings, off by default, rather than decided by engineering.
@@ -2948,3 +2956,8 @@ Decided by the Product Owner in the review of Admin Ops Phase 1
   colour profile; (b) keep files as uploaded and tell staff to remove
   location before upload; (c) strip GPS only.
 - **Engineering:** nothing changed; uploads are stored as uploaded.
+- **Recommendation received (2026-10-05, after `57f0f53`), not an
+  approval:** option (a) — strip camera metadata from public product and
+  content uploads automatically, keeping orientation and the colour
+  profile; private return-evidence photos are handled separately. Status
+  stays **DECISION_REQUIRED** until the Product Owner approves it.

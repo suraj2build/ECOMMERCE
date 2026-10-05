@@ -6,6 +6,37 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-05 (walkthrough): `SOLO-OWNER DESKTOP WALKTHROUGH
+RUN AND ITS SCREEN DEFECTS FIXED ON claude/admin-ops-phase1 — AWAITING
+REVIEW; AO-D5/AO-D6 RECOMMENDED BUT NOT APPROVED.`** After CI passed on
+`57f0f53`, the Product Owner asked for one desktop walkthrough (publish,
+receive with owner approval, pick/pack/print, book/hand over/track,
+failure cases) before more features. Record:
+`docs/admin/WALKTHROUGH_2026-10-05.md`.
+
+- **Fixed.** Next steps and states are now clear:
+  - picked orders now appear on Pack & ship under "Picked, waiting for
+    a package", and the page opens on work in progress;
+  - only actions valid for the current status are offered on purchase
+    orders, packages and order lines;
+  - refused dialogs keep what was typed, and own-approval is disabled
+    with the reason;
+  - messages use plain words, and errors on long forms scroll into
+    view;
+  - readiness says "Not yet" when there is no stock;
+  - documents warn when the warehouse address is missing;
+  - pick and pack scans name the item;
+  - the Overview shows approvals waiting for you and dispatch counts.
+- **AO-D5 (option B) and AO-D6 (strip metadata)** were *recommended* by
+  the Product Owner's reviewer, explicitly not approved. Both stay
+  `DECISION_REQUIRED`, and nothing is built for them.
+- **Reported, not built:** a staff management screen (W-23), and the
+  delivery-area list (W-11, which comes with the courier, LR-008).
+
+Next as asked, once approved: the handover change (AO-D5), the courier
+(LR-008), then promotion templates, basket simulation and campaign
+configuration. Not self-certified; no go-live claimed.
+
 **Status as of 2026-10-05 (second admin review): `INDEPENDENT APPROVAL
 QUEUE AND DISPATCH STAGES BUILT, CODE REVIEW FIXES APPLIED ON
 claude/admin-ops-phase1 — AWAITING IMPLEMENTATION REVIEW; AO-D5 AND AO-D6

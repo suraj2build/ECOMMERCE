@@ -426,3 +426,39 @@ the whole browser suite was rerun from a fresh database.
    courier has been chosen** (`LR-008` is `DECISION_REQUIRED`), so this
    cannot start until one is.
 3. Promotion templates, basket simulation and campaign configuration.
+
+## Solo-owner walkthrough (2026-10-05, after `57f0f53`)
+
+The Product Owner asked for one desktop walkthrough before more features
+are added. The five steps were:
+
+1. Publish a product.
+2. Receive stock with owner approval.
+3. Pick, pack, measure and print an order.
+4. Book the parcel, hand it over and track it.
+5. Handle failures.
+
+At each screen the question was whether the next action is obvious,
+typed work is kept, and failures are explained. The full report, with
+each finding and what was done, is
+[`WALKTHROUGH_2026-10-05.md`](WALKTHROUGH_2026-10-05.md).
+
+- **Fixed (the larger items).**
+  - Picked orders had no visible next step. Pack & ship now has a
+    "Picked, waiting for a package" list.
+  - Pack & ship hid most work behind a Pending filter.
+  - Purchase order, package and order-line actions were offered in
+    states where they cannot apply.
+  - Own-approval and refused dialogs lost what was typed or gave
+    misleading errors.
+  - Messages used internal status and field names.
+  - Errors on long forms were shown off-screen.
+  - Readiness said "can be bought" with no stock.
+  - Documents gave no warning when the warehouse address was missing.
+  - Waiting approvals were not visible on the Overview.
+- **Reported, not built:**
+  - a staff management screen (W-23; needs a go-ahead);
+  - the delivery-area list (W-11; comes with the courier, LR-008).
+- **Recommendations recorded, not approved:** AO-D5 option B and AO-D6
+  metadata stripping, both still `DECISION_REQUIRED` in
+  `blueprint/DECISION_REGISTER.md`. Neither has been built.
