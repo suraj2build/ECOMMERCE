@@ -21,8 +21,10 @@ import { ProductService, skuCodePart, type CreateStyleInput } from './service.js
  *   reserves anything.
  * - Validation (dry run) reads only. Apply works product by product: a
  *   product with any row error is skipped whole; other products go ahead.
- *   Nothing is rolled back - a failure part-way through one product leaves
- *   what was already saved, and re-running the batch finishes it.
+ *   Each product is saved in one transaction (see apply), so a failure or
+ *   crash part-way leaves that product exactly as it was; re-running the
+ *   batch saves it. Products already saved come back as "unchanged".
+ * - Prices are appended to the price history, never edited or deleted.
  */
 
 export const IMPORT_COLUMNS = [
@@ -73,6 +75,8 @@ interface PlannedVariant {
   result: RowResult;
 }
 
+type Db = Prisma.TransactionClient;
+
 interface PlannedStyle {
   styleCode: string;
   existing: Awaited<ReturnType<ImportService['loadStyle']>>;
@@ -87,23 +91,17 @@ interface PlannedStyle {
 }
 
 export class ImportService {
-  private readonly products: ProductService;
-  private readonly catalog: CatalogService;
-
-  constructor(private readonly fastify: FastifyInstance) {
-    this.products = new ProductService(fastify);
-    this.catalog = new CatalogService(fastify);
-  }
+  constructor(private readonly fastify: FastifyInstance) {}
 
   private get prisma() {
     return this.fastify.prisma;
   }
 
-  private async loadReference(): Promise<Reference> {
+  private async loadReference(db: Db): Promise<Reference> {
     const [brands, categories, sizes] = await Promise.all([
-      this.prisma.brand.findMany({ where: { isActive: true } }),
-      this.prisma.category.findMany({ where: { isActive: true } }),
-      this.prisma.size.findMany(),
+      db.brand.findMany({ where: { isActive: true } }),
+      db.category.findMany({ where: { isActive: true } }),
+      db.size.findMany(),
     ]);
     const ref: Reference = { brands: new Map(), categories: new Map(), sizes: new Map() };
     for (const b of brands) {
@@ -118,17 +116,17 @@ export class ImportService {
     return ref;
   }
 
-  private loadStyle(styleCode: string) {
-    return this.prisma.style.findUnique({
+  private loadStyle(db: Db, styleCode: string) {
+    return db.style.findUnique({
       where: { styleCode },
       include: { colours: true, skus: true, media: { select: { url: true } }, prices: true },
     });
   }
 
-  /** Builds the full plan for a batch; reads only. */
-  private async plan(rows: ImportRow[], canWritePrices: boolean): Promise<PlannedStyle[]> {
+  /** Builds the full plan for a batch; reads only (through `db`). */
+  private async plan(rows: ImportRow[], canWritePrices: boolean, db: Db = this.prisma): Promise<PlannedStyle[]> {
     if (rows.length === 0) throw new ValidationError('The batch has no rows');
-    const ref = await this.loadReference();
+    const ref = await this.loadReference(db);
     const groups = new Map<string, ImportRow[]>();
     const orphanResults: PlannedStyle[] = [];
     for (const row of rows) {
@@ -164,7 +162,7 @@ export class ImportService {
 
     const planned: PlannedStyle[] = [];
     for (const [styleCode, groupRows] of groups) {
-      const existing = await this.loadStyle(styleCode);
+      const existing = await this.loadStyle(db, styleCode);
       const style: PlannedStyle = { styleCode, existing, fields: {}, subtitle: null, variants: [], hasError: false, priceByColourKey: new Map(), uniformPrice: null, priceChanges: [] };
       const styleMessages: string[] = [];
 
@@ -281,7 +279,7 @@ export class ImportService {
             if (wantedCode && wantedCode !== sku.skuCode) result.messages.push(`This size already has SKU code ${sku.skuCode}; SKU codes cannot be changed by import`);
           } else {
             if (wantedCode) {
-              const clash = await this.prisma.sku.findUnique({ where: { skuCode: wantedCode } });
+              const clash = await db.sku.findUnique({ where: { skuCode: wantedCode } });
               if (clash) result.messages.push(`SKU code ${wantedCode} is already used by another product`);
             }
             variant.skuCode = wantedCode || null;
@@ -291,7 +289,7 @@ export class ImportService {
           if (barcode) {
             if (!/^[0-9A-Za-z-]{4,64}$/.test(barcode)) result.messages.push('A barcode is 4-64 letters, digits or dashes');
             if ((barcodeRows.get(barcode)?.length ?? 0) > 1) result.messages.push(`Barcode ${barcode} is on rows ${barcodeRows.get(barcode)!.join(', ')}`);
-            const owner = await this.prisma.sku.findUnique({ where: { barcode } });
+            const owner = await db.sku.findUnique({ where: { barcode } });
             if (owner && owner.id !== sku?.id) result.messages.push(`Barcode ${barcode} is already used by ${owner.skuCode}`);
             if (barcode !== sku?.barcode) {
               variant.barcode = barcode;
@@ -356,11 +354,22 @@ export class ImportService {
         if (!same(currentBase(null), style.uniformPrice)) {
           style.priceChanges.push({ colourKey: null, ...style.uniformPrice });
           priced[0]!.result.changes.push(existing?.prices.length ? 'price' : 'new price');
+          const now = new Date();
+          const markdown = existing?.prices.find((p) => p.isMarkdown && p.effectiveFrom <= now && (!p.effectiveTo || p.effectiveTo >= now));
+          if (markdown) {
+            priced[0]!.result.messages.push(
+              `Note: a markdown is running${markdown.effectiveTo ? ` until ${markdown.effectiveTo.toISOString().slice(0, 10)}` : ''}; shoppers see the markdown price until it ends, then this price.`,
+            );
+          }
         }
       } else {
         for (const [key, price] of style.priceByColourKey) {
           const colour = coloursByKey.get(key)!;
-          if (!same(colour.existingId ? currentBase(colour.existingId) : null, price)) {
+          // Compare with the base price this colour sells at now: its own,
+          // else the all-colour price. A colour whose price is not changing
+          // gets no new row.
+          const effective = (colour.existingId ? currentBase(colour.existingId) : null) ?? currentBase(null);
+          if (!same(effective, price)) {
             style.priceChanges.push({ colourKey: key, ...price });
             priced.find((p) => p.colour?.key === key)!.result.changes.push(`price for ${colour.name}`);
           }
@@ -396,81 +405,125 @@ export class ImportService {
     return plan.flatMap((s) => s.variants.map((p) => p.result)).sort((a, b) => a.row - b.row);
   }
 
-  /** Applies one batch and returns per-row outcomes; touched style ids are returned for re-indexing. */
+  /**
+   * Applies one batch and returns per-row outcomes, plus the ids of every
+   * existing product in the batch for re-indexing (saved ones and unchanged
+   * ones alike, so a retry after an interruption also repairs search).
+   *
+   * Each product is saved in ONE transaction: its style, colours, sizes,
+   * prices, images and their audit entries commit together or not at all,
+   * so a failure (or a crash) part-way never leaves a half-built product.
+   * The transaction first takes a lock on the product's style code, then
+   * re-plans that product against the state now committed. Two imports of
+   * the same product therefore run one after the other, and the second
+   * sees the first's work (its rows become "unchanged") instead of
+   * creating the same colour or price twice. Products in a batch are
+   * independent: one failing does not undo the others.
+   */
   async apply(rows: ImportRow[], canWritePrices: boolean, actorStaffId: string): Promise<{ results: RowResult[]; touchedStyleIds: string[] }> {
     const plan = await this.plan(rows, canWritePrices);
     const touched = new Set<string>();
+    const results = new Map<number, RowResult>();
     for (const style of plan) {
+      for (const p of style.variants) results.set(p.row.row, p.result);
       if (style.hasError || !style.styleCode) continue;
-      const pending = style.variants.filter((p) => p.result.outcome === 'create' || p.result.outcome === 'update');
-      if (pending.length === 0) continue;
+      if (!style.variants.some((p) => p.result.outcome === 'create' || p.result.outcome === 'update')) {
+        // Nothing to save, but still re-index: if an earlier run saved this
+        // product and stopped before updating search, the retry repairs it.
+        if (style.existing) touched.add(style.existing.id);
+        continue;
+      }
+      const styleRows = style.variants.map((p) => p.row);
       try {
-        let styleId = style.existing?.id;
-        if (!styleId) {
-          const created = await this.products.createStyle(
-            {
-              ...(style.fields as CreateStyleInput),
-              styleCode: style.styleCode,
-              ...(style.subtitle ? { customAttributes: { subtitle: style.subtitle } } : {}),
-            },
-            actorStaffId,
-          );
-          styleId = created.id;
-        } else if (Object.keys(style.fields).length > 0 || style.subtitle) {
-          await this.products.updateStyle(styleId, { ...style.fields, ...(style.subtitle ? { customAttributes: { subtitle: style.subtitle } } : {}) }, actorStaffId);
-        }
-        touched.add(styleId);
-
-        const colourIds = new Map<string, string>();
-        for (const p of style.variants) {
-          if (!p.colour) continue;
-          if (colourIds.has(p.colour.key)) continue;
-          if (p.colour.existingId) {
-            colourIds.set(p.colour.key, p.colour.existingId);
-            const current = style.existing?.colours.find((c) => c.id === p.colour!.existingId);
-            if (p.colour.hex && current?.hexSwatch?.toLowerCase() !== p.colour.hex.toLowerCase()) {
-              await this.products.updateColour(p.colour.existingId, { hexSwatch: p.colour.hex }, actorStaffId);
-            }
-          } else {
-            const colour = await this.products.addColour(styleId, { name: p.colour.name, colourCode: p.colour.code, ...(p.colour.hex ? { hexSwatch: p.colour.hex } : {}) }, actorStaffId);
-            colourIds.set(p.colour.key, colour.id);
-          }
-        }
-
-        for (const p of style.variants) {
-          if (!p.colour || !p.sizeId) continue;
-          const colourId = colourIds.get(p.colour.key)!;
-          if (p.existingSku) {
-            if (p.barcode) await this.products.updateSku(p.existingSku.id, { barcode: p.barcode }, actorStaffId);
-          } else {
-            const skuCode = p.skuCode ?? (await this.products.uniqueSkuCode(`${style.styleCode}-${p.colour.code}-${skuCodePart(p.sizeLabel!)}`));
-            await this.products.createSku({ styleId, colourId, sizeId: p.sizeId, skuCode, ...(p.barcode ? { barcode: p.barcode } : {}) }, actorStaffId);
-          }
-        }
-
-        for (const change of style.priceChanges) {
-          await this.catalog.setBasePrice(
-            { styleId, ...(change.colourKey ? { colourId: colourIds.get(change.colourKey)! } : {}), mrp: change.mrp, sellingPrice: change.sellingPrice },
-            actorStaffId,
-          );
-        }
-
-        for (const p of style.variants) {
-          if (!p.image) continue;
-          await this.products.addMedia(
-            { styleId, url: p.image.url, ...(p.colour ? { colourId: colourIds.get(p.colour.key)! } : {}), ...(p.image.alt ? { altText: p.image.alt } : {}) },
-            actorStaffId,
-          );
-        }
+        const outcome = await this.prisma.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`product-import:${style.styleCode}`}, 0))`;
+            const [fresh] = await this.plan(styleRows, canWritePrices, tx);
+            if (!fresh || fresh.hasError) return { fresh, styleId: null };
+            const styleId = await this.writeStyle(fresh, tx, actorStaffId);
+            return { fresh, styleId };
+          },
+          { maxWait: 10_000, timeout: 60_000 },
+        );
+        for (const p of outcome.fresh?.variants ?? []) results.set(p.row.row, p.result);
+        if (outcome.styleId) touched.add(outcome.styleId);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        for (const p of pending) {
+        for (const p of style.variants) {
+          if (p.result.outcome !== 'create' && p.result.outcome !== 'update') continue;
           p.result.outcome = 'error';
-          p.result.messages.push(`Stopped while saving this product: ${message}. Anything saved before this point stays; fix the problem and run the import again to finish.`);
+          p.result.messages.push(`Not saved: ${message}. Nothing was changed for ${style.styleCode}; fix the problem and run the import again.`);
         }
       }
     }
-    return { results: plan.flatMap((s) => s.variants.map((p) => p.result)).sort((a, b) => a.row - b.row), touchedStyleIds: [...touched] };
+    return { results: [...results.values()].sort((a, b) => a.row - b.row), touchedStyleIds: [...touched] };
+  }
+
+  /** Writes one planned product inside `tx`; returns its style id (null when nothing needed saving). */
+  private async writeStyle(style: PlannedStyle, tx: Db, actorStaffId: string): Promise<string | null> {
+    const pending = style.variants.filter((p) => p.result.outcome === 'create' || p.result.outcome === 'update');
+    if (pending.length === 0) return null;
+    const products = new ProductService(this.fastify, tx);
+    const catalog = new CatalogService(this.fastify, tx);
+
+    let styleId = style.existing?.id;
+    if (!styleId) {
+      const created = await products.createStyle(
+        {
+          ...(style.fields as CreateStyleInput),
+          styleCode: style.styleCode,
+          ...(style.subtitle ? { customAttributes: { subtitle: style.subtitle } } : {}),
+        },
+        actorStaffId,
+      );
+      styleId = created.id;
+    } else if (Object.keys(style.fields).length > 0 || style.subtitle) {
+      await products.updateStyle(styleId, { ...style.fields, ...(style.subtitle ? { customAttributes: { subtitle: style.subtitle } } : {}) }, actorStaffId);
+    }
+
+    const colourIds = new Map<string, string>();
+    for (const p of style.variants) {
+      if (!p.colour || colourIds.has(p.colour.key)) continue;
+      if (p.colour.existingId) {
+        colourIds.set(p.colour.key, p.colour.existingId);
+        const current = style.existing?.colours.find((c) => c.id === p.colour!.existingId);
+        if (p.colour.hex && current?.hexSwatch?.toLowerCase() !== p.colour.hex.toLowerCase()) {
+          await products.updateColour(p.colour.existingId, { hexSwatch: p.colour.hex }, actorStaffId);
+        }
+      } else {
+        const colour = await products.addColour(styleId, { name: p.colour.name, colourCode: p.colour.code, ...(p.colour.hex ? { hexSwatch: p.colour.hex } : {}) }, actorStaffId);
+        colourIds.set(p.colour.key, colour.id);
+      }
+    }
+
+    for (const p of style.variants) {
+      if (!p.colour || !p.sizeId) continue;
+      const colourId = colourIds.get(p.colour.key)!;
+      if (p.existingSku) {
+        if (p.barcode) await products.updateSku(p.existingSku.id, { barcode: p.barcode }, actorStaffId);
+      } else {
+        const skuCode = p.skuCode ?? (await products.uniqueSkuCode(`${style.styleCode}-${p.colour.code}-${skuCodePart(p.sizeLabel!)}`));
+        await products.createSku({ styleId, colourId, sizeId: p.sizeId, skuCode, ...(p.barcode ? { barcode: p.barcode } : {}) }, actorStaffId);
+      }
+    }
+
+    // Prices are appended, never edited or deleted: the previous price stays
+    // in the history and the newest one in effect is what shoppers see.
+    for (const change of style.priceChanges) {
+      await catalog.setBasePrice(
+        { styleId, ...(change.colourKey ? { colourId: colourIds.get(change.colourKey)! } : {}), mrp: change.mrp, sellingPrice: change.sellingPrice },
+        actorStaffId,
+      );
+    }
+
+    for (const p of style.variants) {
+      if (!p.image) continue;
+      await products.addMedia(
+        { styleId, url: p.image.url, ...(p.colour ? { colourId: colourIds.get(p.colour.key)! } : {}), ...(p.image.alt ? { altText: p.image.alt } : {}) },
+        actorStaffId,
+      );
+    }
+    return styleId;
   }
 
   // --- Import runs (results kept for the owner to come back to) ---

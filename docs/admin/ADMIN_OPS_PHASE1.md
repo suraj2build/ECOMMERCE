@@ -141,8 +141,28 @@ a downloadable problems file.
   half-imported; other styles go ahead.
 - Rows are sent in batches of at most 500, grouped by style, under one
   import run. Each batch's result is recorded; re-running a batch
-  replaces its result and is safe because matching makes it idempotent.
-  There is no row ceiling for the file as a whole.
+  replaces its result. There is no row ceiling for the file as a whole.
+- **Each product is saved in one database transaction** (style, colours,
+  sizes, prices, image links and their audit entries together), so a
+  failure or crash part-way leaves that product exactly as it was, while
+  the other products in the batch are kept. *(Added in the review
+  follow-up; before it, a product's parts were saved by separate calls.)*
+- **Simultaneous imports of one product run one after the other**: the
+  transaction takes a lock on the style code, then re-checks the product
+  against what is now saved, so the second import sees the first's work
+  (its rows come back "unchanged") instead of failing on, or duplicating,
+  a colour, SKU or price. Different products import in parallel.
+- **Prices are appended, never edited or deleted.** A row whose price
+  equals the price the product (or that colour) sells at now adds nothing;
+  a different price adds a new row that takes effect immediately, and the
+  old one stays in the history. A colour is compared with its own price,
+  else the all-colour price. While a markdown is running, the base price
+  still changes and the row notes that shoppers see the markdown until it
+  ends.
+- **An interrupted batch is safe to send again.** If the connection drops
+  after the products were saved but before the result was recorded, the
+  retry finds them saved ("unchanged"), records the result, and re-indexes
+  every existing product in the batch so search catches up too.
 - New products are created as drafts. Import never publishes, never
   touches stock and never reserves anything; a stock column is refused
   with an explanation. There is no "undo": fixing a mistake means

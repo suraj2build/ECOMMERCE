@@ -54,10 +54,18 @@ export interface QaCompletenessResult {
  * an explicit merchandiser action (CAT-002) - neither alone is sufficient.
  */
 export class ProductService {
-  constructor(private readonly fastify: FastifyInstance) {}
+  /**
+   * `db` (optional) runs every read and write on that transaction instead
+   * of the shared client - used by the bulk import so one product's style,
+   * colours, sizes, prices and images commit or roll back together.
+   */
+  constructor(
+    private readonly fastify: FastifyInstance,
+    private readonly db?: Prisma.TransactionClient,
+  ) {}
 
-  private get prisma() {
-    return this.fastify.prisma;
+  private get prisma(): Prisma.TransactionClient {
+    return this.db ?? this.fastify.prisma;
   }
 
   async createStyle(input: CreateStyleInput, actorStaffId: string) {

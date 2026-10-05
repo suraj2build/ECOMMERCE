@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { PrismaClient, Price } from '@fcp/db';
+import type { Prisma, Price } from '@fcp/db';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
@@ -42,10 +42,14 @@ export interface SetPriceInput {
  * impacting discounts get an extra sign-off beyond routine base pricing.
  */
 export class CatalogService {
-  constructor(private readonly fastify: FastifyInstance) {}
+  /** `db` (optional): run on that transaction instead of the shared client (see ProductService). */
+  constructor(
+    private readonly fastify: FastifyInstance,
+    private readonly db?: Prisma.TransactionClient,
+  ) {}
 
-  private get prisma(): PrismaClient {
-    return this.fastify.prisma;
+  private get prisma(): Prisma.TransactionClient {
+    return this.db ?? this.fastify.prisma;
   }
 
   private validatePriceInput(input: SetPriceInput) {
