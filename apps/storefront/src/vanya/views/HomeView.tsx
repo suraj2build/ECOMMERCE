@@ -93,7 +93,7 @@ export function HomeView({
             <img
               src={editorial.hero}
               alt={isMen ? 'VANYA Men - Business Casual & Daily Wear' : 'VANYA Women - Daily, Work & Partywear'}
-              className="w-full h-full object-cover object-[center_top] brightness-[0.80]"
+              className="w-full h-full object-cover object-[68%_top] lg:object-[center_top] brightness-[0.80]"
             />
           )}
           {/* Subtle gradient vignette */}
@@ -233,7 +233,7 @@ export function HomeView({
               <img
                 src={editorial.feature}
                 alt="Tradition Tailored for Today"
-                className="w-full h-full object-cover object-[center_20%] brightness-[0.78]"
+                className="w-full h-full object-cover object-[72%_20%] lg:object-[center_20%] brightness-[0.78]"
               />
             )}
             {/* Ambient gradients */}

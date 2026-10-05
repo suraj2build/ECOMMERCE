@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "scope": "Homepage campaign media only; AI-generated UAT imagery",
+  "banners": [
+    {
+      "placement": "gateway-men",
+      "title": "Modern Indian Menswear \u00b7 Daily Wear & Business Casual",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/gateway-men.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-hero-men",
+      "title": "Business Casual, Done Right",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/home-hero-men.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-feature-men",
+      "title": "Premium Shirts for Every Workday",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/home-feature-men.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "gateway-women",
+      "title": "Modern Indian Womenswear \u00b7 Daily, Work & Partywear",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/gateway-women.webp",
+      "model": "Heena"
+    },
+    {
+      "placement": "home-hero-women",
+      "title": "Workwear to Weekend to Evening",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/home-hero-women.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-feature-women",
+      "title": "Everyday Kurtis, Reimagined",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/home-feature-women.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "FORMAL SHIRTS",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/home-feature-men.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "CASUAL SHIRTS",
+      "sortOrder": 1,
+      "asset": "/campaigns/launch-v1/occasion-men-everyday.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "POLO T-SHIRTS",
+      "sortOrder": 2,
+      "asset": "/campaigns/launch-v1/lifestyle-men-polo.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "DENIMS",
+      "sortOrder": 3,
+      "asset": "/campaigns/launch-v1/lifestyle-men-denim.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "CHINOS",
+      "sortOrder": 4,
+      "asset": "/campaigns/launch-v1/occasion-men-business.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "FORMAL TROUSERS",
+      "sortOrder": 5,
+      "asset": "/campaigns/launch-v1/lifestyle-men-trouser.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "SHOES",
+      "sortOrder": 6,
+      "asset": "/campaigns/launch-v1/category-men-shoes.webp",
+      "model": "Still life"
+    },
+    {
+      "placement": "home-category-men",
+      "title": "BELTS",
+      "sortOrder": 7,
+      "asset": "/campaigns/launch-v1/category-men-belts.webp",
+      "model": "Still life"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "TOPS",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
+      "model": "Riya"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "TEES",
+      "sortOrder": 1,
+      "asset": "/campaigns/launch-v1/occasion-women-weekend.webp",
+      "model": "Riya"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "EVERYDAY KURTIS",
+      "sortOrder": 2,
+      "asset": "/campaigns/launch-v1/lifestyle-women-kurti.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "DENIMS",
+      "sortOrder": 3,
+      "asset": "/campaigns/launch-v1/lifestyle-women-denim.webp",
+      "model": "Riya"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "DRESSES",
+      "sortOrder": 4,
+      "asset": "/campaigns/launch-v1/home-hero-women.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "TROUSERS",
+      "sortOrder": 5,
+      "asset": "/campaigns/launch-v1/lifestyle-women-work.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "SKIRTS",
+      "sortOrder": 6,
+      "asset": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
+      "model": "Riya"
+    },
+    {
+      "placement": "home-category-women",
+      "title": "PARTY & EVENING",
+      "sortOrder": 7,
+      "asset": "/campaigns/launch-v1/lifestyle-women-party.webp",
+      "model": "Heena"
+    },
+    {
+      "placement": "home-occasion-men",
+      "title": "For the Workday",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/occasion-men-work.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-occasion-men",
+      "title": "Everyday Essentials",
+      "sortOrder": 1,
+      "asset": "/campaigns/launch-v1/occasion-men-everyday.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-occasion-men",
+      "title": "Business Casual Edit",
+      "sortOrder": 2,
+      "asset": "/campaigns/launch-v1/occasion-men-business.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-occasion-women",
+      "title": "Workwear",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/lifestyle-women-work.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-occasion-women",
+      "title": "Weekend",
+      "sortOrder": 1,
+      "asset": "/campaigns/launch-v1/occasion-women-weekend.webp",
+      "model": "Riya"
+    },
+    {
+      "placement": "home-occasion-women",
+      "title": "Party & Evening",
+      "sortOrder": 2,
+      "asset": "/campaigns/launch-v1/occasion-women-party.webp",
+      "model": "Heena"
+    },
+    {
+      "placement": "home-tastemakers-men",
+      "title": "Business Casual Shirting",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/lifestyle-men-shirt.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-tastemakers-men",
+      "title": "Everyday Polos",
+      "sortOrder": 1,
+      "asset": "/campaigns/launch-v1/lifestyle-men-polo.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-tastemakers-men",
+      "title": "Weekend Denim",
+      "sortOrder": 2,
+      "asset": "/campaigns/launch-v1/lifestyle-men-denim.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-tastemakers-men",
+      "title": "Workday Trousers",
+      "sortOrder": 3,
+      "asset": "/campaigns/launch-v1/lifestyle-men-trouser.webp",
+      "model": "Aryan"
+    },
+    {
+      "placement": "home-tastemakers-women",
+      "title": "Workwear Edit",
+      "sortOrder": 0,
+      "asset": "/campaigns/launch-v1/lifestyle-women-work.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-tastemakers-women",
+      "title": "Everyday Kurtis",
+      "sortOrder": 1,
+      "asset": "/campaigns/launch-v1/lifestyle-women-kurti.webp",
+      "model": "Deeksha"
+    },
+    {
+      "placement": "home-tastemakers-women",
+      "title": "Weekend Denim",
+      "sortOrder": 2,
+      "asset": "/campaigns/launch-v1/lifestyle-women-denim.webp",
+      "model": "Riya"
+    },
+    {
+      "placement": "home-tastemakers-women",
+      "title": "Party & Evening",
+      "sortOrder": 3,
+      "asset": "/campaigns/launch-v1/lifestyle-women-party.webp",
+      "model": "Heena"
+    }
+  ]
+}
