@@ -526,3 +526,26 @@ is hard to set up. Proposed screen (Settings → Staff), behind
 
 Option (a) needs a small schema change: a "must change password" flag,
 plus a password-change step at sign-in.
+
+### Test record for this change
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Unit (`commerce-api`) | 17 | 90 | 0 | 0 |
+| Unit (other workspaces) | 5 | 21 | 0 | 0 |
+| Integration, with the S3 emulator | 64 | 966 | 0 | 0 |
+| Browser (storefront, admin, API smoke) | — | 89 | 0 | 0 |
+
+Lint and typecheck are clean. The read-load and checkout-contention
+checks passed. New checks:
+
+- `dispatch.test.ts` checks four cases:
+  - a booking is refused without a full sender address, and the courier
+    is never called;
+  - nothing is sold;
+  - completing the address in Business & warehouse is enough to book;
+  - a replay still converges.
+- AO-09 (`approvals.spec.ts`) checks a wrong password: it is refused in
+  the dialog, the reason is kept, and the password is cleared.
+- AO-10 checks the warehouse address printed as the return address on
+  the label.
