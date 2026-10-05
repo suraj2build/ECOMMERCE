@@ -22,7 +22,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard', label: 'Overview', anyOf: [] },
       { href: '/dashboard/setup', label: 'Setup & health', anyOf: ['org:manage'] },
       { href: '/dashboard/business', label: 'Business & warehouse', anyOf: ['org:manage', 'tax:read', 'tax:manage'] },
-      { href: '/dashboard/approvals', label: 'Approvals', anyOf: ['org:manage', 'audit:read'] },
+      // Anyone who can send or be sent an approval request, plus the log readers.
+      { href: '/dashboard/approvals', label: 'Approvals', anyOf: ['org:manage', 'audit:read', 'inventory:adjust', 'inventory:adjust:coapprove', 'grn:create', 'grn:qc:manager_signoff', 'warehouse:pick'] },
     ],
   },
   {

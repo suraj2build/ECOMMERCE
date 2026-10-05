@@ -135,7 +135,16 @@ describe('Audit certification', () => {
         idempotencyKey: 'audit-inventory-adjustment',
       },
     });
-    expect(adjustRes.statusCode).toBe(201);
+    // Queued for the co-approver, who approves from their own login.
+    expect(adjustRes.statusCode).toBe(202);
+    const requestId = adjustRes.json().pendingApproval.id as string;
+    const approved = await app.inject({ method: 'POST', url: `/api/v1/approvals/requests/${requestId}/approve`, headers: { authorization: `Bearer ${finance.token}` } });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const requested = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'approval.requested', entityId: requestId } });
+    assertAuditShape(requested);
+    expect(requested.actorStaffId).toBe(warehouse.staffUserId);
+    const approvedAudit = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'approval.approved', entityId: requestId } });
+    expect(approvedAudit.actorStaffId).toBe(finance.staffUserId);
 
     const entry = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'inventory.adjust', entityId: `${sku.id}/${location.id}` } });
     assertAuditShape(entry);

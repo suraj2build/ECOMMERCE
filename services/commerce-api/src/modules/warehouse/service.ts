@@ -157,7 +157,8 @@ export class WarehouseService {
       include: { sku: { include: { style: true, colour: true, size: true } }, location: true, order: true },
     });
     if (!task) throw new NotFoundError('PickTask', id);
-    return this.toView(task);
+    const waiting = await this.waitingApprovals([task.id]);
+    return { ...this.toView(task), pendingApproval: waiting.get(task.id) ?? null };
   }
 
   /**
@@ -182,7 +183,18 @@ export class WarehouseService {
       }),
       this.prisma.pickTask.count({ where }),
     ]);
-    return { items: items.map((t) => this.toView(t)), total };
+    const waiting = await this.waitingApprovals(items.map((t) => t.id));
+    return { items: items.map((t) => ({ ...this.toView(t), pendingApproval: waiting.get(t.id) ?? null })), total };
+  }
+
+  /** Open shortfall approval requests for these tasks: who each one is waiting for. */
+  private async waitingApprovals(taskIds: string[]) {
+    if (taskIds.length === 0) return new Map<string, { id: string; approver: string }>();
+    const rows = await this.prisma.approvalRequest.findMany({
+      where: { kind: 'PICK_SHORTFALL', status: 'PENDING', subjectKey: { in: taskIds.map((id) => `pick:${id}`) } },
+      select: { id: true, subjectKey: true, approverStaff: { select: { fullName: true } } },
+    });
+    return new Map(rows.map((r) => [r.subjectKey!.slice('pick:'.length), { id: r.id, approver: r.approverStaff.fullName }]));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,6 +282,18 @@ export class WarehouseService {
         }
         throw new ConflictError(
           `Pick task '${params.pickTaskId}' has already been processed (status '${task.status}') - it cannot be picked again`,
+        );
+      }
+
+      // A shortfall waiting for someone's approval holds the task: only
+      // that approval may record its outcome (approvals/queue.ts).
+      const waiting = await tx.approvalRequest.findFirst({
+        where: { kind: 'PICK_SHORTFALL', subjectKey: `pick:${task.id}`, status: 'PENDING' },
+        select: { id: true, approverStaff: { select: { fullName: true } } },
+      });
+      if (waiting && waiting.id !== params.approval?.requestId) {
+        throw new ConflictError(
+          `This pick is waiting for ${waiting.approverStaff.fullName} to approve the shortfall. They approve or reject it on their Approvals page; the person who sent it can withdraw it there.`,
         );
       }
 

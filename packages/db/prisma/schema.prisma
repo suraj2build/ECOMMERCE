@@ -189,6 +189,9 @@ model StaffUser {
   approvalPolicyUpdates         ApprovalPolicy[]
   approvalsRequested            ApprovalRecord[]            @relation("ApprovalRequestedBy")
   approvalsGiven                ApprovalRecord[]            @relation("ApprovalApprovedBy")
+  approvalRequestsMade          ApprovalRequest[]           @relation("ApprovalRequestRequestedBy")
+  approvalRequestsAssigned      ApprovalRequest[]           @relation("ApprovalRequestApprover")
+  approvalRequestsDecided       ApprovalRequest[]           @relation("ApprovalRequestDecidedBy")
   moderatedShoppableMedia       ShoppableMedia[]            @relation("ShoppableMediaModeratedBy")
   moderatedReviews              Review[]                    @relation("ReviewModeratedBy")
   crossSellOverrides            CrossSellOverride[]
@@ -4408,15 +4411,68 @@ model ApprovalRecord {
   /// Required for a self-approval; null otherwise.
   reason             String?
   detail             Json?
+  /// Set when the approval was given on an approval request (never a self-approval).
+  approvalRequestId  String?      @unique
   createdAt          DateTime     @default(now())
 
-  requestedByStaff StaffUser @relation("ApprovalRequestedBy", fields: [requestedByStaffId], references: [id], onDelete: Restrict)
-  approvedByStaff  StaffUser @relation("ApprovalApprovedBy", fields: [approvedByStaffId], references: [id], onDelete: Restrict)
+  requestedByStaff StaffUser        @relation("ApprovalRequestedBy", fields: [requestedByStaffId], references: [id], onDelete: Restrict)
+  approvedByStaff  StaffUser        @relation("ApprovalApprovedBy", fields: [approvedByStaffId], references: [id], onDelete: Restrict)
+  approvalRequest  ApprovalRequest? @relation(fields: [approvalRequestId], references: [id], onDelete: Restrict)
 
   @@index([createdAt])
   @@index([selfApproved, createdAt])
   @@index([entityType, entityId])
   @@map("approval_records")
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  FAILED
+}
+
+/// An action waiting for a named person to approve it from their own login
+/// (Product Owner review 2026-10-05: naming someone must not count as their
+/// approval). The action runs only when that person approves; owner
+/// self-approval is a separate, immediate path and never creates one.
+/// docs/admin/APPROVALS.md.
+model ApprovalRequest {
+  id                 String                @id @default(uuid())
+  kind               ApprovalKind
+  status             ApprovalRequestStatus @default(PENDING)
+  requestedByStaffId String
+  approverStaffId    String
+  /// One open request per subject (a pick task, an adjustment's idempotency key).
+  subjectKey         String?
+  /// The action exactly as submitted (never credentials); run on approval.
+  payload            Json
+  /// What the approver is shown.
+  summary            Json
+  decidedAt          DateTime?
+  decidedByStaffId   String?
+  /// The approver's note when rejecting.
+  decisionNote       String?
+  /// Why approval could not be carried out (stock changed, task already picked, ...).
+  failureReason      String?
+  /// Set while an approval is being carried out, so a second approval of the
+  /// same request is refused instead of racing it; expires if the process dies.
+  claimedAt          DateTime?
+  resultEntityType   String?
+  resultEntityId     String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  requestedByStaff StaffUser       @relation("ApprovalRequestRequestedBy", fields: [requestedByStaffId], references: [id], onDelete: Restrict)
+  approverStaff    StaffUser       @relation("ApprovalRequestApprover", fields: [approverStaffId], references: [id], onDelete: Restrict)
+  decidedByStaff   StaffUser?      @relation("ApprovalRequestDecidedBy", fields: [decidedByStaffId], references: [id], onDelete: Restrict)
+  approvalRecord   ApprovalRecord?
+
+  @@index([approverStaffId, status, createdAt])
+  @@index([requestedByStaffId, status, createdAt])
+  @@index([status, createdAt])
+  @@map("approval_requests")
 }
 
 /// Dispatch checks the owner chooses (B-2, B-3 in docs/admin/NEXT_PHASES_RESEARCH.md);

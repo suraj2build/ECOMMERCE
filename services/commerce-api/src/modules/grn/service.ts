@@ -54,7 +54,13 @@ export class GrnService {
     return formatSequenceNumber('GRN', year, count + 1);
   }
 
-  async createGoodsReceipt(input: CreateGrnInput, actorStaffId: string) {
+  /**
+   * Checks a receipt without posting anything and says whether its QC
+   * failures need a sign-off (GRN-004), with a summary for the approver.
+   * The route uses this to queue a receipt for the named manager's own
+   * approval (approvals/queue.ts) before any stock moves.
+   */
+  async checkGoodsReceipt(input: CreateGrnInput) {
     if (input.lines.length === 0) throw new ValidationError('GRN must have at least one line');
 
     const poLineIds = input.lines.map((l) => l.poLineId);
@@ -67,7 +73,7 @@ export class GrnService {
       throw new ValidationError('A GRN request cannot include the same purchase order line more than once');
     }
 
-    const po = await this.prisma.purchaseOrder.findUnique({ where: { id: input.poId }, include: { lines: true } });
+    const po = await this.prisma.purchaseOrder.findUnique({ where: { id: input.poId }, include: { lines: { include: { sku: { select: { skuCode: true } } } } } });
     if (!po) throw new NotFoundError('PurchaseOrder', input.poId);
     if (!['APPROVED', 'PARTIALLY_RECEIVED'].includes(po.status)) {
       throw new ValidationError(`Cannot record a GRN against a purchase order in status '${po.status}'`);
@@ -96,12 +102,39 @@ export class GrnService {
       const failedQty = line.damagedQty + line.rejectedQty;
       if (failedQty >= env.GRN_QC_FAIL_MANAGER_SIGNOFF_THRESHOLD_UNITS) signoffFailedQty = Math.max(signoffFailedQty, failedQty);
     }
+    const location = await this.prisma.location.findUnique({ where: { id: input.locationId }, select: { name: true } });
+    const summary = {
+      poNumber: po.poNumber,
+      location: location?.name ?? null,
+      failedUnits: signoffFailedQty,
+      lines: input.lines.map((l) => ({
+        skuCode: po.lines.find((pl) => pl.id === l.poLineId)?.sku.skuCode ?? l.skuId,
+        receivedQty: l.receivedQty,
+        acceptedQty: l.acceptedQty,
+        damagedQty: l.damagedQty,
+        rejectedQty: l.rejectedQty,
+        qcNotes: l.qcNotes ?? null,
+      })),
+    };
+    return { signoffFailedQty, summary };
+  }
+
+  /**
+   * Posts a receipt. `approvedSignoff` is the decision of an approved
+   * approval request (approvals/queue.ts): the named manager approved from
+   * their own login. Without it, a sign-off can only be the receiver's own
+   * owner approval; naming someone else is refused here (the route queues
+   * it instead).
+   */
+  async createGoodsReceipt(input: CreateGrnInput, actorStaffId: string, approvedSignoff?: ApprovalDecision) {
+    const { signoffFailedQty } = await this.checkGoodsReceipt(input);
+    const env = loadEnv();
     // QC-fail dispositions at/above the threshold need a named sign-off
-    // (GRN-004) under the shared approval policy (AO-D4): someone holding
-    // grn:qc:manager_signoff other than the receiver, or the receiver only
-    // under owner approval with a reason and password.
+    // (GRN-004) under the shared approval policy (AO-D4).
     let signoff: ApprovalDecision | undefined;
-    if (signoffFailedQty > 0) {
+    if (approvedSignoff) {
+      signoff = approvedSignoff;
+    } else if (signoffFailedQty > 0) {
       if (!input.managerSignoffStaffId) {
         throw new ValidationError(
           `QC-fail disposition of ${signoffFailedQty} units requires Warehouse Manager sign-off (managerSignoffStaffId)`,
@@ -111,6 +144,7 @@ export class GrnService {
         kind: 'RECEIVING_QC',
         requestedByStaffId: actorStaffId,
         approverStaffId: input.managerSignoffStaffId,
+        actingStaffId: actorStaffId,
         permission: 'grn:qc:manager_signoff',
         selfApproval: input.selfApproval,
       });

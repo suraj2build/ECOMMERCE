@@ -1,5 +1,5 @@
 import type { ApprovalKind, Prisma, PrismaClient } from '@fcp/db';
-import { ValidationError, verifyPassword, type PermissionKey } from '@fcp/shared';
+import { ConflictError, ValidationError, verifyPassword, type PermissionKey } from '@fcp/shared';
 import { z } from 'zod';
 import { recordAudit } from '../audit/service.js';
 import { verifyMfaToken } from '../auth/mfa.js';
@@ -15,7 +15,11 @@ import { readMfaSeedOrDeny } from '../auth/service.js';
  * - pick shortfalls at/above the adjustment threshold.
  *
  * The approver must be an active staff member holding the approving
- * permission, and must be someone other than the requester. The one
+ * permission, and must be someone other than the requester, approving from
+ * their own login: naming someone is never their approval (Product Owner
+ * review, 2026-10-05). Purchase orders wait in SUBMITTED for that person;
+ * adjustments, receiving sign-off and pick shortfalls wait as approval
+ * requests (./queue.ts). The one
  * exception is owner approval: when an org:manage holder has switched it
  * on, a staff member named as an owner may approve their own action by
  * giving a written reason and re-entering their password (plus their MFA
@@ -39,6 +43,15 @@ export interface ApprovalDecision {
   approvedByStaffId: string;
   selfApproved: boolean;
   reason: string | null;
+  /** The approval request this decision approves, claimed when the decision is recorded. */
+  requestId?: string;
+}
+
+/** The approval request was decided (or withdrawn) by someone else first. */
+export class ApprovalAlreadyDecidedError extends ConflictError {
+  constructor() {
+    super('This request has already been decided');
+  }
 }
 
 const NOUN: Record<ApprovalKind, string> = {
@@ -54,7 +67,7 @@ const FAILED_CONFIRMATION_WINDOW_MS = 15 * 60_000;
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-async function holdsPermission(db: Db, staffUserId: string, permission: PermissionKey) {
+export async function holdsPermission(db: Db, staffUserId: string, permission: PermissionKey) {
   const staff = await db.staffUser.findUnique({
     where: { id: staffUserId },
     select: {
@@ -138,13 +151,19 @@ export class ApprovalPolicyService {
 
   /**
    * Decides whether `approverStaffId` may approve `requestedByStaffId`'s
-   * action. Call before the action's transaction (password checks are slow);
-   * then pass the decision to {@link record} inside it.
+   * action, as requested by the signed-in `actingStaffId`. Call before the
+   * action's transaction (password checks are slow); then pass the decision
+   * to {@link record} inside it.
+   *
+   * An independent approval is only valid when the approver is the person
+   * acting: someone else can name an approver, but only the approver's own
+   * login approves (the caller queues the action for them instead).
    */
   async decide(params: {
     kind: ApprovalKind;
     requestedByStaffId: string;
     approverStaffId: string;
+    actingStaffId: string;
     permission: PermissionKey;
     selfApproval?: SelfApprovalInput;
   }): Promise<ApprovalDecision> {
@@ -154,7 +173,13 @@ export class ApprovalPolicyService {
       throw new ValidationError(`The approver for this ${noun} must be an active staff member with the ${permission} permission`);
     }
     if (approverStaffId !== requestedByStaffId) {
+      if (params.actingStaffId !== approverStaffId) {
+        throw new ValidationError(`This ${noun} must be approved by the approver from their own login, not on their behalf`);
+      }
       return { kind, requestedByStaffId, approvedByStaffId: approverStaffId, selfApproved: false, reason: null };
+    }
+    if (params.actingStaffId !== requestedByStaffId) {
+      throw new ValidationError(`Only the person who made this ${noun} can approve it as an owner`);
     }
 
     // The requester is approving their own action.
@@ -175,12 +200,39 @@ export class ApprovalPolicyService {
     return { kind, requestedByStaffId, approvedByStaffId: approverStaffId, selfApproved: true, reason };
   }
 
-  /** Writes the approval record (and an audit row for a self-approval) inside the action's transaction. */
+  /**
+   * Writes the approval record (and an audit row for a self-approval) inside
+   * the action's transaction. A decision made on an approval request also
+   * claims that request here, so the action and the request's approval
+   * commit together, and a second approval of the same request fails
+   * (ApprovalAlreadyDecidedError) and rolls its action back.
+   */
   static async record(
     tx: Prisma.TransactionClient,
     decision: ApprovalDecision,
     entity: { entityType: string; entityId: string; detail?: Record<string, unknown> },
   ) {
+    if (decision.requestId) {
+      const claimed = await tx.approvalRequest.updateMany({
+        where: { id: decision.requestId, status: 'PENDING', approverStaffId: decision.approvedByStaffId, requestedByStaffId: decision.requestedByStaffId, kind: decision.kind },
+        data: {
+          status: 'APPROVED',
+          decidedAt: new Date(),
+          decidedByStaffId: decision.approvedByStaffId,
+          resultEntityType: entity.entityType,
+          resultEntityId: entity.entityId,
+        },
+      });
+      if (claimed.count !== 1) throw new ApprovalAlreadyDecidedError();
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: decision.approvedByStaffId,
+        action: 'approval.approved',
+        entityType: 'ApprovalRequest',
+        entityId: decision.requestId,
+        newValue: { kind: decision.kind, resultEntityType: entity.entityType, resultEntityId: entity.entityId },
+      });
+    }
     const row = await tx.approvalRecord.create({
       data: {
         kind: decision.kind,
@@ -190,6 +242,7 @@ export class ApprovalPolicyService {
         approvedByStaffId: decision.approvedByStaffId,
         selfApproved: decision.selfApproved,
         reason: decision.reason,
+        ...(decision.requestId ? { approvalRequestId: decision.requestId } : {}),
         ...(entity.detail ? { detail: entity.detail as Prisma.InputJsonValue } : {}),
       },
     });
@@ -243,34 +296,43 @@ export class ApprovalPolicyService {
    * refused until the window passes.
    */
   private async confirmIdentity(staffUserId: string, confirmation: { password: string; mfaCode?: string }, purpose: string) {
-    const since = new Date(Date.now() - FAILED_CONFIRMATION_WINDOW_MS);
-    const recentFailures = await this.prisma.auditLog.count({
-      where: { actorStaffId: staffUserId, action: 'approval.confirmation_failed', createdAt: { gte: since } },
-    });
-    if (recentFailures >= FAILED_CONFIRMATION_LIMIT) {
-      throw new ValidationError('Too many incorrect confirmations. Wait 15 minutes and try again.');
-    }
-    const staff = await this.prisma.staffUser.findUnique({ where: { id: staffUserId }, select: { passwordHash: true, mfaEnabled: true, mfaSecret: true, isActive: true } });
-    let failure: string | null = null;
-    if (!staff || !staff.isActive || !(await verifyPassword(confirmation.password, staff.passwordHash))) {
-      failure = 'The password is not correct';
-    } else if (staff.mfaEnabled && staff.mfaSecret) {
-      if (!confirmation.mfaCode) failure = 'Enter the code from your authenticator app as well';
-      else {
-        const seed = await readMfaSeedOrDeny(this.prisma, staffUserId, staff.mfaSecret);
-        if (!verifyMfaToken(confirmation.mfaCode, seed)) failure = 'The authenticator code is not correct';
-      }
-    }
-    if (failure) {
-      await recordAudit(this.prisma, {
-        actorType: 'STAFF',
-        actorStaffId: staffUserId,
-        action: 'approval.confirmation_failed',
-        entityType: 'StaffUser',
-        entityId: staffUserId,
-        newValue: { purpose },
-      });
-      throw new ValidationError(failure);
-    }
+    // Attempts for one person run one at a time (a per-person lock), so a
+    // burst of simultaneous wrong guesses cannot all slip under the limit
+    // before the first failure is written.
+    const failure = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`approval-confirm:${staffUserId}`}, 0))`;
+        const since = new Date(Date.now() - FAILED_CONFIRMATION_WINDOW_MS);
+        const recentFailures = await tx.auditLog.count({
+          where: { actorStaffId: staffUserId, action: 'approval.confirmation_failed', createdAt: { gte: since } },
+        });
+        if (recentFailures >= FAILED_CONFIRMATION_LIMIT) return { locked: true as const };
+        const staff = await tx.staffUser.findUnique({ where: { id: staffUserId }, select: { passwordHash: true, mfaEnabled: true, mfaSecret: true, isActive: true } });
+        let message: string | null = null;
+        if (!staff || !staff.isActive || !(await verifyPassword(confirmation.password, staff.passwordHash))) {
+          message = 'The password is not correct';
+        } else if (staff.mfaEnabled && staff.mfaSecret) {
+          if (!confirmation.mfaCode) message = 'Enter the code from your authenticator app as well';
+          else {
+            const seed = await readMfaSeedOrDeny(this.prisma, staffUserId, staff.mfaSecret);
+            if (!verifyMfaToken(confirmation.mfaCode, seed)) message = 'The authenticator code is not correct';
+          }
+        }
+        if (message) {
+          await recordAudit(tx, {
+            actorType: 'STAFF',
+            actorStaffId: staffUserId,
+            action: 'approval.confirmation_failed',
+            entityType: 'StaffUser',
+            entityId: staffUserId,
+            newValue: { purpose },
+          });
+        }
+        return { locked: false as const, message };
+      },
+      { maxWait: 15_000, timeout: 30_000 },
+    );
+    if (failure.locked) throw new ValidationError('Too many incorrect confirmations. Wait 15 minutes and try again.');
+    if (failure.message) throw new ValidationError(failure.message);
   }
 }

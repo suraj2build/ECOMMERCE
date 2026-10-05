@@ -558,6 +558,49 @@ test.describe('P1 Commerce Operations Console', () => {
     await expect(page.locator('pre')).toHaveCount(0);
   });
 
+  test('AO-11 approval queue: a large adjustment waits until the named approver approves it from their own login', async ({ page }) => {
+    const sku = tee.skus[0]!;
+    const balance = async () => (await prisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId: sku.skuId, locationId: fx.locationA.id } } })).onHand;
+    const before = await balance();
+    const reason = `AO-11 found a carton ${RUN}`;
+
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    await page.getByRole('link', { name: 'Stock' }).click();
+    await page.getByLabel('Search').fill(sku.skuCode);
+    await page.getByRole('row').filter({ hasText: sku.skuCode }).filter({ hasText: fx.locationA.name }).getByRole('link', { name: 'Adjust' }).click();
+    await page.getByLabel('Quantity delta').fill('60');
+    await page.getByLabel('Justification (required by the server)').fill(reason);
+    await page.getByLabel('Finance co-approver (required above threshold)').selectOption({ label: 'E2E P1 finance' });
+    await page.getByRole('button', { name: 'Submit adjustment' }).click();
+    await confirmDialog(page, 'Record adjustment');
+    await expect(page.locator('form').getByRole('status')).toContainText('Sent to E2E P1 finance for approval');
+    // Nothing has moved yet.
+    expect(await balance()).toBe(before);
+    const request = await prisma.approvalRequest.findFirstOrThrow({ where: { kind: 'STOCK_ADJUSTMENT', status: 'PENDING', summary: { path: ['reason'], equals: reason } } });
+
+    // The approver sees it on their own Approvals page and approves it.
+    await loginAs(page, 'FINANCE');
+    await page.goto('/dashboard/approvals');
+    const waiting = page.getByRole('table', { name: 'Requests waiting for your approval' }).getByRole('row').filter({ hasText: reason });
+    await expect(waiting).toContainText(sku.skuCode);
+    await expect(waiting).toContainText('add 60');
+    await waiting.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByText('Approved: the stock adjustment has been carried out.')).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Requests waiting for your approval' }).getByRole('row').filter({ hasText: reason })).toHaveCount(0);
+
+    expect(await balance()).toBe(before + 60);
+    const approved = await prisma.approvalRequest.findUniqueOrThrow({ where: { id: request.id } });
+    expect(approved.status).toBe('APPROVED');
+    const finance = await prisma.staffUser.findUniqueOrThrow({ where: { email: 'e2e-p1-finance@example.com' } });
+    const txn = await prisma.inventoryTransaction.findUniqueOrThrow({ where: { id: approved.resultEntityId! } });
+    expect(txn).toMatchObject({ coApproverStaffId: finance.id, quantity: 60, type: 'ADJUSTMENT_IN' });
+
+    // The requester sees the outcome among the requests they sent.
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    await page.goto('/dashboard/approvals');
+    await expect(page.getByRole('table', { name: 'Requests you sent' }).getByRole('row').filter({ hasText: reason })).toContainText('Approved');
+  });
+
   test('AO-10 dispatch: pick scan, pack scans with parcel measurements, documents, booking and courier handover', async ({ page }) => {
     // Barcodes on the tee's sizes (scanners read these).
     const sku = tee.skus[0]!;

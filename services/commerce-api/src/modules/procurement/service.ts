@@ -151,6 +151,7 @@ export class ProcurementService {
       kind: 'PURCHASE_ORDER',
       requestedByStaffId: po.submittedByStaffId ?? actorStaffId,
       approverStaffId: actorStaffId,
+      actingStaffId: actorStaffId,
       permission: 'po:approve',
       selfApproval,
     });

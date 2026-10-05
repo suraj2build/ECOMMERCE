@@ -52,7 +52,7 @@ export default function InventoryAdjustmentsPage() {
     const idempotencyKey = idempotencyKeyRef.current ?? randomUuid();
     idempotencyKeyRef.current = idempotencyKey;
     try {
-      await apiSend('POST', '/inventory/adjustments', {
+      const res = await apiSend<{ pendingApproval?: { approver: string } }>('POST', '/inventory/adjustments', {
         skuId: sku?.id,
         locationId,
         quantityDelta: Number(quantityDelta),
@@ -63,7 +63,14 @@ export default function InventoryAdjustmentsPage() {
       });
       selfApproval.reset();
       idempotencyKeyRef.current = null;
-      setMessage({ kind: 'success', text: `Adjustment recorded for ${sku?.skuCode}.` });
+      setMessage(
+        res.pendingApproval
+          ? {
+              kind: 'success',
+              text: `Sent to ${res.pendingApproval.approver} for approval. Stock does not change until they approve it on their Approvals page.`,
+            }
+          : { kind: 'success', text: `Adjustment recorded for ${sku?.skuCode}.` },
+      );
       setQuantityDelta('');
       setReason('');
       setVersion((v) => v + 1);
@@ -135,6 +142,7 @@ export default function InventoryAdjustmentsPage() {
           <StaffSelect
             label="Finance co-approver (required above threshold)"
             capability="inventory-coapprover"
+            hint="Someone else approves it from their own login before stock changes."
             value={coApproverStaffId}
             onChange={(value) => {
               startNewAdjustment();

@@ -268,6 +268,7 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
   const [rows, setRows] = useState<Record<string, ReceiveRow>>({});
   const [exceptions, setExceptions] = useState<Array<{ skuId: string; shortQty: number; excessQty: number; isExcessException: boolean }>>([]);
   const [recorded, setRecorded] = useState<string | null>(null);
+  const [queuedFor, setQueuedFor] = useState<string | null>(null);
   const row = (lineId: string): ReceiveRow => rows[lineId] ?? { receivedQty: '', acceptedQty: '', damagedQty: '0', rejectedQty: '0', qcNotes: '' };
   const set = (lineId: string, k: keyof ReceiveRow, v: string) => setRows((r) => ({ ...r, [lineId]: { ...row(lineId), [k]: v } }));
 
@@ -279,6 +280,11 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
       </p>
       <ActionMessage message={action.message} />
       {recorded && <Notice kind="success">Goods receipt {recorded} recorded.</Notice>}
+      {queuedFor && (
+        <Notice kind="info">
+          Sent to {queuedFor} for QC sign-off. Nothing is received into stock until they approve it on their Approvals page.
+        </Notice>
+      )}
       {exceptions.length > 0 && (
         <Notice kind="warning">
           Receipt exceptions recorded:{' '}
@@ -305,14 +311,19 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
               };
             });
           setRecorded(null);
+          setQueuedFor(null);
           const ok = await action.run(async () => {
-            const res = await apiSend<{ grnNumber: string; exceptions: typeof exceptions }>('POST', '/grn', {
+            const res = await apiSend<{ grnNumber: string; exceptions: typeof exceptions; pendingApproval?: { approver: string } }>('POST', '/grn', {
               poId: po.id,
               locationId,
               managerSignoffStaffId: signoff || undefined,
               ...(signingOwn ? { selfApproval: selfApproval.value } : {}),
               lines: payloadLines,
             });
+            if (res.pendingApproval) {
+              setQueuedFor(res.pendingApproval.approver);
+              return;
+            }
             setRecorded(res.grnNumber);
             setExceptions(res.exceptions);
           });
@@ -330,7 +341,7 @@ function ReceiveForm({ po, lines, onReceived }: { po: Po; lines: PoLines['lines'
             capability="grn-qc-signoff"
             value={signoff}
             onChange={setSignoff}
-            hint="Needed when damaged + rejected units reach the configured threshold."
+            hint="Needed when damaged + rejected units reach the configured threshold. Someone else signs off from their own login before anything is received."
           />
         </div>
         {signingOwn && <SelfApprovalFields what="receiving QC sign-off" state={selfApproval} />}

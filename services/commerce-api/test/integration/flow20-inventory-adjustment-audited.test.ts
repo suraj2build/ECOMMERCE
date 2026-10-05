@@ -67,7 +67,7 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
 
   it('2. above-threshold: rejected without Finance co-approval, then completes once a valid co-approver is supplied - both audited', async () => {
     const { staffUserId, token } = await createAuthenticatedStaff(app, ['WAREHOUSE_MANAGER']);
-    const { staffUserId: financeStaffId } = await createAuthenticatedStaff(app, ['FINANCE']);
+    const { staffUserId: financeStaffId, token: financeToken } = await createAuthenticatedStaff(app, ['FINANCE']);
 
     const withoutCoApproval = await app.inject({
       method: 'POST',
@@ -83,7 +83,13 @@ describe('FLOW 20 - Inventory Adjustment Audited (M29)', () => {
       headers: auth(token),
       payload: { skuId, locationId, quantityDelta: threshold, reason: 'Large damage write-off', coApproverStaffId: financeStaffId, idempotencyKey: 'flow20-large-approved' },
     });
-    expect(withCoApproval.statusCode).toBe(201);
+    // Naming the co-approver sends them a request; nothing is posted until
+    // they approve it from their own login (Product Owner review 2026-10-05).
+    expect(withCoApproval.statusCode).toBe(202);
+    expect(await testPrisma.auditLog.count({ where: { action: 'inventory.adjust', actorStaffId: staffUserId } })).toBe(0);
+    const requestId = withCoApproval.json().pendingApproval.id as string;
+    const approved = await app.inject({ method: 'POST', url: `/api/v1/approvals/requests/${requestId}/approve`, headers: auth(financeToken) });
+    expect(approved.statusCode, approved.body).toBe(200);
 
     const audit = await testPrisma.auditLog.findFirst({
       where: { action: 'inventory.adjust', actorStaffId: staffUserId, reference: financeStaffId },

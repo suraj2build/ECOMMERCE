@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { LocationSelect, StaffSelect } from '@/components/pickers';
-import { ActionMessage, Can, DataState, DataTable, DateText, Drawer, Ident, PageHeader, Pagination, SelectField, StatusBadge, TextArea, TextField } from '@/components/ui';
+import { ActionMessage, Can, DataState, Notice, DataTable, DateText, Drawer, Ident, PageHeader, Pagination, SelectField, StatusBadge, TextArea, TextField } from '@/components/ui';
 import { apiSend, newIdempotencyKey, qs, type Page } from '@/lib/api';
 import { useAction, useApi, useCan, useSession, useUrlFilter } from '@/lib/session';
 import { SelfApprovalFields, useSelfApproval } from '@/components/self-approval';
@@ -27,6 +27,8 @@ interface PickTask {
   exceptionReason: string | null;
   createdAt: string;
   pickedAt: string | null;
+  /** A shortfall waiting for someone's approval holds the task. */
+  pendingApproval: { id: string; approver: string } | null;
 }
 
 const TAKE = 50;
@@ -42,6 +44,7 @@ export default function PickQueuePage() {
   const orderIds = [...new Set((tasks.data?.items ?? []).map((t) => t.orderId).filter((x): x is string => !!x))];
   const labels = useApi<{ orders: Record<string, string> }>(canOrders && orderIds.length ? `/admin/lookup/labels${qs({ orderIds: orderIds.join(',') })}` : null);
   const [picking, setPicking] = useState<PickTask | null>(null);
+  const [queuedFor, setQueuedFor] = useState<string | null>(null);
 
   return (
     <div>
@@ -66,6 +69,11 @@ export default function PickQueuePage() {
           }}
         />
       </div>
+      {queuedFor && (
+        <Notice kind="info">
+          Sent to {queuedFor} for approval. The pick is recorded, and the shortfall written off, only when they approve it on their Approvals page.
+        </Notice>
+      )}
       <DataState state={tasks}>
         {(data) => (
           <>
@@ -98,6 +106,7 @@ export default function PickQueuePage() {
                     <>
                       <StatusBadge status={t.status} />
                       {t.exceptionType && <div className="muted">{t.exceptionType}</div>}
+                      {t.pendingApproval && <div className="muted">Waiting for {t.pendingApproval.approver} to approve the shortfall</div>}
                     </>
                   ),
                 },
@@ -106,9 +115,13 @@ export default function PickQueuePage() {
                   header: 'Actions',
                   cell: (t) => (
                     <Can anyOf={['warehouse:pick']}>
-                      <button type="button" className="btn small" onClick={() => setPicking(t)}>
-                        Record pick
-                      </button>
+                      {t.pendingApproval ? (
+                        <Link href="/dashboard/approvals">Waiting for approval</Link>
+                      ) : (
+                        <button type="button" className="btn small" onClick={() => setPicking(t)}>
+                          Record pick
+                        </button>
+                      )}
                     </Can>
                   ),
                 },
@@ -122,8 +135,9 @@ export default function PickQueuePage() {
         {picking && (
           <PickForm
             task={picking}
-            onDone={() => {
+            onDone={(waitingFor) => {
               setPicking(null);
+              setQueuedFor(waitingFor);
               tasks.reload();
             }}
           />
@@ -133,7 +147,7 @@ export default function PickQueuePage() {
   );
 }
 
-function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
+function PickForm({ task, onDone }: { task: PickTask; onDone: (queuedFor: string | null) => void }) {
   const action = useAction();
   // One key per drawer opening: resubmitting the same pick replays the same outcome.
   const [key] = useState(() => newIdempotencyKey('pick'));
@@ -151,8 +165,9 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
     <form
       onSubmit={async (e) => {
         e.preventDefault();
-        const ok = await action.run(() =>
-          apiSend('POST', `/warehouse/pick-tasks/${task.id}/pick`, {
+        let queuedFor: string | null = null;
+        const ok = await action.run(async () => {
+          const res = await apiSend<{ pendingApproval?: { approver: string } }>('POST', `/warehouse/pick-tasks/${task.id}/pick`, {
             idempotencyKey: key,
             outcome,
             pickedQuantity: outcome === 'EXCEPTION' ? undefined : Number(picked),
@@ -161,9 +176,10 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
             coApproverStaffId: coApprover || undefined,
             scannedBarcode: scanned.trim() || undefined,
             ...(approvingOwn ? { selfApproval: selfApproval.value } : {}),
-          }),
-        );
-        if (ok) onDone();
+          });
+          queuedFor = res.pendingApproval?.approver ?? null;
+        });
+        if (ok) onDone(queuedFor);
       }}
     >
       <p>
@@ -203,7 +219,7 @@ function PickForm({ task, onDone }: { task: PickTask; onDone: () => void }) {
             capability="pick-shortfall-coapprover"
             value={coApprover}
             onChange={setCoApprover}
-            hint="A shortfall writes off stock; large shortfalls need a co-approver (the server applies the threshold)."
+            hint="A shortfall writes off stock; large shortfalls need a co-approver (the server applies the threshold). Someone else approves it from their own login before anything is recorded."
           />
           {approvingOwn && <SelfApprovalFields what="pick shortfall write-off" state={selfApproval} />}
         </>

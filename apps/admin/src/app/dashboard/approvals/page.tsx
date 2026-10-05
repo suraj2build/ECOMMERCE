@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ActionMessage, Can, Checkbox, DataState, DataTable, DateText, Notice, PageHeader, Section, StatusBadge, TextField } from '@/components/ui';
+import { ActionMessage, Can, Checkbox, DataState, DataTable, DateText, Notice, PageHeader, Section, StatusBadge, TextArea, TextField } from '@/components/ui';
 import { apiSend, qs } from '@/lib/api';
 import { useAction, useApi, useCan } from '@/lib/session';
 
@@ -29,6 +29,35 @@ interface ApprovalLog {
   }>;
 }
 
+interface ApprovalRequest {
+  id: string;
+  kind: 'STOCK_ADJUSTMENT' | 'RECEIVING_QC' | 'PICK_SHORTFALL';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'FAILED';
+  requestedBy: string;
+  approver: string;
+  summary: Record<string, unknown>;
+  createdAt: string;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  failureReason: string | null;
+}
+
+/** One line describing what a request would do, from its summary. */
+function describe(r: ApprovalRequest): string {
+  const s = r.summary as Record<string, string | number | null | Array<Record<string, unknown>>>;
+  if (r.kind === 'STOCK_ADJUSTMENT') {
+    const delta = Number(s.quantityDelta);
+    return `${s.skuCode} at ${s.location}: ${delta > 0 ? `add ${delta}` : `remove ${-delta}`} (on hand when asked: ${s.onHandWhenRequested}). Reason: ${s.reason}`;
+  }
+  if (r.kind === 'PICK_SHORTFALL') {
+    return `${s.reference ?? ''} ${s.skuCode} at ${s.location}: picked ${s.pickedQuantity} of ${s.allocatedQuantity}, write off ${s.writeOff}${s.reason ? `. Reason: ${s.reason}` : ''}`;
+  }
+  const lines = (s.lines as Array<Record<string, unknown>> | undefined) ?? [];
+  return `PO ${s.poNumber} at ${s.location}: ${s.failedUnits} units failed QC. ${lines
+    .map((l) => `${l.skuCode}: received ${l.receivedQty}, accepted ${l.acceptedQty}, damaged ${l.damagedQty}, rejected ${l.rejectedQty}`)
+    .join('; ')}`;
+}
+
 const KIND_LABEL: Record<ApprovalLog['records'][number]['kind'], string> = {
   PURCHASE_ORDER: 'Purchase order',
   STOCK_ADJUSTMENT: 'Stock adjustment',
@@ -44,6 +73,16 @@ const KIND_LABEL: Record<ApprovalLog['records'][number]['kind'], string> = {
  */
 export default function ApprovalsPage() {
   const policy = useApi<Policy>('/approvals/policy');
+  const inbox = useApi<{ total: number; requests: ApprovalRequest[] }>('/approvals/requests?box=inbox&status=PENDING');
+  const outbox = useApi<{ total: number; requests: ApprovalRequest[] }>('/approvals/requests?box=outbox');
+  const decision = useAction();
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const refreshRequests = () => {
+    inbox.reload();
+    outbox.reload();
+    log.reload();
+  };
   const canManage = useCan('org:manage');
   const canLog = useCan('org:manage', 'audit:read');
   const staff = useApi<Array<{ id: string; fullName: string }>>(canManage ? '/approvals/staff' : null);
@@ -66,14 +105,128 @@ export default function ApprovalsPage() {
       <PageHeader
         title="Approvals"
         breadcrumbs={[{ label: 'Setup' }, { label: 'Approvals' }]}
-        description="Who may approve purchase orders, large stock adjustments, receiving QC failures and large pick shortfalls."
+        description="Requests waiting for your approval, the requests you sent, and who may approve purchase orders, large stock adjustments, receiving QC failures and large pick shortfalls."
       />
+      <Section title="Waiting for your approval">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Someone named you to approve these. Nothing has happened yet: approving carries the action out now, as they asked, if it is still possible.
+        </p>
+        <ActionMessage message={decision.message} />
+        <DataState state={inbox}>
+          {(d) => (
+            <DataTable
+              caption="Requests waiting for your approval"
+              rows={d.requests}
+              rowKey={(r) => r.id}
+              empty="Nothing is waiting for you."
+              columns={[
+                { header: 'Sent', cell: (r) => <DateText value={r.createdAt} withTime /> },
+                { header: 'What', cell: (r) => KIND_LABEL[r.kind] },
+                { header: 'From', cell: (r) => r.requestedBy },
+                { header: 'Details', cell: (r) => describe(r) },
+                {
+                  header: 'Decision',
+                  cell: (r) =>
+                    rejecting === r.id ? (
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          const ok = await decision.run(() => apiSend('POST', `/approvals/requests/${r.id}/reject`, { note }), 'Rejected. The requester can see your note.');
+                          if (ok) {
+                            setRejecting(null);
+                            setNote('');
+                            refreshRequests();
+                          }
+                        }}
+                      >
+                        <TextArea label="Why are you rejecting it?" value={note} onChange={setNote} required />
+                        <div className="row">
+                          <button type="submit" className="btn small" disabled={decision.busy}>
+                            Reject
+                          </button>
+                          <button type="button" className="btn small" onClick={() => setRejecting(null)}>
+                            Back
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="row">
+                        <button
+                          type="button"
+                          className="primary small"
+                          disabled={decision.busy}
+                          onClick={async () => {
+                            const ok = await decision.run(() => apiSend('POST', `/approvals/requests/${r.id}/approve`), `Approved: the ${KIND_LABEL[r.kind].toLowerCase()} has been carried out.`);
+                            refreshRequests();
+                            if (!ok) outbox.reload();
+                          }}
+                        >
+                          Approve
+                        </button>
+                        <button type="button" className="btn small" onClick={() => setRejecting(r.id)}>
+                          Reject…
+                        </button>
+                      </div>
+                    ),
+                },
+              ]}
+            />
+          )}
+        </DataState>
+      </Section>
+
+      <Section title="Requests you sent">
+        <DataState state={outbox}>
+          {(d) => (
+            <DataTable
+              caption="Requests you sent"
+              rows={d.requests}
+              rowKey={(r) => r.id}
+              empty="You have not sent any requests."
+              columns={[
+                { header: 'Sent', cell: (r) => <DateText value={r.createdAt} withTime /> },
+                { header: 'What', cell: (r) => KIND_LABEL[r.kind] },
+                { header: 'Approver', cell: (r) => r.approver },
+                { header: 'Details', cell: (r) => describe(r) },
+                {
+                  header: 'Status',
+                  cell: (r) => (
+                    <>
+                      <StatusBadge status={r.status} />
+                      {r.decisionNote && <div className="muted">Note: {r.decisionNote}</div>}
+                      {r.failureReason && <div className="muted">Not carried out: {r.failureReason}</div>}
+                    </>
+                  ),
+                },
+                {
+                  header: 'Actions',
+                  cell: (r) =>
+                    r.status === 'PENDING' ? (
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={decision.busy}
+                        onClick={async () => {
+                          await decision.run(() => apiSend('POST', `/approvals/requests/${r.id}/cancel`), 'Request withdrawn.');
+                          refreshRequests();
+                        }}
+                      >
+                        Withdraw
+                      </button>
+                    ) : null,
+                },
+              ]}
+            />
+          )}
+        </DataState>
+      </Section>
       <DataState state={policy}>
         {(p) => (
           <Section title="Approval rule">
             <p style={{ marginTop: 0 }}>
               By default every approval comes from someone other than the person who made the request, and that person must hold the approving
-              permission. This stays available whatever you choose below.
+              permission and approve from their own login: naming someone sends them a request on this page. This stays available whatever you
+              choose below.
             </p>
             <p>
               Owner approval is <strong>{p.ownerApprovalEnabled ? 'on' : 'off'}</strong>

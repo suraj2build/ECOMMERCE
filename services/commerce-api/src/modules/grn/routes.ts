@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { GrnService } from './service.js';
 import { selfApprovalSchema } from '../approvals/service.js';
+import { ApprovalQueueService } from '../approvals/queue.js';
 
 const createGrnSchema = z.object({
   poId: z.string().uuid(),
@@ -30,7 +31,25 @@ const grnRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/grn', { preHandler: createAuth }, async (request, reply) => {
     const body = createGrnSchema.parse(request.body);
-    const result = await service.createGoodsReceipt(body, request.staffUser!.id);
+    const me = request.staffUser!.id;
+    // A QC failure that needs a manager's sign-off, with someone else named,
+    // waits for that person to approve it from their own login: nothing is
+    // received until then (approvals/queue.ts).
+    if (body.managerSignoffStaffId && body.managerSignoffStaffId !== me) {
+      const check = await service.checkGoodsReceipt(body);
+      if (check.signoffFailedQty > 0) {
+        const pendingApproval = await new ApprovalQueueService(fastify).request({
+          kind: 'RECEIVING_QC',
+          requestedByStaffId: me,
+          approverStaffId: body.managerSignoffStaffId,
+          payload: { poId: body.poId, locationId: body.locationId, lines: body.lines },
+          summary: check.summary,
+        });
+        reply.status(202).send({ pendingApproval });
+        return;
+      }
+    }
+    const result = await service.createGoodsReceipt(body, me);
     // M10: accepted stock changes availability for every distinct SKU on the GRN.
     const distinctSkuIds = [...new Set(body.lines.map((line) => line.skuId))];
     for (const skuId of distinctSkuIds) {

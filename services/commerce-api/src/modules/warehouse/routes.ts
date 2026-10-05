@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { WarehouseService } from './service.js';
+import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { ApprovalPolicyService, selfApprovalSchema } from '../approvals/service.js';
+import { ApprovalQueueService } from '../approvals/queue.js';
 
 const listQuerySchema = z.object({
   status: z.enum(['PENDING', 'PICKED', 'SHORT_PICKED', 'EXCEPTION', 'CANCELLED']).optional(),
@@ -64,15 +66,64 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/warehouse/pick-tasks/:id/pick', { preHandler: pickAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = pickOutcomeSchema.parse(request.body);
+    const me = request.staffUser!.id;
     // A shortfall at/above the threshold writes off stock and needs a
     // co-approver under the same approval policy as stock adjustments
-    // (AO-D4): someone else holding inventory:adjust:coapprove, or the
-    // picker themselves only under owner approval with reason + password.
+    // (AO-D4). Someone else named: the pick outcome waits, unrecorded,
+    // until that person approves it from their own login
+    // (approvals/queue.ts). The picker themselves: owner approval only,
+    // with a reason and password.
+    if (body.coApproverStaffId && body.coApproverStaffId !== me) {
+      if (body.outcome === 'FULL') throw new ValidationError('A full pick writes nothing off, so it needs no approval');
+      const task = await fastify.prisma.pickTask.findUnique({
+        where: { id },
+        select: {
+          status: true,
+          allocatedQuantity: true,
+          order: { select: { orderNumber: true } },
+          exchange: { select: { exchangeNumber: true } },
+          location: { select: { name: true } },
+          sku: { select: { skuCode: true, style: { select: { name: true } }, colour: { select: { name: true } }, size: { select: { label: true } } } },
+        },
+      });
+      if (!task) throw new NotFoundError('PickTask', id);
+      if (task.status !== 'PENDING') throw new ConflictError(`This pick has already been recorded (status '${task.status}')`);
+      const picked = body.outcome === 'EXCEPTION' ? 0 : (body.pickedQuantity ?? 0);
+      const pendingApproval = await new ApprovalQueueService(fastify).request({
+        kind: 'PICK_SHORTFALL',
+        requestedByStaffId: me,
+        approverStaffId: body.coApproverStaffId,
+        payload: {
+          pickTaskId: id,
+          idempotencyKey: body.idempotencyKey,
+          outcome: body.outcome,
+          pickedQuantity: body.pickedQuantity,
+          exceptionType: body.exceptionType,
+          exceptionReason: body.exceptionReason,
+          scannedBarcode: body.scannedBarcode,
+        },
+        summary: {
+          reference: task.exchange?.exchangeNumber ?? task.order?.orderNumber ?? null,
+          skuCode: task.sku.skuCode,
+          item: `${task.sku.style.name} · ${task.sku.colour.name} · ${task.sku.size.label}`,
+          location: task.location.name,
+          outcome: body.outcome,
+          allocatedQuantity: task.allocatedQuantity,
+          pickedQuantity: picked,
+          writeOff: task.allocatedQuantity - picked,
+          reason: body.exceptionReason ?? null,
+        },
+        subjectKey: `pick:${id}`,
+      });
+      reply.status(202).send({ pendingApproval });
+      return;
+    }
     const approval = body.coApproverStaffId
       ? await new ApprovalPolicyService(fastify.prisma).decide({
           kind: 'PICK_SHORTFALL',
-          requestedByStaffId: request.staffUser!.id,
+          requestedByStaffId: me,
           approverStaffId: body.coApproverStaffId,
+          actingStaffId: me,
           permission: 'inventory:adjust:coapprove',
           selfApproval: body.selfApproval,
         })
@@ -80,7 +131,7 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(
       await warehouseService.recordPickOutcome({
         pickTaskId: id,
-        staffId: request.staffUser!.id,
+        staffId: me,
         idempotencyKey: body.idempotencyKey,
         outcome: body.outcome,
         pickedQuantity: body.pickedQuantity,
