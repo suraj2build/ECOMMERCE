@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getWatchAndShopFeed, searchStorefront } from '@/lib/api';
+import { getAllPublicCollections, getWatchAndShopFeed, searchStorefront } from '@/lib/api';
 import { absoluteUrl, sharing } from '@/lib/seo';
 import { loadEditorial, reelsForDepartment, type Department } from '@/vanya/bridge/editorial';
 import { HomeExperience, type DepartmentHome } from '@/vanya/bridge/HomeExperience';
@@ -11,10 +11,10 @@ export const metadata: Metadata = {
   ...sharing('VANYA — Indian Roots · Modern Form', DESCRIPTION, '/'),
 };
 
-async function departmentHome(department: Department, feed: Awaited<ReturnType<typeof getWatchAndShopFeed>>): Promise<DepartmentHome> {
+async function departmentHome(department: Department, feed: Awaited<ReturnType<typeof getWatchAndShopFeed>>, collectionSlugs: string[]): Promise<DepartmentHome> {
   const [result, editorial] = await Promise.all([
     searchStorefront({ gender: department, sort: 'newest', pageSize: 12 }).catch(() => null),
-    loadEditorial(department),
+    loadEditorial(department, collectionSlugs),
   ]);
   return {
     products: result?.hits ?? [],
@@ -25,7 +25,8 @@ async function departmentHome(department: Department, feed: Awaited<ReturnType<t
 }
 
 export default async function HomePage() {
-  const feed = await getWatchAndShopFeed().catch(() => []);
-  const [men, women] = await Promise.all([departmentHome('men', feed), departmentHome('women', feed)]);
+  const [feed, collections] = await Promise.all([getWatchAndShopFeed().catch(() => []), getAllPublicCollections().catch(() => [])]);
+  const slugs = collections.map((c) => c.slug);
+  const [men, women] = await Promise.all([departmentHome('men', feed, slugs), departmentHome('women', feed, slugs)]);
   return <HomeExperience men={men} women={women} />;
 }

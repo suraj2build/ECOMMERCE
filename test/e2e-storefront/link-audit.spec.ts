@@ -20,7 +20,7 @@ const PAGES = [
   '/category/men',
   '/category/new',
   '/category/sale',
-  '/category/kurtas',
+  '/category/everyday-kurtis',
   '/legal/privacy',
   '/legal/terms',
   '/bag',

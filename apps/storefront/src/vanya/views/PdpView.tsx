@@ -404,7 +404,7 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-1.5 text-[10px] text-[#A0978A]">
+                  <p className="mt-1.5 text-[10px] text-[#756A5E]">
                     Estimated if this is the only item in your bag — confirmed at checkout.
                   </p>
                 </div>

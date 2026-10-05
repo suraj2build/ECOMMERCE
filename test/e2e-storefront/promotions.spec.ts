@@ -1,5 +1,6 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { createHash } from 'node:crypto';
+import AxeBuilder from '@axe-core/playwright';
 import { PrismaClient } from '@fcp/db';
 
 const API_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
@@ -287,6 +288,11 @@ test.describe('Promotions (M24) - FLOW 18', () => {
     await expect(page.getByRole('heading', { name: 'Your bag is empty', exact: true })).toBeVisible({ timeout: 10_000 });
 
     await page.goto(`/product/${styleId}`);
+    // The product page's offers box (shown only while an automatic promotion
+    // applies) meets WCAG AA like the rest of the page.
+    await expect(page.getByText('Estimated if this is the only item in your bag', { exact: false })).toBeVisible({ timeout: 10_000 });
+    const offersA11y = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(offersA11y.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
     await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
     await page.getByRole('button', { name: 'Add to Bag' }).first().click();
     await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });

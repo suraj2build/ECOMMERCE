@@ -35,8 +35,8 @@ export function CheckoutStepper({
           ? 'bg-[var(--color-primary)] text-white'
           : isDone
           ? 'bg-[#EAE3D7] text-[#5C5146]'
-          : 'border border-[#DDD3C5] text-[#B9AE9F]';
-        const labelClass = isCurrent ? 'text-[#1A1816] font-semibold' : isDone ? 'text-[#756A5E]' : 'text-[#B9AE9F]';
+          : 'border border-[#DDD3C5] text-[#756A5E]';
+        const labelClass = isCurrent ? 'text-[#1A1816] font-semibold' : isDone ? 'text-[#756A5E]' : 'text-[#756A5E]';
         const content = (
           <span className={`flex items-center gap-1.5 ${labelClass}`}>
             <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${badgeClass}`}>

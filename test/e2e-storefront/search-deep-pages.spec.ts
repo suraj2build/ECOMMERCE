@@ -17,6 +17,11 @@ const MEILI_HEADERS: Record<string, string> = {
   'content-type': 'application/json',
   ...(process.env.MEILISEARCH_API_KEY ? { authorization: `Bearer ${process.env.MEILISEARCH_API_KEY}` } : {}),
 };
+// The API under test runs with NODE_ENV=test and so reads the isolated
+// 'styles_test' index (services/commerce-api/src/modules/search/index-service.ts).
+// These fixtures must never go into the real 'styles' index a demo uses.
+const INDEX = process.env.E2E_SEARCH_INDEX ?? 'styles_test';
+if (INDEX === 'styles') throw new Error("search-deep-pages refuses to write fixtures into the real 'styles' index");
 const TOTAL = 1005;
 const PAGE_SIZE = 24;
 const LAST_PAGE = Math.ceil(TOTAL / PAGE_SIZE); // 42, holding items 985..1005
@@ -42,7 +47,7 @@ test.describe('Search page validation beyond 1,000 matches', () => {
   const finalName = `${token} final item`;
 
   test.beforeAll(async () => {
-    await meili('/indexes/styles/documents', 'POST', ids.map((id, i) => ({
+    await meili(`/indexes/${INDEX}/documents`, 'POST', ids.map((id, i) => ({
       id,
       styleCode: `E2E-${token}-${i}`,
       name: i === 0 ? finalName : `${token} item ${i}`,
@@ -55,7 +60,7 @@ test.describe('Search page validation beyond 1,000 matches', () => {
   });
 
   test.afterAll(async () => {
-    await meili('/indexes/styles/documents/delete-batch', 'POST', ids);
+    await meili(`/indexes/${INDEX}/documents/delete-batch`, 'POST', ids);
   });
 
   test('the last populated page shows the final item, and a page past it redirects there', async ({ page }) => {

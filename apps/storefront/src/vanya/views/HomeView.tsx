@@ -27,6 +27,8 @@ export interface HomeEditorial {
   categories: StoryBubble[];
   occasions: { image: string | null; href: string | null }[];
   tastemakers: { id: string; image: string; caption: string }[];
+  /** Slugs of the published collections, so a link never leads to a missing one. */
+  collectionSlugs: string[];
 }
 
 /** Real delivery/returns defaults (GET /storefront/policies), when known. */
@@ -67,6 +69,9 @@ export function HomeView({
   hrefFor,
 }: HomeViewProps) {
   const isMen = activeGender === 'men';
+  // The design names collections it expects; link to one only while it is
+  // published, otherwise to the list of collections that do exist.
+  const collectionHref = (slug: string) => (editorial.collectionSlugs.includes(slug) ? `/collections/${slug}` : '/collections');
 
   // Strictly dedicated department products
   const departmentProducts = products.filter((p) =>
@@ -133,7 +138,7 @@ export function HomeView({
               </Link>
 
               <Link
-                href={`/collections/${isMen ? 'business-casual' : 'party-evening'}`}
+                href={collectionHref(isMen ? 'business-casual' : 'party-evening')}
                 className="inline-flex items-center gap-2.5 px-8 py-3.5 border border-white/80 bg-black/25 backdrop-blur-xs text-white hover:bg-white hover:text-[#181716] text-xs uppercase tracking-[0.20em] font-medium transition-all cursor-pointer rounded-full"
               >
                 <span>{isMen ? 'BUSINESS CASUAL EDIT' : 'PARTY & EVENING'}</span>
@@ -402,7 +407,7 @@ export function HomeView({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Banner 1: men=Workday, women=Workwear */}
           <Link
-            href={editorial.occasions[0]?.href ?? `/collections/${isMen ? 'workday' : 'workwear'}`}
+            href={editorial.occasions[0]?.href ?? collectionHref(isMen ? 'workday' : 'workwear')}
             className="group relative aspect-[4/3] rounded-2xl overflow-hidden cursor-pointer shadow-md bg-[#181716] flex flex-col justify-end p-6 sm:p-8"
           >
             {editorial.occasions[0]?.image && <img
@@ -429,7 +434,7 @@ export function HomeView({
 
           {/* Banner 2: men=Business Casual, women=Weekend */}
           <Link
-            href={editorial.occasions[1]?.href ?? `/collections/${isMen ? 'business-casual' : 'weekend'}`}
+            href={editorial.occasions[1]?.href ?? collectionHref(isMen ? 'business-casual' : 'weekend')}
             className="group relative aspect-[4/3] rounded-2xl overflow-hidden cursor-pointer shadow-md bg-[#181716] flex flex-col justify-end p-6 sm:p-8"
           >
             {editorial.occasions[1]?.image && <img
@@ -456,7 +461,7 @@ export function HomeView({
 
           {/* Banner 3: men=Everyday, women=Party & Evening */}
           <Link
-            href={editorial.occasions[2]?.href ?? `/collections/${isMen ? 'everyday' : 'party-evening'}`}
+            href={editorial.occasions[2]?.href ?? collectionHref(isMen ? 'everyday' : 'party-evening')}
             className="group relative aspect-[4/3] rounded-2xl overflow-hidden cursor-pointer shadow-md bg-[#181716] flex flex-col justify-end p-6 sm:p-8"
           >
             {editorial.occasions[2]?.image && <img
