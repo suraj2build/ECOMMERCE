@@ -207,10 +207,14 @@ publishing.
 
 | Kind | File | Covers |
 |---|---|---|
-| Integration (18) | `services/commerce-api/test/integration/admin-ops-products.test.ts` | Style/colour/SKU editing rules, blank-vs-null, archived refusal, barcode duplicates, sizes and product types, readiness states, upload validation (spoofed type, size, ownership), cover uniqueness, replace keeps the old file on failure, removal rules, public serving only while referenced, search refresh, permissions |
-| Integration (9) | `.../admin-ops-import.test.ts` | Dry run writes nothing, create/update/unchanged, blank cells, duplicate rows, bad references and barcodes, style skipped whole, batches and retry, no inventory changes, out-of-range batch refused, permissions |
-| Integration (9) | `.../admin-ops-config.test.ts` | Menu link validation, placements, draft banners, page edits, content images, channel scope and pause, setup statuses without secrets, storage test, permissions |
+| Integration (22) | `services/commerce-api/test/integration/admin-ops-products.test.ts` | Style/colour/SKU editing rules, blank-vs-null, archived refusal, barcode duplicates, sizes and product types, readiness states, upload validation (decoded images, corrupt/truncated files, dimension and pixel limits, spoofed type, size, ownership), republish after unpublish (AO-D1), shoe/belt/perfume attributes on the product page (AO-D2), cover uniqueness, replace keeps the old file on failure, removal rules, public serving only while referenced, search refresh, permissions |
+| Integration (16) | `.../admin-ops-import.test.ts` | Dry run writes nothing, create/update/unchanged, blank cells, duplicate rows, bad references and barcodes, style skipped whole, batches and retry, no inventory changes, out-of-range batch refused, permissions; whole-product rollback on a mid-product failure, simultaneous imports of the same product, interrupted batch then retry, price history appended only on a real change |
+| Integration (12) | `.../admin-ops-config.test.ts` | Menu link validation, placements, draft banners, page edits, content images, channel scope and pause, setup statuses without secrets, storage test, permissions; business details, GST registrations and warehouse addresses from admin (AO-D3) |
+| Integration (11) | `.../approvals.test.ts` | One approval policy (AO-D4) across purchase orders, adjustments, receiving and picking: self-approval refused while the policy is off, owner approval with reason and confirmation, wrong password and lock-out, non-owner refused, approver without the permission refused, approval log |
+| Integration (9) | `.../dispatch.test.ts` | Pick and pack scans, parcel measurements sent with the booking, required-check settings, documents, handover by staff and by carrier event, sale still posted at booking, permissions |
 | Browser (8) | `test/e2e-admin/admin-ops-phase1.spec.ts` | AO-01 shoe and perfume profiles; AO-02 draft restore, inline errors, edit reaching the storefront; AO-03 upload/cover/reorder/replace/remove with a bad file refused and the cover in storefront search; AO-04 import dry run, problem rows, import, retry with a corrected file, no stock; AO-05 menu editor reaching the storefront footer; AO-06 draft banner made live; AO-07 setup page, storage test, channel scope and pause; AO-08 readiness and preview |
+| Browser (1) | `test/e2e-admin/approvals.spec.ts` | AO-09 owner approval turned on, used on an own purchase order, listed in the log |
+| Browser (new) | `test/e2e-admin/p1-console.spec.ts` AO-10 | Pick scan (wrong item refused), pack scans with parcel measurements, packing slip and label, booking, courier handover |
 | Browser (updated) | `test/e2e-admin/p1-console.spec.ts` P1-01 | Product creation now goes through the workspace and checks the storefront product page, price and photo |
 
 The menu test and `test/e2e-storefront/cms-pages.spec.ts` both rewrite the
@@ -242,7 +246,7 @@ Desktop walkthrough screenshots (1440 px, from the browser tests):
   product, catalogue and security-header suites pass.
 - Browser: 80 passed, including all 30 admin tests (8 new). Read-load and
   checkout-contention load gates pass.
-- 4 storefront tests fail **at the base commit too** (base CI on `1195f48`
+- *(Fixed in the review follow-up, 2026-10-05; see below.)* 4 storefront tests failed **at the base commit too** (base CI on `1195f48`
   is red; `main` is also red). None involve files this branch changes:
   - link audit (×3): `/category/kurtas` no longer exists after the launch
     taxonomy (`everyday-kurtis`), and the home page falls back to
@@ -267,12 +271,47 @@ Desktop walkthrough screenshots (1440 px, from the browser tests):
 - Barcode scanners, label printers and scales (no hardware).
 - The demo's own photographs and fonts (blocked by this sandbox's network).
 
-## Open decisions
+## Decisions (Product Owner, 2026-10-05)
 
-| # | Question | Current behaviour |
+All five open decisions were answered in the Product Owner's review of
+this phase and are recorded in `blueprint/DECISION_REGISTER.md` → "AO —
+Admin operations":
+
+| # | Decision | Where |
 |---|---|---|
-| AO-D1 | PROD-003 has no path from UNPUBLISHED back to PUBLISHED. Should an unpublished product be republishable? | The workspace explains that an unpublished product cannot be republished. |
-| AO-D2 | Footwear closure, belt buckle and fragrance notes are stored, but the product page only shows short description, details, fit notes and styling notes. Should the product page show them? (A storefront design change.) | Stored with the product; not shown on the product page unless also written in "Details". |
-| AO-D3 | Business details and the warehouse address have no admin screen yet (API/seed only). Build one, or keep them as deployment-time setup? | Setup & health shows what is missing and where it is set. |
-| AO-D4 | Solo-owner approvals (PO approval, large stock adjustments). | See `NEXT_PHASES_RESEARCH.md` → "Solo-owner approvals". |
-| AO-D5 | Dispatch: move "shipped" and the sale from carrier booking to handover. | Unchanged; proposal in `NEXT_PHASES_RESEARCH.md`. |
+| AO-D1 | Unpublished products may be republished through the readiness/QA checks; archived stays separate. | Workspace → Publish ("Republish") |
+| AO-D2 | Shoe, belt and perfume attributes appear in the existing product-details section of the product page. | Storefront product page |
+| AO-D3 | Business and warehouse setup gets admin screens. | Admin → Business & warehouse |
+| AO-D4 | Explicit owner approval policy; one rule across PO, adjustments, receiving and picking. | `docs/admin/APPROVALS.md` |
+| AO-D5 | Booking and handover recorded separately; the sale-posting point stays until its consequences are reviewed. | `docs/admin/DISPATCH.md` |
+
+## Review follow-up (2026-10-05)
+
+The Product Owner's review of `e88aab9` asked for three items to be
+closed before acceptance, then the next dispatch steps.
+
+1. **Green CI on the combined branch.** `main` (catalogue photography) was
+   merged in, then the base-branch failures were fixed:
+   - the home page now links only to collections that are actually
+     published, so a store without the seeded collections has no 404
+     links;
+   - the link audit uses the launch category `everyday-kurtis`;
+   - the checkout stepper's upcoming steps and the product page's offers
+     note are darkened to `#756A5E` (WCAG AA, parity item C-3), and the
+     offers note is now covered by an axe check while a promotion is
+     active;
+   - the two bulk catalogue specs that had been skipped were run. One
+     (`search-deep-pages`) could never pass: it wrote its fixtures to the
+     `styles` index while the test API reads `styles_test`. It now writes
+     to the test index and refuses to run against `styles`.
+2. **Image validation.** Every upload (product photos, content images,
+   return evidence) is decoded in full; corrupt, truncated, animated and
+   oversized files are refused before anything is stored. Details in
+   DEPLOYMENT.md ("Product photos and content images").
+3. **Import recovery and concurrency.** Each product is saved in one
+   transaction under a per-product lock; simultaneous imports of a product
+   serialise; an interrupted batch is safe to resend and re-indexes
+   search; prices are append-only. See "3. Import products" above.
+
+Also from the review: the pick co-approver gap is closed by the shared
+approval policy (`docs/admin/APPROVALS.md`).

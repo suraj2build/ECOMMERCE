@@ -2859,3 +2859,62 @@ so and nothing is invented.
   leaves the bag; a repeated webhook or creation finds the existing order
   and removes nothing again. Tests: `checkout.test.ts` "Bag after a COD
   order (LR-011)", `payment.test.ts` "Bag after an order (LR-011)".
+
+---
+
+## AO — Admin operations (2026-10-05)
+
+Decided by the Product Owner in the review of Admin Ops Phase 1
+(`docs/admin/ADMIN_OPS_PHASE1.md`, branch `claude/admin-ops-phase1`),
+2026-10-05. The open questions were AO-D1..AO-D5 in that document.
+
+#### AO-D1 — Republishing an unpublished product
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** an UNPUBLISHED product may be republished, but only
+  through the readiness and QA checks again. Archived products stay
+  separate (no way back).
+- **Engineering:** unpublishing clears the earlier QA pass; the QA check
+  now runs from UNPUBLISHED and, when it passes, returns the product to
+  READY_FOR_QA, from which the normal publish applies. The workspace shows
+  "Republish" with the same blocking issues as a first publish.
+
+#### AO-D2 — Footwear, belt and fragrance attributes on the product page
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** show the relevant shoe, belt and perfume attributes
+  within the existing product-details section of the product page (no new
+  section, no design change beyond that).
+
+#### AO-D3 — Business and warehouse setup
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** provide admin screens. Routine operational
+  configuration should not require server access.
+- **Engineering:** "Business & warehouse" screen for the legal business
+  details, GST registrations (add, change status) and warehouse addresses
+  with the GST registration each ships under. Values are entered by the
+  owner; nothing is pre-filled or validated against a government service.
+  Secrets and provider credentials remain server settings by design.
+
+#### AO-D4 — Approvals for a solo owner
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** an explicit owner policy with reasons, audit
+  history and stronger confirmation for sensitive actions; independent
+  approval stays available for future staff; one consistent policy across
+  PO approval, stock adjustments, receiving and picking, with no
+  accidental self-approval left in any route.
+- **Engineering:** `docs/admin/APPROVALS.md`.
+
+#### AO-D5 — Dispatch: booking vs handover
+- **Status:** DECIDED in part (Product Owner, 2026-10-05)
+- **Final decision:** separate courier booking from the actual handover to
+  the courier. Review the stock and accounting consequences **before**
+  moving the sale-posting point.
+- **Engineering:** handover is recorded as its own event (staff
+  confirmation on a handover manifest, or the carrier's first in-transit
+  event), separately from booking. The `SALE` / `EXCHANGE_DISPATCH`
+  posting point is **unchanged** (still at booking); moving it remains
+  open pending the consequences review listed in
+  `docs/admin/NEXT_PHASES_RESEARCH.md` ("Proposal: move shipped from
+  carrier booking to handover").
+- **Still open (business):** B-2 (scan required at pick, pack or both) and
+  B-3 (measured parcel weight vs product weights) are left to the owner as
+  admin settings, off by default, rather than decided by engineering.

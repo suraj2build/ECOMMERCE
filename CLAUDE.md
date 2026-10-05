@@ -6,6 +6,51 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-05 (admin review follow-up): `ADMIN OPS PHASE 1
+REVIEW ITEMS CLOSED AND NEXT DISPATCH STEPS BUILT ON
+claude/admin-ops-phase1 — AWAITING IMPLEMENTATION REVIEW.`** The
+Product Owner's review of `e88aab9` asked for three items to be closed
+before acceptance, decided AO-D1..D5, and asked for barcode verification,
+parcel weight/dimensions and dispatch documents next. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Review follow-up"),
+`docs/admin/APPROVALS.md`, `docs/admin/DISPATCH.md`, and
+`blueprint/DECISION_REGISTER.md` → "AO — Admin operations".
+
+- **Green CI on the combined branch.** `main` was merged in. The home
+  page now links only to published collections, the link audit uses the
+  launch categories, and two AA contrast defects are fixed (C-3). The
+  previously skipped bulk spec `search-deep-pages` could never pass (it
+  wrote to the wrong search index); it now uses the test index and
+  refuses the demo's.
+- **Image validation.** Every upload is decoded in full (sharp/libvips).
+  Corrupt, truncated, animated and oversized images are refused before
+  anything is stored. The pixel limits are checked from the header
+  before any pixel is decoded.
+- **Import.** Each product is saved in one transaction under a
+  per-product lock. Simultaneous imports run one after the other, an
+  interrupted batch is safe to resend (search is repaired), and prices
+  are append-only per colour.
+- **AO-D4 approvals.** There is one policy for POs, stock adjustments,
+  receiving QC sign-off and pick shortfalls. Owner self-approval is off
+  by default; when on, it needs a named owner, a reason and a password,
+  and every approval is recorded. The pick co-approver gap is closed,
+  and receiving no longer accepts the receiver as their own sign-off.
+- **AO-D1/D2/D3.** Unpublished products republish through the QA check.
+  Shoe, belt and perfume attributes show in the product page's details.
+  The Business & warehouse admin screen covers the legal entity, GST
+  registrations, warehouse address and dispatch checks.
+- **Dispatch (AO-D5 in part).** Barcode checks at pick and pack, parcel
+  weight and dimensions sent with the booking, a printable packing slip
+  and address label (not a courier label), and a courier-handover
+  manifest. Handover is recorded separately from booking. **The stock
+  SALE is still posted at booking**: moving it waits for the consequences
+  review the Product Owner asked for. Scans and measurements are only
+  required if the owner turns that on (B-2/B-3 are left to the owner).
+
+Still open: a courier (LR-008) for real labels, pickup and cancellation;
+moving the sale point (AO-D5 review); and the other items listed under
+"Still open" below. Not self-certified; no go-live claimed.
+
 **Status as of 2026-10-04 (admin): `DESKTOP-FIRST ADMIN OPERATIONS
 PHASE 1 IMPLEMENTED ON claude/admin-ops-phase1 — AWAITING
 IMPLEMENTATION REVIEW.`** Authorized by the Product Owner ("START BUILD —
