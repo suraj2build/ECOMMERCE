@@ -121,10 +121,50 @@ Decided by the Product Owner on 2026-10-06 (`blueprint/DECISION_REGISTER.md`
   integration) still goes `READY_TO_SHIP -> SHIPPED` and posts the sale at
   once. It is refused for a booked package, which waits for its handover.
 
-### Cancelling a booked package
+### A package booked by mistake: cancel the booking and rebook
+
+Asked for by the Product Owner on 2026-10-06 ("A courier-booking mistake
+should preserve the order and reserved stock. Keep whole-order
+cancellation as a separate action."). Before the courier collects it,
+staff with `shipping:manage` (the people who book) use **Cancel booking
+and rebook** on the package (order page or Pack & ship;
+`POST /orders/fulfilments/:id/cancel-booking-rebook`). They must first
+cancel the booking with the courier themselves (LR-008), tick that they
+did, and give a reason; the courier's cancellation reference is optional.
+In one transaction (shipment, then package, then its lines locked, the
+same order as handover and carrier events):
+
+- the shipment becomes `CANCELLED` (who, when and the courier's reference
+  are kept), and later carrier events and handovers for it are refused;
+- the package becomes `CANCELLED` and is marked `releasedForRebook`;
+- its items go back to **picked, with no package**: they appear under
+  "Picked, waiting for a package" on Pack & ship and can be packed and
+  booked again as usual;
+- nothing else changes: the order and its lines are not cancelled, the
+  stock stays reserved (nothing moved at booking), the pick record stands,
+  and no payment, refund, credit note, loyalty or customer message is
+  touched. The audit log records `order.fulfilment.booking_release` with
+  the items released.
+
+The new package's handover posts the sale once. A retry with the same
+request key returns the same package; another key on an already released
+package, or the same key on another package, is refused (409). **Cancel
+booking and items** on a released package is refused rather than reported
+as done, since its items are no longer in it. A handover or a carrier
+movement event racing the release is serialised by the shipment lock: one
+wins, the other is refused. A line cancellation racing the release either
+waits and then cancels the released item (stock released) or is refused
+while the package was still booked. After the release, items can be
+cancelled one by one in the normal way. The shopper's order page does not
+show the released package (it was an internal correction); the item still
+shows as being prepared. An exchange replacement package is refused here
+and uses its own path (below).
+
+### Cancelling a booked package and its items
 
 Before the courier collects it, staff with `order:cancel` can cancel the
-whole package from the order page (**Cancel booking**). They must first
+whole package and its items from the order page (**Cancel booking and
+items**), for example when the customer no longer wants them. They must first
 cancel the booking with the courier themselves (there is no courier
 adapter yet, LR-008), tick that they did, and give a reason. In one
 transaction:
@@ -136,7 +176,8 @@ transaction:
   note, loyalty reversed;
 - the package becomes `CANCELLED`.
 
-A retry returns the cancelled package. While a package is booked, its
+To keep the order and book again, use **Cancel booking and rebook**
+(above) instead. A retry returns the cancelled package. While a package is booked, its
 lines cannot be cancelled one by one (by staff or by the shopper) and
 cannot be flagged as exceptions. A handover and a cancellation racing
 each other are serialised by the shipment lock: one wins, the other is
@@ -175,7 +216,14 @@ This recovers a wrong *booking* (wrong parcel size, wrong courier
 details, booked too early). It does not change the replacement *item*:
 that is fixed when the exchange is requested, and an exchange can only be
 cancelled before its original item is received. Changing the replacement
-item after allocation has no path today; it is reported, not built.
+item after allocation has no path today: the Product Owner deferred it
+(2026-10-06) on condition that the screen explains the recovery path, so
+the exchange page now says so (AO-D8 in `blueprint/DECISION_REGISTER.md`):
+before receipt the exchange can be cancelled and the item returned for a
+refund (a second exchange on the same line is not possible); after
+receipt only the allocated replacement can be sent. It also warns against
+recording a pick shortage to get round it, which would write the stock
+off.
 
 ### Customer view
 
@@ -187,6 +235,8 @@ to collect it" (not shipped) and hides its Cancel buttons.
 
 ## Not included (needs a courier or a decision)
 
+- Changing an exchange's replacement item after allocation (AO-D8,
+  deferred).
 - A courier's own labels, manifests, pickup booking and cancellation all
   need a real courier adapter (LR-008).
 - Product weights on SKUs (for estimating parcel weight without a scale),
@@ -209,7 +259,16 @@ to collect it" (not shipped) and hides its Cancel buttons.
   a package shipped before option B; cancelling a booked package (line
   cancels and exceptions refused, stock released, later carrier events
   refused); a handover racing a cancellation; the shipped message sent
-  only after the handover commits.
+  only after the handover commits. Cancel booking and rebook: the order,
+  reservation and pick kept and the items back to picked with no package;
+  confirmation, reason and `shipping:manage` required; idempotent retry
+  and key reuse refused; whole-package cancel of a released package
+  refused; handover and carrier events for the old parcel refused; the
+  shopper does not see the released package; a new package booked and
+  handed over posts one sale; refused before booking, after handover and
+  for an unknown package; split shipments (the other package untouched);
+  a handover racing the release; a carrier event racing the release;
+  item cancellation after the release, and racing it.
 - `shipping.test.ts` and `exchange-fulfilment.test.ts`: booking retries
   and races post no sale, the handover posts one; an exchange replacement
   posts its dispatch at handover and cannot be cancelled as an order
@@ -219,8 +278,12 @@ to collect it" (not shipped) and hides its Cancel buttons.
   before booking and after collection; carrier events and handover for
   the cancelled parcel refused), then a new package is booked, handed
   over (one dispatch) and delivered (exchange completed); a handover
-  racing that cancellation.
+  racing that cancellation; the order "cancel booking and rebook" route
+  refuses a replacement package.
 - Browser flows AO-10 (dispatch and handover), AO-11 (cancelling a
-  booked package) and P1-08 (an exchange replacement booked, its booking
+  booked package and its items; Customer Service does not get the rebook
+  action), AO-13 (cancel booking and rebook from the screens, then a new
+  package booked and handed over; the warehouse does not get the
+  cancel-items action) and P1-08 (an exchange replacement booked, its booking
   cancelled, rebooked, handed over and delivered) in `test/e2e-admin/p1-console.spec.ts` (they reuse that
   file's order and pick fixtures).

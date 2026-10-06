@@ -128,10 +128,12 @@ one dispatch).
   (its items are cancelled and the stock released). There is no "cancel
   the booking but keep the order and rebook" path for order packages,
   unlike the exchange replacement path built now. Whether one is wanted
-  is a Product Owner question.
+  is a Product Owner question. *(Built afterwards at the Product Owner's
+  request: **Cancel booking and rebook**, `docs/admin/DISPATCH.md`.)*
 - **Changing an exchange's replacement item** after allocation has no
   path (an exchange can only be cancelled before its original item is
-  received).
+  received). *(Deferred by the Product Owner; the exchange page now
+  explains the recovery path, AO-D8.)*
 - **Admin favicon.** Every admin page logs a 404 for `/favicon.ico`. No
   icon was added, since none has been supplied.
 - The Returns page's actions were not reviewed for status in this pass.

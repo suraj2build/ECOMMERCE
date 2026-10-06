@@ -2993,6 +2993,19 @@ courier (LR-008) stays `DECISION_REQUIRED`; nothing was built for it.
   replacement *item* after allocation is not covered and has no path
   today (reported, not built). `docs/admin/DISPATCH.md` → "A replacement
   booked by mistake".
+- **Order package booked by mistake (2026-10-06, after `71230f9`; Product
+  Owner instruction below):** staff with `shipping:manage` use **Cancel
+  booking and rebook**, after confirming the courier cancellation, with a
+  reason. The shipment and package become `CANCELLED` (the package marked
+  `releasedForRebook`), the items go back to picked with no package, and
+  nothing else changes: the order and its lines stay open, the stock stays
+  reserved, no refund, credit note, loyalty or customer message. The new
+  package's handover posts the sale once. Whole-package cancellation of
+  the items stays a separate action (`order:cancel`, now labelled **Cancel
+  booking and items**). Engineering chose `shipping:manage` because
+  rebooking is part of booking; the people who cancel items keep
+  `order:cancel`. `docs/admin/DISPATCH.md` → "A package booked by
+  mistake".
 - **Still open (business):** B-2 (scan required at pick, pack or both) and
   B-3 (measured parcel weight vs product weights) are left to the owner as
   admin settings, off by default, rather than decided by engineering.
@@ -3036,3 +3049,67 @@ courier (LR-008) stays `DECISION_REQUIRED`; nothing was built for it.
   The last active Super Admin and configured approval owners cannot be
   deactivated or lose their roles; nobody changes their own roles or
   deactivates themselves. Details: `docs/admin/STAFF.md`.
+
+#### Product Owner instruction of 2026-10-06 (after `71230f9`)
+
+Given after the report on `71230f9`, recorded verbatim:
+
+> The reported results close the previous review items: corrected
+> documentation, the desktop walkthrough, and recovery from an incorrect
+> exchange booking. 71230f9 is reported green; I haven’t independently
+> verified it.
+>
+> Before expanding features, I recommend these next steps:
+>
+> Add “cancel booking and rebook” for ordinary orders. A courier-booking
+> mistake should preserve the order and reserved stock. Keep whole-order
+> cancellation as a separate action. Require courier-cancellation
+> confirmation and a reason, and test races with handover.
+>
+> Upload Playwright artifacts on CI failure: traces, screenshots and the
+> HTML report. The link-audit timeout’s cause remains unconfirmed; the
+> latest green run doesn’t establish it.
+>
+> Select the courier, then validate real labels, pickup, tracking,
+> cancellation and duplicate events.
+>
+> Changing an allocated exchange item can remain deferred if the screen
+> clearly explains the available recovery path. The favicon is a minor
+> polish item.
+>
+> This is a stronger UAT candidate, with live courier operation still
+> pending.
+
+Engineering read the first two steps as the Product Owner's go-ahead and
+built them (cancel booking and rebook, AO-D5 above; Playwright artifacts
+on CI failure). The third needs the courier choice (LR-008, still
+`DECISION_REQUIRED`); nothing was built for it. The fourth is AO-D8 below.
+The favicon was not changed, since no icon has been supplied.
+
+#### AO-D8 — Changing an allocated exchange's replacement item
+- **Status:** DEFERRED by the Product Owner (2026-10-06, instruction
+  above), on condition that the screen explains the available recovery
+  path. **DECISION_REQUIRED** before anything is built.
+- **Question:** once an exchange's replacement has been allocated (after
+  the original item is received and passes QC), should staff be able to
+  change it, for example when the customer now wants another size?
+- **Today:** the replacement is fixed when the exchange is requested. An
+  exchange can be cancelled only before its original item is received,
+  and an order line can have only one exchange, so a cancelled exchange
+  cannot be replaced by a new one; a return (refund) can be started
+  instead. After receipt the exchange can only go ahead with its
+  allocated replacement. Recording a pick shortage to escape it would
+  write the stock off as missing, so it is not a recovery path.
+- **Screen:** the exchange page now says this in plain words, with the
+  pre- and post-receipt cases, and warns against the pick-shortage
+  workaround (browser test P1-08 checks it).
+- **Options for later:** (A) let staff cancel an allocated exchange
+  before its replacement is booked: release the replacement's
+  reservation and pick, settle any price difference already paid, and
+  allow one new exchange on the line; (B) let staff change the
+  replacement SKU while it is allocated and not booked: release the old
+  reservation, reserve the new item, re-price, and settle any new
+  difference; (C) keep it as it is. A and B both touch payment settlement
+  and stock, so each needs the Product Owner's rule for price differences
+  before it is built.
+
