@@ -158,6 +158,22 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
       .send(await orderService.cancelOrderLine(id, lineId, request.staffUser!.id, body.reason, body.idempotencyKey));
   });
 
+  // AO-D5 option B: cancel a package that is booked with the courier but
+  // not collected yet, after the courier booking itself was cancelled.
+  fastify.post('/orders/fulfilments/:fulfilmentId/cancel-booking', { preHandler: cancelAuth }, async (request, reply) => {
+    const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({
+        reason: z.string().trim().min(1).max(2000),
+        courierCancellationConfirmed: z.literal(true),
+        courierReference: z.string().trim().max(120).optional(),
+        idempotencyKey: z.string().min(1).max(200),
+      })
+      .strict()
+      .parse(request.body);
+    reply.status(200).send(await orderService.cancelBookedPackage(fulfilmentId, request.staffUser!.id, body));
+  });
+
   fastify.post('/orders/:id/lines/:lineId/exception', { preHandler: exceptionAuth }, async (request, reply) => {
     const { id, lineId } = z.object({ id: z.string().uuid(), lineId: z.string().uuid() }).parse(request.params);
     const body = reasonSchema.parse(request.body);

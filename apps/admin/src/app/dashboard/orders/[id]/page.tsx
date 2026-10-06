@@ -185,6 +185,10 @@ export default function OrderDetailPage() {
     }
   }
 
+  // AO-D5 option B: a line in a package booked with the courier is cancelled
+  // with its whole package (Cancel booking on Pack & ship), not on its own.
+  const inBookedPackage = (l: OrderLine) => Boolean(l.fulfilmentId && order.data?.fulfilments.some((f) => f.id === l.fulfilmentId && f.status === 'BOOKED'));
+
   return (
     <DataState state={order}>
       {(o) => (
@@ -366,7 +370,8 @@ export default function OrderDetailPage() {
                     // after delivery, refund for a cancelled prepaid line or
                     // a delivered (returnable) one.
                     <span className="row">
-                      {!['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && (
+                      {inBookedPackage(l) && <span className="muted">Booked with the courier: cancel from Pack &amp; ship</span>}
+                      {!['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && !inBookedPackage(l) && (
                         <Can anyOf={['order:cancel']}>
                           <button type="button" className="btn small" onClick={() => openLine({ kind: 'cancel', line: l })}>
                             Cancel
@@ -379,7 +384,7 @@ export default function OrderDetailPage() {
                             Resolve exception
                           </button>
                         ) : (
-                          !['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && (
+                          !['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && !inBookedPackage(l) && (
                             <button type="button" className="btn small" onClick={() => openLine({ kind: 'exception', line: l })}>
                               Flag exception
                             </button>

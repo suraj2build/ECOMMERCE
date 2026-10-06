@@ -192,7 +192,7 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/admin/fulfilments', auth('order:read'), async (request) => {
     const q = z
-      .object({ status: z.enum(['IN_PROGRESS', 'PENDING', 'PACKED', 'READY_TO_SHIP', 'SHIPPED', 'BOOKED_AWAITING_COLLECTION', 'HANDED_OVER', 'DELIVERED']).optional(), ...page })
+      .object({ status: z.enum(['IN_PROGRESS', 'PENDING', 'PACKED', 'READY_TO_SHIP', 'SHIPPED', 'BOOKED_AWAITING_COLLECTION', 'HANDED_OVER', 'DELIVERED', 'CANCELLED']).optional(), ...page })
       .parse(request.query);
     return service.listFulfilments(q);
   });

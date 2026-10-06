@@ -306,6 +306,11 @@ describe('Shipping / Tracking (M17)', () => {
       expect(shipment).toBeNull();
     });
 
+    // AO-D5 option B: booking posts no SALE; the handover posts exactly one.
+    async function handoverHttp(shipmentId: string, token: string) {
+      return app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: { authorization: `Bearer ${token}` }, payload: { shipmentIds: [shipmentId] } });
+    }
+
     it('is idempotent: a retried request with the same key returns the same Shipment, never a duplicate booking or a second SALE posting', async () => {
       const skuId = await setupCheckoutableSku(500);
       const token = await warehouseToken();
@@ -322,10 +327,15 @@ describe('Shipping / Tracking (M17)', () => {
       const shipments = await testPrisma.shipment.findMany({ where: { fulfilmentId } });
       expect(shipments).toHaveLength(1);
 
-      const saleRows = await testPrisma.inventoryTransaction.findMany({
-        where: { type: 'SALE', referenceType: 'ORDER_LINE', referenceId: lines[0].id },
-      });
-      expect(saleRows).toHaveLength(1);
+      const sales = () => testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', referenceType: 'ORDER_LINE', referenceId: lines[0].id } });
+      // Booked, not handed over: no stock has left yet.
+      expect(await sales()).toHaveLength(0);
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } })).status).toBe('BOOKED');
+
+      // The handover posts the sale once; repeating it posts nothing more.
+      expect((await handoverHttp(first.json().id, token)).statusCode).toBe(200);
+      expect((await handoverHttp(first.json().id, token)).statusCode).toBe(200);
+      expect(await sales()).toHaveLength(1);
 
       const fulfilment = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } });
       expect(fulfilment.status).toBe('SHIPPED');
@@ -349,10 +359,10 @@ describe('Shipping / Tracking (M17)', () => {
       expect(shipments).toHaveLength(1);
       expect(shipments[0].status).toBe('BOOKED');
 
-      const saleRows = await testPrisma.inventoryTransaction.findMany({
-        where: { type: 'SALE', referenceType: 'ORDER_LINE', referenceId: lines[0].id },
-      });
-      expect(saleRows).toHaveLength(1);
+      const sales = () => testPrisma.inventoryTransaction.findMany({ where: { type: 'SALE', referenceType: 'ORDER_LINE', referenceId: lines[0].id } });
+      expect(await sales()).toHaveLength(0);
+      expect((await handoverHttp(shipments[0].id, token)).statusCode).toBe(200);
+      expect(await sales()).toHaveLength(1);
     });
 
     it('recovers from a crash-equivalent retry between a successful carrier booking and the local commit (idempotent-by-shipmentId adapter)', async () => {

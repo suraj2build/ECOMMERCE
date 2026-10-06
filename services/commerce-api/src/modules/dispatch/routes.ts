@@ -1,10 +1,11 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { DispatchService } from './service.js';
+import { OrderService } from '../order/service.js';
 
 /** Dispatch settings and courier handover (docs/admin/DISPATCH.md). */
 const dispatchRoutes: FastifyPluginAsync = async (fastify) => {
-  const service = new DispatchService(fastify.prisma);
+  const service = new DispatchService(fastify.prisma, new OrderService(fastify));
   const shippingAuth = [fastify.requireStaffAuth, fastify.requirePermission('shipping:manage')];
 
   // Any signed-in staff member may read the checks (the pick and pack screens show them).

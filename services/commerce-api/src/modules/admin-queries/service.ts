@@ -219,15 +219,17 @@ export class AdminQueryService {
 
   /** Fulfilment queue (pack / ready-to-ship / ship / deliver work), order- and exchange-sourced alike. */
   async listFulfilments(params: { status?: string; take?: number; skip?: number }) {
-    // AO-D5: a booked package is SHIPPED whether or not the courier has
-    // collected it; these two filters split it by the recorded handover.
+    // AO-D5 option B: a package booked with the courier is BOOKED until the
+    // handover. A package booked before option B was built was marked
+    // SHIPPED at booking, so for those the recorded handover decides.
     // IN_PROGRESS: everything that still needs someone to act - not yet
-    // shipped, or booked and waiting for the courier to collect it.
+    // with the courier.
+    const legacyAwaiting: Prisma.OrderFulfilmentWhereInput = { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } };
     const where: Prisma.OrderFulfilmentWhereInput =
       params.status === 'IN_PROGRESS'
-        ? { OR: [{ status: { in: ['PENDING', 'PACKED', 'READY_TO_SHIP'] } }, { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } }] }
+        ? { OR: [{ status: { in: ['PENDING', 'PACKED', 'READY_TO_SHIP', 'BOOKED'] } }, legacyAwaiting] }
         : params.status === 'BOOKED_AWAITING_COLLECTION'
-        ? { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } }
+        ? { OR: [{ status: 'BOOKED' }, legacyAwaiting] }
         : params.status === 'HANDED_OVER'
           ? { status: 'SHIPPED', shipment: { is: { handedOverAt: { not: null } } } }
           : params.status
@@ -622,7 +624,7 @@ export class AdminQueryService {
         .findMany({ where: { status: 'PICKED', fulfilmentId: null }, distinct: ['orderId'], select: { orderId: true } })
         .then((rows) => rows.length),
       toPackOrShip: p.orderFulfilment.count({ where: { status: { in: ['PENDING', 'PACKED', 'READY_TO_SHIP'] } } }),
-      awaitingCollection: p.orderFulfilment.count({ where: { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } } }),
+      awaitingCollection: p.orderFulfilment.count({ where: { OR: [{ status: 'BOOKED' }, { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } }] } }),
     });
     if (staffUserId && (permissions.has('inventory:adjust:coapprove') || permissions.has('grn:qc:manager_signoff'))) {
       // Approval requests waiting for this person (only people who can be

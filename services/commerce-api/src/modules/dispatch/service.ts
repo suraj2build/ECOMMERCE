@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from '@fcp/db';
 import { NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
+import type { OrderService } from '../order/service.js';
 
 /**
  * Dispatch checks, documents and courier handover (docs/admin/DISPATCH.md;
@@ -11,21 +12,28 @@ import { recordAudit } from '../audit/service.js';
  *   setting (B-2), off by default; a scan that is given is always checked.
  * - Parcel: gross weight and dimensions recorded at pack and sent with the
  *   courier booking. Required only when the owner's setting says so (B-3).
- * - Handover: recorded separately from booking (staff confirmation or the
- *   carrier's first in-transit event). The stock SALE is NOT moved; it is
- *   still posted at booking until the consequences review is done.
+ * - Handover (AO-D5 option B, Product Owner 2026-10-06): booking makes the
+ *   package BOOKED and moves no stock. The handover - staff confirmation
+ *   here, or the carrier's first movement event - posts the sale (or the
+ *   exchange dispatch), marks the package SHIPPED and sends the customer's
+ *   "shipped" message after commit. Whichever comes first does it; the
+ *   other changes nothing. A package booked before this change is already
+ *   SHIPPED (its sale was posted at booking) and only gets its handover
+ *   recorded.
  */
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
 /**
- * Where a package really is (AO-D5). A package is marked shipped when it is
- * booked with a courier (the sale is posted then), so "shipped" alone does
- * not say whether the courier has it. The admin shows this stage instead.
+ * Where a package really is (AO-D5). BOOKED is booked with the courier and
+ * waiting for collection. A package booked before option B was built was
+ * marked SHIPPED at booking, so for those "shipped" alone does not say
+ * whether the courier has it; the handover time does.
  */
-export type DispatchStage = 'PENDING' | 'PACKED' | 'READY_TO_SHIP' | 'SHIPPED' | 'BOOKED_AWAITING_COLLECTION' | 'HANDED_OVER' | 'DELIVERED';
+export type DispatchStage = 'PENDING' | 'PACKED' | 'READY_TO_SHIP' | 'SHIPPED' | 'BOOKED_AWAITING_COLLECTION' | 'HANDED_OVER' | 'DELIVERED' | 'CANCELLED';
 
 export function dispatchStage(fulfilmentStatus: string, shipment: { handedOverAt: Date | null } | null | undefined): DispatchStage {
+  if (fulfilmentStatus === 'BOOKED') return 'BOOKED_AWAITING_COLLECTION';
   if (fulfilmentStatus === 'SHIPPED' && shipment) return shipment.handedOverAt ? 'HANDED_OVER' : 'BOOKED_AWAITING_COLLECTION';
   return fulfilmentStatus as DispatchStage;
 }
@@ -170,7 +178,11 @@ export async function assertSenderAddress(db: Db, fulfilmentId: string) {
 }
 
 export class DispatchService {
-  constructor(private readonly prisma: PrismaClient) {}
+  /** `order` is needed only by `recordHandover` (it posts the sale through OrderService). */
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly order?: Pick<OrderService, 'markFulfilmentShipped' | 'notifyFulfilmentShipped'>,
+  ) {}
 
   /** Data for the packing slip and address label of one package. */
   async documents(fulfilmentId: string) {
@@ -271,27 +283,40 @@ export class DispatchService {
   /**
    * Staff confirm that the courier collected these parcels. Only booked,
    * not-yet-handed-over shipments are updated; repeating the call for a
-   * parcel already handed over changes nothing. Does NOT post any stock
-   * movement (the SALE stays at booking - AO-D5).
+   * parcel already handed over changes nothing. For a package that is
+   * BOOKED, the handover posts the sale (or exchange dispatch) and marks
+   * it SHIPPED in the same transaction (AO-D5 option B); the customer's
+   * message is sent after commit. A package already SHIPPED (booked before
+   * option B, or the carrier reported movement first) is not posted again.
    */
   async recordHandover(shipmentIds: string[], reference: string | undefined, actorStaffId: string) {
     const ids = [...new Set(shipmentIds)];
     if (ids.length === 0) throw new ValidationError('Choose at least one parcel');
-    return this.prisma.$transaction(async (tx) => {
+    if (!this.order) throw new Error('DispatchService.recordHandover needs an OrderService');
+    const order = this.order;
+    const shipped: Array<{ fulfilmentId: string; trackingRef: string | null }> = [];
+    const result = await this.prisma.$transaction(async (tx) => {
       // Lock the parcels first (in a fixed order), so two people confirming
       // the same parcels at once are serialised: the second sees them as
-      // already handed over and records nothing in their name.
+      // already handed over and records nothing in their name. The package
+      // rows are locked after the shipments (inside markFulfilmentShipped),
+      // the same shipment -> package order booking, carrier events and
+      // booking cancellation use.
       const locked = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM shipments WHERE id = ANY(${ids}::text[]) ORDER BY id FOR UPDATE`;
       if (locked.length !== ids.length) {
         const missingId = ids.find((id) => !locked.some((r) => r.id === id))!;
         throw new NotFoundError('Shipment', missingId);
       }
-      const found = await tx.shipment.findMany({ where: { id: { in: ids } }, select: { id: true, status: true, handedOverAt: true, orderId: true } });
+      const found = await tx.shipment.findMany({
+        where: { id: { in: ids } },
+        orderBy: { id: 'asc' },
+        select: { id: true, status: true, handedOverAt: true, orderId: true, fulfilmentId: true, trackingRef: true, fulfilment: { select: { status: true } } },
+      });
       const missing = ids.filter((id) => !found.some((s) => s.id === id));
       if (missing.length > 0) throw new NotFoundError('Shipment', missing[0]!);
-      const notBooked = found.filter((s) => s.status === 'CREATED');
-      if (notBooked.length > 0) throw new ValidationError('A parcel that is not booked with the courier yet cannot be handed over');
+      if (found.some((s) => s.status === 'CREATED')) throw new ValidationError('A parcel that is not booked with the courier yet cannot be handed over');
+      if (found.some((s) => s.status === 'CANCELLED')) throw new ValidationError('A parcel whose courier booking was cancelled cannot be handed over');
       const now = new Date();
       const updated = await tx.shipment.updateMany({
         where: { id: { in: ids }, handedOverAt: null },
@@ -304,12 +329,20 @@ export class DispatchService {
           action: 'shipping.handover',
           entityType: 'Shipment',
           entityId: s.id,
-          newValue: { handoverReference: reference?.trim() || null, source: 'STAFF' },
+          newValue: { handoverReference: reference?.trim() || null, source: 'STAFF', salePosted: s.fulfilment.status === 'BOOKED' },
           reference: s.orderId,
         });
       }
-      return { recorded: updated.count, alreadyHandedOver: ids.length - updated.count };
+      for (const s of found) {
+        if (s.fulfilment.status !== 'BOOKED') continue;
+        await order.markFulfilmentShipped(s.fulfilmentId, actorStaffId, undefined, tx, 'BOOKED');
+        shipped.push({ fulfilmentId: s.fulfilmentId, trackingRef: s.trackingRef });
+      }
+      return { recorded: updated.count, alreadyHandedOver: ids.length - updated.count, shipped: shipped.length };
     });
+    // Sent only after the handover has committed.
+    for (const s of shipped) await order.notifyFulfilmentShipped(s.fulfilmentId, s.trackingRef);
+    return result;
   }
 
   getSettings() {

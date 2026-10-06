@@ -171,6 +171,7 @@ const STATUS_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 
   PACKED: 'info',
   READY_TO_SHIP: 'info',
   SHIPPED: 'info',
+  BOOKED: 'warning',
   BOOKED_AWAITING_COLLECTION: 'warning',
   HANDED_OVER: 'info',
   IN_TRANSIT: 'info',
@@ -202,6 +203,7 @@ const STATUS_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  BOOKED: 'Booked — awaiting collection',
   BOOKED_AWAITING_COLLECTION: 'Booked — awaiting collection',
   HANDED_OVER: 'Handed over',
 };

@@ -159,20 +159,20 @@ model CustomerRefreshToken {
 }
 
 model StaffUser {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  isActive     Boolean  @default(true)
-  mfaEnabled   Boolean  @default(false)
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String
+  fullName           String
+  isActive           Boolean   @default(true)
+  mfaEnabled         Boolean   @default(false)
   // TOTP secret, AES-256-GCM encrypted at rest by the application layer
   // (M31 Security Hardening - modules/auth/mfa-secret-crypto.ts) - this
   // comment previously claimed encryption that was never actually
   // implemented; a genuine gap this pass found and fixed, not a
   // pre-existing accurate claim.
-  mfaSecret    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  mfaSecret          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   roles                         StaffUserRole[]
   sessions                      StaffSession[]
@@ -1871,6 +1871,10 @@ enum OrderLineStatus {
   EXCEPTION
 }
 
+// AO-D5 option B (2026-10-06): a courier booking now moves READY_TO_SHIP
+// -> BOOKED, and the handover moves BOOKED -> SHIPPED and posts the SALE;
+// a shipment recorded by hand (the staff /ship route) still goes
+// READY_TO_SHIP -> SHIPPED. Original M16 note:
 // M16 inserts READY_TO_SHIP between PACKED and SHIPPED - the explicit
 // warehouse/shipping hand-off boundary the M16 build instruction requires
 // ("create only the explicit adapter/handoff boundary required by M16").
@@ -1884,8 +1888,15 @@ enum FulfilmentStatus {
   PENDING
   PACKED
   READY_TO_SHIP
+  // AO-D5 option B (Product Owner, 2026-10-06): booked with a courier,
+  // waiting for collection. No stock movement yet; the sale (or exchange
+  // dispatch), SHIPPED and the customer's message come at handover.
+  BOOKED
   SHIPPED
   DELIVERED
+  // A booked package cancelled by staff before handover, after the courier
+  // booking was cancelled; its lines are cancelled and detached.
+  CANCELLED
 }
 
 enum PickTaskStatus {
@@ -2246,6 +2257,9 @@ enum ShipmentTrackingStatus {
   DELIVERED
   RTO_INITIATED
   RTO_DELIVERED
+  // AO-D5 option B: the courier booking was cancelled (confirmed by staff)
+  // before handover. Terminal; no carrier event moves it.
+  CANCELLED
 }
 
 enum ShipmentEventSource {
@@ -2268,40 +2282,44 @@ enum ShipmentEventStatus {
 }
 
 model Shipment {
-  id                  String                 @id @default(uuid())
-  fulfilmentId        String                 @unique
-  orderId             String
-  provider            String
-  providerShipmentRef String?
-  trackingRef         String?
-  status              ShipmentTrackingStatus @default(CREATED)
-  deliveryAttempts    Int                    @default(0)
+  id                           String                 @id @default(uuid())
+  fulfilmentId                 String                 @unique
+  orderId                      String
+  provider                     String
+  providerShipmentRef          String?
+  trackingRef                  String?
+  status                       ShipmentTrackingStatus @default(CREATED)
+  deliveryAttempts             Int                    @default(0)
   // Snapshot of the configured SHIPPING_MAX_REDELIVERY_ATTEMPTS at
   // creation time (SHIP-004: "configurable, engineering default 2") - a
   // later config change must never retroactively alter the attempt
   // budget of a shipment already in flight.
-  maxDeliveryAttempts Int
+  maxDeliveryAttempts          Int
   // Carrier-call idempotency key (SHIP §7) - the local Shipment.id itself
   // is already unique per fulfilment, but this column lets a retried
   // create-shipment HTTP request (same client idempotency key) resolve to
   // the SAME shipment row rather than a second one, mirroring Payment.
   // idempotencyKey / InventoryReservation.idempotencyKey / PickTask.
   // idempotencyKey.
-  idempotencyKey      String                 @unique
-  createdByStaffId    String?
-  bookedAt            DateTime?
-  deliveredAt         DateTime?
-  rtoInitiatedAt      DateTime?
-  rtoDeliveredAt      DateTime?
+  idempotencyKey               String                 @unique
+  createdByStaffId             String?
+  bookedAt                     DateTime?
+  deliveredAt                  DateTime?
+  rtoInitiatedAt               DateTime?
+  rtoDeliveredAt               DateTime?
   // AO-D5: handover to the courier, recorded separately from booking (the
   // stock SALE is still posted at booking). Source: STAFF (handover
   // manifest) or CARRIER_EVENT (first in-transit tracking event).
-  handedOverAt        DateTime?
-  handoverSource      String?
-  handedOverByStaffId String?
-  handoverReference   String?
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
+  handedOverAt                 DateTime?
+  handoverSource               String?
+  handedOverByStaffId          String?
+  handoverReference            String?
+  // AO-D5 option B: staff confirmed the courier booking was cancelled.
+  bookingCancelledAt           DateTime?
+  bookingCancelledByStaffId    String?
+  bookingCancellationReference String?
+  createdAt                    DateTime               @default(now())
+  updatedAt                    DateTime               @updatedAt
 
   fulfilment     OrderFulfilment         @relation(fields: [fulfilmentId], references: [id], onDelete: Restrict)
   order          Order                   @relation(fields: [orderId], references: [id], onDelete: Restrict)

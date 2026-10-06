@@ -291,6 +291,14 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await openOrder(page, order.orderNumber);
     await expect(page.getByText(shipment.trackingRef!).first()).toBeVisible();
+    // AO-D5 option B: booked, not collected - nothing to deliver yet, and no stock has left.
+    await expect(page.getByText('Booked with the courier, waiting for collection.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Mark delivered', exact: true })).toHaveCount(0);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(0);
+    await confirmHandover(page, order.orderNumber);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(1);
+
+    await openOrder(page, order.orderNumber);
     await fulfilmentStep(page, 'Mark delivered');
     expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('DELIVERED');
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } })).status).toBe('DELIVERED');
@@ -378,6 +386,10 @@ test.describe('P1 Commerce Operations Console', () => {
     await fulfilmentStep(page, 'Mark packed');
     await fulfilmentStep(page, 'Ready to ship');
     await fulfilmentStep(page, 'Book shipment with carrier');
+    // AO-D5 option B: the replacement leaves stock at the courier handover.
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(0);
+    await confirmHandover(page, exchange.exchangeNumber);
+    await page.goto(`/dashboard/exchanges/${exchange.id}`);
     await fulfilmentStep(page, 'Mark delivered');
     // Delivery of the replacement package completes the exchange automatically (EXC-004 Option 2).
     await expect(page.locator('.page-header .badge').first()).toHaveText('Completed');
@@ -667,25 +679,62 @@ test.describe('P1 Commerce Operations Console', () => {
     await expect(page.getByRole('article', { name: 'Address label' }).getByText('4 Dispatch Yard')).toBeVisible();
     await expect(page.getByRole('article', { name: 'Address label' }).getByText(/Cash on delivery/)).toBeVisible();
 
-    // Book: the stock sale is still posted at booking (AO-D5), handover is separate.
+    // Book: no stock leaves at booking (AO-D5 option B); the handover posts the sale.
     await openOrder(page, order.orderNumber);
     await fulfilmentStep(page, 'Ready to ship');
     await fulfilmentStep(page, 'Book shipment with carrier');
     const shipment = await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: fulfilment.id } });
     expect(shipment.status).toBe('BOOKED');
     expect(shipment.handedOverAt).toBeNull();
-    expect(await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } })).toBe(saleBefore + 1);
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilment.id } })).status).toBe('BOOKED');
+    expect(await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } })).toBe(saleBefore);
 
     // Handover manifest: tick the parcel and confirm.
     await page.getByRole('link', { name: 'Courier handover' }).click();
     await page.getByLabel(`Handed over: ${order.orderNumber}`).check();
     await page.getByLabel(/manifest or pickup reference/).fill(`PICKUP-${RUN}`);
     await page.getByRole('button', { name: /Confirm handover of 1 parcel/ }).click();
-    await expect(page.getByText('1 parcel recorded as handed over.')).toBeVisible();
+    await expect(page.getByText('1 parcel recorded as handed over and marked shipped.')).toBeVisible();
     const handed = await prisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
     expect(handed.handedOverAt).not.toBeNull();
     expect(handed.handoverReference).toBe(`PICKUP-${RUN}`);
     await expect(page.getByLabel(`Handed over: ${order.orderNumber}`)).toHaveCount(0);
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilment.id } })).status).toBe('SHIPPED');
+    expect(await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } })).toBe(saleBefore + 1);
+  });
+
+  test('AO-11 a package booked with the courier is cancelled from the screen; its items are cancelled and no stock leaves', async ({ page }) => {
+    const order = await placeCodOrder(fx, tee.skus[1]!.skuId, nextMobile());
+    const task = await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } });
+    await expectOk(
+      await fx.api.post(`/api/v1/warehouse/pick-tasks/${task.id}/pick`, { headers: fx.auth, data: { idempotencyKey: `ao-11-${task.id}`, outcome: 'FULL', pickedQuantity: 1 } }),
+      'Pick',
+    );
+    const f = await expectOk<{ id: string }>(await fx.api.post(`/api/v1/orders/${order.orderId}/fulfilments`, { headers: fx.auth, data: { lineIds: [order.lineId] } }), 'Fulfilment');
+    for (const step of ['pack', 'ready-to-ship']) await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/${step}`, { headers: fx.auth }), step);
+    await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/shipment`, { headers: fx.auth, data: { idempotencyKey: `ao-11-book-${f.id}` } }), 'Book');
+
+    await loginAs(page, 'CUSTOMER_SERVICE');
+    await openOrder(page, order.orderNumber);
+    // The line cannot be cancelled on its own while the courier has a booking.
+    await expect(page.getByText('Booked with the courier: cancel from Pack & ship')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Cancel booking', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Cancel booking' });
+    const confirm = dialog.getByRole('button', { name: 'Cancel booking' });
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel('Reason (required)').fill('Customer called before collection');
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel('I have cancelled this booking with the courier').check();
+    await confirm.click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('Booking cancelled. The items are cancelled and their stock released.').first()).toBeVisible();
+
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('CANCELLED');
+    expect((await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } })).status).toBe('CANCELLED');
+    expect((await prisma.orderLine.findUniqueOrThrow({ where: { id: order.lineId } })).status).toBe('CANCELLED');
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(0);
   });
 });
 
@@ -713,6 +762,14 @@ async function pickFromQueue(page: Page, orderNumber: string) {
 }
 
 /** Runs one package transition (button + confirmation) and waits for the confirmation text. */
+/** Confirms on the Courier handover page that the courier collected this parcel (AO-D5). */
+async function confirmHandover(page: Page, reference: string) {
+  await page.goto('/dashboard/fulfilments/handover');
+  await page.getByLabel(`Handed over: ${reference}`).check();
+  await page.getByRole('button', { name: /Confirm handover of 1 parcel/ }).click();
+  await expect(page.getByText('1 parcel recorded as handed over and marked shipped.')).toBeVisible();
+}
+
 async function fulfilmentStep(page: Page, label: string) {
   await page.getByRole('button', { name: label, exact: true }).first().click();
   await confirmDialog(page, label);

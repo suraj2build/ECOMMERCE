@@ -155,8 +155,9 @@ export default function FulfilmentsPage() {
             { value: 'READY_TO_SHIP', label: 'Ready to ship' },
             { value: 'BOOKED_AWAITING_COLLECTION', label: 'Booked — awaiting collection' },
             { value: 'HANDED_OVER', label: 'Handed over to the courier' },
-            { value: 'SHIPPED', label: 'Shipped (booked or handed over)' },
+            { value: 'SHIPPED', label: 'Shipped' },
             { value: 'DELIVERED', label: 'Delivered' },
+            { value: 'CANCELLED', label: 'Booking cancelled before collection' },
           ]}
           onChange={(v) => {
             setStatus(v);
@@ -186,13 +187,15 @@ export default function FulfilmentsPage() {
                       </Link>
                     ),
                 },
-                { header: 'Contents', cell: (f) => (f.exchangeId ? 'Exchange replacement' : `${f._count.lines} order line(s)`) },
+                { header: 'Contents', cell: (f) => (f.exchangeId ? 'Exchange replacement' : f.status === 'CANCELLED' ? 'Items cancelled' : `${f._count.lines} order line(s)`) },
                 {
                   header: 'Status',
                   cell: (f) => (
                     <>
                       <StatusBadge status={f.dispatchStage} />
-                      {f.dispatchStage === 'BOOKED_AWAITING_COLLECTION' && <div className="muted">Stock already deducted at booking</div>}
+                      {f.dispatchStage === 'BOOKED_AWAITING_COLLECTION' && (
+                        <div className="muted">{f.status === 'BOOKED' ? 'Stock leaves at handover' : 'Booked before handover posting; stock already deducted'}</div>
+                      )}
                       {f.dispatchStage === 'HANDED_OVER' && f.shipment?.handedOverAt && (
                         <div className="muted">
                           <DateText value={f.shipment.handedOverAt} withTime />

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { apiSend, newIdempotencyKey } from '@/lib/api';
 import { useAction, useApi } from '@/lib/session';
-import { ActionMessage, Can, ConfirmDialog, TextField } from './ui';
+import { ActionMessage, Can, Checkbox, ConfirmDialog, TextField } from './ui';
 
 interface PackLine {
   skuCode: string;
@@ -27,7 +27,7 @@ export interface FulfilmentLike {
   shipment: { id: string; status: string; provider: string; trackingRef: string | null } | null;
 }
 
-type Step = 'pack' | 'ready-to-ship' | 'shipment' | 'ship' | 'deliver';
+type Step = 'pack' | 'ready-to-ship' | 'shipment' | 'ship' | 'deliver' | 'cancel-booking';
 
 const STEPS: Record<Step, { label: string; perm: string; body: string; done: string }> = {
   pack: {
@@ -45,11 +45,22 @@ const STEPS: Record<Step, { label: string; perm: string; body: string; done: str
   shipment: {
     label: 'Book shipment with carrier',
     perm: 'shipping:manage',
-    body: 'Books the shipment with the configured carrier. The parcel weight and size recorded at packing are sent with the booking. A retry uses the same request key, so it never double-books. Booking takes the units out of stock and marks the package shipped now; it shows as "Booked — awaiting collection" until the handover to the courier is confirmed on the Courier handover page.',
+    body: 'Books the shipment with the configured carrier. The parcel weight and size recorded at packing are sent with the booking. A retry uses the same request key, so it never double-books. The stock stays reserved until the courier collects the parcel: the handover takes the units out of stock, marks the package shipped and tells the customer.',
     done: 'Booked with the courier. When they collect it, confirm the handover on the Courier handover page.',
   },
-  ship: { label: 'Mark shipped manually', perm: 'order:fulfil', body: 'Records a shipment handed over outside the carrier integration.', done: 'Marked shipped.' },
+  ship: {
+    label: 'Mark shipped manually',
+    perm: 'order:fulfil',
+    body: 'Records a parcel sent outside the carrier integration, handed over now. It takes the units out of stock and tells the customer it has shipped.',
+    done: 'Marked shipped.',
+  },
   deliver: { label: 'Mark delivered', perm: 'order:fulfil', body: 'Records delivery. Normally the carrier reports this.', done: 'Marked delivered.' },
+  'cancel-booking': {
+    label: 'Cancel booking',
+    perm: 'order:cancel',
+    body: 'Cancels this package before the courier collects it. First cancel the booking with the courier yourself (this system cannot do that yet). Every item in the package is cancelled and its stock released; a prepaid order is flagged for refund.',
+    done: 'Booking cancelled. The items are cancelled and their stock released.',
+  },
 };
 
 /** The steps that apply to a package in this status, in the order they happen. */
@@ -57,6 +68,7 @@ const STEPS_FOR: Record<string, Step[]> = {
   PENDING: ['pack'],
   PACKED: ['ready-to-ship'],
   READY_TO_SHIP: ['shipment', 'ship'],
+  BOOKED: ['cancel-booking'],
   SHIPPED: ['deliver'],
 };
 
@@ -65,6 +77,8 @@ const NEXT_FOR: Record<string, string> = {
   PENDING: 'Next: pack it, scanning each unit.',
   PACKED: 'Next: mark it ready to ship.',
   READY_TO_SHIP: 'Next: book it with the courier (or record a shipment sent another way).',
+  BOOKED: 'Booked with the courier, waiting for collection. When they collect it, confirm the handover on the Courier handover page.',
+  CANCELLED: 'The courier booking was cancelled and the items in this package were cancelled.',
 };
 
 /**
@@ -80,6 +94,9 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
   const [key, setKey] = useState('');
   const [carrierName, setCarrierName] = useState('');
   const [trackingRef, setTrackingRef] = useState('');
+  const [courierCancelled, setCourierCancelled] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [courierReference, setCourierReference] = useState('');
   const settings = useApi<DispatchSettings>('/dispatch/settings');
   const [scan, setScan] = useState('');
   const [scans, setScans] = useState<string[]>([]);
@@ -104,6 +121,8 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
     const body =
       s === 'shipment'
         ? { idempotencyKey: key }
+        : s === 'cancel-booking'
+          ? { idempotencyKey: key, courierCancellationConfirmed: courierCancelled, reason: cancelReason, courierReference: courierReference.trim() || undefined }
         : s === 'ship'
           ? { carrierName: carrierName || undefined, trackingRef: trackingRef || undefined }
           : s === 'pack'
@@ -120,6 +139,9 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
       setScans([]);
       setWeight('');
       setDims({ l: '', w: '', h: '' });
+      setCourierCancelled(false);
+      setCancelReason('');
+      setCourierReference('');
       onChanged(STEPS[s].done);
     }
   }
@@ -148,6 +170,8 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
         title={step ? STEPS[step].label : ''}
         confirmLabel={step ? STEPS[step].label : 'Confirm'}
         busy={action.busy}
+        danger={step === 'cancel-booking'}
+        confirmDisabled={step === 'cancel-booking' && (!courierCancelled || !cancelReason.trim())}
         onCancel={() => {
           action.clear();
           setStep(null);
@@ -159,6 +183,13 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
           <>
             <TextField label="Carrier name" value={carrierName} onChange={setCarrierName} />
             <TextField label="Tracking reference" value={trackingRef} onChange={setTrackingRef} />
+          </>
+        )}
+        {step === 'cancel-booking' && (
+          <>
+            <Checkbox label="I have cancelled this booking with the courier" checked={courierCancelled} onChange={setCourierCancelled} />
+            <TextField label="Reason (required)" value={cancelReason} onChange={setCancelReason} />
+            <TextField label="Courier cancellation reference (optional)" value={courierReference} onChange={setCourierReference} />
           </>
         )}
         {step === 'pack' && (

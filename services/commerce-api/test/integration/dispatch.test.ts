@@ -5,6 +5,7 @@ import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPr
 import { createAuthenticatedStaff } from '../helpers/auth.js';
 import { MockCarrierProvider } from '../../src/modules/shipping/provider.js';
 import { OrderService } from '../../src/modules/order/service.js';
+import { createHmac } from 'node:crypto';
 
 const GUEST_HEADER = 'x-guest-session-id';
 const PINCODE = '110001';
@@ -13,7 +14,9 @@ const PINCODE = '110001';
  * Dispatch (docs/admin/DISPATCH.md; Product Owner review 2026-10-05, AO-D5):
  * barcode checks at pick and pack, parcel measurements sent with the courier
  * booking, packing slip / label data, and handover recorded separately from
- * booking - without moving the stock SALE, which stays at booking.
+ * booking. AO-D5 option B (Product Owner, 2026-10-06): the handover, not the
+ * booking, posts the stock SALE, marks the package shipped and sends the
+ * customer's message.
  */
 describe('Dispatch: scans, parcel, documents and handover', () => {
   let app: FastifyInstance;
@@ -64,7 +67,8 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       payload: { contactName: 'Asha Rao', contactMobile: '9876543210', billingAddress: address, shippingAddress: address, paymentMethod: 'COD', idempotencyKey: `dispatch-${counter}-${Math.random()}` },
     });
     expect(res.statusCode, res.body).toBe(201);
-    return testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id }, include: { lines: true } });
+    const row = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: res.json().id }, include: { lines: { orderBy: { id: 'asc' } } } });
+    return Object.assign(row, { shopperHeaders: headers });
   }
 
   const pick = (taskId: string, payload: Record<string, unknown>) =>
@@ -225,8 +229,10 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       expect(replay.json().id).toBe(booked.json().id);
     });
 
-    it('sends the parcel weight and size with the booking; the SALE is still posted at booking; handover is separate', async () => {
+    it('sends the parcel weight and size with the booking; booking moves no stock; the handover posts the sale once', async () => {
       const { a, f } = await readyPackage();
+      const balance = () => testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId: a.id }, select: { onHand: true, reserved: true } });
+      const before = await balance();
       const spy = vi.spyOn(MockCarrierProvider.prototype, 'initiateShipment');
       const booked = await book(f.id);
       expect(booked.statusCode, booked.body).toBe(201);
@@ -235,21 +241,37 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
 
       const shipment = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } });
       expect(shipment).toMatchObject({ status: 'BOOKED', handedOverAt: null });
-      // AO-D5: the sale-posting point is unchanged.
-      expect(await testPrisma.inventoryTransaction.count({ where: { skuId: a.id, type: 'SALE' } })).toBe(1);
+      // AO-D5 option B: booked, not collected - no sale, stock still reserved, lines still packed.
+      expect(await testPrisma.inventoryTransaction.count({ where: { skuId: a.id, type: 'SALE' } })).toBe(0);
+      expect(await balance()).toEqual(before);
+      expect(await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).toMatchObject({ status: 'BOOKED', shippedAt: null, carrierName: 'MOCK' });
+      expect((await testPrisma.orderLine.findFirstOrThrow({ where: { fulfilmentId: f.id } })).status).toBe('PACKED');
+      // A manual "mark shipped" cannot skip the handover.
+      const manual = await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/ship`, headers: auth(), payload: {} });
+      expect(manual.statusCode).toBe(400);
+      expect(manual.json().error.message).toMatch(/booked with the courier/);
 
       const awaiting = (await app.inject({ method: 'GET', url: '/api/v1/shipments/handover', headers: auth() })).json();
       expect(awaiting.shipments).toEqual([expect.objectContaining({ id: shipment.id, units: 2, parcelWeightGrams: 640 })]);
 
       const handed = await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [shipment.id], reference: 'MANIFEST-7' } });
-      expect(handed.json()).toEqual({ recorded: 1, alreadyHandedOver: 0 });
+      expect(handed.json()).toEqual({ recorded: 1, alreadyHandedOver: 0, shipped: 1 });
       const after = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
       expect(after).toMatchObject({ handoverSource: 'STAFF', handedOverByStaffId: staff.staffUserId, handoverReference: 'MANIFEST-7', status: 'BOOKED' });
       expect(after.handedOverAt).not.toBeNull();
-      // Repeating it changes nothing; stock is untouched by handover.
-      expect((await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [shipment.id] } })).json()).toEqual({ recorded: 0, alreadyHandedOver: 1 });
+      expect(await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).toMatchObject({ status: 'SHIPPED' });
+      expect((await testPrisma.orderLine.findFirstOrThrow({ where: { fulfilmentId: f.id } })).status).toBe('SHIPPED');
+      expect(await testPrisma.inventoryTransaction.count({ where: { skuId: a.id, type: 'SALE' } })).toBe(1);
+      expect(await balance()).toEqual({ onHand: before.onHand - 2, reserved: before.reserved - 2 });
+      const shipAudit = await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'order.fulfilment.ship', entityId: f.id } });
+      expect(shipAudit).toMatchObject({ actorType: 'STAFF', actorStaffId: staff.staffUserId });
+      expect(shipAudit.newValue).toMatchObject({ at: 'HANDOVER' });
+
+      // Repeating it changes nothing: no second handover, sale or stock movement.
+      expect((await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [shipment.id] } })).json()).toEqual({ recorded: 0, alreadyHandedOver: 1, shipped: 0 });
       expect((await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).handoverReference).toBe('MANIFEST-7');
       expect(await testPrisma.inventoryTransaction.count({ where: { skuId: a.id, type: 'SALE' } })).toBe(1);
+      expect(await balance()).toEqual({ onHand: before.onHand - 2, reserved: before.reserved - 2 });
       expect((await app.inject({ method: 'GET', url: '/api/v1/shipments/handover', headers: auth() })).json().shipments).toEqual([]);
       expect((await app.inject({ method: 'GET', url: '/api/v1/shipments/handover', headers: auth(owner.token) })).statusCode).toBe(403);
     });
@@ -269,6 +291,14 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       const after = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
       expect(after).toMatchObject({ status: 'IN_TRANSIT', handoverSource: 'CARRIER_EVENT', handedOverByStaffId: null });
       expect(after.handedOverAt?.toISOString()).toBe('2026-10-05T10:00:00.000Z');
+      // The carrier's movement is the handover: it posts the sale and ships the package, as SYSTEM.
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('SHIPPED');
+      const line = await testPrisma.orderLine.findFirstOrThrow({ where: { fulfilmentId: f.id } });
+      expect(await testPrisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: line.id } })).toBe(1);
+      expect(await testPrisma.auditLog.findFirstOrThrow({ where: { action: 'order.fulfilment.ship', entityId: f.id } })).toMatchObject({ actorType: 'SYSTEM', actorStaffId: null });
+      // A later staff confirmation records nothing more.
+      expect((await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [shipment.id] } })).json()).toEqual({ recorded: 0, alreadyHandedOver: 1, shipped: 0 });
+      expect(await testPrisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: line.id } })).toBe(1);
     });
 
     it('packing slip and label data: items, barcodes, addresses, COD amount and parcel', async () => {
@@ -330,28 +360,44 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       expect(res.shipments).toHaveLength(1);
     });
 
-    it('the "shipped" message is sent after the booking commits, never for a booking that rolled back', async () => {
+    it('the "shipped" message is sent after the handover commits - never at booking, never for a handover that rolled back', async () => {
       const { o, f } = await readyPackage('8901000000158');
       const customer = await testPrisma.customer.create({ data: { mobile: `98${String(10_000_000 + counter).slice(0, 8)}`, fullName: 'Asha Rao' } });
       await testPrisma.order.update({ where: { id: o.id }, data: { customerId: customer.id, guestSessionId: null } });
 
-      // The booking's own transaction fails after the package was marked shipped inside it.
+      expect((await book(f.id)).statusCode).toBe(201);
+      // Booked only: the customer is not told it has shipped.
+      expect(await testPrisma.notificationDelivery.count({ where: { event: 'ORDER_SHIPPED' } })).toBe(0);
+      const shipment = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } });
+
+      // The handover's own transaction fails after the package was marked shipped inside it.
       const original = OrderService.prototype.markFulfilmentShipped;
       const spy = vi.spyOn(OrderService.prototype, 'markFulfilmentShipped').mockImplementationOnce(async function (this: OrderService, ...args: Parameters<OrderService['markFulfilmentShipped']>) {
         await original.apply(this, args);
-        throw new Error('simulated failure before the booking commits');
+        throw new Error('simulated failure before the handover commits');
       });
-      expect((await book(f.id)).statusCode).toBe(500);
+      const failed = await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [shipment.id] } });
+      expect(failed.statusCode).toBe(500);
       spy.mockRestore();
-      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('READY_TO_SHIP');
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('BOOKED');
+      expect((await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).handedOverAt).toBeNull();
+      expect(await testPrisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: o.lines[0]!.id } })).toBe(0);
       expect(await testPrisma.notificationDelivery.count({ where: { event: 'ORDER_SHIPPED' } })).toBe(0);
 
-      // The retry books it, and the message goes out once.
-      expect((await book(f.id)).statusCode).toBe(201);
+      // The retry hands it over, and the message goes out once.
+      expect((await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [shipment.id] } })).json()).toMatchObject({ recorded: 1, shipped: 1 });
       const sent = await testPrisma.notificationDelivery.findMany({ where: { event: 'ORDER_SHIPPED' } });
       expect(sent.length).toBeGreaterThan(0);
       expect(sent.every((d) => d.referenceId === f.id && d.customerId === customer.id)).toBe(true);
       expect(sent.some((d) => d.status === 'SENT')).toBe(true);
+      // A carrier movement event afterwards sends nothing more.
+      const poll = vi.spyOn(MockCarrierProvider.prototype, 'trackShipment').mockResolvedValue({
+        providerShipmentRef: shipment.providerShipmentRef!, rawStatus: 'in_transit', normalizedStatus: 'IN_TRANSIT', occurredAt: new Date(),
+      });
+      expect((await app.inject({ method: 'POST', url: '/api/v1/shipments/poll', headers: auth() })).statusCode).toBe(200);
+      poll.mockRestore();
+      expect((await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).status).toBe('IN_TRANSIT');
+      expect(await testPrisma.notificationDelivery.count({ where: { event: 'ORDER_SHIPPED' } })).toBe(sent.length);
     });
 
     it('refuses to hand over a parcel that is not booked', async () => {
@@ -360,6 +406,222 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       const res = await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(), payload: { shipmentIds: [intent.id] } });
       expect(res.statusCode).toBe(400);
       expect(res.json().error.message).toMatch(/not booked/);
+    });
+  });
+  /**
+   * AO-D5 option B (Product Owner, 2026-10-06): "At courier handover, post
+   * the stock sale, mark shipped and send the customer message. Cover
+   * cancellation before handover, duplicate events, split shipments,
+   * booking failures and existing shipments without double-posting stock."
+   */
+  describe('AO-D5 option B: the handover posts the sale', () => {
+    let cs: { staffUserId: string; token: string };
+    beforeEach(async () => {
+      await grantPermissions('CUSTOMER_SERVICE', ['order:read', 'order:cancel', 'order:exception:manage']);
+      cs = await createAuthenticatedStaff(app, ['CUSTOMER_SERVICE']);
+    });
+
+    async function readyFulfilment(orderId: string, lineIds: string[]) {
+      const f = await fulfilment(orderId, lineIds);
+      expect((await pack(f.id)).statusCode).toBe(200);
+      expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/ready-to-ship`, headers: auth() })).statusCode).toBe(200);
+      return f;
+    }
+    async function bookedPackage(quantity = 1) {
+      const a = await sku(`89020${String(counter).padStart(4, '0')}${Math.floor(Math.random() * 9000 + 1000)}`);
+      const o = await order([{ skuId: a.id, quantity }]);
+      await pickAll(o.id);
+      const f = await readyFulfilment(o.id, [o.lines[0]!.id]);
+      const res = await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/shipment`, headers: auth(), payload: { idempotencyKey: `book-${f.id}` } });
+      expect(res.statusCode, res.body).toBe(201);
+      const shipment = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } });
+      return { a, o, f, shipment };
+    }
+    const handover = (shipmentIds: string[], t = staff.token) =>
+      app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: auth(t), payload: { shipmentIds } });
+    const cancelBooking = (fulfilmentId: string, payload: Record<string, unknown> = {}) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/fulfilments/${fulfilmentId}/cancel-booking`,
+        headers: auth(cs.token),
+        payload: { reason: 'Customer called before collection', courierCancellationConfirmed: true, courierReference: 'CXL-1', idempotencyKey: `cxl-${fulfilmentId}`, ...payload },
+      });
+    const sales = (lineId: string) => testPrisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: lineId } });
+    const balance = (skuId: string) => testPrisma.inventoryBalance.findFirstOrThrow({ where: { skuId }, select: { onHand: true, reserved: true } });
+    function carrierWebhook(providerShipmentRef: string, status: string, id: string) {
+      const body = JSON.stringify({ id, shipment_ref: providerShipmentRef, status, occurred_at: new Date().toISOString() });
+      const signature = createHmac('sha256', 'mock-carrier-webhook-secret-test-only').update(body).digest('hex');
+      return app.inject({ method: 'POST', url: '/api/v1/webhooks/shipping/mock', headers: { 'content-type': 'application/json', 'x-shipping-signature': signature }, payload: body });
+    }
+
+    it('a staff handover and the carrier\'s movement event at the same moment post one sale and one shipped transition', async () => {
+      for (let i = 0; i < 3; i += 1) {
+        const { o, f, shipment } = await bookedPackage();
+        const [staffRes, carrierRes] = await Promise.all([handover([shipment.id]), carrierWebhook(shipment.providerShipmentRef!, 'in_transit', `evt-race-${f.id}`)]);
+        expect(staffRes.statusCode, staffRes.body).toBe(200);
+        expect(carrierRes.statusCode, carrierRes.body).toBe(200);
+        expect(await sales(o.lines[0]!.id)).toBe(1);
+        expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.ship', entityId: f.id } })).toBe(1);
+        expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('SHIPPED');
+        const s = await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
+        expect(s.status).toBe('IN_TRANSIT');
+        expect(s.handedOverAt).not.toBeNull();
+        // A redelivered carrier event is a no-op.
+        expect((await carrierWebhook(shipment.providerShipmentRef!, 'in_transit', `evt-race-${f.id}`)).statusCode).toBe(200);
+        expect(await sales(o.lines[0]!.id)).toBe(1);
+      }
+    });
+
+    it('split shipment: each package posts its own sale at its own handover', async () => {
+      const a = await sku('8902100000011');
+      const b = await sku('8902100000028');
+      const o = await order([{ skuId: a.id, quantity: 1 }, { skuId: b.id, quantity: 1 }]);
+      await pickAll(o.id);
+      const lineA = o.lines.find((l) => l.skuId === a.id)!;
+      const lineB = o.lines.find((l) => l.skuId === b.id)!;
+      const fa = await readyFulfilment(o.id, [lineA.id]);
+      const fb = await readyFulfilment(o.id, [lineB.id]);
+      for (const f of [fa, fb]) {
+        expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/shipment`, headers: auth(), payload: { idempotencyKey: `book-${f.id}` } })).statusCode).toBe(201);
+      }
+      const sa = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: fa.id } });
+      const sb = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: fb.id } });
+
+      expect((await handover([sa.id])).json()).toMatchObject({ recorded: 1, shipped: 1 });
+      expect(await sales(lineA.id)).toBe(1);
+      expect(await sales(lineB.id)).toBe(0);
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fb.id } })).status).toBe('BOOKED');
+      expect((await testPrisma.order.findUniqueOrThrow({ where: { id: o.id } })).status).toBe('PROCESSING');
+
+      expect((await carrierWebhook(sb.providerShipmentRef!, 'in_transit', `evt-split-${fb.id}`)).statusCode).toBe(200);
+      expect(await sales(lineB.id)).toBe(1);
+      expect(await sales(lineA.id)).toBe(1);
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fb.id } })).status).toBe('SHIPPED');
+    });
+
+    it('a failed courier booking leaves the package ready to ship, with no sale and nothing to hand over', async () => {
+      const a = await sku('8902200000010');
+      const o = await order([{ skuId: a.id, quantity: 1 }]);
+      await pickAll(o.id);
+      const f = await readyFulfilment(o.id, [o.lines[0]!.id]);
+      const before = await balance(a.id);
+      const carrier = vi.spyOn(MockCarrierProvider.prototype, 'initiateShipment').mockRejectedValueOnce(new Error('courier unavailable'));
+      const res = await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/shipment`, headers: auth(), payload: { idempotencyKey: `book-${f.id}` } });
+      carrier.mockRestore();
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('READY_TO_SHIP');
+      expect(await sales(o.lines[0]!.id)).toBe(0);
+      expect(await balance(a.id)).toEqual(before);
+      expect((await app.inject({ method: 'GET', url: '/api/v1/shipments/handover', headers: auth() })).json().shipments).toEqual([]);
+      const intent = await testPrisma.shipment.findUnique({ where: { fulfilmentId: f.id } });
+      if (intent) {
+        expect(intent.status).toBe('CREATED');
+        expect((await handover([intent.id])).statusCode).toBe(400);
+      }
+      // The retry books it; still no sale until the handover.
+      const retry = await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/shipment`, headers: auth(), payload: { idempotencyKey: `book-${f.id}` } });
+      expect(retry.statusCode, retry.body).toBe(201);
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('BOOKED');
+      expect(await sales(o.lines[0]!.id)).toBe(0);
+    });
+
+    it('a package shipped before option B (sale posted at booking) only gets its handover recorded - no second sale or message', async () => {
+      const { o, f, shipment } = await bookedPackage();
+      // Recreate the old state: the sale was posted and the package SHIPPED at booking, no handover yet.
+      await new OrderService(app).markFulfilmentShipped(f.id, staff.staffUserId, undefined, undefined, 'BOOKED');
+      await testPrisma.shipment.update({ where: { id: shipment.id }, data: { handedOverAt: null, handoverSource: null } });
+      expect(await sales(o.lines[0]!.id)).toBe(1);
+      const list = (await app.inject({ method: 'GET', url: '/api/v1/admin/fulfilments?status=BOOKED_AWAITING_COLLECTION', headers: auth() })).json().items;
+      expect(list).toEqual([expect.objectContaining({ id: f.id, status: 'SHIPPED', dispatchStage: 'BOOKED_AWAITING_COLLECTION' })]);
+      const shippedNotices = await testPrisma.notificationDelivery.count({ where: { event: 'ORDER_SHIPPED' } });
+
+      expect((await handover([shipment.id])).json()).toEqual({ recorded: 1, alreadyHandedOver: 0, shipped: 0 });
+      expect(await sales(o.lines[0]!.id)).toBe(1);
+      expect((await carrierWebhook(shipment.providerShipmentRef!, 'in_transit', `evt-legacy-${f.id}`)).statusCode).toBe(200);
+      expect(await sales(o.lines[0]!.id)).toBe(1);
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.ship', entityId: f.id } })).toBe(1);
+      expect(await testPrisma.notificationDelivery.count({ where: { event: 'ORDER_SHIPPED' } })).toBe(shippedNotices);
+    });
+
+    it('cancelling a booked package: line cancels are refused while booked; the package cancel releases the stock and closes the booking', async () => {
+      const { a, o, f, shipment } = await bookedPackage(2);
+      const line = o.lines[0]!;
+      const before = await balance(a.id);
+
+      // Staff and shopper line cancellations are refused while the courier has a booking.
+      const staffCancel = await app.inject({ method: 'POST', url: `/api/v1/orders/${o.id}/lines/${line.id}/cancel`, headers: auth(cs.token), payload: { idempotencyKey: `line-${line.id}` } });
+      expect(staffCancel.statusCode).toBe(400);
+      expect(staffCancel.json().error.message).toMatch(/Cancel the courier booking, then cancel the whole package/);
+      const shopperCancel = await app.inject({ method: 'POST', url: `/api/v1/storefront/orders/${o.id}/lines/${line.id}/cancel`, headers: o.shopperHeaders, payload: { idempotencyKey: `shopper-${line.id}` } });
+      expect(shopperCancel.statusCode).toBe(400);
+      expect(shopperCancel.json().error.message).toMatch(/booked with the courier/);
+      // ...and so is an exception, whose resolution could otherwise release the stock.
+      const exception = await app.inject({ method: 'POST', url: `/api/v1/orders/${o.id}/lines/${line.id}/exception`, headers: auth(cs.token), payload: { reason: 'damaged' } });
+      expect(exception.statusCode).toBe(400);
+      expect(exception.json().error.message).toMatch(/Cancel the courier booking/);
+      expect((await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).status).toBe('PACKED');
+
+      // The package cancel needs the courier cancellation confirmed, a reason, and permission.
+      expect((await cancelBooking(f.id, { courierCancellationConfirmed: false })).statusCode).toBe(400);
+      expect((await cancelBooking(f.id, { reason: '  ' })).statusCode).toBe(400);
+      expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/cancel-booking`, headers: auth(), payload: { reason: 'x', courierCancellationConfirmed: true, idempotencyKey: 'k' } })).statusCode).toBe(403);
+
+      const cancelled = await cancelBooking(f.id);
+      expect(cancelled.statusCode, cancelled.body).toBe(200);
+      expect(cancelled.json()).toMatchObject({ status: 'CANCELLED', shipment: { status: 'CANCELLED', bookingCancellationReference: 'CXL-1', bookingCancelledByStaffId: cs.staffUserId } });
+      expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).toMatchObject({ status: 'CANCELLED', fulfilmentId: null, cancelledReason: 'Customer called before collection' });
+      expect((await testPrisma.order.findUniqueOrThrow({ where: { id: o.id } })).status).toBe('CANCELLED');
+      expect(await sales(line.id)).toBe(0);
+      expect(await balance(a.id)).toEqual({ onHand: before.onHand, reserved: before.reserved - 2 });
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_cancel', entityId: f.id } })).toBe(1);
+
+      // Retrying is a no-op; the cancelled parcel cannot be handed over; carrier events for it are refused.
+      expect((await cancelBooking(f.id)).json()).toMatchObject({ status: 'CANCELLED' });
+      expect(await balance(a.id)).toEqual({ onHand: before.onHand, reserved: before.reserved - 2 });
+      const refusedHandover = await handover([shipment.id]);
+      expect(refusedHandover.statusCode).toBe(400);
+      expect(refusedHandover.json().error.message).toMatch(/cancelled/);
+      expect((await app.inject({ method: 'GET', url: '/api/v1/shipments/handover', headers: auth() })).json().shipments).toEqual([]);
+      expect((await carrierWebhook(shipment.providerShipmentRef!, 'in_transit', `evt-after-cxl-${f.id}`)).statusCode).toBe(400);
+      expect(await sales(line.id)).toBe(0);
+      expect((await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).status).toBe('CANCELLED');
+      expect((await app.inject({ method: 'GET', url: '/api/v1/admin/fulfilments?status=CANCELLED', headers: auth() })).json().items).toEqual([expect.objectContaining({ id: f.id, dispatchStage: 'CANCELLED' })]);
+    });
+
+    it('a package that has been handed over cannot be cancelled as a booking', async () => {
+      const { f, shipment } = await bookedPackage();
+      expect((await handover([shipment.id])).statusCode).toBe(200);
+      const res = await cancelBooking(f.id);
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.message).toMatch(/use a return instead/);
+    });
+
+    it('a handover racing a booking cancellation: exactly one wins, and stock stays consistent either way', async () => {
+      const outcomes: string[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        const { a, o, f, shipment } = await bookedPackage();
+        const before = await balance(a.id);
+        const [h, c] = await Promise.all([handover([shipment.id]), cancelBooking(f.id)]);
+        const pkg = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } });
+        const after = await balance(a.id);
+        if (pkg.status === 'SHIPPED') {
+          outcomes.push('handover');
+          expect(h.statusCode, h.body).toBe(200);
+          expect(c.statusCode).toBe(400);
+          expect(await sales(o.lines[0]!.id)).toBe(1);
+          expect(after).toEqual({ onHand: before.onHand - 1, reserved: before.reserved - 1 });
+          expect((await testPrisma.orderLine.findUniqueOrThrow({ where: { id: o.lines[0]!.id } })).status).toBe('SHIPPED');
+        } else {
+          outcomes.push('cancel');
+          expect(pkg.status).toBe('CANCELLED');
+          expect(c.statusCode, c.body).toBe(200);
+          expect(h.statusCode).toBe(400);
+          expect(await sales(o.lines[0]!.id)).toBe(0);
+          expect(after).toEqual({ onHand: before.onHand, reserved: before.reserved - 1 });
+          expect((await testPrisma.orderLine.findUniqueOrThrow({ where: { id: o.lines[0]!.id } })).status).toBe('CANCELLED');
+        }
+      }
+      expect(outcomes).toHaveLength(4);
     });
   });
 });

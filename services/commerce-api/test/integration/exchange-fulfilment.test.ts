@@ -411,9 +411,15 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
     const shipRes = await createShipmentHttp(fulfilmentId, token, `idem-track-ship-${counter}`);
     expect(shipRes.statusCode).toBe(201);
     const shipment = shipRes.json();
+    // AO-D5 option B: booked only - the replacement has not left stock yet.
+    const exchangeDispatches = () => testPrisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceType: 'EXCHANGE', referenceId: exchange.id } });
+    expect(await exchangeDispatches()).toBe(0);
+    expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } })).status).toBe('BOOKED');
 
     // In transit - tracking visible to the owning guest, Exchange not yet COMPLETED.
     expect((await sendTracking(shipment.providerShipmentRef, 'in_transit', `evt-track-1-${counter}`)).statusCode).toBe(200);
+    // The carrier's first movement is the handover: the dispatch is posted then, once.
+    expect(await exchangeDispatches()).toBe(1);
     const midViewRes = await app.inject({ method: 'GET', url: `/api/v1/storefront/exchanges/${exchange.id}`, headers: { [GUEST_HEADER]: guestId } });
     expect(midViewRes.statusCode).toBe(200);
     const midView = midViewRes.json();
@@ -445,6 +451,37 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
 
     const finalView = await app.inject({ method: 'GET', url: `/api/v1/storefront/exchanges/${exchange.id}`, headers: { [GUEST_HEADER]: guestId } });
     expect(finalView.json().replacementFulfilment.fulfilment.shipment.status).toBe('DELIVERED');
+  });
+
+  it('AO-D5 option B: a staff handover posts the exchange dispatch once; a booked replacement package cannot be cancelled as a booking', async () => {
+    await grantPermissions('WAREHOUSE_MANAGER', ['order:cancel']);
+    const token = await warehouseToken();
+    const fixture = await setupExchangeableStyle(1400);
+    const { orderId } = await codOrder(fixture.skuM.id, `guest-xho-${counter}`, `idem-xho-${counter}`);
+    const { lineId } = await deliverOrderLine(orderId, token);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.skuL.id, token, `exc-xho-${counter}`)).json();
+    await receiveAndQcPass(exchange.id, token);
+    const fulfilmentId = await readyToShipReplacement(exchange.id, token);
+    const shipment = (await createShipmentHttp(fulfilmentId, token, `idem-xho-ship-${counter}`)).json();
+    const dispatches = () => testPrisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceType: 'EXCHANGE', referenceId: exchange.id } });
+    expect(await dispatches()).toBe(0);
+
+    const cancel = await app.inject({
+      method: 'POST',
+      url: `/api/v1/orders/fulfilments/${fulfilmentId}/cancel-booking`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { reason: 'test', courierCancellationConfirmed: true, idempotencyKey: `xho-cxl-${counter}` },
+    });
+    expect(cancel.statusCode).toBe(400);
+    expect(cancel.json().error.message).toMatch(/exchange/);
+
+    const handover = () => app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: { authorization: `Bearer ${token}` }, payload: { shipmentIds: [shipment.id] } });
+    expect((await handover()).json()).toMatchObject({ recorded: 1, shipped: 1 });
+    expect((await handover()).json()).toMatchObject({ recorded: 0, shipped: 0 });
+    expect(await dispatches()).toBe(1);
+    expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId } })).status).toBe('SHIPPED');
+    // Never a SALE for the replacement.
+    expect(await testPrisma.inventoryTransaction.count({ where: { type: 'SALE', skuId: fixture.skuL.id } })).toBe(0);
   });
 
   // --- 9 & 10 & 11. Exactly-once dispatch, never a second SALE, normal SALE invariant unchanged ---

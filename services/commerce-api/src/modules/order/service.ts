@@ -936,15 +936,26 @@ export class OrderService {
    */
   async markFulfilmentShipped(
     fulfilmentId: string,
-    staffId: string,
+    staffId: string | null,
     opts?: { carrierName?: string; trackingRef?: string },
     externalTx?: Prisma.TransactionClient,
+    // AO-D5 option B: 'READY_TO_SHIP' is a shipment recorded by hand
+    // (outside the courier integration, handed over as it is recorded);
+    // 'BOOKED' is the handover of a package booked with a courier.
+    from: 'READY_TO_SHIP' | 'BOOKED' = 'READY_TO_SHIP',
   ) {
     const run = async (tx: Prisma.TransactionClient) => {
       const locked = await this.lockFulfilment(tx, fulfilmentId);
       if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
-      if (locked.status !== 'READY_TO_SHIP') {
-        throw new ValidationError(`Mark the package ready to ship before marking it shipped; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`);
+      if (locked.status !== from) {
+        if (from === 'READY_TO_SHIP' && locked.status === 'BOOKED') {
+          throw new ValidationError('This package is booked with the courier. It is marked shipped when the courier collects it (Courier handover).');
+        }
+        throw new ValidationError(
+          from === 'BOOKED'
+            ? `Only a package booked with the courier can be handed over; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`
+            : `Mark the package ready to ship before marking it shipped; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`,
+        );
       }
 
       // Safe to read the lines only now that the fulfilment row lock is
@@ -996,12 +1007,12 @@ export class OrderService {
       });
       await tx.orderLine.updateMany({ where: { fulfilmentId }, data: { status: 'SHIPPED' } });
       await recordAudit(tx, {
-        actorType: 'STAFF',
-        actorStaffId: staffId,
+        actorType: staffId ? 'STAFF' : 'SYSTEM',
+        actorStaffId: staffId ?? undefined,
         action: 'order.fulfilment.ship',
         entityType: 'OrderFulfilment',
         entityId: fulfilmentId,
-        newValue: { carrierName: opts?.carrierName, trackingRef: opts?.trackingRef },
+        newValue: { carrierName: opts?.carrierName, trackingRef: opts?.trackingRef, at: from === 'BOOKED' ? 'HANDOVER' : 'MANUAL' },
         reference: fulfilment.orderId,
       });
       await this.recomputeOrderStatus(tx, fulfilment.orderId);
@@ -1015,6 +1026,97 @@ export class OrderService {
     // sends the message after its own commit (notifyFulfilmentShipped).
     if (!externalTx) await this.notifyFulfilmentShipped(result.id, opts?.trackingRef);
     return result;
+  }
+
+  /**
+   * AO-D5 option B: the courier booking. READY_TO_SHIP -> BOOKED, with the
+   * courier's references. No stock movement, no status change on the lines
+   * and no customer message: those happen at handover. Runs inside the
+   * booking's transaction (after the shipment row is locked, matching the
+   * shipment -> package lock order used by handover and cancellation).
+   */
+  async markFulfilmentBooked(fulfilmentId: string, staffId: string, opts: { carrierName: string; trackingRef: string | null }, tx: Prisma.TransactionClient) {
+    const locked = await this.lockFulfilment(tx, fulfilmentId);
+    if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
+    if (locked.status !== 'READY_TO_SHIP') {
+      throw new ValidationError(`Mark the package ready to ship before booking it with a courier; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`);
+    }
+    await tx.orderFulfilment.update({ where: { id: fulfilmentId }, data: { status: 'BOOKED', carrierName: opts.carrierName, trackingRef: opts.trackingRef } });
+    await recordAudit(tx, {
+      actorType: 'STAFF',
+      actorStaffId: staffId,
+      action: 'order.fulfilment.book',
+      entityType: 'OrderFulfilment',
+      entityId: fulfilmentId,
+      newValue: { carrierName: opts.carrierName, trackingRef: opts.trackingRef },
+      reference: locked.orderId,
+    });
+  }
+
+  /**
+   * AO-D5 option B: staff cancel a package that is booked with the courier
+   * but not yet collected, after confirming the courier booking itself was
+   * cancelled (no courier adapter can do that yet - LR-008). Every active
+   * line is cancelled through the normal cancellation path (stock released,
+   * refund flagged and credit note issued for a prepaid order, loyalty
+   * reversed), the shipment is marked CANCELLED and the package CANCELLED,
+   * all in one transaction. Locks the shipment, then the package - the same
+   * order as booking and handover, so a handover racing a cancellation is
+   * serialised: whichever commits first wins and the other is refused.
+   * A retry after success returns the cancelled package.
+   */
+  async cancelBookedPackage(
+    fulfilmentId: string,
+    staffId: string,
+    input: { reason: string; courierCancellationConfirmed: boolean; courierReference?: string; idempotencyKey: string },
+  ) {
+    if (!input.courierCancellationConfirmed) {
+      throw new ValidationError('Cancel the booking with the courier first, then confirm that here.');
+    }
+    const reason = input.reason.trim();
+    if (!reason) throw new ValidationError('Give a reason for cancelling the package');
+    if (!input.idempotencyKey?.trim()) throw new ValidationError('An idempotency key is required');
+
+    return this.prisma.$transaction(async (tx) => {
+      const shipments = await tx.$queryRaw<Array<{ id: string; status: string; handedOverAt: Date | null }>>`
+        SELECT "id", "status", "handedOverAt" FROM "shipments" WHERE "fulfilmentId" = ${fulfilmentId} FOR UPDATE`;
+      const locked = await this.lockFulfilment(tx, fulfilmentId);
+      if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
+      if (locked.status === 'CANCELLED') return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
+      if (locked.exchangeId) {
+        throw new ValidationError('An exchange replacement package cannot be cancelled here; handle it from the exchange.');
+      }
+      const shipment = shipments[0];
+      if (locked.status !== 'BOOKED' || !shipment || shipment.status !== 'BOOKED') {
+        throw new ValidationError(
+          locked.status === 'SHIPPED' || locked.status === 'DELIVERED'
+            ? 'The courier has already collected this package; use a return instead.'
+            : `Only a package booked with the courier can be cancelled here; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`,
+        );
+      }
+      if (shipment.handedOverAt) throw new ValidationError('The courier has already collected this package; use a return instead.');
+
+      await tx.shipment.update({
+        where: { id: shipment.id },
+        data: { status: 'CANCELLED', bookingCancelledAt: new Date(), bookingCancelledByStaffId: staffId, bookingCancellationReference: input.courierReference?.trim() || null },
+      });
+      const lines = await tx.orderLine.findMany({ where: { fulfilmentId, status: { not: 'CANCELLED' } }, select: { id: true }, orderBy: { id: 'asc' } });
+      for (const line of lines) {
+        await this.cancelLineInTx(tx, locked.orderId, line.id, staffId, reason, `${input.idempotencyKey}:${line.id}`, { bookedPackageCancelled: true });
+      }
+      await tx.orderFulfilment.update({ where: { id: fulfilmentId }, data: { status: 'CANCELLED' } });
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: staffId,
+        action: 'order.fulfilment.booking_cancel',
+        entityType: 'OrderFulfilment',
+        entityId: fulfilmentId,
+        newValue: { reason, courierReference: input.courierReference?.trim() || null, cancelledLineIds: lines.map((l) => l.id), shipmentId: shipment.id },
+        reference: locked.orderId,
+      });
+      await this.recomputeOrderStatus(tx, locked.orderId);
+      return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
+    });
   }
 
   /** The customer's "shipped" message for a package. Call only after the shipping transaction has committed. */
@@ -1262,126 +1364,7 @@ export class OrderService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const preread = await tx.orderLine.findUnique({ where: { id: lineId }, select: { fulfilmentId: true } });
-        if (!preread) throw new NotFoundError('OrderLine', lineId);
-
-        let line: { id: string; orderId: string; fulfilmentId: string | null; status: OrderLineStatus };
-        if (preread.fulfilmentId) {
-          await this.lockFulfilment(tx, preread.fulfilmentId);
-          const fresh = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
-          line = fresh;
-        } else {
-          await this.lockPendingPickTasksForLine(tx, lineId);
-          const locked = await this.lockOrderLine(tx, lineId);
-          if (!locked) throw new NotFoundError('OrderLine', lineId);
-          line = locked;
-        }
-
-        if (line.orderId !== orderId) throw new NotFoundError('OrderLine', lineId);
-
-        if (line.status === 'CANCELLED') {
-          // Idempotent no-op - see docblock. Never re-applies inventory
-          // release, refund flagging, credit-note issuance, or audit.
-          return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
-        }
-        if (line.status === 'SHIPPED' || line.status === 'DELIVERED') {
-          throw new ValidationError(`Cannot cancel a line that has already ${line.status.toLowerCase()} - use a return instead`);
-        }
-
-        const fullLine = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
-
-        if (fullLine.reservationId) {
-          await this.inventory.cancelAllocation(fullLine.reservationId, reason?.trim() || 'Order line cancelled', tx);
-        }
-
-        // A PickTask that hasn't started yet (still PENDING) is
-        // cancelled alongside its line, so a warehouse queue never shows
-        // phantom work for a cancelled line (M18 §9). A task that
-        // already completed (PICKED/SHORT_PICKED/EXCEPTION) is left as
-        // the historical record of the work that genuinely happened -
-        // recordPickOutcome's own "pick cancelled line" guard is what
-        // protects a NEW pick attempt, not a retroactive rewrite of one
-        // that already occurred.
-        await tx.pickTask.updateMany({ where: { orderLineId: lineId, status: 'PENDING' }, data: { status: 'CANCELLED' } });
-
-        await tx.orderLine.update({
-          where: { id: lineId },
-          data: {
-            status: 'CANCELLED',
-            cancelledAt: new Date(),
-            cancelledReason: reason?.trim() || null,
-            cancellationIdempotencyKey: idempotencyKey,
-            // Detach from its fulfilment (M18 §10 "shipping effects"):
-            // if this line still had a not-yet-shipped fulfilment, that
-            // fulfilment's OWN future ship transition iterates its
-            // `lines` relation to post SALE per line - leaving a
-            // cancelled line attached would let a SALE be posted (and
-            // inventory double-consumed) for stock this cancellation
-            // just released. Never touched for a line with no
-            // fulfilment yet (fulfilmentId already null).
-            ...(fullLine.fulfilmentId ? { fulfilmentId: null } : {}),
-          },
-        });
-
-        const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
-        let refundRequired = order.refundRequired;
-        if (order.paymentMethod === 'PREPAID') {
-          refundRequired = true;
-          await tx.order.update({ where: { id: orderId }, data: { refundRequired: true } });
-        }
-
-        // M18 §12 (tax/invoice/credit-note integration): a captured-
-        // payment (PREPAID) order's cancelled line, when a matching
-        // invoice + InvoiceLine already exist, gets an automatic
-        // engineering credit note via the EXISTING, already-certified
-        // credit-note engine (M08) - no GST arithmetic reimplemented
-        // here. This is engineering-level automation only: TAX-005
-        // (credit-note format specifics) remains UNDER_REVIEW regardless
-        // - see specs/17-cancellation.md. COD cancellations never reach
-        // this branch (nothing was collected - CAN §11 "do not
-        // manufacture a refund"). If no invoice/InvoiceLine correlation
-        // exists yet (invoice issuance still pending/failed, or an
-        // invoice issued before the M18 orderLineId migration), this
-        // step is honestly skipped rather than guessed - the line is
-        // still correctly cancelled and refundRequired still flags the
-        // financial consequence for manual reconciliation.
-        if (order.paymentMethod === 'PREPAID' && order.invoiceId) {
-          const invoiceLine = await tx.invoiceLine.findUnique({ where: { orderLineId: lineId } });
-          if (invoiceLine) {
-            await this.invoice.issueCreditNote(
-              {
-                originalInvoiceId: order.invoiceId,
-                reason: reason?.trim() || 'Order line cancelled',
-                referenceNote: `Cancellation of order line '${lineId}' (order '${orderId}')`,
-                lines: [{ invoiceLineId: invoiceLine.id, quantity: invoiceLine.quantity }],
-              },
-              actorStaffId,
-              tx,
-            );
-          }
-        }
-
-        await recordAudit(tx, {
-          actorType: actorStaffId ? 'STAFF' : 'CUSTOMER',
-          actorStaffId: actorStaffId ?? undefined,
-          action: 'order.line.cancel',
-          entityType: 'OrderLine',
-          entityId: lineId,
-          newValue: { reason: reason?.trim() || null, refundRequired, idempotencyKey },
-          reference: orderId,
-        });
-
-        // M23 (specs/22-loyalty.md): reverse this line's proportional
-        // share of its order's earned points - a safe no-op for a guest
-        // order or an order that earned zero points. Only reachable at
-        // all because EARN triggers at order confirmation, not delivery
-        // - see LoyaltyService.reverseForOrderLine's own docblock.
-        await this.loyalty.reverseForOrderLine(tx, order, fullLine, reason?.trim() || 'Order line cancelled');
-
-        await this.recomputeOrderStatus(tx, orderId);
-        return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
-      });
+      return await this.prisma.$transaction((tx) => this.cancelLineInTx(tx, orderId, lineId, actorStaffId, reason, idempotencyKey));
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // Lost a genuine concurrent race on the idempotency key itself
@@ -1397,6 +1380,150 @@ export class OrderService {
     }
   }
 
+  /** The cancellation itself, inside the caller's transaction (see performCancellation). */
+  private async cancelLineInTx(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    lineId: string,
+    actorStaffId: string | null,
+    reason: string | undefined,
+    idempotencyKey: string,
+    opts?: { bookedPackageCancelled?: boolean },
+  ) {
+    const preread = await tx.orderLine.findUnique({ where: { id: lineId }, select: { fulfilmentId: true } });
+    if (!preread) throw new NotFoundError('OrderLine', lineId);
+
+    let line: { id: string; orderId: string; fulfilmentId: string | null; status: OrderLineStatus };
+    if (preread.fulfilmentId) {
+      await this.lockFulfilment(tx, preread.fulfilmentId);
+      const fresh = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+      line = fresh;
+    } else {
+      await this.lockPendingPickTasksForLine(tx, lineId);
+      const locked = await this.lockOrderLine(tx, lineId);
+      if (!locked) throw new NotFoundError('OrderLine', lineId);
+      line = locked;
+    }
+
+    if (line.orderId !== orderId) throw new NotFoundError('OrderLine', lineId);
+
+    if (line.status === 'CANCELLED') {
+      // Idempotent no-op - see docblock. Never re-applies inventory
+      // release, refund flagging, credit-note issuance, or audit.
+      return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+    }
+    if (line.status === 'SHIPPED' || line.status === 'DELIVERED') {
+      throw new ValidationError(`Cannot cancel a line that has already ${line.status.toLowerCase()} - use a return instead`);
+    }
+    // AO-D5 option B: a line in a package booked with the courier is not
+    // shipped yet, but it cannot be cancelled on its own: the courier
+    // booking has to be cancelled first, for the whole package
+    // (cancelBookedPackage, staff only).
+    if (line.fulfilmentId && !opts?.bookedPackageCancelled) {
+      const pkg = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: line.fulfilmentId }, select: { status: true } });
+      if (pkg.status === 'BOOKED') {
+        throw new ValidationError(
+          actorStaffId
+            ? 'This item is in a package booked with the courier. Cancel the courier booking, then cancel the whole package from Pack & ship.'
+            : 'This item has been booked with the courier, so it can no longer be cancelled online. Please contact us.',
+        );
+      }
+    }
+
+    const fullLine = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+
+    if (fullLine.reservationId) {
+      await this.inventory.cancelAllocation(fullLine.reservationId, reason?.trim() || 'Order line cancelled', tx);
+    }
+
+    // A PickTask that hasn't started yet (still PENDING) is
+    // cancelled alongside its line, so a warehouse queue never shows
+    // phantom work for a cancelled line (M18 §9). A task that
+    // already completed (PICKED/SHORT_PICKED/EXCEPTION) is left as
+    // the historical record of the work that genuinely happened -
+    // recordPickOutcome's own "pick cancelled line" guard is what
+    // protects a NEW pick attempt, not a retroactive rewrite of one
+    // that already occurred.
+    await tx.pickTask.updateMany({ where: { orderLineId: lineId, status: 'PENDING' }, data: { status: 'CANCELLED' } });
+
+    await tx.orderLine.update({
+      where: { id: lineId },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledReason: reason?.trim() || null,
+        cancellationIdempotencyKey: idempotencyKey,
+        // Detach from its fulfilment (M18 §10 "shipping effects"):
+        // if this line still had a not-yet-shipped fulfilment, that
+        // fulfilment's OWN future ship transition iterates its
+        // `lines` relation to post SALE per line - leaving a
+        // cancelled line attached would let a SALE be posted (and
+        // inventory double-consumed) for stock this cancellation
+        // just released. Never touched for a line with no
+        // fulfilment yet (fulfilmentId already null).
+        ...(fullLine.fulfilmentId ? { fulfilmentId: null } : {}),
+      },
+    });
+
+    const order = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
+    let refundRequired = order.refundRequired;
+    if (order.paymentMethod === 'PREPAID') {
+      refundRequired = true;
+      await tx.order.update({ where: { id: orderId }, data: { refundRequired: true } });
+    }
+
+    // M18 §12 (tax/invoice/credit-note integration): a captured-
+    // payment (PREPAID) order's cancelled line, when a matching
+    // invoice + InvoiceLine already exist, gets an automatic
+    // engineering credit note via the EXISTING, already-certified
+    // credit-note engine (M08) - no GST arithmetic reimplemented
+    // here. This is engineering-level automation only: TAX-005
+    // (credit-note format specifics) remains UNDER_REVIEW regardless
+    // - see specs/17-cancellation.md. COD cancellations never reach
+    // this branch (nothing was collected - CAN §11 "do not
+    // manufacture a refund"). If no invoice/InvoiceLine correlation
+    // exists yet (invoice issuance still pending/failed, or an
+    // invoice issued before the M18 orderLineId migration), this
+    // step is honestly skipped rather than guessed - the line is
+    // still correctly cancelled and refundRequired still flags the
+    // financial consequence for manual reconciliation.
+    if (order.paymentMethod === 'PREPAID' && order.invoiceId) {
+      const invoiceLine = await tx.invoiceLine.findUnique({ where: { orderLineId: lineId } });
+      if (invoiceLine) {
+        await this.invoice.issueCreditNote(
+          {
+            originalInvoiceId: order.invoiceId,
+            reason: reason?.trim() || 'Order line cancelled',
+            referenceNote: `Cancellation of order line '${lineId}' (order '${orderId}')`,
+            lines: [{ invoiceLineId: invoiceLine.id, quantity: invoiceLine.quantity }],
+          },
+          actorStaffId,
+          tx,
+        );
+      }
+    }
+
+    await recordAudit(tx, {
+      actorType: actorStaffId ? 'STAFF' : 'CUSTOMER',
+      actorStaffId: actorStaffId ?? undefined,
+      action: 'order.line.cancel',
+      entityType: 'OrderLine',
+      entityId: lineId,
+      newValue: { reason: reason?.trim() || null, refundRequired, idempotencyKey },
+      reference: orderId,
+    });
+
+    // M23 (specs/22-loyalty.md): reverse this line's proportional
+    // share of its order's earned points - a safe no-op for a guest
+    // order or an order that earned zero points. Only reachable at
+    // all because EARN triggers at order confirmation, not delivery
+    // - see LoyaltyService.reverseForOrderLine's own docblock.
+    await this.loyalty.reverseForOrderLine(tx, order, fullLine, reason?.trim() || 'Order line cancelled');
+
+    await this.recomputeOrderStatus(tx, orderId);
+    return tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
+  }
+
   /** Order exception (ORD-001, negative scenario #2) - e.g. a pick shortfall discovered post-confirmation. */
   async flagException(orderId: string, lineId: string, staffId: string, reason: string) {
     if (!reason.trim()) throw new ValidationError('An exception reason is required');
@@ -1406,6 +1533,15 @@ export class OrderService {
       if (!line || line.orderId !== orderId) throw new NotFoundError('OrderLine', lineId);
       if (line.status === 'SHIPPED' || line.status === 'DELIVERED' || line.status === 'CANCELLED') {
         throw new ValidationError(`Cannot flag an exception on a line in status '${line.status}'`);
+      }
+      // AO-D5 option B: a line in a package booked with the courier is
+      // handled by cancelling the booking (cancelBookedPackage), never by
+      // an exception whose resolution could release its stock.
+      if (line.fulfilmentId) {
+        const pkg = await tx.orderFulfilment.findUnique({ where: { id: line.fulfilmentId }, select: { status: true } });
+        if (pkg?.status === 'BOOKED') {
+          throw new ValidationError('This item is in a package booked with the courier. Cancel the courier booking from Pack & ship instead.');
+        }
       }
 
       await tx.orderLine.update({ where: { id: lineId }, data: { status: 'EXCEPTION', exceptionReason: reason } });

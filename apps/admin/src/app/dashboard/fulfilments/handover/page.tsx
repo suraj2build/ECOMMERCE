@@ -20,9 +20,9 @@ interface AwaitingShipment {
 /**
  * Handover manifest (AO-D5): parcels booked with a courier but not yet
  * handed over, grouped by courier. Print it for the courier to sign, then
- * confirm the handover. Handover is recorded separately from booking; the
- * stock sale is still posted at booking until the consequences review of
- * moving it is done (docs/admin/DISPATCH.md).
+ * confirm the handover. Confirming it takes the units out of stock, marks
+ * the packages shipped and tells the customers (AO-D5 option B,
+ * docs/admin/DISPATCH.md).
  */
 export default function HandoverPage() {
   const data = useApi<{ total: number; limit: number; shipments: AwaitingShipment[] }>('/shipments/handover');
@@ -41,7 +41,7 @@ export default function HandoverPage() {
         <PageHeader
           title="Courier handover"
           breadcrumbs={[{ label: 'Orders' }, { label: 'Pack & ship', href: '/dashboard/fulfilments' }, { label: 'Courier handover' }]}
-          description="Parcels booked with a courier and waiting to be collected. Print the manifest for the courier, then confirm what they took."
+          description="Parcels booked with a courier and waiting to be collected. Print the manifest for the courier, then confirm what they took: that takes the units out of stock and marks them shipped (customers with an account get a shipped message)."
           actions={
             <button type="button" className="btn" onClick={() => window.print()}>
               Print manifest
@@ -118,7 +118,7 @@ export default function HandoverPage() {
                     e.preventDefault();
                     const ok = await action.run(
                       () => apiSend('POST', '/shipments/handover', { shipmentIds: selected, reference: reference.trim() || undefined }),
-                      `${selected.length} parcel${selected.length === 1 ? '' : 's'} recorded as handed over.`,
+                      `${selected.length} parcel${selected.length === 1 ? '' : 's'} recorded as handed over and marked shipped.`,
                     );
                     if (ok) {
                       setSelected([]);
