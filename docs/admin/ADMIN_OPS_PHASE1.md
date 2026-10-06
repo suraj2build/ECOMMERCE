@@ -839,3 +839,16 @@ Runs that did not pass, in order:
   in the test, not a product change.
 - **Browser run 2: 92 passed** (the final run above), on a fresh
   database.
+
+### CI on `0862606`
+
+CI failed before any test ran, at the production dependency audit: a
+high-severity advisory for sharp (its bundled librsvg) had been
+published since `71230f9`, and no package file had changed in the push.
+sharp is moved to 0.35.5 everywhere (pin plus a root override; details in
+`security/DEPENDENCY_AUDIT.md`). On the new version, before pushing
+again: unit 90 + 21, the 33 integration files that use images, media or
+storage 621/621, builds clean, browser 92/92 with the load checks
+passing. The rest of the integration suite does not load sharp and ran
+998/998 on `0862606`'s code.
+
