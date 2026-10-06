@@ -484,6 +484,156 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
     expect(await testPrisma.inventoryTransaction.count({ where: { type: 'SALE', skuId: fixture.skuL.id } })).toBe(0);
   });
 
+  // --- Replacement booked by mistake: cancel the booking, keep the exchange, book a new package ---
+
+  function cancelReplacementBookingHttp(exchangeId: string, token: string, payload: Record<string, unknown> = {}) {
+    return app.inject({
+      method: 'POST',
+      url: `/api/v1/exchanges/${exchangeId}/fulfilment/cancel-booking`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { reason: 'Booked with the wrong parcel size', courierCancellationConfirmed: true, courierReference: 'CXL-R1', idempotencyKey: `rcx-${exchangeId}`, ...payload },
+    });
+  }
+  async function skuStock(skuId: string) {
+    const rows = await testPrisma.inventoryBalance.findMany({ where: { skuId } });
+    return { onHand: rows.reduce((n, r) => n + r.onHand, 0), reserved: rows.reduce((n, r) => n + r.reserved, 0) };
+  }
+  const exchangeDispatchCount = (exchangeId: string) =>
+    testPrisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceType: 'EXCHANGE', referenceId: exchangeId } });
+
+  it('a replacement booked by mistake: cancelling the booking keeps the exchange allocated, moves no stock, and a new package ships and completes it once', async () => {
+    const token = await warehouseToken();
+    const ctx = await seedContext();
+    const { exchangeId, orderId, fixture } = await toReplacementAllocated(token, 'rebook', ctx);
+    const guestId = `guest-exf-rebook-${counter}`;
+    const firstPackageId = await readyToShipReplacement(exchangeId, token);
+    const first = (await createShipmentHttp(firstPackageId, token, `idem-rebook-1-${counter}`)).json();
+    const booked = await skuStock(fixture.skuL.id);
+
+    // Not without the courier cancellation confirmed, a reason, or the exchange:fulfil permission.
+    expect((await cancelReplacementBookingHttp(exchangeId, token, { courierCancellationConfirmed: false })).statusCode).toBe(400);
+    expect((await cancelReplacementBookingHttp(exchangeId, token, { reason: '  ' })).statusCode).toBe(400);
+    const noFulfil = await operatorToken(['order:read', 'order:fulfil', 'order:cancel', 'shipping:manage', 'exchange:read']);
+    expect((await cancelReplacementBookingHttp(exchangeId, noFulfil)).statusCode).toBe(403);
+
+    const cancelled = await cancelReplacementBookingHttp(exchangeId, token);
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.json()).toMatchObject({
+      id: firstPackageId,
+      status: 'CANCELLED',
+      exchangeId: null,
+      cancelledExchangeId: exchangeId,
+      shipment: { id: first.id, status: 'CANCELLED', bookingCancellationReference: 'CXL-R1' },
+    });
+    // The exchange carries on: still allocated, replacement still picked and reserved, nothing dispatched or refunded.
+    expect((await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchangeId } })).status).toBe('REPLACEMENT_ALLOCATED');
+    expect((await testPrisma.pickTask.findUniqueOrThrow({ where: { exchangeId } })).status).toBe('PICKED');
+    expect(await skuStock(fixture.skuL.id)).toEqual(booked);
+    expect(await exchangeDispatchCount(exchangeId)).toBe(0);
+    expect(await testPrisma.auditLog.count({ where: { action: 'exchange.replacement_booking_cancel', entityId: firstPackageId } })).toBe(1);
+
+    // A retry with the same key returns the same result and changes nothing; reusing it for another exchange is refused.
+    const retry = await cancelReplacementBookingHttp(exchangeId, token);
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json().id).toBe(firstPackageId);
+    expect(await testPrisma.auditLog.count({ where: { action: 'exchange.replacement_booking_cancel', entityId: firstPackageId } })).toBe(1);
+
+    // The cancelled parcel cannot be handed over, and the carrier's events for it are refused.
+    const refusedHandover = await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: { authorization: `Bearer ${token}` }, payload: { shipmentIds: [first.id] } });
+    expect(refusedHandover.statusCode).toBe(400);
+    expect((await sendTracking(first.providerShipmentRef, 'in_transit', `evt-rebook-old-${counter}`)).statusCode).toBe(400);
+    expect(await exchangeDispatchCount(exchangeId)).toBe(0);
+
+    // Staff see the cancelled booking on the exchange; the customer does not.
+    const staffView = (await app.inject({ method: 'GET', url: `/api/v1/exchanges/${exchangeId}`, headers: { authorization: `Bearer ${token}` } })).json();
+    expect(staffView.replacementFulfilment.fulfilment).toBeNull();
+    expect(staffView.replacementFulfilment.cancelledBookings).toEqual([expect.objectContaining({ id: firstPackageId, courierReference: 'CXL-R1' })]);
+    const customerView = (await app.inject({ method: 'GET', url: `/api/v1/storefront/exchanges/${exchangeId}`, headers: { [GUEST_HEADER]: guestId } })).json();
+    expect(customerView.replacementFulfilment.cancelledBookings).toEqual([]);
+
+    // Pack & ship lists the cancelled package against its exchange.
+    const list = (await app.inject({ method: 'GET', url: '/api/v1/admin/fulfilments?status=CANCELLED', headers: { authorization: `Bearer ${token}` } })).json();
+    expect(list.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: firstPackageId, cancelledExchangeId: exchangeId, exchangeId: null })]));
+
+    // A new package for the same replacement, packed, booked and handed over: dispatched once, then completed.
+    const reassign = await assignReplacementToFulfilment(exchangeId, token);
+    expect(reassign.statusCode).toBe(201);
+    const secondPackageId = reassign.json().id as string;
+    expect(secondPackageId).not.toBe(firstPackageId);
+    expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${secondPackageId}/pack`, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${secondPackageId}/ready-to-ship`, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200);
+    const second = await createShipmentHttp(secondPackageId, token, `idem-rebook-2-${counter}`);
+    expect(second.statusCode, second.body).toBe(201);
+    expect(second.json().id).not.toBe(first.id);
+    expect(await skuStock(fixture.skuL.id)).toEqual(booked);
+    const handover = await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: { authorization: `Bearer ${token}` }, payload: { shipmentIds: [second.json().id] } });
+    expect(handover.json()).toMatchObject({ recorded: 1, shipped: 1 });
+    expect(await exchangeDispatchCount(exchangeId)).toBe(1);
+    expect(await skuStock(fixture.skuL.id)).toEqual({ onHand: booked.onHand - 1, reserved: booked.reserved - 1 });
+    // Once collected, the new booking can no longer be cancelled this way.
+    const late = await cancelReplacementBookingHttp(exchangeId, token, { idempotencyKey: `rcx-late-${counter}` });
+    expect(late.statusCode).toBe(400);
+    expect(late.json().error.message).toMatch(/already collected/);
+
+    expect((await deliverManually(secondPackageId, token)).statusCode).toBe(200);
+    expect((await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchangeId } })).status).toBe('COMPLETED');
+    expect(await exchangeDispatchCount(exchangeId)).toBe(1);
+    expect(await testPrisma.inventoryTransaction.count({ where: { type: 'SALE', skuId: fixture.skuL.id } })).toBe(0);
+
+    // The old key cannot be reused for a different exchange.
+    const other = await toReplacementAllocated(token, 'rebook-other', ctx);
+    const otherPackageId = await readyToShipReplacement(other.exchangeId, token);
+    expect((await createShipmentHttp(otherPackageId, token, `idem-rebook-3-${counter}`)).statusCode).toBe(201);
+    expect((await cancelReplacementBookingHttp(other.exchangeId, token, { idempotencyKey: `rcx-${exchangeId}` })).statusCode).toBe(409);
+    void orderId;
+  });
+
+  it('a replacement booking can only be cancelled while booked: not before booking, and not for an unknown exchange', async () => {
+    const token = await warehouseToken();
+    const { exchangeId } = await toReplacementAllocated(token, 'rcx-early');
+    const none = await cancelReplacementBookingHttp(exchangeId, token);
+    expect(none.statusCode).toBe(400);
+    expect(none.json().error.message).toMatch(/no replacement package booked/);
+    await readyToShipReplacement(exchangeId, token);
+    const notBooked = await cancelReplacementBookingHttp(exchangeId, token);
+    expect(notBooked.statusCode).toBe(400);
+    expect(notBooked.json().error.message).toMatch(/ready to ship now/);
+    expect((await cancelReplacementBookingHttp('00000000-0000-0000-0000-000000000000', token, { idempotencyKey: `rcx-missing-${counter}` })).statusCode).toBe(404);
+  });
+
+  it('a handover racing a replacement booking cancellation: exactly one wins, and the replacement is dispatched at most once', async () => {
+    const token = await warehouseToken();
+    const ctx = await seedContext();
+    const outcomes: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const { exchangeId, fixture } = await toReplacementAllocated(token, `rcx-race-${i}`, ctx);
+      const packageId = await readyToShipReplacement(exchangeId, token);
+      const shipment = (await createShipmentHttp(packageId, token, `idem-rcx-race-${i}-${counter}`)).json();
+      const before = await skuStock(fixture.skuL.id);
+      const [h, c] = await Promise.all([
+        app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: { authorization: `Bearer ${token}` }, payload: { shipmentIds: [shipment.id] } }),
+        cancelReplacementBookingHttp(exchangeId, token),
+      ]);
+      const pkg = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: packageId } });
+      if (pkg.status === 'SHIPPED') {
+        outcomes.push('handover');
+        expect(h.statusCode, h.body).toBe(200);
+        expect(c.statusCode).toBe(400);
+        expect(await exchangeDispatchCount(exchangeId)).toBe(1);
+        expect(await skuStock(fixture.skuL.id)).toEqual({ onHand: before.onHand - 1, reserved: before.reserved - 1 });
+      } else {
+        outcomes.push('cancel');
+        expect(pkg).toMatchObject({ status: 'CANCELLED', exchangeId: null, cancelledExchangeId: exchangeId });
+        expect(c.statusCode, c.body).toBe(200);
+        expect(h.statusCode).toBe(400);
+        expect(await exchangeDispatchCount(exchangeId)).toBe(0);
+        expect(await skuStock(fixture.skuL.id)).toEqual(before);
+        expect((await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchangeId } })).status).toBe('REPLACEMENT_ALLOCATED');
+      }
+    }
+    expect(outcomes).toHaveLength(3);
+  });
+
   // --- 9 & 10 & 11. Exactly-once dispatch, never a second SALE, normal SALE invariant unchanged ---
 
   it('posts EXCHANGE_DISPATCH exactly once and never touches the ORDER_LINE SALE invariant of the original (or any other) order', async () => {

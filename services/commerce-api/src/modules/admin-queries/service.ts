@@ -251,6 +251,8 @@ export class AdminQueryService {
           createdAt: true,
           order: { select: { orderNumber: true } },
           exchange: { select: { exchangeNumber: true } },
+          cancelledExchangeId: true,
+          cancelledExchange: { select: { exchangeNumber: true } },
           shipment: { select: { id: true, provider: true, status: true, trackingRef: true, deliveryAttempts: true, maxDeliveryAttempts: true, bookedAt: true, handedOverAt: true, handoverSource: true } },
           _count: { select: { lines: true } },
         },

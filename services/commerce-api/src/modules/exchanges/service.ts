@@ -41,8 +41,14 @@ export interface ExchangeReplacementFulfilmentView {
     packedAt: Date | null;
     shippedAt: Date | null;
     deliveredAt: Date | null;
-    shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number } | null;
+    shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number; handedOverAt: Date | null } | null;
   } | null;
+  /**
+   * Earlier replacement packages whose courier booking staff cancelled
+   * before collection (OrderService.cancelReplacementBooking). Staff view
+   * only; the customer's view leaves it empty.
+   */
+  cancelledBookings: Array<{ id: string; trackingRef: string | null; bookingCancelledAt: Date | null; courierReference: string | null }>;
 }
 
 export type ExchangeView = Exchange & { replacementFulfilment: ExchangeReplacementFulfilmentView };
@@ -719,6 +725,15 @@ export class ExchangeService {
    * fulfilment already uses (see OrderService.assignExchangeToFulfilment's
    * own docblock for the full eligibility/idempotency discipline).
    */
+  /** A replacement booked by mistake: see OrderService.cancelReplacementBooking. */
+  async cancelReplacementBooking(
+    exchangeId: string,
+    staffId: string,
+    input: { reason: string; courierCancellationConfirmed: boolean; courierReference?: string; idempotencyKey: string },
+  ) {
+    return this.order.cancelReplacementBooking(exchangeId, staffId, input);
+  }
+
   async assignReplacementToFulfilment(exchangeId: string, staffId: string) {
     return this.order.assignExchangeToFulfilment(exchangeId, staffId);
   }
@@ -778,7 +793,18 @@ export class ExchangeService {
       }),
       this.prisma.orderFulfilment.findUnique({ where: { exchangeId }, include: { shipment: true } }),
     ]);
+    const cancelled = await this.prisma.orderFulfilment.findMany({
+      where: { cancelledExchangeId: exchangeId },
+      orderBy: { createdAt: 'asc' },
+      include: { shipment: { select: { trackingRef: true, bookingCancelledAt: true, bookingCancellationReference: true } } },
+    });
     return {
+      cancelledBookings: cancelled.map((f) => ({
+        id: f.id,
+        trackingRef: f.shipment?.trackingRef ?? null,
+        bookingCancelledAt: f.shipment?.bookingCancelledAt ?? null,
+        courierReference: f.shipment?.bookingCancellationReference ?? null,
+      })),
       pickTask: pickTask ?? null,
       fulfilment: fulfilment
         ? {
@@ -794,6 +820,7 @@ export class ExchangeService {
                   status: fulfilment.shipment.status,
                   trackingRef: fulfilment.shipment.trackingRef,
                   deliveryAttempts: fulfilment.shipment.deliveryAttempts,
+                  handedOverAt: fulfilment.shipment.handedOverAt,
                 }
               : null,
           }
@@ -812,7 +839,7 @@ export class ExchangeService {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id: exchange.orderId } });
     const owns = (identity.customerId && order.customerId === identity.customerId) || (identity.guestSessionId && order.guestSessionId === identity.guestSessionId);
     if (!owns) throw new NotFoundError('Exchange', id);
-    return exchange;
+    return { ...exchange, replacementFulfilment: { ...exchange.replacementFulfilment, cancelledBookings: [] } };
   }
 
   async listExchangesForOrder(orderId: string): Promise<Exchange[]> {

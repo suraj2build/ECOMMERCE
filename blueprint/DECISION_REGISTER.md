@@ -2979,6 +2979,20 @@ courier (LR-008) stays `DECISION_REQUIRED`; nothing was built for it.
   replacement package cannot be cancelled this way. Details:
   `docs/admin/DISPATCH.md`. Tax consequences stay TAX/COMPLIANCE REVIEW
   REQUIRED.
+- **Replacement booked by mistake (2026-10-06, after `a807ef6`; the
+  Product Owner asked for "a clear recovery path for a replacement booked
+  incorrectly before operational acceptance"):** staff with
+  `exchange:fulfil` cancel the replacement's booking from the exchange,
+  after confirming the courier cancellation, with a reason. The shipment
+  and package become `CANCELLED`, the package is detached from the
+  exchange, and nothing else changes: no stock moves, the exchange stays
+  `REPLACEMENT_ALLOCATED` with its pick and reservation. Staff then create
+  a new package and book it; its handover posts the dispatch once.
+  Engineering chose this shape as the minimal recovery that changes no
+  business rule (no refund, no cancellation of the exchange). Changing the
+  replacement *item* after allocation is not covered and has no path
+  today (reported, not built). `docs/admin/DISPATCH.md` → "A replacement
+  booked by mistake".
 - **Still open (business):** B-2 (scan required at pick, pack or both) and
   B-3 (measured parcel weight vs product weights) are left to the owner as
   admin settings, off by default, rather than decided by engineering.

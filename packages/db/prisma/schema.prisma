@@ -2205,32 +2205,40 @@ model OrderLine {
 // preserving every existing orderId-scoped index/query/RTO-lookup
 // unchanged.
 model OrderFulfilment {
-  id                 String           @id @default(uuid())
-  orderId            String
-  exchangeId         String?          @unique
-  status             FulfilmentStatus @default(PENDING)
-  carrierName        String?
-  trackingRef        String?
-  packedAt           DateTime?
-  shippedAt          DateTime?
-  deliveredAt        DateTime?
+  id                  String           @id @default(uuid())
+  orderId             String
+  exchangeId          String?          @unique
+  status              FulfilmentStatus @default(PENDING)
+  carrierName         String?
+  trackingRef         String?
+  packedAt            DateTime?
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
   // Dispatch (docs/admin/DISPATCH.md): measured at pack, sent with the
   // courier booking. Gross weight in grams, dimensions in whole cm.
-  parcelWeightGrams  Int?
-  parcelLengthCm     Int?
-  parcelWidthCm      Int?
-  parcelHeightCm     Int?
+  parcelWeightGrams   Int?
+  parcelLengthCm      Int?
+  parcelWidthCm       Int?
+  parcelHeightCm      Int?
   /// Set when every unit was scanned into the parcel and matched the package.
-  packScanVerifiedAt DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  packScanVerifiedAt  DateTime?
+  // An exchange replacement package whose courier booking was cancelled
+  // before collection (wrong booking): `exchangeId` is cleared so the
+  // exchange can get a new package, and the exchange it belonged to is
+  // kept here. `bookingCancelKey` makes that cancellation idempotent.
+  cancelledExchangeId String?
+  bookingCancelKey    String?          @unique
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
-  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  exchange Exchange?   @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
-  lines    OrderLine[]
-  shipment Shipment?
+  order             Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  exchange          Exchange?   @relation("ExchangeReplacementPackage", fields: [exchangeId], references: [id], onDelete: Cascade)
+  cancelledExchange Exchange?   @relation("ExchangeCancelledReplacementPackages", fields: [cancelledExchangeId], references: [id], onDelete: SetNull)
+  lines             OrderLine[]
+  shipment          Shipment?
 
   @@index([orderId])
+  @@index([cancelledExchangeId])
   @@map("order_fulfilments")
 }
 
@@ -3126,16 +3134,16 @@ model Exchange {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  order                       Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  orderLine                   OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  originalSku                 Sku                 @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
-  originalLocation            Location            @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
-  replacementSku              Sku                 @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
-  initiatedStaff              StaffUser?          @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
-  qcActorStaff                StaffUser?          @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
-  replacementFulfilledByStaff StaffUser?          @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
-  storeCreditEntry            StoreCreditEntry?   @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
-  paymentEvents               PaymentEvent[]
+  order                        Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLine                    OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  originalSku                  Sku                 @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
+  originalLocation             Location            @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
+  replacementSku               Sku                 @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
+  initiatedStaff               StaffUser?          @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
+  qcActorStaff                 StaffUser?          @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  replacementFulfilledByStaff  StaffUser?          @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
+  storeCreditEntry             StoreCreditEntry?   @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
+  paymentEvents                PaymentEvent[]
   // EXC-004 Option 2 repair (2026-09-26): the replacement's physical
   // forward fulfilment - one PickTask (auto-created the instant this
   // Exchange reaches REPLACEMENT_ALLOCATED) and, once picked and
@@ -3143,12 +3151,13 @@ model Exchange {
   // M16/M17 pipeline normal orders use) - reusing the certified
   // primitives rather than duplicating them (see the schema comments on
   // PickTask/OrderFulfilment above).
-  pickTask                    PickTask?
-  fulfilment                  OrderFulfilment?
+  pickTask                     PickTask?
+  fulfilment                   OrderFulfilment?    @relation("ExchangeReplacementPackage")
+  cancelledReplacementPackages OrderFulfilment[]   @relation("ExchangeCancelledReplacementPackages")
   // 2026-09-27 LOY-006 resolution: set the instant this Exchange's QC
   // result is PASS (LoyaltyService.reverseForExchangeLine, mirroring
   // ReturnService's own reverseForReturnLine call exactly).
-  loyaltyReversalEntry        LoyaltyLedgerEntry?
+  loyaltyReversalEntry         LoyaltyLedgerEntry?
 
   @@index([orderId])
   @@map("exchanges")

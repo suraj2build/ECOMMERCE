@@ -104,6 +104,8 @@ function buildOrderView(order: OrderWithViewIncludes) {
     fulfilments: order.fulfilments.map((f) => ({
       id: f.id,
       status: f.status,
+      exchangeId: f.exchangeId,
+      cancelledExchangeId: f.cancelledExchangeId,
       // AO-D5: booked with a courier vs actually collected (see dispatchStage).
       dispatchStage: dispatchStage(f.status, f.shipment),
       carrierName: f.carrierName,
@@ -1084,7 +1086,9 @@ export class OrderService {
       if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
       if (locked.status === 'CANCELLED') return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
       if (locked.exchangeId) {
-        throw new ValidationError('An exchange replacement package cannot be cancelled here; handle it from the exchange.');
+        throw new ValidationError(
+          'This is an exchange replacement package. Cancel its booking from the exchange: the replacement stays allocated and can be packed and booked again.',
+        );
       }
       const shipment = shipments[0];
       if (locked.status !== 'BOOKED' || !shipment || shipment.status !== 'BOOKED') {
@@ -1116,6 +1120,87 @@ export class OrderService {
       });
       await this.recomputeOrderStatus(tx, locked.orderId);
       return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
+    });
+  }
+
+  /**
+   * An exchange replacement booked by mistake (wrong parcel, courier or
+   * label), before the courier collects it. The customer is still owed the
+   * replacement, so nothing about the exchange is cancelled: the shipment
+   * and the package become CANCELLED, the package lets go of the exchange
+   * (kept as `cancelledExchangeId`), and the exchange stays
+   * REPLACEMENT_ALLOCATED with its unit still picked and its stock still
+   * reserved. Staff then create a new replacement package and pack, mark
+   * ready and book it as usual. No stock moved at booking (AO-D5 option B),
+   * so none moves now.
+   *
+   * Same lock order as handover and carrier events (shipment, then
+   * package), then the exchange row, as in delivery. A retry with the same
+   * key returns the cancelled package.
+   */
+  async cancelReplacementBooking(
+    exchangeId: string,
+    staffId: string,
+    input: { reason: string; courierCancellationConfirmed: boolean; courierReference?: string; idempotencyKey: string },
+  ) {
+    if (!input.courierCancellationConfirmed) {
+      throw new ValidationError('Cancel the booking with the courier first, then confirm that here.');
+    }
+    const reason = input.reason.trim();
+    if (!reason) throw new ValidationError('Give a reason for cancelling the booking');
+    const key = input.idempotencyKey?.trim();
+    if (!key) throw new ValidationError('An idempotency key is required');
+
+    return this.prisma.$transaction(async (tx) => {
+      const replay = await tx.orderFulfilment.findUnique({ where: { bookingCancelKey: key }, include: { shipment: true } });
+      if (replay) {
+        if (replay.cancelledExchangeId !== exchangeId) throw new ConflictError(`Idempotency key '${key}' was already used for a different booking`);
+        return replay;
+      }
+      const current = await tx.orderFulfilment.findUnique({ where: { exchangeId }, select: { id: true } });
+      if (!current) {
+        if (!(await tx.exchange.findUnique({ where: { id: exchangeId }, select: { id: true } }))) throw new NotFoundError('Exchange', exchangeId);
+        throw new ValidationError('This exchange has no replacement package booked with a courier.');
+      }
+      const shipments = await tx.$queryRaw<Array<{ id: string; status: string; handedOverAt: Date | null }>>`
+        SELECT "id", "status", "handedOverAt" FROM "shipments" WHERE "fulfilmentId" = ${current.id} FOR UPDATE`;
+      const locked = await this.lockFulfilment(tx, current.id);
+      if (!locked || locked.exchangeId !== exchangeId) throw new ConflictError('The replacement package changed at the same time; reload and try again.');
+      const shipment = shipments[0];
+      if (locked.status === 'SHIPPED' || locked.status === 'DELIVERED' || shipment?.handedOverAt) {
+        throw new ValidationError('The courier has already collected this replacement; it can no longer be cancelled as a booking.');
+      }
+      if (locked.status !== 'BOOKED' || !shipment || shipment.status !== 'BOOKED') {
+        throw new ValidationError(
+          `Only a replacement package booked with the courier can have its booking cancelled; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`,
+        );
+      }
+      const exchange = (
+        await tx.$queryRaw<Array<{ id: string; status: string; orderId: string }>>`
+          SELECT "id", "status", "orderId" FROM "exchanges" WHERE "id" = ${exchangeId} FOR UPDATE`
+      )[0];
+      if (!exchange || exchange.status !== 'REPLACEMENT_ALLOCATED') {
+        throw new ValidationError(`The exchange is ${exchange?.status.toLowerCase().replace(/_/g, ' ') ?? 'missing'}; its replacement booking cannot be cancelled here.`);
+      }
+
+      await tx.shipment.update({
+        where: { id: shipment.id },
+        data: { status: 'CANCELLED', bookingCancelledAt: new Date(), bookingCancelledByStaffId: staffId, bookingCancellationReference: input.courierReference?.trim() || null },
+      });
+      await tx.orderFulfilment.update({
+        where: { id: current.id },
+        data: { status: 'CANCELLED', exchangeId: null, cancelledExchangeId: exchangeId, bookingCancelKey: key },
+      });
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: staffId,
+        action: 'exchange.replacement_booking_cancel',
+        entityType: 'OrderFulfilment',
+        entityId: current.id,
+        newValue: { exchangeId, reason, courierReference: input.courierReference?.trim() || null, shipmentId: shipment.id },
+        reference: exchange.orderId,
+      });
+      return tx.orderFulfilment.findUniqueOrThrow({ where: { id: current.id }, include: { shipment: true } });
     });
   }
 

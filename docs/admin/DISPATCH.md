@@ -140,8 +140,42 @@ A retry returns the cancelled package. While a package is booked, its
 lines cannot be cancelled one by one (by staff or by the shopper) and
 cannot be flagged as exceptions. A handover and a cancellation racing
 each other are serialised by the shipment lock: one wins, the other is
-refused. An exchange replacement package cannot be cancelled this way.
-Once handed over, it is a return, not a cancellation.
+refused. An exchange replacement package is not cancelled this way (see
+below). Once handed over, it is a return, not a cancellation.
+
+### A replacement booked by mistake (exchange)
+
+An exchange replacement package has no order lines to cancel, and the
+exchange itself should go on. Before the courier collects it, staff with
+`exchange:fulfil` cancel its booking from the exchange page (**Cancel
+booking**; `POST /exchanges/:id/fulfilment/cancel-booking`), after
+cancelling it with the courier, ticking that they did and giving a
+reason. In one transaction (shipment, then package, then exchange locked
+in that order):
+
+- the shipment becomes `CANCELLED` (who, when and the courier's reference
+  are kept), and later carrier events and handovers for it are refused;
+- the package becomes `CANCELLED` and is detached from the exchange (it
+  keeps a link to it, `cancelledExchangeId`, so Pack & ship and the
+  exchange page still show it);
+- nothing else changes: no stock moves (the replacement left nothing at
+  booking), the exchange stays `REPLACEMENT_ALLOCATED`, its pick task
+  stays picked and its reservation stays in place, and nothing is
+  refunded or cancelled.
+
+Staff then **Create replacement package** again on the exchange, pack it,
+mark it ready and book it; its handover posts the `EXCHANGE_DISPATCH`
+once, and delivery completes the exchange as usual. A retry with the same
+request key returns the same cancelled package; the same key used for a
+different exchange is refused. After the courier has collected the
+parcel, cancelling is refused. A handover racing the cancellation is
+serialised by the shipment lock: one wins, the other is refused.
+
+This recovers a wrong *booking* (wrong parcel size, wrong courier
+details, booked too early). It does not change the replacement *item*:
+that is fixed when the exchange is requested, and an exchange can only be
+cancelled before its original item is received. Changing the replacement
+item after allocation has no path today; it is reported, not built.
 
 ### Customer view
 
@@ -178,7 +212,15 @@ to collect it" (not shipped) and hides its Cancel buttons.
   only after the handover commits.
 - `shipping.test.ts` and `exchange-fulfilment.test.ts`: booking retries
   and races post no sale, the handover posts one; an exchange replacement
-  posts its dispatch at handover and cannot be cancelled as a booking.
-- Browser flows AO-10 (dispatch and handover) and AO-11 (cancelling a
-  booked package) in `test/e2e-admin/p1-console.spec.ts` (they reuse that
+  posts its dispatch at handover and cannot be cancelled as an order
+  booking; a mistaken replacement booking is cancelled from the exchange
+  (confirmation, reason and permission required; no stock moves; the
+  exchange stays allocated; idempotent retry; key reuse refused; refused
+  before booking and after collection; carrier events and handover for
+  the cancelled parcel refused), then a new package is booked, handed
+  over (one dispatch) and delivered (exchange completed); a handover
+  racing that cancellation.
+- Browser flows AO-10 (dispatch and handover), AO-11 (cancelling a
+  booked package) and P1-08 (an exchange replacement booked, its booking
+  cancelled, rebooked, handed over and delivered) in `test/e2e-admin/p1-console.spec.ts` (they reuse that
   file's order and pick fixtures).
