@@ -623,5 +623,227 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       }
       expect(outcomes).toHaveLength(4);
     });
+
+    // --- Cancel booking and rebook (Product Owner, 2026-10-06): a courier-booking mistake keeps the order and its reserved stock ---
+
+    const rebook = (fulfilmentId: string, payload: Record<string, unknown> = {}, t = staff.token) =>
+      app.inject({
+        method: 'POST',
+        url: `/api/v1/orders/fulfilments/${fulfilmentId}/cancel-booking-rebook`,
+        headers: auth(t),
+        payload: { reason: 'Booked with the wrong parcel size', courierCancellationConfirmed: true, courierReference: 'CXL-RB1', idempotencyKey: `rbk-${fulfilmentId}`, ...payload },
+      });
+    const reservation = (lineId: string) =>
+      testPrisma.orderLine.findUniqueOrThrow({ where: { id: lineId }, select: { reservationId: true } }).then((l) => testPrisma.inventoryReservation.findUniqueOrThrow({ where: { id: l.reservationId! } }));
+
+    it('cancel booking and rebook: the order and its reserved stock are kept, the items wait for a new package, and only the new handover posts the sale', async () => {
+      const { a, o, f, shipment } = await bookedPackage(2);
+      const line = o.lines[0]!;
+      const before = await balance(a.id);
+      const reservedBefore = await reservation(line.id);
+
+      // Not without the courier cancellation confirmed, a reason, or the booking permission.
+      expect((await rebook(f.id, { courierCancellationConfirmed: false })).statusCode).toBe(400);
+      expect((await rebook(f.id, { reason: '  ' })).statusCode).toBe(400);
+      expect((await rebook(f.id, {}, cs.token)).statusCode).toBe(403);
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('BOOKED');
+
+      const released = await rebook(f.id);
+      expect(released.statusCode, released.body).toBe(200);
+      expect(released.json()).toMatchObject({
+        id: f.id,
+        status: 'CANCELLED',
+        releasedForRebook: true,
+        shipment: { id: shipment.id, status: 'CANCELLED', bookingCancellationReference: 'CXL-RB1', bookingCancelledByStaffId: staff.staffUserId },
+      });
+      // The item is back to picked with no package; the order, the line, the reservation and the pick stand.
+      expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).toMatchObject({ status: 'PICKED', fulfilmentId: null, cancelledAt: null });
+      expect((await testPrisma.order.findUniqueOrThrow({ where: { id: o.id } })).status).toBe('PROCESSING');
+      expect(await balance(a.id)).toEqual(before);
+      expect(await reservation(line.id)).toMatchObject({ status: reservedBefore.status, quantity: reservedBefore.quantity });
+      expect((await testPrisma.pickTask.findFirstOrThrow({ where: { orderLineId: line.id } })).status).toBe('PICKED');
+      expect(await sales(line.id)).toBe(0);
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } })).toBe(1);
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_cancel', entityId: f.id } })).toBe(0);
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.line.cancel', entityId: line.id } })).toBe(0);
+      expect(await testPrisma.notificationDelivery.count()).toBe(0);
+
+      // A retry with the same key returns the same package and changes nothing.
+      const retry = await rebook(f.id);
+      expect(retry.statusCode).toBe(200);
+      expect(retry.json().id).toBe(f.id);
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } })).toBe(1);
+      // A different key on the same package, and the whole-package cancel, are refused rather than taken as done.
+      expect((await rebook(f.id, { idempotencyKey: `rbk-other-${f.id}` })).statusCode).toBe(409);
+      const whole = await cancelBooking(f.id);
+      expect(whole.statusCode).toBe(409);
+      expect(whole.json().error.message).toMatch(/kept for rebooking/);
+      expect((await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).status).toBe('PICKED');
+
+      // The cancelled parcel cannot be handed over and the carrier's events for it are refused.
+      expect((await handover([shipment.id])).statusCode).toBe(400);
+      expect((await carrierWebhook(shipment.providerShipmentRef!, 'in_transit', `evt-rbk-old-${f.id}`)).statusCode).toBe(400);
+      expect((await app.inject({ method: 'GET', url: '/api/v1/shipments/handover', headers: auth() })).json().shipments).toEqual([]);
+      expect(await sales(line.id)).toBe(0);
+
+      // Pack & ship shows the item waiting for a package and the old package as released for rebooking.
+      const cancelledList = (await app.inject({ method: 'GET', url: '/api/v1/admin/fulfilments?status=CANCELLED', headers: auth() })).json().items;
+      expect(cancelledList).toEqual([expect.objectContaining({ id: f.id, releasedForRebook: true, dispatchStage: 'CANCELLED' })]);
+      const orderView = (await app.inject({ method: 'GET', url: `/api/v1/orders/${o.id}`, headers: auth() })).json();
+      expect(orderView.fulfilments).toEqual([expect.objectContaining({ id: f.id, status: 'CANCELLED', releasedForRebook: true })]);
+      expect(orderView.lines[0]).toMatchObject({ status: 'PICKED', fulfilmentId: null });
+      // The shopper sees no "cancelled" shipment for an internal booking correction, and the item still on order.
+      const shopperView = (await app.inject({ method: 'GET', url: `/api/v1/storefront/orders/${o.id}`, headers: o.shopperHeaders })).json();
+      expect(shopperView.fulfilments).toEqual([]);
+      expect(shopperView).toMatchObject({ status: 'PROCESSING', lines: [expect.objectContaining({ status: 'PICKED' })] });
+
+      // A new package: packed, ready, booked, handed over - one sale, stock leaves once.
+      const second = await readyFulfilment(o.id, [line.id]);
+      expect(second.id).not.toBe(f.id);
+      const booking = await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${second.id}/shipment`, headers: auth(), payload: { idempotencyKey: `book-${second.id}` } });
+      expect(booking.statusCode, booking.body).toBe(201);
+      expect(booking.json().id).not.toBe(shipment.id);
+      expect(await balance(a.id)).toEqual(before);
+      expect((await handover([booking.json().id])).json()).toMatchObject({ recorded: 1, shipped: 1 });
+      expect(await sales(line.id)).toBe(1);
+      expect(await balance(a.id)).toEqual({ onHand: before.onHand - 2, reserved: before.reserved - 2 });
+      expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).toMatchObject({ status: 'SHIPPED', fulfilmentId: second.id });
+
+      // Once collected, the new booking can no longer be cancelled either way.
+      const late = await rebook(second.id);
+      expect(late.statusCode).toBe(400);
+      expect(late.json().error.message).toMatch(/already collected/);
+      // The first key cannot be reused for the new package.
+      expect((await rebook(second.id, { idempotencyKey: `rbk-${f.id}` })).statusCode).toBe(409);
+    });
+
+    it('cancel booking and rebook is refused for a package that is not booked or already handed over', async () => {
+      const a = await sku('8902300000019');
+      const o = await order([{ skuId: a.id, quantity: 1 }]);
+      await pickAll(o.id);
+      const f = await readyFulfilment(o.id, [o.lines[0]!.id]);
+      const notBooked = await rebook(f.id);
+      expect(notBooked.statusCode).toBe(400);
+      expect(notBooked.json().error.message).toMatch(/ready to ship now/);
+
+      const { f: handed, shipment } = await bookedPackage();
+      expect((await handover([shipment.id])).statusCode).toBe(200);
+      const late = await rebook(handed.id);
+      expect(late.statusCode).toBe(400);
+      expect(late.json().error.message).toMatch(/use a return instead/);
+
+      const missing = await rebook('00000000-0000-4000-8000-000000000000');
+      expect(missing.statusCode).toBe(404);
+    });
+
+    it('split shipment: cancelling one package\'s booking for rebooking leaves the other package and its line alone', async () => {
+      const a = await sku('8902400000018');
+      const b = await sku('8902400000025');
+      const o = await order([{ skuId: a.id, quantity: 1 }, { skuId: b.id, quantity: 1 }]);
+      await pickAll(o.id);
+      const lineA = o.lines.find((l) => l.skuId === a.id)!;
+      const lineB = o.lines.find((l) => l.skuId === b.id)!;
+      const fa = await readyFulfilment(o.id, [lineA.id]);
+      const fb = await readyFulfilment(o.id, [lineB.id]);
+      for (const f of [fa, fb]) {
+        expect((await app.inject({ method: 'POST', url: `/api/v1/orders/fulfilments/${f.id}/shipment`, headers: auth(), payload: { idempotencyKey: `book-${f.id}` } })).statusCode).toBe(201);
+      }
+      const sb = await testPrisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: fb.id } });
+
+      expect((await rebook(fa.id)).statusCode).toBe(200);
+      expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: lineA.id } })).toMatchObject({ status: 'PICKED', fulfilmentId: null });
+      expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: lineB.id } })).toMatchObject({ status: 'PACKED', fulfilmentId: fb.id });
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: fb.id } })).status).toBe('BOOKED');
+      expect((await testPrisma.shipment.findUniqueOrThrow({ where: { id: sb.id } })).status).toBe('BOOKED');
+
+      expect((await handover([sb.id])).json()).toMatchObject({ recorded: 1, shipped: 1 });
+      expect(await sales(lineB.id)).toBe(1);
+      expect(await sales(lineA.id)).toBe(0);
+      expect((await testPrisma.order.findUniqueOrThrow({ where: { id: o.id } })).status).toBe('PROCESSING');
+    });
+
+    it('a handover racing a cancel-and-rebook: exactly one wins, and stock stays consistent either way', async () => {
+      const outcomes: string[] = [];
+      for (let i = 0; i < 4; i += 1) {
+        const { a, o, f, shipment } = await bookedPackage();
+        const line = o.lines[0]!;
+        const before = await balance(a.id);
+        const [h, r] = await Promise.all([handover([shipment.id]), rebook(f.id)]);
+        const pkg = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } });
+        const after = await balance(a.id);
+        if (pkg.status === 'SHIPPED') {
+          outcomes.push('handover');
+          expect(h.statusCode, h.body).toBe(200);
+          expect(r.statusCode).toBe(400);
+          expect(await sales(line.id)).toBe(1);
+          expect(after).toEqual({ onHand: before.onHand - 1, reserved: before.reserved - 1 });
+          expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).toMatchObject({ status: 'SHIPPED', fulfilmentId: f.id });
+        } else {
+          outcomes.push('rebook');
+          expect(pkg).toMatchObject({ status: 'CANCELLED', releasedForRebook: true });
+          expect(r.statusCode, r.body).toBe(200);
+          expect(h.statusCode).toBe(400);
+          expect(await sales(line.id)).toBe(0);
+          expect(after).toEqual(before);
+          expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).toMatchObject({ status: 'PICKED', fulfilmentId: null });
+        }
+      }
+      expect(outcomes).toHaveLength(4);
+    });
+
+    it('a carrier movement event racing a cancel-and-rebook: exactly one wins', async () => {
+      for (let i = 0; i < 3; i += 1) {
+        const { a, o, f, shipment } = await bookedPackage();
+        const before = await balance(a.id);
+        const [w, r] = await Promise.all([carrierWebhook(shipment.providerShipmentRef!, 'in_transit', `evt-rbk-race-${f.id}`), rebook(f.id)]);
+        const pkg = await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } });
+        if (pkg.status === 'SHIPPED') {
+          expect(r.statusCode).toBe(400);
+          expect(await sales(o.lines[0]!.id)).toBe(1);
+          expect(await balance(a.id)).toEqual({ onHand: before.onHand - 1, reserved: before.reserved - 1 });
+        } else {
+          expect(r.statusCode, r.body).toBe(200);
+          expect(w.statusCode).toBe(400);
+          expect(await sales(o.lines[0]!.id)).toBe(0);
+          expect(await balance(a.id)).toEqual(before);
+        }
+      }
+    });
+
+    it('after a cancel-and-rebook the items can still be cancelled on their own, and a line cancel racing the release stays consistent', async () => {
+      // Cancelling an item after its booking was released releases its stock as usual.
+      const first = await bookedPackage();
+      expect((await rebook(first.f.id)).statusCode).toBe(200);
+      const before = await balance(first.a.id);
+      const line = first.o.lines[0]!;
+      const cancel = await app.inject({ method: 'POST', url: `/api/v1/orders/${first.o.id}/lines/${line.id}/cancel`, headers: auth(cs.token), payload: { idempotencyKey: `line-${line.id}` } });
+      expect(cancel.statusCode, cancel.body).toBe(200);
+      expect((await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).status).toBe('CANCELLED');
+      expect(await balance(first.a.id)).toEqual({ onHand: before.onHand, reserved: before.reserved - 1 });
+
+      // A line cancel sent at the same moment as the release: either the line is cancelled after
+      // the release (stock released) or refused while still booked (stock kept for the rebooking).
+      for (let i = 0; i < 4; i += 1) {
+        const { a, o, f } = await bookedPackage();
+        const l = o.lines[0]!;
+        const start = await balance(a.id);
+        const [r, c] = await Promise.all([
+          rebook(f.id),
+          app.inject({ method: 'POST', url: `/api/v1/orders/${o.id}/lines/${l.id}/cancel`, headers: auth(cs.token), payload: { idempotencyKey: `line-race-${l.id}` } }),
+        ]);
+        expect(r.statusCode, r.body).toBe(200);
+        const row = await testPrisma.orderLine.findUniqueOrThrow({ where: { id: l.id } });
+        expect(row.fulfilmentId).toBeNull();
+        if (row.status === 'CANCELLED') {
+          expect(c.statusCode, c.body).toBe(200);
+          expect(await balance(a.id)).toEqual({ onHand: start.onHand, reserved: start.reserved - 1 });
+        } else {
+          expect(row.status).toBe('PICKED');
+          expect(c.statusCode).toBe(400);
+          expect(await balance(a.id)).toEqual(start);
+        }
+        expect(await sales(l.id)).toBe(0);
+      }
+    });
   });
 });

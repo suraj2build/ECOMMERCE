@@ -364,6 +364,8 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
     await page.goto(`/dashboard/exchanges/${exchange.id}`);
+    // The replacement item cannot be changed here; the page says what can be done instead (AO-D8).
+    await expect(page.getByText(/Until the original item is received, you can cancel this exchange/)).toBeVisible();
     await page.getByRole('button', { name: 'Mark received' }).click();
     await confirmDialog(page, 'Mark received');
     await expect(page.getByText('Mark received: done.')).toBeVisible();
@@ -371,6 +373,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await confirmDialog(page, 'Record QC');
     await expect(page.getByText('QC recorded.')).toBeVisible();
     await expect(page.getByText('Replacement allocated').first()).toBeVisible();
+    await expect(page.getByText(/the exchange can only go ahead with this replacement/)).toBeVisible();
 
     // The replacement's pick task appears in the normal pick queue.
     await page.goto(`/dashboard/warehouse/picks?locationId=${fx.locationA.id}`);
@@ -725,7 +728,7 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } })).toBe(saleBefore + 1);
   });
 
-  test('AO-11 a package booked with the courier is cancelled from the screen; its items are cancelled and no stock leaves', async ({ page }) => {
+  test('AO-11 a package booked with the courier is cancelled with its items from the screen; no stock leaves', async ({ page }) => {
     const order = await placeCodOrder(fx, tee.skus[1]!.skuId, nextMobile());
     const task = await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } });
     await expectOk(
@@ -739,12 +742,14 @@ test.describe('P1 Commerce Operations Console', () => {
     await loginAs(page, 'CUSTOMER_SERVICE');
     await openOrder(page, order.orderNumber);
     // The line cannot be cancelled on its own while the courier has a booking.
-    await expect(page.getByText('Booked with the courier: to cancel, use Cancel booking on its package below')).toBeVisible();
+    await expect(page.getByText('Booked with the courier: to cancel it or book it again, use the buttons on its package below')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+    // Customer Service can cancel items (order:cancel) but not rebook (that needs the booking permission).
+    await expect(page.getByRole('button', { name: 'Cancel booking and rebook' })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Cancel booking', exact: true }).first().click();
-    const dialog = page.getByRole('dialog', { name: 'Cancel booking' });
-    const confirm = dialog.getByRole('button', { name: 'Cancel booking' });
+    await page.getByRole('button', { name: 'Cancel booking and items', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Cancel booking and items' });
+    const confirm = dialog.getByRole('button', { name: 'Cancel booking and items' });
     await expect(confirm).toBeDisabled();
     await dialog.getByLabel('Reason (required)').fill('Customer called before collection');
     await expect(confirm).toBeDisabled();
@@ -757,6 +762,70 @@ test.describe('P1 Commerce Operations Console', () => {
     expect((await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } })).status).toBe('CANCELLED');
     expect((await prisma.orderLine.findUniqueOrThrow({ where: { id: order.lineId } })).status).toBe('CANCELLED');
     expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(0);
+  });
+
+  test('AO-13 a booking made by mistake is cancelled and booked again from the screen; the order and its reserved stock are kept', async ({ page }) => {
+    const skuId = tee.skus[1]!.skuId;
+    const order = await placeCodOrder(fx, skuId, nextMobile());
+    const task = await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } });
+    await expectOk(
+      await fx.api.post(`/api/v1/warehouse/pick-tasks/${task.id}/pick`, { headers: fx.auth, data: { idempotencyKey: `ao-13-${task.id}`, outcome: 'FULL', pickedQuantity: 1 } }),
+      'Pick',
+    );
+    const f = await expectOk<{ id: string }>(await fx.api.post(`/api/v1/orders/${order.orderId}/fulfilments`, { headers: fx.auth, data: { lineIds: [order.lineId] } }), 'Fulfilment');
+    for (const step of ['pack', 'ready-to-ship']) await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/${step}`, { headers: fx.auth }), step);
+    await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/shipment`, { headers: fx.auth, data: { idempotencyKey: `ao-13-book-${f.id}` } }), 'Book');
+    const stock = async () => {
+      const rows = await prisma.inventoryBalance.findMany({ where: { skuId } });
+      return { onHand: rows.reduce((n, r) => n + r.onHand, 0), reserved: rows.reduce((n, r) => n + r.reserved, 0) };
+    };
+    const booked = await stock();
+
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    await openOrder(page, order.orderNumber);
+    // The warehouse can rebook (shipping:manage) but not cancel items (order:cancel).
+    await expect(page.getByRole('button', { name: 'Cancel booking and items' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Cancel booking and rebook', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Cancel booking and rebook' });
+    await expect(dialog).toContainText('The order is kept');
+    const confirm = dialog.getByRole('button', { name: 'Cancel booking and rebook' });
+    await dialog.getByLabel('Reason (required)').fill('Booked with the wrong parcel size');
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel('I have cancelled this booking with the courier').check();
+    await dialog.getByLabel('Courier cancellation reference (optional)').fill(`CXL-${RUN}`);
+    await confirm.click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(/Booking cancelled; the order is kept/).first()).toBeVisible();
+    await expect(page.getByText('Booking cancelled - items kept, to be packed and booked again')).toBeVisible();
+
+    expect(await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).toMatchObject({ status: 'CANCELLED', releasedForRebook: true });
+    expect((await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } })).bookingCancellationReference).toBe(`CXL-${RUN}`);
+    expect(await prisma.orderLine.findUniqueOrThrow({ where: { id: order.lineId } })).toMatchObject({ status: 'PICKED', fulfilmentId: null });
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } })).status).toBe('PROCESSING');
+    expect(await stock()).toEqual(booked);
+
+    // Pack & ship lists the order as picked and waiting for a package.
+    await page.getByRole('link', { name: 'Pack & ship' }).click();
+    await expect(page.getByRole('region', { name: 'Picked, waiting for a package' }).getByRole('link', { name: order.orderNumber })).toBeVisible();
+
+    // A new package, packed, ready and booked from the order page; still nothing leaves stock until the handover.
+    await openOrder(page, order.orderNumber);
+    await page.getByLabel(new RegExp(`^Select ${escape(tee.name)}`)).check();
+    await page.getByRole('button', { name: 'Create fulfilment from selected' }).click();
+    await confirmDialog(page, 'Create fulfilment');
+    await expect(page.getByText('Fulfilment created.')).toBeVisible();
+    await fulfilmentStep(page, 'Mark packed');
+    await fulfilmentStep(page, 'Ready to ship');
+    await fulfilmentStep(page, 'Book shipment with carrier');
+    const second = await prisma.orderFulfilment.findFirstOrThrow({ where: { orderId: order.orderId, status: 'BOOKED' } });
+    expect(second.id).not.toBe(f.id);
+    expect(await stock()).toEqual(booked);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(0);
+
+    await confirmHandover(page, order.orderNumber);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(1);
+    expect(await stock()).toEqual({ onHand: booked.onHand - 1, reserved: booked.reserved - 1 });
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: second.id } })).status).toBe('SHIPPED');
   });
 });
 

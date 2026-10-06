@@ -25,6 +25,8 @@ interface FulfilmentRow {
   /** A replacement package whose courier booking was cancelled; the exchange carries on with a new package. */
   cancelledExchangeId: string | null;
   cancelledExchange: { exchangeNumber: string } | null;
+  /** An order package whose booking was cancelled with its items kept, to be packed and booked again. */
+  releasedForRebook: boolean;
   shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number; maxDeliveryAttempts: number; bookedAt: string | null; handedOverAt: string | null } | null;
   _count: { lines: number };
 }
@@ -201,9 +203,11 @@ export default function FulfilmentsPage() {
                       ? 'Exchange replacement'
                       : f.cancelledExchangeId
                         ? 'Exchange replacement - booking cancelled before collection'
-                        : f.status === 'CANCELLED'
-                          ? 'Items cancelled'
-                          : `${f._count.lines} order line(s)`,
+                        : f.releasedForRebook
+                          ? 'Booking cancelled before collection - items kept, back under "Picked, waiting for a package"'
+                          : f.status === 'CANCELLED'
+                            ? 'Items cancelled'
+                            : `${f._count.lines} order line(s)`,
                 },
                 {
                   header: 'Status',

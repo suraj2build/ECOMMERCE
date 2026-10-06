@@ -106,6 +106,8 @@ function buildOrderView(order: OrderWithViewIncludes) {
       status: f.status,
       exchangeId: f.exchangeId,
       cancelledExchangeId: f.cancelledExchangeId,
+      // Booking cancelled with the items kept, to be packed and booked again.
+      releasedForRebook: f.releasedForRebook,
       // AO-D5: booked with a courier vs actually collected (see dispatchStage).
       dispatchStage: dispatchStage(f.status, f.shipment),
       carrierName: f.carrierName,
@@ -138,6 +140,17 @@ function buildOrderView(order: OrderWithViewIncludes) {
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };
+}
+
+/**
+ * The shopper's copy of an order: a package whose courier booking staff
+ * cancelled to book again (an order package released for rebooking, or an
+ * exchange replacement's cancelled booking) was an internal correction -
+ * nothing of the order was cancelled - so it is left out rather than shown
+ * as a "Cancelled" shipment.
+ */
+function forCustomer<T extends { fulfilments: Array<{ status: string; releasedForRebook: boolean; cancelledExchangeId: string | null }> }>(view: T): T {
+  return { ...view, fulfilments: view.fulfilments.filter((f) => !(f.status === 'CANCELLED' && (f.releasedForRebook || f.cancelledExchangeId))) };
 }
 
 export class OrderService {
@@ -590,7 +603,7 @@ export class OrderService {
 
   async getOrderForCustomer(id: string, identity: CartOwnerIdentity) {
     await this.loadOwnedOrder(id, identity);
-    return this.toView(id);
+    return forCustomer(await this.toView(id));
   }
 
   /**
@@ -611,7 +624,7 @@ export class OrderService {
       orderBy: { createdAt: 'desc' },
       include: ORDER_VIEW_INCLUDE,
     });
-    return orders.map((o) => buildOrderView(o));
+    return orders.map((o) => forCustomer(buildOrderView(o)));
   }
 
   async getOrder(id: string) {
@@ -1084,7 +1097,15 @@ export class OrderService {
         SELECT "id", "status", "handedOverAt" FROM "shipments" WHERE "fulfilmentId" = ${fulfilmentId} FOR UPDATE`;
       const locked = await this.lockFulfilment(tx, fulfilmentId);
       if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
-      if (locked.status === 'CANCELLED') return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
+      if (locked.status === 'CANCELLED') {
+        const done = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
+        // Its booking was cancelled with the items kept for rebooking: the
+        // items are no longer in this package, so nothing was cancelled here.
+        if (done.releasedForRebook) {
+          throw new ConflictError('This booking was cancelled with the items kept for rebooking; cancel the items from the order page if they are no longer wanted.');
+        }
+        return done;
+      }
       if (locked.exchangeId) {
         throw new ValidationError(
           'This is an exchange replacement package. Cancel its booking from the exchange: the replacement stays allocated and can be packed and booked again.',
@@ -1116,6 +1137,98 @@ export class OrderService {
         entityType: 'OrderFulfilment',
         entityId: fulfilmentId,
         newValue: { reason, courierReference: input.courierReference?.trim() || null, cancelledLineIds: lines.map((l) => l.id), shipmentId: shipment.id },
+        reference: locked.orderId,
+      });
+      await this.recomputeOrderStatus(tx, locked.orderId);
+      return tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
+    });
+  }
+
+  /**
+   * An order package booked by mistake (wrong parcel, courier, label or
+   * service), before the courier collects it: cancel the booking and keep
+   * the order. Staff confirm the courier booking itself was cancelled (no
+   * courier adapter can do that yet - LR-008) and give a reason. The
+   * shipment and the package become CANCELLED (`releasedForRebook`), and
+   * the package's items go back to PICKED with no package, so they appear
+   * under "Picked, waiting for a package" to be packed and booked again.
+   * Nothing else changes: the order and its lines are not cancelled, the
+   * stock stays reserved (no stock moved at booking, AO-D5 option B), the
+   * pick record stands, and no payment, refund, invoice, loyalty or
+   * customer message is touched. Cancelling the items themselves stays a
+   * separate action (cancelBookedPackage).
+   *
+   * Same lock order as handover, carrier events and cancelBookedPackage
+   * (shipment, then package), so a handover racing this is serialised:
+   * whichever commits first wins and the other is refused. A retry with
+   * the same key returns the cancelled package.
+   */
+  async cancelBookingForRebook(
+    fulfilmentId: string,
+    staffId: string,
+    input: { reason: string; courierCancellationConfirmed: boolean; courierReference?: string; idempotencyKey: string },
+  ) {
+    if (!input.courierCancellationConfirmed) {
+      throw new ValidationError('Cancel the booking with the courier first, then confirm that here.');
+    }
+    const reason = input.reason.trim();
+    if (!reason) throw new ValidationError('Give a reason for cancelling the booking');
+    const key = input.idempotencyKey?.trim();
+    if (!key) throw new ValidationError('An idempotency key is required');
+
+    return this.prisma.$transaction(async (tx) => {
+      const replay = await tx.orderFulfilment.findUnique({ where: { bookingCancelKey: key }, include: { shipment: true } });
+      if (replay) {
+        if (replay.id !== fulfilmentId || !replay.releasedForRebook) {
+          throw new ConflictError(`Idempotency key '${key}' was already used for a different booking`);
+        }
+        return replay;
+      }
+      const shipments = await tx.$queryRaw<Array<{ id: string; status: string; handedOverAt: Date | null }>>`
+        SELECT "id", "status", "handedOverAt" FROM "shipments" WHERE "fulfilmentId" = ${fulfilmentId} FOR UPDATE`;
+      const locked = await this.lockFulfilment(tx, fulfilmentId);
+      if (!locked) throw new NotFoundError('OrderFulfilment', fulfilmentId);
+      if (locked.exchangeId) {
+        throw new ValidationError(
+          'This is an exchange replacement package. Cancel its booking from the exchange: the replacement stays allocated and can be packed and booked again.',
+        );
+      }
+      const shipment = shipments[0];
+      if (locked.status === 'SHIPPED' || locked.status === 'DELIVERED' || shipment?.handedOverAt) {
+        throw new ValidationError('The courier has already collected this package; use a return instead.');
+      }
+      if (locked.status === 'CANCELLED') {
+        throw new ConflictError('This package was already cancelled; reload to see its current state.');
+      }
+      if (locked.status !== 'BOOKED' || !shipment || shipment.status !== 'BOOKED') {
+        throw new ValidationError(
+          `Only a package booked with the courier can have its booking cancelled; it is ${locked.status.toLowerCase().replace(/_/g, ' ')} now.`,
+        );
+      }
+      const lines = await tx.$queryRaw<Array<{ id: string; status: OrderLineStatus }>>`
+        SELECT "id", "status" FROM "order_lines"
+        WHERE "fulfilmentId" = ${fulfilmentId} AND "status" <> 'CANCELLED'
+        ORDER BY "id" FOR UPDATE`;
+      const notPacked = lines.find((l) => l.status !== 'PACKED');
+      if (notPacked) {
+        throw new ValidationError(`An item in this package is ${notPacked.status.toLowerCase()}, so its booking cannot be cancelled for rebooking.`);
+      }
+
+      await tx.shipment.update({
+        where: { id: shipment.id },
+        data: { status: 'CANCELLED', bookingCancelledAt: new Date(), bookingCancelledByStaffId: staffId, bookingCancellationReference: input.courierReference?.trim() || null },
+      });
+      if (lines.length > 0) {
+        await tx.orderLine.updateMany({ where: { id: { in: lines.map((l) => l.id) } }, data: { fulfilmentId: null, status: 'PICKED' } });
+      }
+      await tx.orderFulfilment.update({ where: { id: fulfilmentId }, data: { status: 'CANCELLED', releasedForRebook: true, bookingCancelKey: key } });
+      await recordAudit(tx, {
+        actorType: 'STAFF',
+        actorStaffId: staffId,
+        action: 'order.fulfilment.booking_release',
+        entityType: 'OrderFulfilment',
+        entityId: fulfilmentId,
+        newValue: { reason, courierReference: input.courierReference?.trim() || null, releasedLineIds: lines.map((l) => l.id), shipmentId: shipment.id },
         reference: locked.orderId,
       });
       await this.recomputeOrderStatus(tx, locked.orderId);
@@ -1482,7 +1595,19 @@ export class OrderService {
     if (preread.fulfilmentId) {
       await this.lockFulfilment(tx, preread.fulfilmentId);
       const fresh = await tx.orderLine.findUniqueOrThrow({ where: { id: lineId } });
-      line = fresh;
+      if (fresh.fulfilmentId !== preread.fulfilmentId) {
+        // The package's booking was cancelled for rebooking while this
+        // waited (cancelBookingForRebook): the line left the package. Lock
+        // the line itself, as for any line without a package, so a new
+        // package cannot take it at the same time.
+        const relocked = fresh.fulfilmentId === null ? await this.lockOrderLine(tx, lineId) : null;
+        if (!relocked || relocked.fulfilmentId !== null) {
+          throw new ConflictError('This item moved to another package at the same time; reload and try again.');
+        }
+        line = relocked;
+      } else {
+        line = fresh;
+      }
     } else {
       await this.lockPendingPickTasksForLine(tx, lineId);
       const locked = await this.lockOrderLine(tx, lineId);

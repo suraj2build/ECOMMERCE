@@ -253,6 +253,7 @@ export class AdminQueryService {
           exchange: { select: { exchangeNumber: true } },
           cancelledExchangeId: true,
           cancelledExchange: { select: { exchangeNumber: true } },
+          releasedForRebook: true,
           shipment: { select: { id: true, provider: true, status: true, trackingRef: true, deliveryAttempts: true, maxDeliveryAttempts: true, bookedAt: true, handedOverAt: true, handoverSource: true } },
           _count: { select: { lines: true } },
         },

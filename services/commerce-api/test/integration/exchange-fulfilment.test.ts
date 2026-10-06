@@ -474,6 +474,15 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
     });
     expect(cancel.statusCode).toBe(400);
     expect(cancel.json().error.message).toMatch(/exchange/);
+    // Nor through the order package's "cancel booking and rebook".
+    const rebook = await app.inject({
+      method: 'POST',
+      url: `/api/v1/orders/fulfilments/${fulfilmentId}/cancel-booking-rebook`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { reason: 'test', courierCancellationConfirmed: true, idempotencyKey: `xho-rbk-${counter}` },
+    });
+    expect(rebook.statusCode).toBe(400);
+    expect(rebook.json().error.message).toMatch(/exchange/);
 
     const handover = () => app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: { authorization: `Bearer ${token}` }, payload: { shipmentIds: [shipment.id] } });
     expect((await handover()).json()).toMatchObject({ recorded: 1, shipped: 1 });

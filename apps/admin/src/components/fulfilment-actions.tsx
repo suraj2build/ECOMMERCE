@@ -29,6 +29,8 @@ export interface FulfilmentLike {
   exchangeId?: string | null;
   /** Set on a replacement package whose booking was cancelled; the exchange goes on with a new package. */
   cancelledExchangeId?: string | null;
+  /** Set on an order package whose booking was cancelled with its items kept, to be packed and booked again. */
+  releasedForRebook?: boolean;
 }
 
 /**
@@ -41,7 +43,7 @@ export function shipmentDisplayStatus(shipment: { status: string; handedOverAt?:
   return shipment.status === 'BOOKED' && shipment.handedOverAt ? 'HANDED_OVER' : shipment.status;
 }
 
-type Step = 'pack' | 'ready-to-ship' | 'shipment' | 'ship' | 'deliver' | 'cancel-booking';
+type Step = 'pack' | 'ready-to-ship' | 'shipment' | 'ship' | 'deliver' | 'cancel-booking-rebook' | 'cancel-booking';
 
 const STEPS: Record<Step, { label: string; perm: string; body: string; done: string }> = {
   pack: {
@@ -69,10 +71,16 @@ const STEPS: Record<Step, { label: string; perm: string; body: string; done: str
     done: 'Marked shipped.',
   },
   deliver: { label: 'Mark delivered', perm: 'order:fulfil', body: 'Records delivery. Normally the carrier reports this.', done: 'Marked delivered.' },
+  'cancel-booking-rebook': {
+    label: 'Cancel booking and rebook',
+    perm: 'shipping:manage',
+    body: 'For a booking made by mistake (wrong parcel, courier, label or service), before the courier collects it. First cancel the booking with the courier yourself (this system cannot do that yet). The order is kept: nothing is cancelled or refunded, the stock stays reserved, and the items go back under "Picked, waiting for a package" on Pack & ship to be packed and booked again.',
+    done: 'Booking cancelled; the order is kept. The items are back under "Picked, waiting for a package" on Pack & ship: create a new package, pack it and book it again.',
+  },
   'cancel-booking': {
-    label: 'Cancel booking',
+    label: 'Cancel booking and items',
     perm: 'order:cancel',
-    body: 'Cancels this package before the courier collects it. First cancel the booking with the courier yourself (this system cannot do that yet). Every item in the package is cancelled and its stock released; a prepaid order is flagged for refund.',
+    body: 'Cancels this package and the items in it, before the courier collects it - for example when the customer no longer wants them. First cancel the booking with the courier yourself (this system cannot do that yet). Every item in the package is cancelled and its stock released; a prepaid order is flagged for refund. To keep the order and book again, use "Cancel booking and rebook" instead.',
     done: 'Booking cancelled. The items are cancelled and their stock released.',
   },
 };
@@ -94,7 +102,7 @@ const STEPS_FOR: Record<string, Step[]> = {
   PENDING: ['pack'],
   PACKED: ['ready-to-ship'],
   READY_TO_SHIP: ['shipment', 'ship'],
-  BOOKED: ['cancel-booking'],
+  BOOKED: ['cancel-booking-rebook', 'cancel-booking'],
   SHIPPED: ['deliver'],
 };
 
@@ -138,8 +146,10 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
     action.clear();
     setStep(s);
   };
-  const steps = STEPS_FOR[fulfilment.status] ?? [];
   const replacement = Boolean(fulfilment.exchangeId);
+  // A replacement package has one cancel: from the exchange, which keeps the replacement allocated.
+  const steps = replacement && fulfilment.status === 'BOOKED' ? (['cancel-booking'] as Step[]) : (STEPS_FOR[fulfilment.status] ?? []);
+  const cancelling = step === 'cancel-booking' || step === 'cancel-booking-rebook';
   const stepInfo = (s: Step) => (s === 'cancel-booking' && replacement ? REPLACEMENT_CANCEL : STEPS[s]);
 
   async function run(s: Step) {
@@ -151,7 +161,7 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
     const body =
       s === 'shipment'
         ? { idempotencyKey: key }
-        : s === 'cancel-booking'
+        : s === 'cancel-booking' || s === 'cancel-booking-rebook'
           ? { idempotencyKey: key, courierCancellationConfirmed: courierCancelled, reason: cancelReason, courierReference: courierReference.trim() || undefined }
         : s === 'ship'
           ? { carrierName: carrierName || undefined, trackingRef: trackingRef || undefined }
@@ -185,7 +195,9 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
         <p className="muted">
           {fulfilment.cancelledExchangeId
             ? 'The courier booking for this exchange replacement was cancelled before collection; nothing left stock. The exchange page shows its current package.'
-            : NEXT_FOR[fulfilment.status]}
+            : fulfilment.releasedForRebook
+              ? 'The courier booking was cancelled before collection and the order kept; nothing left stock. Its items went back under "Picked, waiting for a package" to be packed and booked again.'
+              : NEXT_FOR[fulfilment.status]}
         </p>
       )}
       <div className="row">
@@ -209,7 +221,7 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
         confirmLabel={step ? stepInfo(step).label : 'Confirm'}
         busy={action.busy}
         danger={step === 'cancel-booking'}
-        confirmDisabled={step === 'cancel-booking' && (!courierCancelled || !cancelReason.trim())}
+        confirmDisabled={cancelling && (!courierCancelled || !cancelReason.trim())}
         onCancel={() => {
           action.clear();
           setStep(null);
@@ -223,7 +235,7 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
             <TextField label="Tracking reference" value={trackingRef} onChange={setTrackingRef} />
           </>
         )}
-        {step === 'cancel-booking' && (
+        {cancelling && (
           <>
             <Checkbox label="I have cancelled this booking with the courier" checked={courierCancelled} onChange={setCourierCancelled} />
             <TextField label="Reason (required)" value={cancelReason} onChange={setCancelReason} />

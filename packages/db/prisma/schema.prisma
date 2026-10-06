@@ -2228,6 +2228,11 @@ model OrderFulfilment {
   // kept here. `bookingCancelKey` makes that cancellation idempotent.
   cancelledExchangeId String?
   bookingCancelKey    String?          @unique
+  // An order package whose courier booking was cancelled before collection
+  // with its items kept (cancel booking and rebook): the lines went back to
+  // PICKED, with no package, to be packed and booked again. Its line ids
+  // are in the audit log; the order itself was not cancelled.
+  releasedForRebook   Boolean          @default(false)
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 

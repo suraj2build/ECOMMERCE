@@ -31,6 +31,9 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
   const cancelAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:cancel')];
   const exceptionAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:exception:manage')];
   const rtoAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:rto')];
+  // Cancelling a courier booking to book again is part of booking, so it
+  // needs the booking permission; cancelling the items needs order:cancel.
+  const rebookAuth = [fastify.requireStaffAuth, fastify.requirePermission('shipping:manage')];
   // invoice:create - same permission FINANCE already holds for the M08
   // HTTP invoice-issuance entry point; retrying a failed invoice is the
   // same operation, just re-triggered (independent-review finding #2).
@@ -172,6 +175,23 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
       .strict()
       .parse(request.body);
     reply.status(200).send(await orderService.cancelBookedPackage(fulfilmentId, request.staffUser!.id, body));
+  });
+
+  // Cancel the courier booking of an order package booked by mistake and
+  // keep the order: the items go back to "Picked, waiting for a package"
+  // with their stock still reserved, to be packed and booked again.
+  fastify.post('/orders/fulfilments/:fulfilmentId/cancel-booking-rebook', { preHandler: rebookAuth }, async (request, reply) => {
+    const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({
+        reason: z.string().trim().min(1).max(2000),
+        courierCancellationConfirmed: z.literal(true),
+        courierReference: z.string().trim().max(120).optional(),
+        idempotencyKey: z.string().min(1).max(200),
+      })
+      .strict()
+      .parse(request.body);
+    reply.status(200).send(await orderService.cancelBookingForRebook(fulfilmentId, request.staffUser!.id, body));
   });
 
   fastify.post('/orders/:id/lines/:lineId/exception', { preHandler: exceptionAuth }, async (request, reply) => {

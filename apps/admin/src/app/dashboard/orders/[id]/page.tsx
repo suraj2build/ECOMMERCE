@@ -49,6 +49,8 @@ interface Fulfilment {
   /** An exchange replacement package (current, or one whose booking was cancelled). */
   exchangeId?: string | null;
   cancelledExchangeId?: string | null;
+  /** Booking cancelled with the items kept, to be packed and booked again. */
+  releasedForRebook?: boolean;
   /** Booked with a courier vs actually collected (AO-D5). */
   dispatchStage?: string;
   carrierName: string | null;
@@ -374,7 +376,7 @@ export default function OrderDetailPage() {
                     // after delivery, refund for a cancelled prepaid line or
                     // a delivered (returnable) one.
                     <span className="row">
-                      {inBookedPackage(l) && <span className="muted">Booked with the courier: to cancel, use Cancel booking on its package below</span>}
+                      {inBookedPackage(l) && <span className="muted">Booked with the courier: to cancel it or book it again, use the buttons on its package below</span>}
                       {!['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && !inBookedPackage(l) && (
                         <Can anyOf={['order:cancel']}>
                           <button type="button" className="btn small" onClick={() => openLine({ kind: 'cancel', line: l })}>
@@ -429,6 +431,10 @@ export default function OrderDetailPage() {
                       <Link href={`/dashboard/exchanges/${f.exchangeId ?? f.cancelledExchangeId}`}>
                         {f.exchangeId ? 'Exchange replacement' : 'Exchange replacement - booking cancelled'}
                       </Link>
+                    ) : f.releasedForRebook ? (
+                      'Booking cancelled - items kept, to be packed and booked again'
+                    ) : f.status === 'CANCELLED' ? (
+                      'Booking cancelled - items cancelled'
                     ) : (
                       o.lines.filter((l) => l.fulfilmentId === f.id).map((l) => `${l.styleName} ${l.sizeLabel}`).join(', ')
                     )}
