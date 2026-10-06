@@ -6,6 +6,34 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-06 (after `71230f9`): `CANCEL BOOKING AND REBOOK
+FOR ORDER PACKAGES, PLAYWRIGHT ARTIFACTS ON CI FAILURE AND AN EXCHANGE
+SCREEN NOTE BUILT ON claude/admin-ops-phase1 — AWAITING REVIEW; COURIER
+(LR-008) STILL UNDECIDED.`** Instruction recorded verbatim in
+`blueprint/DECISION_REGISTER.md` → AO. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Follow-up after `71230f9`").
+
+- **Cancel booking and rebook.** A courier booking made by mistake is
+  cancelled before collection and the order kept: no stock moves, the
+  items return to "Picked, waiting for a package", and the new package's
+  handover posts the sale once. Courier cancellation confirmed, a reason
+  and `shipping:manage` are required. **Cancel booking and items** stays
+  separate (`order:cancel`). Races with handover, carrier events and line
+  cancellation are tested. `docs/admin/DISPATCH.md`.
+- **CI artifacts.** A failed browser run uploads the HTML report, traces
+  and screenshots. The cause of the earlier link-audit timeout is still
+  unconfirmed.
+- **AO-D8 (changing an allocated exchange item):** deferred by the
+  Product Owner. The exchange page explains the recovery path (none in
+  the system after receipt); options are recorded, nothing built.
+- **Tests before push:** unit 90 + 21, integration 998/998 (65 files,
+  none skipped), browser 92/92 with the load checks passing. One earlier
+  browser run failed on a test-timing race (P1-07); the cause is in the
+  record.
+
+Not self-certified; no go-live claimed. Green CI does not establish
+go-live readiness.
+
 **Status as of 2026-10-06 (review of `a807ef6`): `WALKTHROUGH OF STAFF
 SIGN-IN, REVOCATION, BOOKING, HANDOVER AND CANCELLATION RUN, ITS SCREEN
 DEFECTS FIXED, AND A RECOVERY PATH FOR A MISTAKEN EXCHANGE REPLACEMENT

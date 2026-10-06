@@ -752,3 +752,90 @@ and are fixed, without loosening it:
 
 The test now prints the time spent on each page, so a recurrence shows
 where the time went. This branch did not change the pages it audits.
+
+CI on `71230f9` (the link-audit change) passed: all three jobs green
+(build/test, API image, read-load investigation). Its test totals could
+not be read back from this sandbox: the job log's last lines are service
+output and the full log is served from a host outside this session's
+network access. As the Product Owner noted, one green run does not
+establish the cause of the earlier link-audit timeout.
+
+## Follow-up after `71230f9` (2026-10-06)
+
+The Product Owner's instruction is recorded verbatim in
+`blueprint/DECISION_REGISTER.md` → AO ("Product Owner instruction of
+2026-10-06 (after `71230f9`)"). Engineering read the first two steps as
+the go-ahead:
+
+1. **Cancel booking and rebook for ordinary orders.** A courier booking
+   made by mistake is cancelled before collection and the order kept: the
+   items go back to "Picked, waiting for a package" with their stock still
+   reserved, and are packed and booked again. Courier cancellation
+   confirmed, a reason and `shipping:manage` are required. Cancelling the
+   items stays a separate action (**Cancel booking and items**,
+   `order:cancel`). Races with handover, carrier events and line
+   cancellation are tested. `DISPATCH.md` → "A package booked by mistake".
+2. **Playwright artifacts on CI failure.** `playwright.config.ts` keeps a
+   trace and a screenshot for each failed test and, in CI, writes an HTML
+   report; the workflow uploads `playwright-report/` and `test-results/`
+   when the E2E step fails (14 days). Checked locally by forcing one
+   failure in CI mode: the report, trace and screenshot were produced.
+   This does not explain the earlier link-audit timeout; it means a
+   recurrence can be diagnosed from the run.
+3. **Courier (LR-008):** still the Product Owner's choice; nothing built.
+   Once chosen, its sandbox credentials go in the environment's secret
+   settings, never in chat or the repository.
+4. **Changing an allocated exchange item** stays deferred (AO-D8). The
+   exchange page now explains the recovery path: before the original item
+   is received the exchange can be cancelled and the item returned for a
+   refund (a second exchange on the same line is not possible); after
+   receipt only the allocated replacement can be sent. It warns against
+   recording a pick shortage to get round it, since that writes the stock
+   off. There is no in-system way to change the item.
+5. The favicon was not changed (no icon supplied).
+
+### Changes
+
+- API: `POST /orders/fulfilments/:id/cancel-booking-rebook`
+  (`OrderService.cancelBookingForRebook`); migration
+  `20261007090000_order_booking_rebook` adds
+  `order_fulfilments.releasedForRebook`. The whole-package cancel refuses
+  a released package (409) instead of reporting it done. A line
+  cancellation that waited on a package released meanwhile now locks the
+  line itself. The shopper's order view leaves out packages whose booking
+  was cancelled as an internal correction (rebook, or an exchange
+  replacement's cancelled booking).
+- Admin: two actions on a booked order package; released packages shown
+  on the order page and Pack & ship; the exchange page note (AO-D8).
+- CI: Playwright report, traces and screenshots uploaded on failure.
+
+### Test record (local, before push)
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Unit (`commerce-api`) | 17 | 90 | 0 | 0 |
+| Unit (other workspaces) | 5 | 21 | 0 | 0 |
+| Integration, with the S3 emulator | 65 | 998 | 0 | 0 |
+| Browser (storefront, admin, API smoke), final run | — | 92 | 0 | 0 |
+
+Lint, typecheck (all workspaces), builds and the migration drift check
+are clean; the read-load and checkout-contention checks passed. New
+integration tests (6, `dispatch.test.ts`): the full rebook path,
+refusals, split shipment, a handover racing the release, a carrier event
+racing it, and item cancellation after and racing the release; the
+exchange route refusal was added to an existing test. New browser test
+AO-13; AO-11 and P1-08 extended.
+
+Runs that did not pass, in order:
+
+- **Browser run 1: 91 passed, 1 failed (P1-07, returns; not changed in
+  this pass).** After sign-in the test clicked the link named "Returns"
+  on the Overview. The Overview's KPI tiles ("Returns requested", "Returns
+  in transit", "Returns awaiting QC") are links that appear when their
+  data loads, so depending on timing the name matched four links and
+  Playwright refused to pick one. The click now uses the exact name, as
+  does the same pattern for "Transfers" in P1-04; nothing in the checks
+  was loosened. The tiles came in with `9ae0bd2`; this is a latent race
+  in the test, not a product change.
+- **Browser run 2: 92 passed** (the final run above), on a fresh
+  database.
