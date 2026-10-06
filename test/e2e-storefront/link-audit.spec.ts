@@ -35,6 +35,7 @@ const INSTAGRAM_UA =
 interface Found { links: Set<string>; images: Set<string>; broken: string[] }
 
 async function collect(page: Page, path: string, found: Found, openMenu = false) {
+  const started = Date.now();
   const response = await page.goto(path);
   expect(response?.status(), `${path} status`).toBeLessThan(400);
   if (openMenu) {
@@ -42,8 +43,12 @@ async function collect(page: Page, path: string, found: Found, openMenu = false)
     if (await toggle.isVisible()) await toggle.click();
   }
   // Bring lazily loaded images into view, then let them settle.
+  // Bounded, so a page that keeps growing as it scrolls cannot use up the test's time.
   await page.evaluate(async () => {
-    for (let y = 0; y < document.body.scrollHeight; y += 600) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 40)); }
+    for (let y = 0, steps = 0; y < document.body.scrollHeight && steps < 150; y += 600, steps += 1) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 40));
+    }
   });
   await page.waitForLoadState('networkidle');
   // Lazily loaded images scrolled past quickly may not have started; load
@@ -51,7 +56,9 @@ async function collect(page: Page, path: string, found: Found, openMenu = false)
   await page.evaluate(async () => {
     await Promise.all([...document.images].map((img) => {
       img.loading = 'eager';
-      if (img.complete && img.naturalWidth > 0) return null;
+      // Already finished, loaded or failed: its load/error event has fired and will not fire
+      // again, so waiting would only burn the timeout. A failed one is reported below.
+      if (img.complete) return null;
       return new Promise((resolve) => { img.addEventListener('load', resolve, { once: true }); img.addEventListener('error', resolve, { once: true }); setTimeout(resolve, 15_000); });
     }));
   });
@@ -68,6 +75,9 @@ async function collect(page: Page, path: string, found: Found, openMenu = false)
     found.images.add(image.src);
     if (!image.ok) found.broken.push(`${path}: image did not render ${image.src}`);
   }
+  // Per-page timing in the report, so a slow run shows which page took the time.
+  test.info().annotations.push({ type: 'page-time', description: `${path}: ${Date.now() - started} ms` });
+  process.stdout.write(`link-audit ${path}: ${Date.now() - started} ms\n`);
 }
 
 async function checkAll(request: APIRequestContext, found: Found) {

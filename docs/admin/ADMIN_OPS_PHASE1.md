@@ -733,3 +733,22 @@ Runs that did not pass, in order:
   build and passes on the fixed one.
 - **Browser run 3: 91 passed** (the final run above), each run on a
   fresh database.
+
+### CI on `849c8de`
+
+CI failed in the browser step: 88 passed, 1 failed, 2 did not run (the
+two bulk-catalogue checks, which wait for the storefront project). The
+failure was the storefront link audit (desktop), which ran past its
+4-minute limit; locally the same test takes about 18 seconds, also with
+two workers, and CI uploads no browser artifacts, so the slow page could
+not be identified. Two weaknesses in the test could produce exactly this
+and are fixed, without loosening it:
+
+- an image that had already failed was given a fresh 15-second wait for a
+  load or error event that had already fired (it was then reported as
+  broken anyway); finished images are no longer waited on;
+- the scroll that brings lazy images into view had no upper bound for a
+  page that keeps growing; it now stops after 150 steps.
+
+The test now prints the time spent on each page, so a recurrence shows
+where the time went. This branch did not change the pages it audits.
