@@ -172,6 +172,8 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
       setCourierCancelled(false);
       setCancelReason('');
       setCourierReference('');
+      // A cancelled replacement booking removes this package; the exchange page shows the confirmation instead.
+      if (s === 'cancel-booking' && replacement) action.clear();
       onChanged(stepInfo(s).done);
     }
   }

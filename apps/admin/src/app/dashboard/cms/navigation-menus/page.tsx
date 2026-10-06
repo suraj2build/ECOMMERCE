@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActionMessage, Can, DataState, Notice, PageHeader, Section, SelectField, TextField } from '@/components/ui';
 import { apiSend, type Page } from '@/lib/api';
 import { storefrontUrl } from '@/lib/media';
@@ -44,6 +44,10 @@ function linkProblem(url: string): string | null {
   }
 }
 
+function snapshot(items: Array<{ label: string; url: string }>): string {
+  return JSON.stringify(items.map((i) => [i.label.trim(), i.url.trim()]));
+}
+
 function kindOf(url: string): LinkKind {
   if (url.startsWith('/pages/')) return 'page';
   if (url.startsWith('/category/')) return 'category';
@@ -69,18 +73,20 @@ export default function NavigationMenusPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
+  // What the server holds for this menu, as compared for "unsaved changes". Set on load and
+  // straight after a successful save, so switching menus right after saving never asks to discard.
+  const [baseline, setBaseline] = useState('[]');
   const action = useAction();
   const clearMessage = action.clear;
 
-  const current = menus.data?.find((m) => m.key === key);
   useEffect(() => {
     if (!menus.data || loadedKey === key) return;
     const found = menus.data.find((m) => m.key === key);
-    setItems(
-      [...(found?.items ?? [])]
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-        .map((i) => ({ label: i.label, url: i.url, kind: kindOf(i.url) })),
-    );
+    const loaded = [...(found?.items ?? [])]
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((i) => ({ label: i.label, url: i.url, kind: kindOf(i.url) }));
+    setItems(loaded);
+    setBaseline(snapshot(loaded));
     setLoadedKey(key);
     setShowErrors(false);
     clearMessage();
@@ -90,8 +96,7 @@ export default function NavigationMenusPage() {
   const unreadNote = placements.data?.unreadMenus[key];
   const isSocial = key === 'footer-social';
   const problems = items.map((i) => (!i.label.trim() ? 'Give the link a label.' : i.label.trim().length > 60 ? 'Keep the label to 60 characters.' : linkProblem(i.url)));
-  const saved = useMemo(() => JSON.stringify((current?.items ?? []).map((i) => [i.label, i.url])), [current]);
-  const dirty = JSON.stringify(items.map((i) => [i.label.trim(), i.url.trim()])) !== saved;
+  const dirty = snapshot(items) !== baseline;
 
   const update = (index: number, patch: Partial<Item>) => setItems((list) => list.map((it, i) => (i === index ? { ...it, ...patch } : it)));
   const move = (index: number, delta: -1 | 1) =>
@@ -109,7 +114,10 @@ export default function NavigationMenusPage() {
       () => apiSend('PUT', `/cms/navigation-menus/${key}`, { items: items.map((i, idx) => ({ label: i.label.trim(), url: i.url.trim(), sortOrder: idx + 1 })) }),
       placement ? 'Saved. The storefront footer shows the change within a minute.' : 'Saved. Note: the storefront does not read this menu.',
     );
-    if (ok) menus.reload();
+    if (ok) {
+      setBaseline(snapshot(items));
+      menus.reload();
+    }
   }
 
   const otherKeys = (menus.data ?? []).map((m) => m.key).filter((k) => !placements.data?.menus.some((p) => p.key === k));

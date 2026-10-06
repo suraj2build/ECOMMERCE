@@ -298,6 +298,17 @@ test.describe('Admin Ops Phase 1: owner workflows', () => {
     await expect(second.getByText('Web addresses must start with https://')).toBeVisible();
     await second.getByLabel('Web address').fill('https://journal.example.com');
     await second.getByRole('button', { name: 'Move Journal up' }).click();
+    // Hold back the menu reload that follows the save, so switching menus straight after saving
+    // happens before fresh data arrives: it must not ask to discard changes that were just saved.
+    const prompts: string[] = [];
+    page.on('dialog', (d) => {
+      prompts.push(d.message());
+      void d.dismiss();
+    });
+    await page.route('**/api/v1/cms/navigation-menus', async (route) => {
+      if (route.request().method() === 'GET') await new Promise((r) => setTimeout(r, 1500));
+      await route.continue();
+    });
     await page.getByRole('button', { name: 'Save menu' }).click();
     await expect(page.getByText(/^Saved\. The storefront footer shows the change/)).toBeVisible();
     await shot(page, '08-navigation-menu');
@@ -311,6 +322,8 @@ test.describe('Admin Ops Phase 1: owner workflows', () => {
     // The header menu is clearly marked as not read by the storefront.
     await page.getByLabel('Menu', { exact: true }).selectOption('main-nav');
     await expect(page.getByText(/does not change the header/)).toBeVisible();
+    expect(prompts).toEqual([]);
+    await page.unroute('**/api/v1/cms/navigation-menus');
 
     const shop = await page.context().newPage();
     await shop.addInitScript(() => localStorage.setItem('vanya_department', 'women'));
