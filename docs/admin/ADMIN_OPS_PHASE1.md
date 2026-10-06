@@ -635,3 +635,15 @@ block in `dispatch.test.ts` (7), AO-D6 tests in `admin-ops-products`,
   first: the reported value was the pending item. The test now waits for
   it to clear; it must still clear.
 - **Run 4: 91 passed.** Each run started from a fresh database.
+
+### CI on `b2c1a58`
+
+CI failed before lint and tests: its production dependency audit found a
+newly published advisory in `source-map-js` (GHSA-68fv-2mgg-jv7q), a
+build-time dependency of `postcss`. Nothing in this change touched
+dependencies. The lockfile now pins the patched 1.2.2
+(`security/DEPENDENCY_AUDIT.md`). On the new lockfile: production audit 0
+vulnerabilities; lint, typecheck and builds clean; unit 90 + 21; browser
+91/91 with the load checks passing. The integration suite was not rerun:
+the lockfile change touches only the CSS build tooling, which the API
+tests do not load. CI runs it on the next commit.

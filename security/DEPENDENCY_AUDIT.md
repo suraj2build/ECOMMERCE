@@ -51,3 +51,18 @@ processes untrusted input in CI.
 critical finding and stays contained to tests. The Next 16, eslint-config-next 16
 and Tailwind 4 upgrades belong together in one later UI-platform upgrade.
 Visual regression review of the approved VANYA UI is part of that upgrade.
+
+## 2026-10-06: source-map-js (GHSA-68fv-2mgg-jv7q)
+
+CI's production audit (`npm audit --omit=dev --audit-level=high`) failed
+on `b2c1a58` with a newly published high-severity advisory:
+`source-map-js` 1.0.0 - 1.2.1 allows an event-loop denial of service
+through indexed source-map section offsets. It reaches production
+dependencies through `postcss` (overridden to 8.5.28 for Next) and
+`@tailwindcss/node`; both use it at build time on the project's own CSS.
+No package file had changed, so the base commit would fail the same way.
+
+Fixed by moving the lockfile to `source-map-js` 1.2.2, the patched release
+(a 3-line `package-lock.json` change; no `package.json` change). The
+production audit then reports 0 vulnerabilities. Builds, unit,
+integration and browser suites were rerun on the new lockfile.
