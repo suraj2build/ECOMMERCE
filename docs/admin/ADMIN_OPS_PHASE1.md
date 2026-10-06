@@ -651,3 +651,85 @@ CI passed on `a807ef6` (all three jobs).
 *Correction (2026-10-06):* an earlier version of this paragraph said the
 integration suite was not rerun after the lockfile change. It was rerun
 after that text was written, with the result above.
+
+## Follow-up after `a807ef6` (2026-10-06)
+
+The Product Owner's review of `a807ef6` asked for:
+
+1. **This document corrected** to record the post-lockfile integration
+   rerun (989/989, none skipped). Done in a documentation-only commit
+   (`3656b9e`).
+2. **A desktop walkthrough** of temporary-password sign-in, session
+   revocation, booking without stock movement, handover posting once and
+   cancellation releasing stock. Record: `WALKTHROUGH_2026-10-06.md`. All
+   five behaved as specified; nine screen defects it found are fixed
+   (W2-1..W2-9), and five items are reported, not changed.
+3. **A recovery path for an exchange replacement booked by mistake**
+   (before, it could not be cancelled at all). Staff with
+   `exchange:fulfil` cancel the replacement's booking from the exchange
+   page after cancelling with the courier; the package and shipment
+   become `CANCELLED` and are detached from the exchange, no stock moves,
+   and the exchange stays allocated with its pick and reservation. A new
+   package is then created and booked as usual; its handover posts the
+   dispatch once. Changing the replacement item is not covered.
+   `DISPATCH.md` → "A replacement booked by mistake"; decision note under
+   AO-D5 in `blueprint/DECISION_REGISTER.md`.
+
+The courier (LR-008) is still not chosen: real labels, pickup booking,
+tracking and courier-side cancellation need that integration.
+
+### Changes
+
+- API: `POST /exchanges/:id/fulfilment/cancel-booking`
+  (`OrderService.cancelReplacementBooking`; lock order shipment, package,
+  exchange); migration `20261006120000_replacement_booking_cancel` adds
+  `order_fulfilments.cancelledExchangeId` and `bookingCancelKey`
+  (idempotency). The staff exchange view lists cancelled bookings; the
+  customer's view does not.
+- Admin: Cancel booking on the exchange page; cancelled replacement
+  packages shown on Pack & ship and the order page; the walkthrough
+  fixes listed in `WALKTHROUGH_2026-10-06.md`.
+- Storefront: a shipped package no longer reads "Booked with carrier"
+  after a staff handover.
+
+### Test record (local, before push)
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Unit (`commerce-api`) | 17 | 90 | 0 | 0 |
+| Unit (other workspaces) | 5 | 21 | 0 | 0 |
+| Integration, with the S3 emulator | 65 | 992 | 0 | 0 |
+| Browser (storefront, admin, API smoke), final run | — | 91 | 0 | 0 |
+
+Lint, typecheck (all workspaces) and the migration drift check (no
+difference from an empty database) are clean; the read-load and
+checkout-contention checks passed. New: three tests in
+`exchange-fulfilment.test.ts` (the cancel-and-rebook path, refusals, and
+a handover racing the cancellation); browser P1-08 now cancels and
+rebooks the replacement; AO-12 checks the new signed-out link and the
+password confirmation.
+
+Runs that did not pass, in order:
+
+- **Integration run 1: 974 passed, 18 failed** (all in
+  `search-discovery.test.ts`). Meilisearch was not running in this
+  container: my start command's "already running?" check matched its own
+  command line, so it never started it. Started properly, the next run
+  was cut short when the S3 emulator hit the sandbox's 30-minute limit
+  for background jobs and was stopped deliberately; it is not counted.
+  Both services were restarted with a longer limit and the run above is
+  the complete one.
+- **Browser run 1: 90 passed, 1 failed (P1-08).** Right after cancelling
+  a replacement booking, the confirmation showed twice for a moment (page
+  level and inside the package until the reload removed it). The package
+  no longer shows its own copy in that case.
+- **Browser run 2: 90 passed, 1 failed (AO-05, navigation menus; code
+  not changed in this pass).** Switching menus straight after saving
+  could ask "Discard your unsaved changes?" because the page compared
+  against server data that had not reloaded yet; the browser test
+  dismisses such prompts, so the switch did not happen. The page now
+  treats a successful save as the new saved state at once. AO-05 now
+  holds back that reload and requires no prompt: it failed on the old
+  build and passes on the fixed one.
+- **Browser run 3: 91 passed** (the final run above), each run on a
+  fresh database.

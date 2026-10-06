@@ -6,6 +6,40 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-06 (review of `a807ef6`): `WALKTHROUGH OF STAFF
+SIGN-IN, REVOCATION, BOOKING, HANDOVER AND CANCELLATION RUN, ITS SCREEN
+DEFECTS FIXED, AND A RECOVERY PATH FOR A MISTAKEN EXCHANGE REPLACEMENT
+BOOKING BUILT ON claude/admin-ops-phase1 — AWAITING REVIEW; COURIER
+(LR-008) STILL UNDECIDED.`** Record: `docs/admin/ADMIN_OPS_PHASE1.md`
+("Follow-up after `a807ef6`") and `docs/admin/WALKTHROUGH_2026-10-06.md`.
+
+- **Validation record corrected** (documentation-only commit `3656b9e`):
+  the post-lockfile integration rerun was 989/989, none skipped.
+- **Walkthrough.** Temporary-password sign-in, revocation on role change,
+  reset, deactivation and own password change, booking (no stock moved),
+  handover (one sale; a later carrier poll posted nothing) and booking
+  cancellation (reservation released) all behaved as specified. Nine
+  screen defects were fixed (W2-1..W2-9), for example a signed-out person
+  now gets a "Sign in again" link instead of a Retry that could never
+  work, and a shipped package no longer reads "Booked".
+- **Replacement booked by mistake.** Staff cancel the replacement's
+  booking from the exchange (`exchange:fulfil`); no stock moves, the
+  exchange stays allocated, and a new package is booked; its handover
+  posts the dispatch once. `docs/admin/DISPATCH.md`.
+- **Also fixed (found by the browser runs):** a brief duplicate
+  confirmation after cancelling a replacement booking, and the navigation
+  menu editor asking to discard just-saved changes when switching menus
+  straight after saving (now covered deterministically by AO-05).
+- **Tests before push:** unit 90 + 21, integration 992/992 (65 files,
+  none skipped), browser 91/91 with the load checks passing; earlier
+  failed runs and their causes are in the record.
+- **Reported, not built:** an order package booked by mistake can only be
+  cancelled whole (no rebook path); changing an exchange's replacement
+  item after allocation has no path.
+
+Not self-certified; no go-live claimed. Green CI does not establish
+go-live readiness.
+
 **Status as of 2026-10-06: `AO-D5 OPTION B, AO-D6 METADATA REMOVAL AND
 STAFF MANAGEMENT (AO-D7) BUILT ON claude/admin-ops-phase1 — AWAITING
 REVIEW; COURIER (LR-008) STILL UNDECIDED.`** The Product Owner's
