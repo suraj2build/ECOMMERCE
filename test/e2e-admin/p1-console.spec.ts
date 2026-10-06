@@ -223,7 +223,8 @@ test.describe('P1 Commerce Operations Console', () => {
     const beforeA = (await balance(fx.locationA.id))!;
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
-    await page.getByRole('link', { name: 'Transfers' }).click();
+    // exact: the Overview's KPI tiles ("Transfers ...") are links too, once they load.
+    await page.getByRole('link', { name: 'Transfers', exact: true }).click();
     await chooseSku(page, sku.skuCode);
     await page.getByLabel('From location').selectOption({ label: `${fx.locationA.name} (${fx.locationA.code})` });
     await page.getByLabel('To location').selectOption({ label: `${fx.locationB.name} (${fx.locationB.code})` });
@@ -318,7 +319,8 @@ test.describe('P1 Commerce Operations Console', () => {
     const ret = await prisma.return.findFirstOrThrow({ where: { orderId: order.orderId }, include: { lines: true } });
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
-    await page.getByRole('link', { name: 'Returns' }).click();
+    // exact: the Overview's KPI tiles ("Returns ...") are links too, once they load.
+    await page.getByRole('link', { name: 'Returns', exact: true }).click();
     await page.getByRole('link', { name: ret.returnNumber }).click();
     await page.getByRole('button', { name: 'Mark received at warehouse' }).click();
     await confirmDialog(page, 'Mark received at warehouse');
