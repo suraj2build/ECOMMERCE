@@ -644,6 +644,10 @@ build-time dependency of `postcss`. Nothing in this change touched
 dependencies. The lockfile now pins the patched 1.2.2
 (`security/DEPENDENCY_AUDIT.md`). On the new lockfile: production audit 0
 vulnerabilities; lint, typecheck and builds clean; unit 90 + 21; browser
-91/91 with the load checks passing. The integration suite was not rerun:
-the lockfile change touches only the CSS build tooling, which the API
-tests do not load. CI runs it on the next commit.
+91/91 with the load checks passing; integration with the S3 emulator
+989/989 passed, 65 files, none skipped (rerun after the lockfile change).
+CI passed on `a807ef6` (all three jobs).
+
+*Correction (2026-10-06):* an earlier version of this paragraph said the
+integration suite was not rerun after the lockfile change. It was rerun
+after that text was written, with the result above.
