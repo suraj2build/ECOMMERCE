@@ -280,6 +280,15 @@ export default function ExchangeDetailPage() {
                   </ul>
                 </div>
               )}
+              {!['COMPLETED', 'CANCELLED', 'QC_FAILED'].includes(e.status) && (
+                <Notice kind="info">
+                  <strong>Changing the replacement item</strong> (another size or colour) is not possible here; it waits on a Product Owner decision (AO-D8).{' '}
+                  {['REQUESTED', 'PICKUP_SCHEDULED', 'PICKED_UP'].includes(e.status)
+                    ? 'Until the original item is received, you can cancel this exchange; the customer can then return the item for a refund, but cannot open a second exchange for it.'
+                    : 'The original item has been received, so the exchange can only go ahead with this replacement.'}{' '}
+                  Do not record a pick shortage to get round this: that writes the stock off as missing.
+                </Notice>
+              )}
               {e.status === 'REPLACEMENT_ALLOCATED' && (
                 <details style={{ marginTop: '1rem' }}>
                   <summary>Recovery: replacement fulfilled outside the pipeline</summary>
