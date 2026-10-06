@@ -1,8 +1,9 @@
 # Booking vs handover: stock and accounting review (AO-D5)
 
-Status: REVIEW COMPLETE — DECISION REQUIRED (Product Owner). Nothing in
-this document has been implemented. The stock sale is still posted when a
-parcel is booked with a courier.
+Status: DECIDED — option B (Product Owner, 2026-10-06) and IMPLEMENTED on
+`claude/admin-ops-phase1`; see `DISPATCH.md` ("AO-D5 option B"). Sections
+1-4 below describe the behaviour before option B and are kept as the
+review that informed the decision.
 
 The Product Owner's decision AO-D5 (2026-10-05) was: "Separate booking from
 actual handover. Review stock and accounting consequences before moving

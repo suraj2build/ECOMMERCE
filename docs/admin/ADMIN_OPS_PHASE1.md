@@ -549,3 +549,57 @@ checks passed. New checks:
   the dialog, the reason is kept, and the password is cleared.
 - AO-10 checks the warehouse address printed as the return address on
   the label.
+
+## Product Owner go-ahead (2026-10-06, after `ced9f2b`)
+
+The Product Owner's instruction is recorded verbatim in
+`blueprint/DECISION_REGISTER.md` → AO ("Product Owner instruction of
+2026-10-06"). Engineering read it as authorization for AO-D5 option B,
+AO-D6 option (a) and the staff screen proposed above (option (a),
+recorded as AO-D7). The courier (LR-008) is still not chosen and nothing
+was built for it.
+
+### AO-D5 option B: the handover posts the sale
+
+- Booking moves the package to the new `BOOKED` status. No stock moves
+  and no message is sent.
+- The handover (Courier handover page, or the carrier's first movement
+  event, whichever comes first) posts the `SALE` / `EXCHANGE_DISPATCH`,
+  marks the package shipped and sends the shipped message after commit.
+- Covered as asked:
+  - duplicate events: a second report or confirmation changes nothing;
+  - a staff handover racing the carrier's event posts one sale;
+  - split shipments: each package is sold at its own handover;
+  - booking failures leave the package ready to ship, with no sale;
+  - packages booked before this change (already `SHIPPED`) only get their
+    handover recorded;
+  - cancellation before handover: staff cancel the whole booked package
+    after cancelling with the courier. Line cancels and exceptions are
+    refused while booked, and a handover racing a cancellation is
+    serialised.
+- Admin: "Cancel booking" on booked packages; the order page hides the
+  line Cancel for them; Pack & ship has a "Booking cancelled" filter.
+  Storefront: a booked package reads "Packed, waiting for the courier to
+  collect it" and cannot be cancelled online.
+- Details: `DISPATCH.md`.
+
+### AO-D6: photo metadata
+
+Product photos and banner/page images are re-encoded before storage:
+upright (EXIF orientation applied), ICC colour profile kept, EXIF/GPS,
+XMP and IPTC removed. PNG stays lossless; JPEG and WebP are re-encoded at
+quality 95. Tests compare the pixels with the original: identical for PNG,
+a mean difference under 3 (of 255) for JPEG and WebP. Return evidence is
+stored exactly as uploaded.
+
+### AO-D7: staff management
+
+Dashboard → Staff (`rbac:manage`): list, add, change roles, reset
+password, deactivate/reactivate. Details and protections: `STAFF.md`.
+
+### Also fixed
+
+- The storefront order page printed a stray `\n` above the order number
+  (since `920ff96`).
+- An exception could be flagged on a line in a booked package, and its
+  resolution would have released the stock; it is now refused.

@@ -6,6 +6,31 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-06: `AO-D5 OPTION B, AO-D6 METADATA REMOVAL AND
+STAFF MANAGEMENT (AO-D7) BUILT ON claude/admin-ops-phase1 — AWAITING
+REVIEW; COURIER (LR-008) STILL UNDECIDED.`** The Product Owner's
+instruction of 2026-10-06 ("Proceed with AO-D5 option B, AO-D6 metadata
+removal, and staff management option (a) …") is recorded verbatim in
+`blueprint/DECISION_REGISTER.md` → AO. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Product Owner go-ahead, 2026-10-06").
+
+- **AO-D5 option B.** Booking makes the package `BOOKED` and moves no
+  stock. The courier handover (staff confirmation or the carrier's first
+  movement, once) posts the sale, marks it shipped and sends the message
+  after commit. Booked packages are cancelled whole by staff after the
+  courier booking is cancelled. Packages booked earlier are not posted
+  twice. `docs/admin/DISPATCH.md`.
+- **AO-D6.** Public product and content images are re-encoded without
+  EXIF/GPS/XMP, upright, with their colour profile. Return evidence is
+  untouched.
+- **AO-D7 staff management.** Staff page; temporary passwords shown once
+  with a forced change; sessions end on reset, deactivation, role change
+  and own password change; last Super Admin and approval owners
+  protected. `docs/admin/STAFF.md`.
+
+Not self-certified; no go-live claimed. Green CI does not establish
+go-live readiness.
+
 **Status as of 2026-10-05 (review after `6217031`): `APPROVAL SECRETS
 CLEARED AFTER REFUSAL AND SENDER ADDRESS REQUIRED FOR COURIER BOOKING ON
 claude/admin-ops-phase1 — AWAITING REVIEW; STAFF SCREEN, AO-D5 AND AO-D6

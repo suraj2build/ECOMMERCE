@@ -2909,8 +2909,33 @@ Decided by the Product Owner in the review of Admin Ops Phase 1
   re-checked, only then. Owner self-approval remains a distinct,
   immediate path. Purchase orders already worked this way.
 
+#### Product Owner instruction of 2026-10-06 (AO-D5, AO-D6, AO-D7)
+
+Given after the review of `ced9f2b`, recorded verbatim:
+
+> Proceed with AO-D5 option B, AO-D6 metadata removal, and staff
+> management option (a). At courier handover, post the stock sale, mark
+> shipped and send the customer message. Cover cancellation before
+> handover, duplicate events, split shipments, booking failures and
+> existing shipments without double-posting stock. Strip camera/GPS
+> metadata from public photos while preserving displayed orientation and
+> colour fidelity. Keep private return evidence separate. Build staff
+> management with temporary passwords shown once and mandatory password
+> change before further access. Revoke sessions after password reset,
+> deactivation or role changes. Protect the last Super Admin and
+> configured owner. Validate, push and report CI for the exact final
+> commit, with accurate test totals. Courier selection remains a
+> separate business decision. The operational controls can proceed while
+> that choice is made. Green CI alone does not establish go-live
+> readiness.
+
+Engineering read this as the Product Owner's authorization for AO-D5
+option B, AO-D6 option (a) and the staff screen as proposed (AO-D7). The
+courier (LR-008) stays `DECISION_REQUIRED`; nothing was built for it.
+
 #### AO-D5 — Dispatch: booking vs handover
-- **Status:** DECIDED in part (Product Owner, 2026-10-05)
+- **Status:** DECIDED — option B (Product Owner, 2026-10-06; instruction
+  above). Earlier: decided in part on 2026-10-05.
 - **Final decision:** separate courier booking from the actual handover to
   the courier. Review the stock and accounting consequences **before**
   moving the sale-posting point.
@@ -2939,12 +2964,28 @@ Decided by the Product Owner in the review of Admin Ops Phase 1
   cancellation. The reviewer stated this is a recommendation, not an
   approval recorded on the owner's behalf, so the status stays
   **DECISION_REQUIRED** and nothing has been built for it yet.
+- **Implemented (option B, 2026-10-06):** booking moves the package
+  `READY_TO_SHIP -> BOOKED` with no stock movement and no message. The
+  handover (staff confirmation on the Courier handover page, or the
+  carrier's first movement event, whichever comes first) posts the `SALE`
+  (or `EXCHANGE_DISPATCH`), marks the package `SHIPPED` and sends
+  `ORDER_SHIPPED` after commit; the second report changes nothing.
+  Packages booked before this change are already `SHIPPED`: their
+  handover is recorded and nothing is posted again. A booked package is
+  cancelled whole, by staff (`order:cancel`), after confirming the courier
+  booking was cancelled; its lines are cancelled through the normal path
+  and its stock released. Line cancellation (staff or shopper) and line
+  exceptions are refused while the package is booked. An exchange
+  replacement package cannot be cancelled this way. Details:
+  `docs/admin/DISPATCH.md`. Tax consequences stay TAX/COMPLIANCE REVIEW
+  REQUIRED.
 - **Still open (business):** B-2 (scan required at pick, pack or both) and
   B-3 (measured parcel weight vs product weights) are left to the owner as
   admin settings, off by default, rather than decided by engineering.
 
 #### AO-D6 — Camera metadata on public product photos
-- **Status:** DECISION_REQUIRED (found in the code review after `3e1149a`)
+- **Status:** DECIDED — option (a) (Product Owner, 2026-10-06; instruction
+  above). Found in the code review after `3e1149a`.
 - **Question:** should uploaded product and content photos have their
   camera metadata (EXIF, which can include GPS location and device) removed
   before they are served publicly?
@@ -2959,5 +3000,25 @@ Decided by the Product Owner in the review of Admin Ops Phase 1
 - **Recommendation received (2026-10-05, after `57f0f53`), not an
   approval:** option (a) — strip camera metadata from public product and
   content uploads automatically, keeping orientation and the colour
-  profile; private return-evidence photos are handled separately. Status
-  stays **DECISION_REQUIRED** until the Product Owner approves it.
+  profile; private return-evidence photos are handled separately.
+- **Implemented (2026-10-06):** product photos (upload and replace) and
+  banner/page images are re-encoded before storage: the EXIF orientation
+  is applied to the pixels, the ICC colour profile is kept, and EXIF
+  (camera, GPS), XMP and IPTC are dropped. PNG stays lossless; JPEG and
+  WebP are re-encoded at quality 95 (JPEG without chroma subsampling).
+  Return evidence is stored exactly as uploaded, in its private store.
+
+#### AO-D7 — Staff management screen
+- **Status:** DECIDED — option (a) of the proposal in
+  `docs/admin/ADMIN_OPS_PHASE1.md` (Product Owner, 2026-10-06; instruction
+  above).
+- **Implemented:** Staff page (`rbac:manage`): list with roles, status,
+  last sign-in and approval-owner flag; add a person; change roles;
+  reset a password; deactivate and reactivate. Temporary passwords are
+  random, shown once and never stored or logged; the person must choose
+  their own before any other route answers. A password reset,
+  deactivation or role change ends every session of that person (checked
+  in the database on every request, not only by deleting Redis keys).
+  The last active Super Admin and configured approval owners cannot be
+  deactivated or lose their roles; nobody changes their own roles or
+  deactivates themselves. Details: `docs/admin/STAFF.md`.

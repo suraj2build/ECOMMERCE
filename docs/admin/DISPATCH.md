@@ -4,7 +4,8 @@ Status: IMPLEMENTED on `claude/admin-ops-phase1`, awaiting implementation
 review. This follows the Product Owner's review of 2026-10-05: "build
 barcode verification, parcel weight/dimensions and dispatch documents",
 plus decision AO-D5 ("separate booking from actual handover; review stock
-and accounting consequences before moving sale posting").
+and accounting consequences before moving sale posting"), decided as
+option B on 2026-10-06: the handover, not the booking, posts the sale.
 
 ## What the owner does
 
@@ -55,7 +56,8 @@ booked with a courier but not yet collected, grouped by courier.
    "received by".
 2. Tick the parcels the courier actually took.
 3. Optionally enter the courier's pickup or manifest reference.
-4. Confirm.
+4. Confirm. This posts the stock sale, marks the packages shipped and
+   sends account holders their "shipped" message (AO-D5 option B).
 
 A carrier's first in-transit tracking event also records the handover
 automatically, if it arrives first. Recording a handover twice is
@@ -67,17 +69,16 @@ how many there are in total and that only the oldest 500 are listed.
 
 ## Dispatch stage in the admin
 
-The admin distinguishes the two states a booked package can be in. Both
-are `SHIPPED` underneath, so this is a label, not a new status:
-
 | Stage | Shown as | Meaning |
 |---|---|---|
-| `BOOKED_AWAITING_COLLECTION` | **Booked — awaiting collection** | booked with a courier, not yet handed over |
-| `HANDED_OVER` | **Handed over** | the courier took it (staff handover or carrier event) |
+| `BOOKED_AWAITING_COLLECTION` | **Booked — awaiting collection** | booked with a courier, not yet handed over (package status `BOOKED`) |
+| `HANDED_OVER` | **Handed over** | the courier took it; the package is `SHIPPED` |
+| `CANCELLED` | **Cancelled** | the booking was cancelled before collection |
 
-The stage shows on the Pack & ship list and on the order page. The Pack & ship list can be filtered by either stage. A booked
-package also says "Stock already deducted at booking", because that is
-still true (see below).
+A package booked before option B was built is `SHIPPED` but shows as
+"Booked — awaiting collection" until its handover is recorded, with the
+note that its stock was already deducted at booking. The Pack & ship list
+can be filtered by each stage.
 
 ## Settings (Business & warehouse → Dispatch checks)
 
@@ -89,40 +90,66 @@ default**, and changing them needs `org:manage`.
 When a check is off, a scan or measurement that **is** entered is still
 checked. When a check is on, packing or picking without it is refused.
 
-## AO-D5: booking vs handover (what changed and what did not)
+## AO-D5 option B: the handover posts the sale
 
-- **Changed:** handover is a separate, recorded event on the shipment:
-  - `handedOverAt`;
-  - who handed it over, or "carrier event";
-  - the courier's reference.
+Decided by the Product Owner on 2026-10-06 (`blueprint/DECISION_REGISTER.md`
+→ AO-D5).
 
-  Booked-but-not-collected parcels are visible on the handover page and
-  can be counted.
-- **Not changed:** the inventory sale (`SALE`, or `EXCHANGE_DISPATCH` for
-  an exchange replacement) is still posted when the shipment is booked.
-  The fulfilment still becomes `SHIPPED` at booking. Moving the sale to
-  handover affects:
-  - cancellation of booked parcels;
-  - order status;
-  - analytics ship dates;
-  - exchange dispatch;
-  - concurrency between webhook, staff and cancellation.
+- **Booking** (`ShippingService.createShipment`) books the parcel and moves
+  the package `READY_TO_SHIP -> BOOKED`. No stock moves, the lines stay
+  packed, and the customer gets no message. A failed booking leaves the
+  package ready to ship; its retry is idempotent as before.
+- **Handover** is whichever comes first:
+  - staff confirm it on the Courier handover page
+    (`DispatchService.recordHandover`), or
+  - the carrier reports the parcel moving (in transit, out for delivery,
+    delivered or a failed attempt).
 
-  These are listed in `NEXT_PHASES_RESEARCH.md` ("Proposal: move shipped
-  from carrier booking to handover"). The Product Owner asked for that
-  review **before** the posting point moves, so it has not moved.
-- **What this means today:** a parcel that is booked but never collected
-  has already left stock in the ledger. The handover page and the
-  "Booked — awaiting collection" filter are where to see such parcels.
-- **AO-D5 is therefore partly implemented.** The review of what moving the
-  sale would change is `BOOKING_TO_HANDOVER_REVIEW.md`. It recommends
-  option B: the sale, the shipped status and the customer's shipped
-  message all move to handover, with a rule for cancelling a booked
-  parcel. It needs the Product Owner's decision before anything moves.
-- **Fixed while reviewing:** the "shipped" message to the customer (and
-  the "delivered" one) was sent from inside the booking transaction, so a
-  booking that then failed could still have told the customer it had
-  shipped. Both are now sent only after the change is committed.
+  In one transaction it posts one `SALE` per order line (or one
+  `EXCHANGE_DISPATCH` for an exchange replacement), marks the package and
+  its lines `SHIPPED`, and records the handover. The `ORDER_SHIPPED`
+  message is sent after that commits.
+- **Exactly once.** The shipment row is locked first, then the package row
+  (the same order in booking, handover, carrier events and cancellation).
+  Only a `BOOKED` package can move to `SHIPPED`, and the ledger allows one
+  `SALE` per order line. A staff confirmation and a carrier event arriving
+  together post one sale; a repeated event or confirmation changes nothing.
+- **Split shipments.** Each package is handed over, and sold, on its own.
+- **Packages booked before option B** are already `SHIPPED` with their
+  sale posted. Their handover is recorded and nothing is posted again.
+- **A manual "Mark shipped"** (a parcel sent outside the courier
+  integration) still goes `READY_TO_SHIP -> SHIPPED` and posts the sale at
+  once. It is refused for a booked package, which waits for its handover.
+
+### Cancelling a booked package
+
+Before the courier collects it, staff with `order:cancel` can cancel the
+whole package from the order page (**Cancel booking**). They must first
+cancel the booking with the courier themselves (there is no courier
+adapter yet, LR-008), tick that they did, and give a reason. In one
+transaction:
+
+- the shipment becomes `CANCELLED` (who, when and the courier's reference
+  are kept), and later carrier events for it are refused;
+- every line in the package is cancelled through the normal cancellation
+  path: stock released, a prepaid order flagged for refund with a credit
+  note, loyalty reversed;
+- the package becomes `CANCELLED`.
+
+A retry returns the cancelled package. While a package is booked, its
+lines cannot be cancelled one by one (by staff or by the shopper) and
+cannot be flagged as exceptions. A handover and a cancellation racing
+each other are serialised by the shipment lock: one wins, the other is
+refused. An exchange replacement package cannot be cancelled this way.
+Once handed over, it is a return, not a cancellation.
+
+### Customer view
+
+The order page shows a booked package as "Packed, waiting for the courier
+to collect it" (not shipped) and hides its Cancel buttons.
+
+- **Fixed earlier:** the "shipped" and "delivered" messages are sent only
+  after the change is committed.
 
 ## Not included (needs a courier or a decision)
 
@@ -140,9 +167,18 @@ checked. When a check is on, packing or picking without it is refused.
   match and mismatch; pack scans (exact, missing, extra, foreign,
   unknown); parcel measurements stored and sent with the booking;
   settings requiring scans and measurements; documents content; handover
-  by staff and by carrier event; repeat handover; SALE still posted at
-  booking; permissions; the dispatch stage and its filters; two
-  simultaneous handovers of one parcel; the list total beyond its limit;
-  the shipped message sent only after the booking commits.
-- Browser flow AO-10 in `test/e2e-admin/p1-console.spec.ts` (it reuses that
+  by staff and by carrier event; repeat handover; permissions; the
+  dispatch stage and its filters; two simultaneous handovers of one
+  parcel; the list total beyond its limit. AO-D5 option B: no sale or
+  stock change at booking; the sale posted once at handover; a staff
+  handover racing the carrier's event; split shipments; a failed booking;
+  a package shipped before option B; cancelling a booked package (line
+  cancels and exceptions refused, stock released, later carrier events
+  refused); a handover racing a cancellation; the shipped message sent
+  only after the handover commits.
+- `shipping.test.ts` and `exchange-fulfilment.test.ts`: booking retries
+  and races post no sale, the handover posts one; an exchange replacement
+  posts its dispatch at handover and cannot be cancelled as a booking.
+- Browser flows AO-10 (dispatch and handover) and AO-11 (cancelling a
+  booked package) in `test/e2e-admin/p1-console.spec.ts` (they reuse that
   file's order and pick fixtures).
