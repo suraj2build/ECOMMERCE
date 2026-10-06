@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
-import { FulfilmentActions } from '@/components/fulfilment-actions';
+import { FulfilmentActions, REPLACEMENT_CANCEL, shipmentDisplayStatus } from '@/components/fulfilment-actions';
 import { ActionMessage, Can, ConfirmDialog, DataState, DateText, Ident, Money, Notice, PageHeader, Section, SelectField, StatusBadge, TextArea } from '@/components/ui';
 import { apiSend, newIdempotencyKey, qs } from '@/lib/api';
 import { useAction, useApi, useCan } from '@/lib/session';
@@ -41,8 +41,9 @@ interface ExchangeDetail {
       packedAt: string | null;
       shippedAt: string | null;
       deliveredAt: string | null;
-      shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number } | null;
+      shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number; handedOverAt: string | null } | null;
     } | null;
+    cancelledBookings: Array<{ id: string; trackingRef: string | null; bookingCancelledAt: string | null; courierReference: string | null }>;
   };
 }
 
@@ -65,6 +66,22 @@ const STEPS: Record<Step, { label: string; perm: string; body: string; danger?: 
   },
   cancel: { label: 'Cancel exchange', perm: 'exchange:initiate', danger: true, body: 'Cancels the exchange request.' },
 };
+
+/** Only the steps the exchange service accepts from the current status are offered (it still decides). */
+function headerStepValid(step: Step, e: { status: string; method: string }): boolean {
+  switch (step) {
+    case 'pickup':
+      return e.status === 'REQUESTED' && e.method === 'PICKUP';
+    case 'pickup/complete':
+      return e.status === 'PICKUP_SCHEDULED';
+    case 'receive':
+      return e.method === 'DROP_OFF' ? e.status === 'REQUESTED' : e.status === 'PICKED_UP';
+    case 'cancel':
+      return e.status === 'REQUESTED' || e.status === 'PICKUP_SCHEDULED';
+    default:
+      return true;
+  }
+}
 
 export default function ExchangeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -100,7 +117,7 @@ export default function ExchangeDetailPage() {
               breadcrumbs={[{ label: 'Post-purchase' }, { label: 'Exchanges', href: '/dashboard/exchanges' }, { label: e.exchangeNumber }]}
               actions={
                 <>
-                  {(['pickup', 'pickup/complete', 'receive', 'cancel'] as Step[]).map((s) => (
+                  {(['pickup', 'pickup/complete', 'receive', 'cancel'] as Step[]).filter((s) => headerStepValid(s, e)).map((s) => (
                     <Can key={s} anyOf={[STEPS[s].perm]}>
                       <button
                         type="button"
@@ -116,18 +133,20 @@ export default function ExchangeDetailPage() {
                       </button>
                     </Can>
                   ))}
-                  <Can anyOf={['exchange:qc']}>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        action.clear();
-                        setQcOpen(true);
-                      }}
-                    >
-                      Record QC
-                    </button>
-                  </Can>
+                  {e.status === 'RECEIVED' && (
+                    <Can anyOf={['exchange:qc']}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          action.clear();
+                          setQcOpen(true);
+                        }}
+                      >
+                        Record QC
+                      </button>
+                    </Can>
+                  )}
                 </>
               }
             />
@@ -204,7 +223,7 @@ export default function ExchangeDetailPage() {
                 <dd>
                   {rf.fulfilment?.shipment ? (
                     <>
-                      <StatusBadge status={rf.fulfilment.shipment.status} /> {rf.fulfilment.shipment.provider} <Ident>{rf.fulfilment.shipment.trackingRef ?? ''}</Ident>
+                      <StatusBadge status={shipmentDisplayStatus(rf.fulfilment.shipment)} /> {rf.fulfilment.shipment.provider} <Ident>{rf.fulfilment.shipment.trackingRef ?? ''}</Ident>
                     </>
                   ) : (
                     '—'
@@ -215,7 +234,10 @@ export default function ExchangeDetailPage() {
                   <DateText value={e.replacementFulfilledAt} withTime />
                 </dd>
               </dl>
-              {!rf.fulfilment && (
+              {!rf.fulfilment && e.status === 'REPLACEMENT_ALLOCATED' && rf.pickTask?.status !== 'PICKED' && (
+                <p className="muted">Next: pick the replacement from the pick queue, then create its package here.</p>
+              )}
+              {!rf.fulfilment && e.status === 'REPLACEMENT_ALLOCATED' && rf.pickTask?.status === 'PICKED' && (
                 <Can anyOf={['exchange:fulfil']}>
                   <button
                     type="button"
@@ -230,24 +252,52 @@ export default function ExchangeDetailPage() {
                 </Can>
               )}
               {rf.fulfilment && (
-                <FulfilmentActions fulfilment={{ id: rf.fulfilment.id, status: rf.fulfilment.status, shipment: rf.fulfilment.shipment }} onChanged={ex.reload} />
+                <FulfilmentActions
+                  fulfilment={{ id: rf.fulfilment.id, status: rf.fulfilment.status, shipment: rf.fulfilment.shipment, exchangeId: e.id }}
+                  onChanged={(done) => {
+                    action.clear();
+                    // A cancelled booking removes the package, and the package's own message with it.
+                    if (done === REPLACEMENT_CANCEL.done) void action.run(async () => undefined, done);
+                    ex.reload();
+                  }}
+                />
               )}
-              <details style={{ marginTop: '1rem' }}>
-                <summary>Recovery: replacement fulfilled outside the pipeline</summary>
-                <p className="muted">The exchange completes automatically when its replacement package is delivered. Use this only for a replacement handed over outside tracked shipping.</p>
-                <Can anyOf={['exchange:fulfil']}>
-                  <button
-                    type="button"
-                    className="btn danger"
-                    onClick={() => {
-                      action.clear();
-                      setStep('replacement-fulfilled');
-                    }}
-                  >
-                    Confirm fulfilled outside the pipeline
-                  </button>
-                </Can>
-              </details>
+              {rf.cancelledBookings.length > 0 && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <p className="muted">Earlier packages whose courier booking was cancelled before collection (no stock moved):</p>
+                  <ul>
+                    {rf.cancelledBookings.map((b) => (
+                      <li key={b.id}>
+                        Booking <Ident>{b.trackingRef ?? '—'}</Ident> cancelled <DateText value={b.bookingCancelledAt} withTime />
+                        {b.courierReference && (
+                          <>
+                            {' '}
+                            · courier reference <Ident>{b.courierReference}</Ident>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {e.status === 'REPLACEMENT_ALLOCATED' && (
+                <details style={{ marginTop: '1rem' }}>
+                  <summary>Recovery: replacement fulfilled outside the pipeline</summary>
+                  <p className="muted">The exchange completes automatically when its replacement package is delivered. Use this only for a replacement handed over outside tracked shipping.</p>
+                  <Can anyOf={['exchange:fulfil']}>
+                    <button
+                      type="button"
+                      className="btn danger"
+                      onClick={() => {
+                        action.clear();
+                        setStep('replacement-fulfilled');
+                      }}
+                    >
+                      Confirm fulfilled outside the pipeline
+                    </button>
+                  </Can>
+                </details>
+              )}
             </Section>
 
             <ConfirmDialog

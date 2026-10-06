@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
-import { FulfilmentActions } from '@/components/fulfilment-actions';
+import { FulfilmentActions, shipmentDisplayStatus } from '@/components/fulfilment-actions';
 import { SkuPicker, type SkuOption } from '@/components/pickers';
 import {
   ActionMessage,
@@ -46,6 +46,9 @@ interface OrderLine {
 interface Fulfilment {
   id: string;
   status: string;
+  /** An exchange replacement package (current, or one whose booking was cancelled). */
+  exchangeId?: string | null;
+  cancelledExchangeId?: string | null;
   /** Booked with a courier vs actually collected (AO-D5). */
   dispatchStage?: string;
   carrierName: string | null;
@@ -61,6 +64,7 @@ interface Fulfilment {
     deliveryAttempts: number;
     maxDeliveryAttempts: number;
     bookedAt: string | null;
+    handedOverAt: string | null;
     deliveredAt: string | null;
   } | null;
 }
@@ -370,7 +374,7 @@ export default function OrderDetailPage() {
                     // after delivery, refund for a cancelled prepaid line or
                     // a delivered (returnable) one.
                     <span className="row">
-                      {inBookedPackage(l) && <span className="muted">Booked with the courier: cancel from Pack &amp; ship</span>}
+                      {inBookedPackage(l) && <span className="muted">Booked with the courier: to cancel, use Cancel booking on its package below</span>}
                       {!['SHIPPED', 'DELIVERED', 'CANCELLED'].includes(l.status) && !inBookedPackage(l) && (
                         <Can anyOf={['order:cancel']}>
                           <button type="button" className="btn small" onClick={() => openLine({ kind: 'cancel', line: l })}>
@@ -420,7 +424,15 @@ export default function OrderDetailPage() {
                   <strong>
                     Package {i + 1} <StatusBadge status={f.dispatchStage ?? f.status} />
                   </strong>
-                  <span className="muted">{o.lines.filter((l) => l.fulfilmentId === f.id).map((l) => `${l.styleName} ${l.sizeLabel}`).join(', ')}</span>
+                  <span className="muted">
+                    {f.exchangeId || f.cancelledExchangeId ? (
+                      <Link href={`/dashboard/exchanges/${f.exchangeId ?? f.cancelledExchangeId}`}>
+                        {f.exchangeId ? 'Exchange replacement' : 'Exchange replacement - booking cancelled'}
+                      </Link>
+                    ) : (
+                      o.lines.filter((l) => l.fulfilmentId === f.id).map((l) => `${l.styleName} ${l.sizeLabel}`).join(', ')
+                    )}
+                  </span>
                 </div>
                 <dl className="dl" style={{ margin: '0.5rem 0' }}>
                   <dt>Packed</dt>
@@ -429,7 +441,7 @@ export default function OrderDetailPage() {
                   </dd>
                   <dt>Shipped</dt>
                   <dd>
-                    <DateText value={f.shippedAt} withTime /> {f.carrierName && `· ${f.carrierName}`} {f.trackingRef && <Ident>{f.trackingRef}</Ident>}
+                    <DateText value={f.shippedAt} withTime /> {f.shippedAt && f.carrierName && `· ${f.carrierName}`} {f.shippedAt && f.trackingRef && <Ident>{f.trackingRef}</Ident>}
                   </dd>
                   <dt>Delivered</dt>
                   <dd>
@@ -439,7 +451,7 @@ export default function OrderDetailPage() {
                   <dd>
                     {f.shipment ? (
                       <>
-                        <StatusBadge status={f.shipment.status} /> {f.shipment.provider} <Ident>{f.shipment.trackingRef ?? ''}</Ident> · attempts{' '}
+                        <StatusBadge status={shipmentDisplayStatus(f.shipment)} /> {f.shipment.provider} <Ident>{f.shipment.trackingRef ?? ''}</Ident> · attempts{' '}
                         {f.shipment.deliveryAttempts}/{f.shipment.maxDeliveryAttempts}
                       </>
                     ) : (
@@ -447,7 +459,14 @@ export default function OrderDetailPage() {
                     )}
                   </dd>
                 </dl>
-                <FulfilmentActions fulfilment={f} onChanged={reloadAll} />
+                <FulfilmentActions
+                  fulfilment={f}
+                  onChanged={() => {
+                    // The package shows its own confirmation; an older page message would be stale.
+                    action.clear();
+                    reloadAll();
+                  }}
+                />
               </div>
             ))}
           </Section>

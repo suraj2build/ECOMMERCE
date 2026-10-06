@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatDate, formatDateTime, formatMoney, humanize } from '@/lib/format';
+import { SESSION_ENDED_MESSAGE } from '@/lib/api';
 import { useCan } from '@/lib/session';
 
 // ---------------------------------------------------------------- layout
@@ -89,7 +90,21 @@ export function ActionMessage({ message }: { message: { kind: 'success' | 'error
   return (
     <Notice kind={message.kind} reveal={message}>
       {message.text}
+      {message.text === SESSION_ENDED_MESSAGE && <SignInAgain />}
     </Notice>
+  );
+}
+
+/** Opens the sign-in page in a new tab, so what was typed here is kept. */
+function SignInAgain() {
+  return (
+    <>
+      {' '}
+      <a href="/login" target="_blank" rel="noopener">
+        Sign in again in a new tab
+      </a>
+      , then come back: this page keeps what you typed.
+    </>
   );
 }
 
@@ -108,7 +123,8 @@ export function EmptyState({ children }: { children: ReactNode }) {
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="error-banner" role="alert">
-      {message}{' '}
+      {message}
+      {message === SESSION_ENDED_MESSAGE && <SignInAgain />}{' '}
       {onRetry && (
         <button type="button" className="link-button" onClick={onRetry}>
           Retry

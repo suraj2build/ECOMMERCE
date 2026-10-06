@@ -19,6 +19,7 @@ export default function ChangePasswordPage() {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
     const s = getStoredSession();
@@ -31,6 +32,20 @@ export default function ChangePasswordPage() {
 
   if (forced === null) return null;
 
+  if (done) {
+    return (
+      <main style={{ maxWidth: 420, margin: '4rem auto', padding: '0 1rem' }}>
+        <h1 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Password changed</h1>
+        <div className="card">
+          <p role="status">Your new password is saved. Any other browser signed in as you has been signed out; this one stays signed in.</p>
+          <button type="button" className="primary" onClick={() => router.replace('/dashboard')}>
+            Continue
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -41,7 +56,10 @@ export default function ChangePasswordPage() {
     setSubmitting(true);
     try {
       await changeOwnPassword(current, next);
-      router.replace('/dashboard');
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+      setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The password could not be changed.');
       if (!getStoredSession()) router.replace('/login');

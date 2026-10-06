@@ -91,7 +91,9 @@ const LINE_STATUS_LABEL: Record<string, string> = {
  */
 const SHIPMENT_STATUS_LABEL: Record<string, string> = {
   CREATED: 'Preparing to ship',
-  BOOKED: 'Booked with carrier',
+  // Shown only for a package that has left (a staff-confirmed handover keeps
+  // the carrier's own status at BOOKED until the carrier reports movement).
+  BOOKED: 'With the courier',
   IN_TRANSIT: 'In transit',
   OUT_FOR_DELIVERY: 'Out for delivery',
   DELIVERY_FAILED: 'Delivery attempt failed - retrying',
@@ -708,7 +710,7 @@ export default function OrderDetailPage() {
                     once a shipment exists; gracefully omitted otherwise
                     rather than showing an error (acceptance negative
                     scenario #1). */}
-                {f.shipment && f.status !== 'BOOKED' && f.status !== 'CANCELLED' ? ` — ${SHIPMENT_STATUS_LABEL[f.shipment.status] ?? f.shipment.status}` : ''}
+                {f.shipment && f.status === 'SHIPPED' ? ` — ${SHIPMENT_STATUS_LABEL[f.shipment.status] ?? f.shipment.status}` : ''}
               </p>
             ))}
           </div>

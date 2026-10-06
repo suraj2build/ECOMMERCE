@@ -34,6 +34,8 @@ least 12 characters, letters and a number, and must differ from the
 current one. Changing it (then or later, from **Change password** in the
 sidebar) ends every session, including the current one, and returns a
 new session, so other browsers signed in as that person are signed out.
+The page then confirms the change ("Password changed") before the person
+continues.
 
 The older `POST /auth/staff/users` route (an administrator-chosen
 password) now marks that password as temporary too.
@@ -47,6 +49,13 @@ are also deleted, but the database check alone is enough: a key that
 could not be deleted is still refused. Sign-in dates its session from the
 moment it read the password, so a reset that lands during a sign-in still
 ends that new session.
+
+What the signed-out person sees: their next request is refused, and the
+screen says "You are signed out: your session expired or an administrator
+changed your account." with a **Sign in again in a new tab** link. The
+page itself stays, so anything they had typed is kept; after signing in
+in the new tab they come back and try again (added after the 2026-10-06
+walkthrough, which found only a Retry link that could never succeed).
 
 ## Protections
 

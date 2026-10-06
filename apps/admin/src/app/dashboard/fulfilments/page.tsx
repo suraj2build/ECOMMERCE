@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { FulfilmentActions } from '@/components/fulfilment-actions';
+import { FulfilmentActions, shipmentDisplayStatus } from '@/components/fulfilment-actions';
 import { ActionMessage, Can, DataState, DataTable, DateText, Drawer, Ident, Notice, PageHeader, Pagination, SelectField, StatusBadge } from '@/components/ui';
 import { apiSend, qs, type Page } from '@/lib/api';
 import { useAction, useApi, useUrlFilter } from '@/lib/session';
@@ -22,6 +22,9 @@ interface FulfilmentRow {
   createdAt: string;
   order: { orderNumber: string };
   exchange: { exchangeNumber: string } | null;
+  /** A replacement package whose courier booking was cancelled; the exchange carries on with a new package. */
+  cancelledExchangeId: string | null;
+  cancelledExchange: { exchangeNumber: string } | null;
   shipment: { id: string; provider: string; status: string; trackingRef: string | null; deliveryAttempts: number; maxDeliveryAttempts: number; bookedAt: string | null; handedOverAt: string | null } | null;
   _count: { lines: number };
 }
@@ -181,13 +184,27 @@ export default function FulfilmentsPage() {
                       <Link href={`/dashboard/exchanges/${f.exchangeId}`}>
                         Exchange <Ident>{f.exchange.exchangeNumber}</Ident>
                       </Link>
+                    ) : f.cancelledExchange ? (
+                      <Link href={`/dashboard/exchanges/${f.cancelledExchangeId}`}>
+                        Exchange <Ident>{f.cancelledExchange.exchangeNumber}</Ident>
+                      </Link>
                     ) : (
                       <Link href={`/dashboard/orders/${f.orderId}`}>
                         <Ident>{f.order.orderNumber}</Ident>
                       </Link>
                     ),
                 },
-                { header: 'Contents', cell: (f) => (f.exchangeId ? 'Exchange replacement' : f.status === 'CANCELLED' ? 'Items cancelled' : `${f._count.lines} order line(s)`) },
+                {
+                  header: 'Contents',
+                  cell: (f) =>
+                    f.exchangeId
+                      ? 'Exchange replacement'
+                      : f.cancelledExchangeId
+                        ? 'Exchange replacement - booking cancelled before collection'
+                        : f.status === 'CANCELLED'
+                          ? 'Items cancelled'
+                          : `${f._count.lines} order line(s)`,
+                },
                 {
                   header: 'Status',
                   cell: (f) => (
@@ -209,7 +226,7 @@ export default function FulfilmentsPage() {
                   cell: (f) =>
                     f.shipment ? (
                       <>
-                        <StatusBadge status={f.shipment.status} /> <Ident>{f.shipment.trackingRef ?? ''}</Ident>
+                        <StatusBadge status={shipmentDisplayStatus(f.shipment)} /> <Ident>{f.shipment.trackingRef ?? ''}</Ident>
                       </>
                     ) : (
                       '—'
@@ -230,7 +247,7 @@ export default function FulfilmentsPage() {
           </>
         )}
       </DataState>
-      <Drawer open={open !== null} title={open ? `Package for ${open.exchange ? open.exchange.exchangeNumber : open.order.orderNumber}` : ''} onClose={() => setOpen(null)}>
+      <Drawer open={open !== null} title={open ? `Package for ${(open.exchange ?? open.cancelledExchange)?.exchangeNumber ?? open.order.orderNumber}` : ''} onClose={() => setOpen(null)}>
         {open && (
           <>
             <p>

@@ -23,6 +23,14 @@ export class ApiError extends Error {
  * proving rejection is server-side, not a client-side guess about what
  * the UI should or shouldn't render.
  */
+/**
+ * Shown when the server no longer accepts this login: it expired, or an
+ * administrator reset the password, changed the roles or deactivated the
+ * account (AO-D7). Screens show a "Sign in again" link with it instead of
+ * Retry, and keep what was typed on the page.
+ */
+export const SESSION_ENDED_MESSAGE = 'You are signed out: your session expired or an administrator changed your account.';
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const session = getStoredSession();
   const headers: Record<string, string> = {
@@ -35,7 +43,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (res.status === 401) {
     clearSession();
-    throw new ApiError(401, 'Your session has expired. Please sign in again.');
+    throw new ApiError(401, SESSION_ENDED_MESSAGE);
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;

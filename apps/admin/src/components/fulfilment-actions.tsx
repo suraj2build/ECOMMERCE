@@ -25,6 +25,20 @@ export interface FulfilmentLike {
   id: string;
   status: string;
   shipment: { id: string; status: string; provider: string; trackingRef: string | null } | null;
+  /** Set when this package carries an exchange replacement rather than order lines. */
+  exchangeId?: string | null;
+  /** Set on a replacement package whose booking was cancelled; the exchange goes on with a new package. */
+  cancelledExchangeId?: string | null;
+}
+
+/**
+ * The status to show for a carrier shipment. A staff-confirmed handover
+ * (AO-D5) records `handedOverAt` but leaves the carrier's own status at
+ * BOOKED until the carrier reports movement, so that case reads "Handed
+ * over" rather than "Booked — awaiting collection".
+ */
+export function shipmentDisplayStatus(shipment: { status: string; handedOverAt?: string | null }): string {
+  return shipment.status === 'BOOKED' && shipment.handedOverAt ? 'HANDED_OVER' : shipment.status;
 }
 
 type Step = 'pack' | 'ready-to-ship' | 'shipment' | 'ship' | 'deliver' | 'cancel-booking';
@@ -61,6 +75,18 @@ const STEPS: Record<Step, { label: string; perm: string; body: string; done: str
     body: 'Cancels this package before the courier collects it. First cancel the booking with the courier yourself (this system cannot do that yet). Every item in the package is cancelled and its stock released; a prepaid order is flagged for refund.',
     done: 'Booking cancelled. The items are cancelled and their stock released.',
   },
+};
+
+/**
+ * An exchange replacement booked by mistake is cancelled from the exchange:
+ * the replacement stays allocated (nothing is cancelled or refunded) and a
+ * new package can be created and booked.
+ */
+export const REPLACEMENT_CANCEL = {
+  label: 'Cancel booking',
+  perm: 'exchange:fulfil',
+  body: 'Cancels this replacement package before the courier collects it. First cancel the booking with the courier yourself (this system cannot do that yet). The exchange is not cancelled: the replacement stays allocated and reserved, and you can create a new package for it, pack it and book it again.',
+  done: 'Booking cancelled. The replacement is still allocated: create a new package for it and book it again.',
 };
 
 /** The steps that apply to a package in this status, in the order they happen. */
@@ -113,10 +139,14 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
     setStep(s);
   };
   const steps = STEPS_FOR[fulfilment.status] ?? [];
+  const replacement = Boolean(fulfilment.exchangeId);
+  const stepInfo = (s: Step) => (s === 'cancel-booking' && replacement ? REPLACEMENT_CANCEL : STEPS[s]);
 
   async function run(s: Step) {
     const path =
-      s === 'shipment' ? `/orders/fulfilments/${fulfilment.id}/shipment` : `/orders/fulfilments/${fulfilment.id}/${s}`;
+      s === 'cancel-booking' && replacement
+        ? `/exchanges/${fulfilment.exchangeId}/fulfilment/cancel-booking`
+        : `/orders/fulfilments/${fulfilment.id}/${s}`;
     const num = (v: string) => (v.trim() === '' ? undefined : Number(v));
     const body =
       s === 'shipment'
@@ -133,7 +163,7 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
                   : {}),
               }
             : undefined;
-    const ok = await action.run(() => apiSend('POST', path, body), STEPS[s].done);
+    const ok = await action.run(() => apiSend('POST', path, body), stepInfo(s).done);
     if (ok) {
       setStep(null);
       setScans([]);
@@ -142,14 +172,20 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
       setCourierCancelled(false);
       setCancelReason('');
       setCourierReference('');
-      onChanged(STEPS[s].done);
+      onChanged(stepInfo(s).done);
     }
   }
 
   return (
     <div>
       {step === null && <ActionMessage message={action.message} />}
-      {NEXT_FOR[fulfilment.status] && step === null && action.message === null && <p className="muted">{NEXT_FOR[fulfilment.status]}</p>}
+      {NEXT_FOR[fulfilment.status] && step === null && action.message === null && (
+        <p className="muted">
+          {fulfilment.cancelledExchangeId
+            ? 'The courier booking for this exchange replacement was cancelled before collection; nothing left stock. The exchange page shows its current package.'
+            : NEXT_FOR[fulfilment.status]}
+        </p>
+      )}
       <div className="row">
         <Link className="btn small" href={`/dashboard/fulfilments/${fulfilment.id}/documents?doc=slip`}>
           Packing slip
@@ -158,17 +194,17 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
           Address label
         </Link>
         {steps.map((s, i) => (
-          <Can key={s} anyOf={[STEPS[s].perm]}>
+          <Can key={s} anyOf={[stepInfo(s).perm]}>
             <button type="button" className={i === 0 ? 'btn small primary' : 'btn small'} disabled={action.busy} onClick={() => open(s)}>
-              {STEPS[s].label}
+              {stepInfo(s).label}
             </button>
           </Can>
         ))}
       </div>
       <ConfirmDialog
         open={step !== null}
-        title={step ? STEPS[step].label : ''}
-        confirmLabel={step ? STEPS[step].label : 'Confirm'}
+        title={step ? stepInfo(step).label : ''}
+        confirmLabel={step ? stepInfo(step).label : 'Confirm'}
         busy={action.busy}
         danger={step === 'cancel-booking'}
         confirmDisabled={step === 'cancel-booking' && (!courierCancelled || !cancelReason.trim())}
@@ -178,7 +214,7 @@ export function FulfilmentActions({ fulfilment, onChanged }: { fulfilment: Fulfi
         }}
         onConfirm={() => step && void run(step)}
       >
-        <p>{step && STEPS[step].body}</p>
+        <p>{step && stepInfo(step).body}</p>
         {step === 'ship' && (
           <>
             <TextField label="Carrier name" value={carrierName} onChange={setCarrierName} />

@@ -60,6 +60,8 @@ test('AO-12 staff: add a person, temporary password shown once, forced change, r
   await person.getByLabel('New password', { exact: true }).fill(`Meera${RUN}Godown9`);
   await person.getByLabel('New password again').fill(`Meera${RUN}Godown9`);
   await person.getByRole('button', { name: 'Save new password' }).click();
+  await expect(person.getByRole('status').filter({ hasText: 'Your new password is saved' })).toBeVisible();
+  await person.getByRole('button', { name: 'Continue' }).click();
   await person.waitForURL('**/dashboard');
   await expect(person.getByRole('heading', { name: 'Overview' })).toBeVisible();
   expect((await prisma.staffUser.findUniqueOrThrow({ where: { email } })).mustChangePassword).toBe(false);
@@ -72,7 +74,8 @@ test('AO-12 staff: add a person, temporary password shown once, forced change, r
   const second = (await page.getByLabel('Temporary password').textContent())!.trim();
   expect(second).not.toBe(temporary);
   await person.goto('/dashboard/orders');
-  await expect(person.getByText('Your session has expired. Please sign in again.').first()).toBeVisible();
+  await expect(person.getByText(/You are signed out: your session expired or an administrator changed your account/).first()).toBeVisible();
+  await expect(person.getByRole('link', { name: 'Sign in again in a new tab' }).first()).toHaveAttribute('href', '/login');
 
   // Deactivated: the person cannot sign in at all.
   await page.getByRole('row').filter({ hasText: email }).getByRole('button', { name: 'Deactivate' }).click();

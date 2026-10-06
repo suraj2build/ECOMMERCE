@@ -347,7 +347,7 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(line).toMatchObject({ qcResult: 'PASS', disposition: 'RESTOCK_SELLABLE', refundEligible: true });
   });
 
-  test('P1-08 exchange ships its replacement through the normal fulfilment pipeline', async ({ page }) => {
+  test('P1-08 exchange ships its replacement through the normal fulfilment pipeline, after a mistaken booking is cancelled and rebooked', async ({ page }) => {
     const [small, medium] = tee.skus;
     const order = await placeCodOrder(fx, small!.skuId, nextMobile());
     await deliverLine(fx, order.orderId, order.lineId);
@@ -388,6 +388,27 @@ test.describe('P1 Commerce Operations Console', () => {
     await fulfilmentStep(page, 'Book shipment with carrier');
     // AO-D5 option B: the replacement leaves stock at the courier handover.
     expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(0);
+
+    // Booked by mistake: cancel the booking from the exchange. The exchange carries on and a new package is booked.
+    await page.getByRole('button', { name: 'Cancel booking', exact: true }).click();
+    const cancelDialog = page.getByRole('dialog').last();
+    await expect(cancelDialog).toContainText('The exchange is not cancelled');
+    await expect(cancelDialog.getByRole('button', { name: 'Cancel booking', exact: true })).toBeDisabled();
+    await cancelDialog.getByLabel('I have cancelled this booking with the courier').check();
+    await cancelDialog.getByLabel('Reason (required)').fill('Booked with the wrong parcel size');
+    await confirmDialog(page, 'Cancel booking');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page.getByText('Booking cancelled. The replacement is still allocated: create a new package for it and book it again.')).toBeVisible();
+    await expect(page.getByText(/Earlier packages whose courier booking was cancelled/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create replacement package' })).toBeVisible();
+    expect((await prisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } })).status).toBe('REPLACEMENT_ALLOCATED');
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(0);
+    await page.getByRole('button', { name: 'Create replacement package' }).click();
+    await confirmDialog(page, 'Create replacement package');
+    await expect(page.getByText('Create replacement package: done.')).toBeVisible();
+    await fulfilmentStep(page, 'Mark packed');
+    await fulfilmentStep(page, 'Ready to ship');
+    await fulfilmentStep(page, 'Book shipment with carrier');
     await confirmHandover(page, exchange.exchangeNumber);
     await page.goto(`/dashboard/exchanges/${exchange.id}`);
     await fulfilmentStep(page, 'Mark delivered');
@@ -398,6 +419,7 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(done.status).toBe('COMPLETED');
     const fulfilment = await prisma.orderFulfilment.findUniqueOrThrow({ where: { exchangeId: exchange.id }, include: { shipment: true, lines: true } });
     expect(fulfilment).toMatchObject({ status: 'DELIVERED', lines: [], orderId: order.orderId });
+    expect(await prisma.orderFulfilment.findMany({ where: { cancelledExchangeId: exchange.id }, select: { status: true } })).toEqual([{ status: 'CANCELLED' }]);
     expect(fulfilment.shipment?.provider).toBe('MOCK');
     expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(1);
     // No second order or order line was created for the replacement.
@@ -717,7 +739,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await loginAs(page, 'CUSTOMER_SERVICE');
     await openOrder(page, order.orderNumber);
     // The line cannot be cancelled on its own while the courier has a booking.
-    await expect(page.getByText('Booked with the courier: cancel from Pack & ship')).toBeVisible();
+    await expect(page.getByText('Booked with the courier: to cancel, use Cancel booking on its package below')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Cancel booking', exact: true }).first().click();
