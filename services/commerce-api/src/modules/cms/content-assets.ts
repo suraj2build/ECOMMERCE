@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { loadEnv } from '@fcp/config';
 import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
-import { checkUploadedImage } from '../../lib/image-validation.js';
+import { preparePublicImage } from '../../lib/image-validation.js';
 import { newProductMediaKey, PRODUCT_MEDIA_KEY, resolveProductMediaStore, type ProductMediaStore } from '../product/media-storage.js';
 
 /** The URL stored on a banner or page: relative to the storefront, which proxies it to the API. */
@@ -27,11 +27,12 @@ export class ContentAssetService {
     return this.storeInstance;
   }
 
-  async upload(buffer: Buffer, altText: string | null, actorStaffId: string) {
+  async upload(upload: Buffer, altText: string | null, actorStaffId: string) {
     const max = loadEnv().PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES;
-    if (buffer.length === 0) throw new ValidationError('The file is empty');
-    if (buffer.length > max) throw new ValidationError(`The image is larger than ${Math.round(max / 1048576)} MB`);
-    const { mimeType, width, height } = await checkUploadedImage(buffer, 'image');
+    if (upload.length === 0) throw new ValidationError('The file is empty');
+    if (upload.length > max) throw new ValidationError(`The image is larger than ${Math.round(max / 1048576)} MB`);
+    // Stored without camera or location metadata (AO-D6).
+    const { mimeType, width, height, buffer } = await preparePublicImage(upload, 'image');
     const storageKey = newProductMediaKey(mimeType);
     try {
       await this.store.put(storageKey, buffer, mimeType);

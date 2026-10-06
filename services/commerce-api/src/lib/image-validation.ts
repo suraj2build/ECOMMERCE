@@ -101,3 +101,44 @@ export async function checkUploadedImage(buffer: Buffer, noun: 'photo' | 'image'
   }
   return inspectImage(buffer, sniffed);
 }
+
+export interface PublicImage extends CheckedImage {
+  /** The bytes to store: re-encoded without camera or location metadata. */
+  buffer: Buffer;
+}
+
+/**
+ * AO-D6 (Product Owner, 2026-10-06): product photos and content images are
+ * public, so camera and location metadata is removed before they are
+ * stored. The image is checked first ({@link checkUploadedImage}), then
+ * re-encoded by libvips:
+ *
+ * - orientation: the EXIF orientation is applied to the pixels and the tag
+ *   dropped, so the photo shows the same way up everywhere;
+ * - colour: the embedded ICC colour profile is kept (sharp's default
+ *   output drops it, which would shift colours on wide-gamut photos);
+ * - everything else is dropped: EXIF (camera, serial number, time, GPS),
+ *   XMP and IPTC;
+ * - format is unchanged. PNG stays lossless. JPEG and WebP are lossy
+ *   formats, so they are re-encoded at quality 95 (JPEG without chroma
+ *   subsampling), which is visually indistinguishable from the upload.
+ *
+ * Private return evidence does not come through here: it is kept exactly
+ * as uploaded, in its own private store.
+ */
+export async function preparePublicImage(input: Buffer, noun: 'photo' | 'image' = 'image'): Promise<PublicImage> {
+  const checked = await checkUploadedImage(input, noun);
+  const env = loadEnv();
+  let buffer: Buffer;
+  try {
+    buffer = await withDecodeSlot(() => {
+      const pipeline = sharp(input, { failOn: 'warning', limitInputPixels: env.IMAGE_UPLOAD_MAX_PIXELS }).rotate().keepIccProfile();
+      if (checked.mimeType === 'image/png') return pipeline.png({ compressionLevel: 9 }).toBuffer();
+      if (checked.mimeType === 'image/webp') return pipeline.webp({ quality: 95, smartSubsample: true }).toBuffer();
+      return pipeline.jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
+    });
+  } catch {
+    throw new ValidationError(DAMAGED);
+  }
+  return { ...checked, buffer };
+}

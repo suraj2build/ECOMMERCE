@@ -5,7 +5,8 @@ import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPr
 import { createAuthenticatedStaff } from '../helpers/auth.js';
 import { ProductMediaService } from '../../src/modules/product/media-service.js';
 import type { ProductMediaStore } from '../../src/modules/product/media-storage.js';
-import { animatedWebp, claimedPng, cutShortJpeg, fakeJpeg, realJpeg, realPng, realWebp, truncatedPng } from '../helpers/images.js';
+import { animatedWebp, claimedPng, cutShortJpeg, exifHasGps, fakeJpeg, meanPixelDifference, photoWithMetadata, realJpeg, realPng, realWebp, truncatedPng } from '../helpers/images.js';
+import sharp from 'sharp';
 import fs from 'node:fs/promises';
 
 /**
@@ -253,7 +254,7 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
       const res = await upload(style.id, PNG, { colourId: colour.id, altText: 'Front view' });
       expect(res.statusCode).toBe(201);
       const media = res.json();
-      expect(media).toMatchObject({ colourId: colour.id, altText: 'Front view', mimeType: 'image/png', byteSize: PNG.length, type: 'IMAGE' });
+      expect(media).toMatchObject({ colourId: colour.id, altText: 'Front view', mimeType: 'image/png', type: 'IMAGE' });
       expect(media.url).toMatch(/^\/media\/products\/[0-9a-f-]{36}\.png$/);
 
       const served = await app.inject({ method: 'GET', url: `/api/v1${media.url}` });
@@ -263,7 +264,9 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
       // The admin shows these from another origin; JSON responses stay same-origin.
       expect(served.headers['cross-origin-resource-policy']).toBe('cross-origin');
       expect((await app.inject({ method: 'GET', url: '/api/v1/products/reference', headers: auth() })).headers['cross-origin-resource-policy']).toBe('same-origin');
-      expect(Buffer.compare(served.rawPayload, PNG)).toBe(0);
+      // AO-D6: the stored file is a metadata-free re-encoding; PNG is lossless, so every pixel is the same.
+      expect(media.byteSize).toBe(served.rawPayload.length);
+      expect(await meanPixelDifference(served.rawPayload, PNG)).toBe(0);
     });
 
     it('decides the type from the bytes, not the name, and refuses empty, unsupported and foreign-colour uploads', async () => {
@@ -332,8 +335,65 @@ describe('Admin Ops Phase 1: product editing, readiness and photos', () => {
       ] as const) {
         const res = await upload(style.id, file);
         expect(res.statusCode).toBe(201);
-        expect(res.json()).toMatchObject({ mimeType, width, height, byteSize: file.length });
+        expect(res.json()).toMatchObject({ mimeType, width, height });
+        // The recorded size is the stored (re-encoded) file's, not the upload's (AO-D6).
+        const served = await app.inject({ method: 'GET', url: `/api/v1${res.json().url}` });
+        expect(res.json().byteSize).toBe(served.rawPayload.length);
       }
+    });
+
+    it('AO-D6: a public photo is stored without camera, GPS or XMP metadata, shown the same way up, with its colour profile and colours kept', async () => {
+      const style = await createStyle();
+      for (const format of ['jpeg', 'png', 'webp'] as const) {
+        const input = await photoWithMetadata(format);
+        const before = await sharp(input).metadata();
+        // The test photo really carries what must be removed.
+        expect(before).toMatchObject({ orientation: 6, width: 40, height: 20 });
+        expect(exifHasGps(before.exif)).toBe(true);
+        expect(before.xmp).toBeDefined();
+        expect(input.toString('latin1')).toContain('TestCam');
+
+        const res = await upload(style.id, input);
+        expect(res.statusCode, res.body).toBe(201);
+        const media = res.json();
+        // Recorded as displayed: 20 wide, 40 tall.
+        expect(media).toMatchObject({ width: 20, height: 40 });
+        const served = (await app.inject({ method: 'GET', url: `/api/v1${media.url}` })).rawPayload;
+        expect(media.byteSize).toBe(served.length);
+        const after = await sharp(served).metadata();
+        expect(after.format).toBe(before.format);
+        expect(after.exif).toBeUndefined();
+        expect(after.xmp).toBeUndefined();
+        expect(after.iptc).toBeUndefined();
+        expect(after.orientation).toBeUndefined();
+        expect(served.toString('latin1')).not.toContain('TestCam');
+        expect(served.toString('latin1')).not.toContain('Secret Photographer');
+        // The pixels are turned upright, so it looks the same with or without EXIF support.
+        expect({ width: after.width, height: after.height }).toEqual({ width: 20, height: 40 });
+        // Colour: the same ICC profile, and the same colours as the original displayed photo.
+        expect(after.icc && Buffer.compare(after.icc, before.icc!)).toBe(0);
+        const difference = await meanPixelDifference(served, input);
+        if (format === 'png') expect(difference).toBe(0);
+        else expect(difference).toBeLessThan(3);
+        const { data } = await sharp(served).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        const pixel = (x: number, y: number) => Array.from(data.subarray((y * 20 + x) * 3, (y * 20 + x) * 3 + 3));
+        expect(pixel(10, 5)[0]).toBeGreaterThan(pixel(10, 5)[2]!); // top half red
+        expect(pixel(10, 35)[2]).toBeGreaterThan(pixel(10, 35)[0]!); // bottom half blue
+      }
+    });
+
+    it('AO-D6: replacing a photo strips the new file\'s metadata too', async () => {
+      const style = await createStyle();
+      const first = (await upload(style.id, PNG)).json();
+      const body = multipart({}, { buffer: await photoWithMetadata('jpeg'), filename: 'new.jpg', contentType: 'image/jpeg' });
+      const res = await app.inject({ method: 'PUT', url: `/api/v1/products/media/${first.id}/file`, headers: { ...auth(), 'content-type': body.contentType }, payload: body.payload });
+      expect(res.statusCode, res.body).toBe(200);
+      const served = (await app.inject({ method: 'GET', url: `/api/v1${res.json().url}` })).rawPayload;
+      const after = await sharp(served).metadata();
+      expect(after.exif).toBeUndefined();
+      expect(after.xmp).toBeUndefined();
+      expect(after.icc).toBeDefined();
+      expect(res.json()).toMatchObject({ width: 20, height: 40 });
     });
 
     it('replaces a photo keeping its colour, order and text; the old file stops being served', async () => {

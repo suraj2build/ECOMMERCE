@@ -3,7 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
-import { cutShortJpeg, realWebp, truncatedPng } from '../helpers/images.js';
+import { cutShortJpeg, meanPixelDifference, photoWithMetadata, realWebp, truncatedPng } from '../helpers/images.js';
+import sharp from 'sharp';
 import { ChannelService } from '../../src/modules/channels/service.js';
 
 /**
@@ -128,6 +129,23 @@ describe('Admin Ops Phase 1: storefront configuration, channels and setup', () =
       expect((await app.inject({ method: 'POST', url: '/api/v1/cms/assets', headers: { ...auth(cms), 'content-type': lying.contentType }, payload: lying.payload })).statusCode).toBe(400);
       const viewerUpload = multipart({}, PNG);
       expect((await app.inject({ method: 'POST', url: '/api/v1/cms/assets', headers: { ...auth(viewer), 'content-type': viewerUpload.contentType }, payload: viewerUpload.payload })).statusCode).toBe(403);
+    });
+
+    it('AO-D6: a banner image is stored without camera, GPS or XMP metadata and keeps its colour profile', async () => {
+      const input = await photoWithMetadata('jpeg');
+      const body = multipart({}, input);
+      const res = await app.inject({ method: 'POST', url: '/api/v1/cms/assets', headers: { ...auth(cms), 'content-type': body.contentType }, payload: body.payload });
+      expect(res.statusCode, res.body).toBe(201);
+      expect(res.json()).toMatchObject({ width: 20, height: 40 });
+      const served = (await app.inject({ method: 'GET', url: `/api/v1${res.json().url}` })).rawPayload;
+      expect(res.json().byteSize).toBe(served.length);
+      const after = await sharp(served).metadata();
+      expect(after.exif).toBeUndefined();
+      expect(after.xmp).toBeUndefined();
+      expect(after.orientation).toBeUndefined();
+      expect(after.icc && Buffer.compare(after.icc, (await sharp(input).metadata()).icc!)).toBe(0);
+      expect(served.toString('latin1')).not.toContain('TestCam');
+      expect(await meanPixelDifference(served, input)).toBeLessThan(3);
     });
 
     it('decodes banner images: damaged files are refused and a real image records its pixel size', async () => {

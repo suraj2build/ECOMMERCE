@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
-import { claimedPng, cutShortJpeg, fakeJpeg, realJpeg, realPng } from '../helpers/images.js';
+import { claimedPng, cutShortJpeg, fakeJpeg, photoWithMetadata, realJpeg, realPng } from '../helpers/images.js';
 
 process.env.RAZORPAY_KEY_ID = 'test_key_id';
 process.env.RAZORPAY_KEY_SECRET = 'test_key_secret';
@@ -969,6 +969,16 @@ describe('Returns (M19)', () => {
       expect(contentRes.statusCode).toBe(200);
       expect(contentRes.headers['content-type']).toBe('image/jpeg');
       expect(Buffer.compare(contentRes.rawPayload, PHOTO_JPEG)).toBe(0);
+    });
+
+    it('AO-D6: private return evidence is kept exactly as uploaded (its metadata is not touched; it is never public)', async () => {
+      const { returnId, returnLineId, headers } = await setupDeliveredReturnLine();
+      const photo = await photoWithMetadata('jpeg');
+      const res = await uploadEvidence(`/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence`, headers, photo);
+      expect(res.statusCode, res.body).toBe(201);
+      expect(res.json().sizeBytes).toBe(photo.length);
+      const content = await app.inject({ method: 'GET', url: `/api/v1/storefront/returns/${returnId}/lines/${returnLineId}/evidence/${res.json().id}`, headers });
+      expect(Buffer.compare(content.rawPayload, photo)).toBe(0);
     });
 
     it('accepts a genuine PNG too, sniffed from its own byte signature', async () => {
