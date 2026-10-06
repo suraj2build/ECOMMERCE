@@ -252,6 +252,19 @@ jobs:
           # covered by apps/storefront/test/seo.test.ts.
           SITE_INDEXING: enabled
 
+      # A failed browser run: the HTML report, plus the trace and screenshot
+      # of every failed test (playwright.config.ts keeps them only on failure).
+      - name: Upload Playwright report and failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload read-load measurements
         if: always()
         uses: actions/upload-artifact@v4

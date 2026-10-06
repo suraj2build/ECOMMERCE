@@ -15,7 +15,15 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   timeout: 30_000,
-  reporter: [['list']],
+  // In CI a failed run also leaves an HTML report (playwright-report/) and,
+  // for each failed test, its trace and a screenshot (test-results/); the
+  // workflow uploads both when the E2E step fails, so a failure can be
+  // diagnosed from the run itself rather than guessed at.
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]] : [['list']],
+  use: {
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+  },
   projects: [
     {
       name: 'api-smoke',
