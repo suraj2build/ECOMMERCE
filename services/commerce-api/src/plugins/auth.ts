@@ -2,7 +2,7 @@ import fp from 'fastify-plugin';
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import { loadEnv } from '@fcp/config';
-import { UnauthorizedError, ForbiddenError, type PermissionKey, type RoleKey } from '@fcp/shared';
+import { AppError, UnauthorizedError, ForbiddenError, type PermissionKey, type RoleKey } from '@fcp/shared';
 import { StaffSessionStore } from '../modules/auth/staff-session.js';
 import { resolveStaffPermissions } from '../modules/auth/rbac.js';
 import { recordAudit } from '../modules/audit/service.js';
@@ -19,10 +19,13 @@ declare module 'fastify' {
   }
 
   interface FastifyRequest {
-    staffUser?: { id: string; roles: RoleKey[]; permissions: Set<PermissionKey> };
+    staffUser?: { id: string; roles: RoleKey[]; permissions: Set<PermissionKey>; mustChangePassword?: boolean };
     customer?: { id: string; mobile: string };
   }
 }
+
+/** The only routes open to a staff member who still has a temporary password (AO-D7). */
+const PASSWORD_CHANGE_ALLOWED_ROUTES = new Set(['GET /api/v1/auth/staff/me', 'POST /api/v1/auth/staff/password', 'POST /api/v1/auth/staff/logout']);
 
 function extractBearerToken(request: FastifyRequest): string | null {
   const header = request.headers.authorization;
@@ -55,13 +58,23 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
     const session = await staffSessionStore.resolve(token);
     if (!session) throw new UnauthorizedError('Session is invalid, expired, or revoked');
 
-    const { permissions, roles, isActive } = await resolveStaffPermissions(
+    const { permissions, roles, isActive, mustChangePassword, sessionsRevokedAt } = await resolveStaffPermissions(
       fastify.prisma,
       session.staffUserId,
     );
     if (!isActive) throw new UnauthorizedError('Staff account is inactive');
+    // Staff management (AO-D7): a password reset, deactivation, role change
+    // or own password change ends every earlier session, even one whose
+    // Redis key could not be deleted.
+    if (sessionsRevokedAt && (session.issuedAt ?? 0) < sessionsRevokedAt.getTime()) {
+      throw new UnauthorizedError('Session is invalid, expired, or revoked');
+    }
+    // A temporary password must be replaced before anything else is done.
+    if (mustChangePassword && !PASSWORD_CHANGE_ALLOWED_ROUTES.has(`${request.method} ${request.routeOptions.url ?? ''}`)) {
+      throw new AppError('Choose a new password before continuing.', 403, 'PASSWORD_CHANGE_REQUIRED');
+    }
 
-    request.staffUser = { id: session.staffUserId, roles, permissions };
+    request.staffUser = { id: session.staffUserId, roles, permissions, mustChangePassword };
   });
 
   fastify.decorate('requirePermission', (permission: PermissionKey) => {

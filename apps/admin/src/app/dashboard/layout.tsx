@@ -37,6 +37,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.replace('/login');
       return;
     }
+    if (s.mustChangePassword) {
+      router.replace('/change-password');
+      return;
+    }
     setSession(s);
   }, [router]);
 
@@ -86,6 +90,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
           <div className="sidebar-footer">
             <p style={{ margin: 0 }}>Roles: {session.roles.join(', ') || 'none'}</p>
+            <Link href="/change-password" className="link-button" style={{ display: 'block', marginTop: '0.5rem' }}>
+              Change password
+            </Link>
             <button
               type="button"
               className="link-button"

@@ -154,7 +154,10 @@ export class AuthService {
     password: string,
     mfaCode: string | undefined,
     meta: { ipAddress?: string; userAgent?: string },
-  ): Promise<{ token: string; expiresAt: Date } | { mfaRequired: true }> {
+  ): Promise<{ token: string; expiresAt: Date; mustChangePassword: boolean } | { mfaRequired: true }> {
+    // The session is dated from this moment, before the password is read
+    // (see StaffSessionStore.create).
+    const checkedAt = Date.now();
     const staffUser = await this.prisma.staffUser.findUnique({
       where: { email },
       include: { roles: { include: { role: true } } },
@@ -187,7 +190,7 @@ export class AuthService {
       }
     }
 
-    const session = await this.staffSessionStore.create(staffUser.id, meta);
+    const session = await this.staffSessionStore.create(staffUser.id, meta, checkedAt);
     await recordAudit(this.prisma, {
       actorType: 'STAFF',
       actorStaffId: staffUser.id,
@@ -196,7 +199,7 @@ export class AuthService {
       entityId: staffUser.id,
       reference: meta.ipAddress,
     });
-    return session;
+    return { ...session, mustChangePassword: staffUser.mustChangePassword };
   }
 
   async staffLogout(token: string, staffUserId: string): Promise<void> {
@@ -231,6 +234,8 @@ export class AuthService {
         email: params.email,
         passwordHash,
         fullName: params.fullName,
+        // AO-D7: a password chosen by someone else must be replaced at first sign-in.
+        mustChangePassword: true,
         roles: { create: roles.map((role) => ({ roleId: role.id })) },
       },
     });

@@ -20,6 +20,8 @@ export interface StaffSession {
   staffUserId: string;
   roles: string[];
   permissions: string[];
+  /** A temporary password is in use: the console shows only "Choose a new password" (AO-D7). */
+  mustChangePassword?: boolean;
 }
 
 export function getStoredSession(): StaffSession | null {
@@ -71,16 +73,41 @@ export async function staffLogin(email: string, password: string, mfaCode?: stri
     throw new Error(body?.error?.message ?? 'Invalid email or password.');
   }
   const { token } = (await res.json()) as { token: string; expiresAt: string };
+  return startSession(token);
+}
 
+async function startSession(token: string): Promise<StaffSession> {
   const meRes = await fetch(`${API_URL}/api/v1/auth/staff/me`, {
     headers: { authorization: `Bearer ${token}` },
   });
   if (!meRes.ok) throw new Error('Login succeeded but the session could not be verified.');
-  const me = (await meRes.json()) as { id: string; roles: string[]; permissions: string[] };
+  const me = (await meRes.json()) as { id: string; roles: string[]; permissions: string[]; mustChangePassword?: boolean };
 
-  const session: StaffSession = { token, staffUserId: me.id, roles: me.roles, permissions: me.permissions };
+  const session: StaffSession = { token, staffUserId: me.id, roles: me.roles, permissions: me.permissions, mustChangePassword: Boolean(me.mustChangePassword) };
   storeSession(session);
   return session;
+}
+
+/**
+ * Changes the signed-in person's password (AO-D7). The server ends every
+ * session, this one included, and returns a new one, which replaces the
+ * stored session. Neither password is stored.
+ */
+export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<StaffSession> {
+  const session = getStoredSession();
+  if (!session) throw new Error('Sign in again.');
+  const res = await fetch(`${API_URL}/api/v1/auth/staff/password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+    if (res.status === 401) clearSession();
+    throw new Error(body?.error?.message ?? 'The password could not be changed.');
+  }
+  const { token } = (await res.json()) as { token: string };
+  return startSession(token);
 }
 
 /** Revokes the session server-side (POST /auth/staff/logout), then forgets it locally either way. */

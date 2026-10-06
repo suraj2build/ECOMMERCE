@@ -171,6 +171,15 @@ model StaffUser {
   // implemented; a genuine gap this pass found and fixed, not a
   // pre-existing accurate claim.
   mfaSecret          String?
+  // Staff management (AO-D7, 2026-10-06): set when an administrator creates
+  // the account or resets its password with a temporary password; until the
+  // person chooses their own, every route except changing it is refused.
+  mustChangePassword Boolean   @default(false)
+  passwordChangedAt  DateTime?
+  // Sessions issued before this moment are refused (password reset,
+  // deactivation, role change, own password change), even if their Redis
+  // key could not be deleted.
+  sessionsRevokedAt  DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

@@ -1,9 +1,11 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AuthService, readMfaSeedOrDeny } from './service.js';
 import { generateMfaSecret, buildMfaOtpAuthUrl } from './mfa.js';
 import { verifyMfaToken } from './mfa.js';
 import { encryptMfaSecret } from './mfa-secret-crypto.js';
+import { StaffService } from '../staff/service.js';
 import { UnauthorizedError, ValidationError } from '@fcp/shared';
 import { loadEnv } from '@fcp/config';
 
@@ -24,6 +26,12 @@ function mobileKey(request: FastifyRequest): string {
   const body = request.body as { mobile?: unknown } | undefined;
   const mobile = typeof body?.mobile === 'string' ? body.mobile : 'unknown';
   return `${request.ip}:${mobile}`;
+}
+
+/** Per session: the bearer token's hash, never the token itself (AO-D7 password change). */
+function sessionKey(request: FastifyRequest): string {
+  const header = request.headers.authorization ?? '';
+  return `staff-password:${createHash('sha256').update(header).digest('hex')}`;
 }
 
 function emailKey(request: FastifyRequest): string {
@@ -236,8 +244,27 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       id: request.staffUser!.id,
       roles: request.staffUser!.roles,
       permissions: [...request.staffUser!.permissions],
+      mustChangePassword: request.staffUser!.mustChangePassword ?? false,
     });
   });
+
+  // AO-D7: the signed-in person changes their own password (required after
+  // a temporary one). Returns a new session; every earlier one is ended.
+  fastify.post(
+    '/auth/staff/password',
+    {
+      preHandler: fastify.requireStaffAuth,
+      config: { rateLimit: { max: authRateLimitMax.staffLogin, timeWindow: '15 minutes', keyGenerator: sessionKey } },
+    },
+    async (request, reply) => {
+      const body = z.object({ currentPassword: z.string().min(1).max(200), newPassword: z.string().min(1).max(200) }).strict().parse(request.body);
+      const session = await new StaffService(fastify).changeOwnPassword(request.staffUser!.id, body.currentPassword, body.newPassword, {
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+      });
+      reply.status(200).send(session);
+    },
+  );
 };
 
 export default authRoutes;

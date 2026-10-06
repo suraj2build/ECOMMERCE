@@ -38,6 +38,10 @@ export function createLogger(
         // '*.password' only matches one level.
         '*.*.password',
         '*.mfaCode',
+        // Staff management (AO-D7): temporary and changed passwords.
+        '*.temporaryPassword',
+        '*.currentPassword',
+        '*.newPassword',
         '*.*.mfaCode',
       ],
       censor: '[REDACTED]',

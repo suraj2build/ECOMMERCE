@@ -39,6 +39,8 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    // AO-D7: a temporary password must be replaced before anything else.
+    if (body?.error?.code === 'PASSWORD_CHANGE_REQUIRED' && typeof window !== 'undefined') window.location.assign('/change-password');
     throw new ApiError(res.status, body?.error?.message ?? `Request failed (${res.status})`, body?.error?.code);
   }
   if (res.status === 204) return undefined as T;

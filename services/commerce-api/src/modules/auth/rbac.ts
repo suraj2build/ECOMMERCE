@@ -12,7 +12,7 @@ import type { PermissionKey, RoleKey } from '@fcp/shared';
 export async function resolveStaffPermissions(
   prisma: PrismaClient,
   staffUserId: string,
-): Promise<{ permissions: Set<PermissionKey>; roles: RoleKey[]; isActive: boolean }> {
+): Promise<{ permissions: Set<PermissionKey>; roles: RoleKey[]; isActive: boolean; mustChangePassword: boolean; sessionsRevokedAt: Date | null }> {
   const staffUser = await prisma.staffUser.findUnique({
     where: { id: staffUserId },
     include: {
@@ -27,7 +27,7 @@ export async function resolveStaffPermissions(
   });
 
   if (!staffUser) {
-    return { permissions: new Set(), roles: [], isActive: false };
+    return { permissions: new Set(), roles: [], isActive: false, mustChangePassword: false, sessionsRevokedAt: null };
   }
 
   const permissions = new Set<PermissionKey>();
@@ -39,5 +39,5 @@ export async function resolveStaffPermissions(
     }
   }
 
-  return { permissions, roles, isActive: staffUser.isActive };
+  return { permissions, roles, isActive: staffUser.isActive, mustChangePassword: staffUser.mustChangePassword, sessionsRevokedAt: staffUser.sessionsRevokedAt };
 }
