@@ -51,10 +51,12 @@ test('AO-12 staff: add a person, temporary password shown once, forced change, r
   await person.goto('/dashboard/orders');
   await person.waitForURL('**/change-password');
   await person.getByLabel('Temporary password').fill(temporary);
-  await person.getByLabel('New password', { exact: true }).fill('short1');
-  await person.getByLabel('New password again').fill('short1');
+  // Long enough for the field's own length check, but refused by the server's rule.
+  await person.getByLabel('New password', { exact: true }).fill('onlylettershere');
+  await person.getByLabel('New password again').fill('onlylettershere');
   await person.getByRole('button', { name: 'Save new password' }).click();
-  await expect(person.getByRole('alert')).toContainText('at least 12 characters');
+  await expect(person.getByRole('alert').filter({ hasText: 'Use letters and at least one number' })).toBeVisible();
+  expect((await prisma.staffUser.findUniqueOrThrow({ where: { email } })).mustChangePassword).toBe(true);
   await person.getByLabel('New password', { exact: true }).fill(`Meera${RUN}Godown9`);
   await person.getByLabel('New password again').fill(`Meera${RUN}Godown9`);
   await person.getByRole('button', { name: 'Save new password' }).click();
@@ -78,7 +80,7 @@ test('AO-12 staff: add a person, temporary password shown once, forced change, r
   await expect(page.getByText('Meera Shah was deactivated and signed out. They can no longer sign in.')).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: email }).getByText('Deactivated')).toBeVisible();
   await signIn(person, email, second);
-  await expect(person.getByRole('alert')).toContainText('Invalid email or password');
+  await expect(person.getByRole('alert').filter({ hasText: 'Invalid email or password' })).toBeVisible();
   await theirs.close();
 
   // The owner's own row offers no actions on themselves.

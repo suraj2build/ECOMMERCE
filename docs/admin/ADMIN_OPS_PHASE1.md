@@ -603,3 +603,35 @@ password, deactivate/reactivate. Details and protections: `STAFF.md`.
   (since `920ff96`).
 - An exception could be flagged on a line in a booked package, and its
   resolution would have released the stock; it is now refused.
+
+### Test record (local, before push)
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Unit (`commerce-api`) | 17 | 90 | 0 | 0 |
+| Unit (other workspaces) | 5 | 21 | 0 | 0 |
+| Integration, with the S3 emulator | 65 | 989 | 0 | 0 |
+| Browser (storefront, admin, API smoke), final run | — | 91 | 0 | 0 |
+
+Lint and typecheck are clean; the read-load and checkout-contention checks
+passed. New: `staff-management.test.ts` (11 tests), the AO-D5 option B
+block in `dispatch.test.ts` (7), AO-D6 tests in `admin-ops-products`,
+`admin-ops-config` and `returns`, and browser flows AO-11 and AO-12.
+
+### Failures in the browser runs before push
+
+- **Run 1: 90 passed, 1 failed (AO-12).** The test typed a 6-character
+  password; the field's own 12-character limit stopped the browser from
+  submitting, so the server's message the test waited for never came. The
+  test now uses a long password without a number, which the server refuses.
+- **Run 2: 90 passed, 1 failed (AO-12).** That refusal was shown, but the
+  test's locator also matched Next.js's own hidden route announcer
+  (`role="alert"`). Both alert checks now match the message text.
+- **Run 3: 88 passed, 1 failed, 2 did not run (`consent.spec.ts`,
+  unchanged code; it passed in runs 1 and 2).** It read the browser's
+  pending consent withdrawal straight after seeing the database updated.
+  The server commits before it answers, and the browser forgets the
+  pending withdrawal only when the answer arrives, so the read could come
+  first: the reported value was the pending item. The test now waits for
+  it to clear; it must still clear.
+- **Run 4: 91 passed.** Each run started from a fresh database.
