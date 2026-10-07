@@ -1771,9 +1771,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-dn-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Black skinny denim back view; consistent waistband/pocket construction and colour with the reviewed front; studio-consistent.",
       "garmentMaster": "/products/launch-v1/women-dn-02-c1-front.webp"
     },
     {
@@ -1800,9 +1800,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-dn-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Black skinny denim side/silhouette view; ankle length and fit consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-dn-02-c1-front.webp"
     },
     {
@@ -1829,9 +1829,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-dn-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Construction detail: pocket, rivets and button hardware clearly visible, matches front colour/fabric.",
       "garmentMaster": "/products/launch-v1/women-dn-02-c1-front.webp"
     },
     {
@@ -1887,9 +1887,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-dr-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Rust orange wrap dress back view; waist-tie and silhouette consistent with the reviewed front; studio-consistent.",
       "garmentMaster": "/products/launch-v1/women-dr-01-c1-front.webp"
     },
     {
@@ -2815,9 +2815,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-sk-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Charcoal A-line skirt back view, zipper visible, flare and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sk-01-c1-front.webp"
     },
     {
@@ -2844,9 +2844,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-sk-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Charcoal A-line skirt side/silhouette view, consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sk-01-c1-front.webp"
     },
     {
@@ -2873,9 +2873,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-sk-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Waistband/seam construction detail, matches front colour and fabric.",
       "garmentMaster": "/products/launch-v1/women-sk-01-c1-front.webp"
     },
     {
@@ -2931,9 +2931,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-sk-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Burgundy pleated midi skirt back view; pleats and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sk-02-c1-front.webp"
     },
     {
@@ -3018,9 +3018,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-sk-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Black sequin mini skirt, neutral white tee; sequin texture and mini length visible; studio-consistent.",
       "garmentMaster": "/products/launch-v1/women-sk-03-c1-front.webp"
     },
     {
@@ -3134,9 +3134,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-hs-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via an external ZIP recovery without accompanying generation-prompt metadata.",
+      "review": "Light-wash denim shorts, neutral white tee per the bottoms-framing rule; waistband-to-hem visible; studio-consistent.",
       "garmentMaster": "/products/launch-v1/women-hs-01-c1-front.webp"
     },
     {
