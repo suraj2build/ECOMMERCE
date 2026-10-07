@@ -668,12 +668,14 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       expect(await testPrisma.auditLog.count({ where: { action: 'order.line.cancel', entityId: line.id } })).toBe(0);
       expect(await testPrisma.notificationDelivery.count()).toBe(0);
 
-      // A retry with the same key returns the same package and changes nothing.
-      const retry = await rebook(f.id);
+      // A retry with the same key (the first response was lost) returns the original result unchanged,
+      // even with a different reason in the body, and does nothing again.
+      const retry = await rebook(f.id, { reason: 'Retried after a lost response' });
       expect(retry.statusCode).toBe(200);
-      expect(retry.json().id).toBe(f.id);
+      expect(retry.json()).toEqual(released.json());
       expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } })).toBe(1);
-      // A different key on the same package, and the whole-package cancel, are refused rather than taken as done.
+      expect(await balance(a.id)).toEqual(before);
+      // A different request (another key) on the already released package, and the whole-package cancel, are refused rather than taken as done.
       expect((await rebook(f.id, { idempotencyKey: `rbk-other-${f.id}` })).statusCode).toBe(409);
       const whole = await cancelBooking(f.id);
       expect(whole.statusCode).toBe(409);
@@ -715,6 +717,35 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       expect(late.json().error.message).toMatch(/already collected/);
       // The first key cannot be reused for the new package.
       expect((await rebook(second.id, { idempotencyKey: `rbk-${f.id}` })).statusCode).toBe(409);
+      // A late retry of the first release, after the items were rebooked and shipped, still returns the
+      // original release and moves nothing: the new package stays shipped and the sale stays single.
+      const lateRetry = await rebook(f.id);
+      expect(lateRetry.statusCode).toBe(200);
+      expect(lateRetry.json()).toEqual(released.json());
+      expect((await testPrisma.orderFulfilment.findUniqueOrThrow({ where: { id: second.id } })).status).toBe('SHIPPED');
+      expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: line.id } })).toMatchObject({ status: 'SHIPPED', fulfilmentId: second.id });
+      expect(await sales(line.id)).toBe(1);
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } })).toBe(1);
+    });
+
+    it('cancel booking and rebook: two requests with the same key at the same moment (a retry while the first is still running) both get the original result', async () => {
+      for (let i = 0; i < 4; i += 1) {
+        const { a, o, f } = await bookedPackage();
+        const before = await balance(a.id);
+        const [r1, r2] = await Promise.all([rebook(f.id), rebook(f.id)]);
+        expect(r1.statusCode, r1.body).toBe(200);
+        expect(r2.statusCode, r2.body).toBe(200);
+        expect(r2.json()).toEqual(r1.json());
+        expect(r1.json()).toMatchObject({ id: f.id, status: 'CANCELLED', releasedForRebook: true });
+        expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } })).toBe(1);
+        expect(await testPrisma.orderLine.findUniqueOrThrow({ where: { id: o.lines[0]!.id } })).toMatchObject({ status: 'PICKED', fulfilmentId: null });
+        expect(await balance(a.id)).toEqual(before);
+      }
+      // Two different keys at the same moment: one release, and the other request is refused.
+      const { f } = await bookedPackage();
+      const [x, y] = await Promise.all([rebook(f.id, { idempotencyKey: `rbk-x-${f.id}` }), rebook(f.id, { idempotencyKey: `rbk-y-${f.id}` })]);
+      expect([x.statusCode, y.statusCode].sort()).toEqual([200, 409]);
+      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } })).toBe(1);
     });
 
     it('cancel booking and rebook is refused for a package that is not booked or already handed over', async () => {

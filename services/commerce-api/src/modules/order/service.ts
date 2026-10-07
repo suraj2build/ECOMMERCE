@@ -1198,6 +1198,10 @@ export class OrderService {
         throw new ValidationError('The courier has already collected this package; use a return instead.');
       }
       if (locked.status === 'CANCELLED') {
+        // A retry that arrived while the first request with the same key was
+        // still running waited on the locks above; return that request's result.
+        const done = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilmentId }, include: { shipment: true } });
+        if (done.releasedForRebook && done.bookingCancelKey === key) return done;
         throw new ConflictError('This package was already cancelled; reload to see its current state.');
       }
       if (locked.status !== 'BOOKED' || !shipment || shipment.status !== 'BOOKED') {
@@ -1278,7 +1282,13 @@ export class OrderService {
       const shipments = await tx.$queryRaw<Array<{ id: string; status: string; handedOverAt: Date | null }>>`
         SELECT "id", "status", "handedOverAt" FROM "shipments" WHERE "fulfilmentId" = ${current.id} FOR UPDATE`;
       const locked = await this.lockFulfilment(tx, current.id);
-      if (!locked || locked.exchangeId !== exchangeId) throw new ConflictError('The replacement package changed at the same time; reload and try again.');
+      if (!locked || locked.exchangeId !== exchangeId) {
+        // A retry that arrived while the first request with the same key was
+        // still running waited on the locks above; return that request's result.
+        const done = await tx.orderFulfilment.findUnique({ where: { id: current.id }, include: { shipment: true } });
+        if (done && done.cancelledExchangeId === exchangeId && done.bookingCancelKey === key) return done;
+        throw new ConflictError('The replacement package changed at the same time; reload and try again.');
+      }
       const shipment = shipments[0];
       if (locked.status === 'SHIPPED' || locked.status === 'DELIVERED' || shipment?.handedOverAt) {
         throw new ValidationError('The courier has already collected this replacement; it can no longer be cancelled as a booking.');

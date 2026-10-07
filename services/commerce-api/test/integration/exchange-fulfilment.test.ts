@@ -643,6 +643,25 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
     expect(outcomes).toHaveLength(3);
   });
 
+  it('two replacement booking cancellations with the same key at the same moment (a retry while the first is still running) both get the original result', async () => {
+    const token = await warehouseToken();
+    const ctx = await seedContext();
+    for (let i = 0; i < 3; i += 1) {
+      const { exchangeId, fixture } = await toReplacementAllocated(token, `rcx-same-${i}`, ctx);
+      const packageId = await readyToShipReplacement(exchangeId, token);
+      expect((await createShipmentHttp(packageId, token, `idem-rcx-same-${i}-${counter}`)).statusCode).toBe(201);
+      const before = await skuStock(fixture.skuL.id);
+      const [c1, c2] = await Promise.all([cancelReplacementBookingHttp(exchangeId, token), cancelReplacementBookingHttp(exchangeId, token)]);
+      expect(c1.statusCode, c1.body).toBe(200);
+      expect(c2.statusCode, c2.body).toBe(200);
+      expect(c2.json()).toEqual(c1.json());
+      expect(c1.json()).toMatchObject({ id: packageId, status: 'CANCELLED', exchangeId: null, cancelledExchangeId: exchangeId });
+      expect(await testPrisma.auditLog.count({ where: { action: 'exchange.replacement_booking_cancel', entityId: packageId } })).toBe(1);
+      expect(await skuStock(fixture.skuL.id)).toEqual(before);
+      expect((await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchangeId } })).status).toBe('REPLACEMENT_ALLOCATED');
+    }
+  });
+
   // --- 9 & 10 & 11. Exactly-once dispatch, never a second SALE, normal SALE invariant unchanged ---
 
   it('posts EXCHANGE_DISPATCH exactly once and never touches the ORDER_LINE SALE invariant of the original (or any other) order', async () => {
