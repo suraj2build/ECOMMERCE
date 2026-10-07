@@ -37,6 +37,11 @@ SCREEN NOTE BUILT ON claude/admin-ops-phase1 — AWAITING REVIEW; COURIER
   released package is refused. Integration 1000/1000, browser 92/92.
   Next: courier selection (LR-008), real integration, then an
   end-to-end UAT.
+- **Retry rule (Product Owner, 2026-10-07):** the first successful
+  request's reason and result are authoritative; a same-key retry with a
+  different reason changes nothing and cannot alter the audit record
+  (documented in `docs/admin/DISPATCH.md`, tested for both paths).
+  Further admin expansion waits for the courier integration and UAT.
 
 Not self-certified; no go-live claimed. Green CI does not establish
 go-live readiness.

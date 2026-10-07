@@ -3086,6 +3086,23 @@ on CI failure). The third needs the courier choice (LR-008, still
 `DECISION_REQUIRED`); nothing was built for it. The fourth is AO-D8 below.
 The favicon was not changed, since no icon has been supplied.
 
+#### Product Owner clarification of 2026-10-07 (retries of a booking cancellation)
+
+Given after the report on `c26e0cb`, recorded verbatim:
+
+> One specification detail: allowing the same key with a different
+> reason is intentional here. Document that the first successful
+> request’s reason and result remain authoritative, so retries cannot
+> alter the audit record.
+
+Recorded as the rule for both **Cancel booking and rebook** and an
+exchange replacement's booking cancellation: a same-key retry is
+accepted whatever its body, changes nothing, and returns the first
+successful request's result; the first request's reason, courier
+reference and staff member stay in the audit log and on the shipment.
+`docs/admin/DISPATCH.md` states it; integration tests check it for both
+paths.
+
 #### AO-D8 — Changing an allocated exchange's replacement item
 - **Status:** DEFERRED by the Product Owner (2026-10-06, instruction
   above), on condition that the screen explains the available recovery

@@ -154,7 +154,16 @@ one that already succeeded (the response was lost, or the retry arrived
 while the first was still running) gets the original result unchanged,
 with nothing done again, even if the items have since been rebooked and
 shipped. A different request against an already released package (a new
-key) is refused (409), as is the same key used on another package. **Cancel
+key) is refused (409), as is the same key used on another package.
+
+**The first successful request is authoritative** (Product Owner,
+2026-10-07). A retry with the same key may carry a different reason or
+courier reference; it is accepted, but it changes nothing. The reason,
+courier reference and staff member recorded by the first successful
+request stay in the audit log and on the shipment, and the retry gets
+that first request's response back. A retry therefore cannot alter the
+audit record. The same rule applies to an exchange replacement's
+booking cancellation (below). **Cancel
 booking and items** on a released package is refused rather than reported
 as done, since its items are no longer in it. A handover or a carrier
 movement event racing the release is serialised by the shipment lock: one
@@ -214,8 +223,10 @@ Staff then **Create replacement package** again on the exchange, pack it,
 mark it ready and book it; its handover posts the `EXCHANGE_DISPATCH`
 once, and delivery completes the exchange as usual. A retry with the same
 request key returns the same cancelled package, including a retry that
-arrives while the first request is still running; the same key used for
-a different exchange is refused. After the courier has collected the
+arrives while the first request is still running, and leaves the first
+request's reason and courier reference on record even if the retry
+carries different ones; the same key used for a different exchange is
+refused. After the courier has collected the
 parcel, cancelling is refused. A handover racing the cancellation is
 serialised by the shipment lock: one wins, the other is refused.
 

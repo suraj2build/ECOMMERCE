@@ -898,3 +898,31 @@ Next, as the Product Owner set out: courier selection (LR-008) and real
 integration testing, then an end-to-end UAT of booking, rebooking,
 handover, cancellation and tracking. Exchange item changes stay deferred
 (AO-D8).
+
+CI on `c26e0cb` passed: all three jobs green (test totals not readable
+from this session).
+
+## First request authoritative on retry (2026-10-07, after `c26e0cb`)
+
+The Product Owner confirmed that a same-key retry with a different
+reason is intentional, and asked for it to be documented that the first
+successful request's reason and result remain authoritative, so retries
+cannot alter the audit record (recorded verbatim in
+`blueprint/DECISION_REGISTER.md` → AO).
+
+- **Behaviour (no code change):** a same-key retry returns the first
+  request's result and writes nothing; the audit entry and the
+  shipment's courier cancellation reference are only ever written by
+  the first successful request.
+- **Tests tightened:** for both the order rebook and the exchange
+  replacement cancel, a retry carrying a different reason and courier
+  reference now must leave exactly one audit entry with the first
+  reason, reference and staff member, and the shipment's reference
+  unchanged. `dispatch.test.ts` and `exchange-fulfilment.test.ts`: 50/50.
+- **Documented:** `DISPATCH.md` ("The first successful request is
+  authoritative").
+
+Next, unchanged: courier selection (LR-008), real integration
+(booking, labels, pickup, tracking, cancellation, duplicate events),
+then the end-to-end UAT. Further admin expansion waits.
+
