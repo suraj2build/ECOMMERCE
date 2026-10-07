@@ -542,10 +542,14 @@ describe('Exchange replacement fulfilment (EXC-004 Option 2)', () => {
     expect(await testPrisma.auditLog.count({ where: { action: 'exchange.replacement_booking_cancel', entityId: firstPackageId } })).toBe(1);
 
     // A retry with the same key returns the same result and changes nothing; reusing it for another exchange is refused.
-    const retry = await cancelReplacementBookingHttp(exchangeId, token);
+    // A different reason or courier reference in the retry does not change what was recorded first.
+    const retry = await cancelReplacementBookingHttp(exchangeId, token, { reason: 'Retried after a lost response', courierReference: 'CXL-OTHER' });
     expect(retry.statusCode).toBe(200);
-    expect(retry.json().id).toBe(firstPackageId);
-    expect(await testPrisma.auditLog.count({ where: { action: 'exchange.replacement_booking_cancel', entityId: firstPackageId } })).toBe(1);
+    expect(retry.json()).toEqual(cancelled.json());
+    const cancelAudit = await testPrisma.auditLog.findMany({ where: { action: 'exchange.replacement_booking_cancel', entityId: firstPackageId } });
+    expect(cancelAudit).toHaveLength(1);
+    expect(cancelAudit[0]!.newValue).toMatchObject({ reason: 'Booked with the wrong parcel size', courierReference: 'CXL-R1' });
+    expect((await testPrisma.shipment.findUniqueOrThrow({ where: { id: first.id } })).bookingCancellationReference).toBe('CXL-R1');
 
     // The cancelled parcel cannot be handed over, and the carrier's events for it are refused.
     const refusedHandover = await app.inject({ method: 'POST', url: '/api/v1/shipments/handover', headers: { authorization: `Bearer ${token}` }, payload: { shipmentIds: [first.id] } });

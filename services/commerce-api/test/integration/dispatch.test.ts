@@ -669,11 +669,15 @@ describe('Dispatch: scans, parcel, documents and handover', () => {
       expect(await testPrisma.notificationDelivery.count()).toBe(0);
 
       // A retry with the same key (the first response was lost) returns the original result unchanged,
-      // even with a different reason in the body, and does nothing again.
-      const retry = await rebook(f.id, { reason: 'Retried after a lost response' });
+      // even with a different reason and courier reference in the body, and does nothing again: the first
+      // successful request's reason and reference stay on record, in the audit log and on the shipment.
+      const retry = await rebook(f.id, { reason: 'Retried after a lost response', courierReference: 'CXL-OTHER' });
       expect(retry.statusCode).toBe(200);
       expect(retry.json()).toEqual(released.json());
-      expect(await testPrisma.auditLog.count({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } })).toBe(1);
+      const releaseAudit = await testPrisma.auditLog.findMany({ where: { action: 'order.fulfilment.booking_release', entityId: f.id } });
+      expect(releaseAudit).toHaveLength(1);
+      expect(releaseAudit[0]).toMatchObject({ actorStaffId: staff.staffUserId, newValue: expect.objectContaining({ reason: 'Booked with the wrong parcel size', courierReference: 'CXL-RB1' }) });
+      expect(await testPrisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } })).toMatchObject({ bookingCancellationReference: 'CXL-RB1', bookingCancelledByStaffId: staff.staffUserId });
       expect(await balance(a.id)).toEqual(before);
       // A different request (another key) on the already released package, and the whole-package cancel, are refused rather than taken as done.
       expect((await rebook(f.id, { idempotencyKey: `rbk-other-${f.id}` })).statusCode).toBe(409);
