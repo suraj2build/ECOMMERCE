@@ -852,3 +852,49 @@ storage 621/621, builds clean, browser 92/92 with the load checks
 passing. The rest of the integration suite does not load sharp and ran
 998/998 on `0862606`'s code.
 
+
+CI on `42d92ec` passed: all three jobs green. Test totals could not be
+read back from this session (the log tail is service output).
+
+## Retry clarification after `42d92ec` (2026-10-07)
+
+The Product Owner asked to confirm that a lost-response retry of **Cancel
+booking and rebook** with the same key returns the original result, while
+a different request against an already released package is refused. My
+report had said "a repeated request is refused", which was imprecise.
+
+- **Already implemented and tested:** a same-key retry after the first
+  request committed returns the original package (200, nothing done
+  again); a new key on a released package, and the same key on another
+  package, get 409.
+- **Gap found while checking:** the key check ran before the row locks.
+  A retry arriving *while the first request was still running* waited on
+  the lock, then saw the package already cancelled and got 409 instead of
+  the original result. The exchange replacement booking cancel had the
+  same pattern. Both now re-check the key after taking the locks and
+  return the original result. New tests send two same-key requests at
+  once (four rounds for orders, three for replacements); both failed on
+  the old code with 409 and pass now. Two different keys at once still
+  give one 200 and one 409.
+- **Tests tightened:** the retry must return a body identical to the
+  original (with a different reason in the body), and a retry made after
+  the items were rebooked, booked again and shipped still returns the
+  original release and changes nothing.
+- `DISPATCH.md` now states the retry rules exactly.
+
+### Test record (local, before push)
+
+| Suite | Files | Passed | Failed | Skipped |
+|---|---|---|---|---|
+| Integration, with the S3 emulator | 65 | 1000 | 0 | 0 |
+| Browser (storefront, admin, API smoke) | — | 92 | 0 | 0 |
+
+Lint and typecheck clean; read-load and checkout-contention checks
+passed. Unit tests were not affected (no unit-tested code changed). The
+local Postgres, Redis, Meilisearch and S3 emulator had to be restarted
+after the container restarted; no earlier result depended on them.
+
+Next, as the Product Owner set out: courier selection (LR-008) and real
+integration testing, then an end-to-end UAT of booking, rebooking,
+handover, cancellation and tracking. Exchange item changes stay deferred
+(AO-D8).

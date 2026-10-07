@@ -146,9 +146,15 @@ same order as handover and carrier events):
   touched. The audit log records `order.fulfilment.booking_release` with
   the items released.
 
-The new package's handover posts the sale once. A retry with the same
-request key returns the same package; another key on an already released
-package, or the same key on another package, is refused (409). **Cancel
+The new package's handover posts the sale once.
+
+**Retries.** The admin screen sends one request key per dialog opening
+and reuses it if the request is retried. A request with the same key as
+one that already succeeded (the response was lost, or the retry arrived
+while the first was still running) gets the original result unchanged,
+with nothing done again, even if the items have since been rebooked and
+shipped. A different request against an already released package (a new
+key) is refused (409), as is the same key used on another package. **Cancel
 booking and items** on a released package is refused rather than reported
 as done, since its items are no longer in it. A handover or a carrier
 movement event racing the release is serialised by the shipment lock: one
@@ -207,8 +213,9 @@ in that order):
 Staff then **Create replacement package** again on the exchange, pack it,
 mark it ready and book it; its handover posts the `EXCHANGE_DISPATCH`
 once, and delivery completes the exchange as usual. A retry with the same
-request key returns the same cancelled package; the same key used for a
-different exchange is refused. After the courier has collected the
+request key returns the same cancelled package, including a retry that
+arrives while the first request is still running; the same key used for
+a different exchange is refused. After the courier has collected the
 parcel, cancelling is refused. A handover racing the cancellation is
 serialised by the shipment lock: one wins, the other is refused.
 
@@ -261,8 +268,11 @@ to collect it" (not shipped) and hides its Cancel buttons.
   refused); a handover racing a cancellation; the shipped message sent
   only after the handover commits. Cancel booking and rebook: the order,
   reservation and pick kept and the items back to picked with no package;
-  confirmation, reason and `shipping:manage` required; idempotent retry
-  and key reuse refused; whole-package cancel of a released package
+  confirmation, reason and `shipping:manage` required; a same-key retry
+  returns the original response unchanged (also after the items were
+  rebooked and shipped, and while the first request is still running),
+  while a new key on a released package and key reuse on another package
+  are refused; whole-package cancel of a released package
   refused; handover and carrier events for the old parcel refused; the
   shopper does not see the released package; a new package booked and
   handed over posts one sale; refused before booking, after handover and
@@ -278,7 +288,8 @@ to collect it" (not shipped) and hides its Cancel buttons.
   before booking and after collection; carrier events and handover for
   the cancelled parcel refused), then a new package is booked, handed
   over (one dispatch) and delivered (exchange completed); a handover
-  racing that cancellation; the order "cancel booking and rebook" route
+  racing that cancellation; two same-key cancellations at once both get
+  the original result; the order "cancel booking and rebook" route
   refuses a replacement package.
 - Browser flows AO-10 (dispatch and handover), AO-11 (cancelling a
   booked package and its items; Customer Service does not get the rebook

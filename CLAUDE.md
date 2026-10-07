@@ -30,6 +30,13 @@ SCREEN NOTE BUILT ON claude/admin-ops-phase1 — AWAITING REVIEW; COURIER
   none skipped), browser 92/92 with the load checks passing. One earlier
   browser run failed on a test-timing race (P1-07); the cause is in the
   record.
+- **Retry follow-up (2026-10-07):** a same-key retry of a booking
+  cancellation (order rebook or exchange replacement) returns the
+  original result, now also when it arrives while the first request is
+  still running (it used to get 409); a different request against a
+  released package is refused. Integration 1000/1000, browser 92/92.
+  Next: courier selection (LR-008), real integration, then an
+  end-to-end UAT.
 
 Not self-certified; no go-live claimed. Green CI does not establish
 go-live readiness.
