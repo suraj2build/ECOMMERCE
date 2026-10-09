@@ -217,6 +217,56 @@ export class ProductService {
     return media;
   }
 
+  /**
+   * Narrowly-scoped media update support (per
+   * docs/deployment/PRODUCT_PHOTOGRAPHY.md): the plain `addMedia` route
+   * above is append-only by design, so replacing a placeholder gallery
+   * with reviewed photography through it would leave the two
+   * interspersed, or duplicate rows on a rerun. This atomically swaps
+   * ONE colour's entire media gallery for a new ordered list - never the
+   * whole style's media, and never a generic delete/update route - so a
+   * reapply (e.g. after more photography is reviewed) is a clean
+   * replace, not an accumulation.
+   */
+  async replaceColourMedia(
+    styleId: string,
+    colourId: string,
+    items: { url: string; type?: 'IMAGE' | 'VIDEO'; altText?: string; isSwatch?: boolean }[],
+    actorStaffId: string,
+  ) {
+    if (items.length === 0) throw new ValidationError('items must not be empty');
+    await this.getStyle(styleId);
+    const colour = await this.prisma.colour.findUnique({ where: { id: colourId } });
+    if (!colour || colour.styleId !== styleId) {
+      throw new ValidationError(`Colour '${colourId}' does not belong to style '${styleId}'`);
+    }
+
+    const media = await this.prisma.$transaction(async (tx) => {
+      const { count: removedCount } = await tx.productMedia.deleteMany({ where: { styleId, colourId } });
+      const created = [];
+      for (const [index, item] of items.entries()) {
+        created.push(
+          await tx.productMedia.create({
+            data: { styleId, colourId, type: item.type ?? 'IMAGE', sortOrder: index, url: item.url, altText: item.altText, isSwatch: item.isSwatch ?? false },
+          }),
+        );
+      }
+      return { removedCount, created };
+    });
+
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'product_media.replace',
+      entityType: 'ProductMedia',
+      entityId: colourId,
+      reference: styleId,
+      oldValue: { removedCount: media.removedCount },
+      newValue: { urls: items.map((i) => i.url) },
+    });
+    return media.created;
+  }
+
   async createSizeChart(input: {
     name: string;
     category?: string;

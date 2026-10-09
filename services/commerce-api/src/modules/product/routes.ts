@@ -42,6 +42,20 @@ const addMediaSchema = z.object({
   isSwatch: z.boolean().optional(),
 });
 
+const replaceColourMediaSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        url: z.string().url(),
+        type: z.enum(['IMAGE', 'VIDEO']).optional(),
+        altText: z.string().optional(),
+        isSwatch: z.boolean().optional(),
+      }),
+    )
+    .min(1)
+    .max(12),
+});
+
 const createSizeChartSchema = z.object({
   name: z.string().min(1),
   category: z.string().optional(),
@@ -116,6 +130,25 @@ const productRoutes: FastifyPluginAsync = async (fastify) => {
     await fastify.storefrontCache.invalidateProduct(id);
     reply.status(201).send(media);
   });
+
+  // Narrowly-scoped update support for an otherwise append-only media
+  // route (docs/deployment/PRODUCT_PHOTOGRAPHY.md): atomically swaps one
+  // colour's whole gallery so reviewed photography can replace
+  // placeholders without ever leaving the two interspersed, and reapplying
+  // after more photography is reviewed is a clean replace, not an
+  // accumulation of duplicate rows.
+  fastify.post(
+    '/products/styles/:id/colours/:colourId/media/replace',
+    { preHandler: writeAuth },
+    async (request, reply) => {
+      const { id, colourId } = z.object({ id: z.string().uuid(), colourId: z.string().uuid() }).parse(request.params);
+      const { items } = replaceColourMediaSchema.parse(request.body);
+      const media = await service.replaceColourMedia(id, colourId, items, request.staffUser!.id);
+      await fastify.searchIndex.indexStyle(id); // card thumbnail/hover/swatch images can change
+      await fastify.storefrontCache.invalidateProduct(id);
+      reply.status(200).send(media);
+    },
+  );
 
   fastify.post('/products/size-charts', { preHandler: writeAuth }, async (request, reply) => {
     const body = createSizeChartSchema.parse(request.body);
