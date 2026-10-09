@@ -1916,9 +1916,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-dr-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Rust Orange wrap midi dress side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-dr-01-c1-front.webp"
     },
     {
@@ -1945,9 +1945,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-dr-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Rust Orange wrap midi dress construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-dr-01-c1-front.webp"
     },
     {
@@ -2061,9 +2061,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-dr-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy Stripe shirt dress construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-dr-02-c1-front.webp"
     },
     {
@@ -2177,9 +2177,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-dr-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Emerald Green cocktail evening dress construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-dr-03-c1-front.webp"
     },
     {
@@ -2235,9 +2235,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-dr-03-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black cocktail evening dress back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/women-dr-03-c2-front.webp"
     },
     {
@@ -2264,9 +2264,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-dr-03-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black cocktail evening dress side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-dr-03-c2-front.webp"
     },
     {
@@ -2293,9 +2293,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-dr-03-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black cocktail evening dress construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-dr-03-c2-front.webp"
     },
     {
@@ -2409,9 +2409,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-tr-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black tailored straight trousers construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-tr-01-c1-front.webp"
     },
     {
@@ -2467,9 +2467,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-tr-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige wide leg trousers back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/women-tr-02-c1-front.webp"
     },
     {
@@ -2496,9 +2496,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-tr-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige wide leg trousers side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-tr-02-c1-front.webp"
     },
     {
@@ -2525,9 +2525,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-tr-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige wide leg trousers construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-tr-02-c1-front.webp"
     },
     {
@@ -2554,9 +2554,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-sr-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic collared shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the shirts line.",
       "garmentMaster": "/products/launch-v1/women-sr-01-c1-front.webp"
     },
     {
@@ -2583,9 +2583,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-sr-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic collared shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/women-sr-01-c1-front.webp"
     },
     {
@@ -2612,9 +2612,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-sr-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic collared shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sr-01-c1-front.webp"
     },
     {
@@ -2641,9 +2641,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-sr-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic collared shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sr-01-c1-front.webp"
     },
     {
@@ -2670,9 +2670,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-sr-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Powder Blue relaxed fit shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the shirts line.",
       "garmentMaster": "/products/launch-v1/women-sr-02-c1-front.webp"
     },
     {
@@ -2699,9 +2699,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-sr-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Powder Blue relaxed fit shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/women-sr-02-c1-front.webp"
     },
     {
@@ -2728,9 +2728,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-sr-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Powder Blue relaxed fit shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sr-02-c1-front.webp"
     },
     {
@@ -2757,9 +2757,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-work.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-sr-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Powder Blue relaxed fit shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sr-02-c1-front.webp"
     },
     {
@@ -2960,9 +2960,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-sk-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Burgundy pleated midi skirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sk-02-c1-front.webp"
     },
     {
@@ -2989,9 +2989,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-sk-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Burgundy pleated midi skirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sk-02-c1-front.webp"
     },
     {
@@ -3047,9 +3047,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-sk-03-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black sequin mini skirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/women-sk-03-c1-front.webp"
     },
     {
@@ -3076,9 +3076,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-sk-03-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black sequin mini skirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sk-03-c1-front.webp"
     },
     {
@@ -3105,9 +3105,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-women.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-sk-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black sequin mini skirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-sk-03-c1-front.webp"
     },
     {
@@ -3163,9 +3163,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-hs-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Wash denim shorts back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/women-hs-01-c1-front.webp"
     },
     {
@@ -3192,9 +3192,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-hs-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Wash denim shorts side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-hs-01-c1-front.webp"
     },
     {
@@ -3221,9 +3221,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-hs-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Wash denim shorts construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-hs-01-c1-front.webp"
     },
     {
@@ -3250,9 +3250,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "front",
       "asset": "/products/launch-v1/women-hs-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige tailored shorts front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the hotpants / shorts line.",
       "garmentMaster": "/products/launch-v1/women-hs-02-c1-front.webp"
     },
     {
@@ -3279,9 +3279,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "back",
       "asset": "/products/launch-v1/women-hs-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige tailored shorts back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/women-hs-02-c1-front.webp"
     },
     {
@@ -3308,9 +3308,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "side",
       "asset": "/products/launch-v1/women-hs-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige tailored shorts side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-hs-02-c1-front.webp"
     },
     {
@@ -3337,9 +3337,9 @@
       "identityReference": "/campaigns/launch-v1/lifestyle-women-fashion.webp",
       "view": "detail",
       "asset": "/products/launch-v1/women-hs-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige tailored shorts construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/women-hs-02-c1-front.webp"
     },
     {
@@ -3366,9 +3366,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-fs-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic fit formal shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal shirts line.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c1-front.webp"
     },
     {
@@ -3395,9 +3395,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-fs-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic fit formal shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c1-front.webp"
     },
     {
@@ -3424,9 +3424,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-fs-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic fit formal shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c1-front.webp"
     },
     {
@@ -3453,9 +3453,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-fs-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic fit formal shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c1-front.webp"
     },
     {
@@ -3482,9 +3482,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-fs-01-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Sky Blue classic fit formal shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal shirts line.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c1-front.webp"
     },
     {
@@ -3511,9 +3511,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-fs-01-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Sky Blue classic fit formal shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c2-front.webp"
     },
     {
@@ -3540,9 +3540,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-fs-01-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Sky Blue classic fit formal shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c2-front.webp"
     },
     {
@@ -3569,9 +3569,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-fs-01-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Sky Blue classic fit formal shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-01-c2-front.webp"
     },
     {
@@ -3598,9 +3598,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-fs-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue slim fit formal shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal shirts line.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c1-front.webp"
     },
     {
@@ -3627,9 +3627,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-fs-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue slim fit formal shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c1-front.webp"
     },
     {
@@ -3656,9 +3656,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-fs-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue slim fit formal shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c1-front.webp"
     },
     {
@@ -3685,9 +3685,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-fs-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue slim fit formal shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c1-front.webp"
     },
     {
@@ -3714,9 +3714,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-fs-02-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Stripe slim fit formal shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal shirts line.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c1-front.webp"
     },
     {
@@ -3743,9 +3743,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-fs-02-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Stripe slim fit formal shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c2-front.webp"
     },
     {
@@ -3772,9 +3772,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-fs-02-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Stripe slim fit formal shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c2-front.webp"
     },
     {
@@ -3801,9 +3801,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-fs-02-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Stripe slim fit formal shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-02-c2-front.webp"
     },
     {
@@ -3830,9 +3830,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-fs-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey textured formal shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal shirts line.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c1-front.webp"
     },
     {
@@ -3859,9 +3859,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-fs-03-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey textured formal shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c1-front.webp"
     },
     {
@@ -3888,9 +3888,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-fs-03-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey textured formal shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c1-front.webp"
     },
     {
@@ -3917,9 +3917,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-fs-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey textured formal shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c1-front.webp"
     },
     {
@@ -3946,9 +3946,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-fs-03-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy textured formal shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal shirts line.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c1-front.webp"
     },
     {
@@ -3975,9 +3975,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-fs-03-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy textured formal shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c2-front.webp"
     },
     {
@@ -4004,9 +4004,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-fs-03-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy textured formal shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c2-front.webp"
     },
     {
@@ -4033,9 +4033,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-fs-03-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy textured formal shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-fs-03-c2-front.webp"
     },
     {
@@ -4062,9 +4062,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-cs-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue oxford casual shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual shirts line.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c1-front.webp"
     },
     {
@@ -4091,9 +4091,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-cs-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue oxford casual shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c1-front.webp"
     },
     {
@@ -4120,9 +4120,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-cs-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue oxford casual shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c1-front.webp"
     },
     {
@@ -4149,9 +4149,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-cs-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Light Blue oxford casual shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c1-front.webp"
     },
     {
@@ -4178,9 +4178,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-cs-01-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White oxford casual shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual shirts line.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c1-front.webp"
     },
     {
@@ -4207,9 +4207,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-cs-01-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White oxford casual shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c2-front.webp"
     },
     {
@@ -4236,9 +4236,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-cs-01-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White oxford casual shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c2-front.webp"
     },
     {
@@ -4265,9 +4265,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-cs-01-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White oxford casual shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-01-c2-front.webp"
     },
     {
@@ -4294,9 +4294,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-cs-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige linen blend casual shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual shirts line.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c1-front.webp"
     },
     {
@@ -4323,9 +4323,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-cs-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige linen blend casual shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c1-front.webp"
     },
     {
@@ -4352,9 +4352,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-cs-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige linen blend casual shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c1-front.webp"
     },
     {
@@ -4381,9 +4381,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-cs-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Beige linen blend casual shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c1-front.webp"
     },
     {
@@ -4410,9 +4410,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-cs-02-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive linen blend casual shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual shirts line.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c1-front.webp"
     },
     {
@@ -4439,9 +4439,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-cs-02-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive linen blend casual shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c2-front.webp"
     },
     {
@@ -4468,9 +4468,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-cs-02-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive linen blend casual shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c2-front.webp"
     },
     {
@@ -4497,9 +4497,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-cs-02-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive linen blend casual shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-02-c2-front.webp"
     },
     {
@@ -4526,9 +4526,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-cs-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy & White Check checked casual shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual shirts line.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c1-front.webp"
     },
     {
@@ -4555,9 +4555,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-cs-03-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy & White Check checked casual shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c1-front.webp"
     },
     {
@@ -4584,9 +4584,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-cs-03-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy & White Check checked casual shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c1-front.webp"
     },
     {
@@ -4613,9 +4613,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-cs-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy & White Check checked casual shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c1-front.webp"
     },
     {
@@ -4642,9 +4642,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-cs-03-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Grey & Black Check checked casual shirt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual shirts line.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c1-front.webp"
     },
     {
@@ -4671,9 +4671,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-cs-03-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Grey & Black Check checked casual shirt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c2-front.webp"
     },
     {
@@ -4700,9 +4700,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-cs-03-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Grey & Black Check checked casual shirt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c2-front.webp"
     },
     {
@@ -4729,9 +4729,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-cs-03-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Grey & Black Check checked casual shirt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-cs-03-c2-front.webp"
     },
     {
@@ -4758,9 +4758,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-polo-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy classic pique polo front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the polo t-shirts line.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c1-front.webp"
     },
     {
@@ -4787,9 +4787,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-polo-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy classic pique polo back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c1-front.webp"
     },
     {
@@ -4816,9 +4816,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-polo-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy classic pique polo side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c1-front.webp"
     },
     {
@@ -4845,9 +4845,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-polo-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy classic pique polo construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c1-front.webp"
     },
     {
@@ -4874,9 +4874,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-polo-01-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic pique polo front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the polo t-shirts line.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c1-front.webp"
     },
     {
@@ -4903,9 +4903,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-polo-01-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic pique polo back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c2-front.webp"
     },
     {
@@ -4932,9 +4932,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-polo-01-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic pique polo side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c2-front.webp"
     },
     {
@@ -4961,9 +4961,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-polo-01-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "White classic pique polo construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-01-c2-front.webp"
     },
     {
@@ -4990,9 +4990,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-polo-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive classic pique polo front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the polo t-shirts line.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c1-front.webp"
     },
     {
@@ -5019,9 +5019,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-polo-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive classic pique polo back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c1-front.webp"
     },
     {
@@ -5048,9 +5048,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-polo-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive classic pique polo side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c1-front.webp"
     },
     {
@@ -5077,9 +5077,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-polo-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive classic pique polo construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c1-front.webp"
     },
     {
@@ -5106,9 +5106,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-polo-02-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal classic pique polo front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the polo t-shirts line.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c1-front.webp"
     },
     {
@@ -5135,9 +5135,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-polo-02-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal classic pique polo back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c2-front.webp"
     },
     {
@@ -5164,9 +5164,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-polo-02-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal classic pique polo side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c2-front.webp"
     },
     {
@@ -5193,9 +5193,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-polo-02-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal classic pique polo construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-02-c2-front.webp"
     },
     {
@@ -5222,9 +5222,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-polo-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Burgundy textured knit polo front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the polo t-shirts line.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c1-front.webp"
     },
     {
@@ -5251,9 +5251,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-polo-03-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Burgundy textured knit polo back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c1-front.webp"
     },
     {
@@ -5280,9 +5280,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-polo-03-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Burgundy textured knit polo side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c1-front.webp"
     },
     {
@@ -5309,9 +5309,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-polo-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Burgundy textured knit polo construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c1-front.webp"
     },
     {
@@ -5338,9 +5338,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-polo-03-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Muted Blue textured knit polo front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the polo t-shirts line.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c1-front.webp"
     },
     {
@@ -5367,9 +5367,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-polo-03-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Muted Blue textured knit polo back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c2-front.webp"
     },
     {
@@ -5396,9 +5396,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-polo-03-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Muted Blue textured knit polo side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c2-front.webp"
     },
     {
@@ -5425,9 +5425,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-polo-03-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Muted Blue textured knit polo construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-polo-03-c2-front.webp"
     },
     {
@@ -5454,9 +5454,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-dn-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Indigo Blue straight fit denim front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the denims line.",
       "garmentMaster": "/products/launch-v1/men-dn-01-c1-front.webp"
     },
     {
@@ -5483,9 +5483,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-dn-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Indigo Blue straight fit denim back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-dn-01-c1-front.webp"
     },
     {
@@ -5512,9 +5512,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-dn-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Indigo Blue straight fit denim side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-dn-01-c1-front.webp"
     },
     {
@@ -5541,9 +5541,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-dn-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Indigo Blue straight fit denim construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-dn-01-c1-front.webp"
     },
     {
@@ -5570,9 +5570,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-dn-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Jet Black slim fit denim front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the denims line.",
       "garmentMaster": "/products/launch-v1/men-dn-02-c1-front.webp"
     },
     {
@@ -5599,9 +5599,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-dn-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Jet Black slim fit denim back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-dn-02-c1-front.webp"
     },
     {
@@ -5628,9 +5628,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-dn-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Jet Black slim fit denim side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-dn-02-c1-front.webp"
     },
     {
@@ -5657,9 +5657,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-dn-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Jet Black slim fit denim construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-dn-02-c1-front.webp"
     },
     {
@@ -5686,9 +5686,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-ct-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Khaki slim fit chinos front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual trousers / chinos line.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c1-front.webp"
     },
     {
@@ -5715,9 +5715,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-ct-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Khaki slim fit chinos back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c1-front.webp"
     },
     {
@@ -5744,9 +5744,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-ct-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Khaki slim fit chinos side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c1-front.webp"
     },
     {
@@ -5773,9 +5773,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-ct-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Khaki slim fit chinos construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c1-front.webp"
     },
     {
@@ -5802,9 +5802,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-ct-01-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Stone slim fit chinos front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual trousers / chinos line.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c1-front.webp"
     },
     {
@@ -5831,9 +5831,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-ct-01-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Stone slim fit chinos back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c2-front.webp"
     },
     {
@@ -5860,9 +5860,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-ct-01-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Stone slim fit chinos side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c2-front.webp"
     },
     {
@@ -5889,9 +5889,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-ct-01-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Stone slim fit chinos construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-01-c2-front.webp"
     },
     {
@@ -5918,9 +5918,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-ct-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive Green tapered chinos front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual trousers / chinos line.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c1-front.webp"
     },
     {
@@ -5947,9 +5947,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-ct-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive Green tapered chinos back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c1-front.webp"
     },
     {
@@ -5976,9 +5976,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-ct-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive Green tapered chinos side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c1-front.webp"
     },
     {
@@ -6005,9 +6005,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-ct-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Olive Green tapered chinos construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c1-front.webp"
     },
     {
@@ -6034,9 +6034,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-ct-02-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy tapered chinos front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual trousers / chinos line.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c1-front.webp"
     },
     {
@@ -6063,9 +6063,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-ct-02-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy tapered chinos back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c2-front.webp"
     },
     {
@@ -6092,9 +6092,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-ct-02-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy tapered chinos side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c2-front.webp"
     },
     {
@@ -6121,9 +6121,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-ct-02-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy tapered chinos construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-02-c2-front.webp"
     },
     {
@@ -6150,9 +6150,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-ct-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal comfort fit casual trousers front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the casual trousers / chinos line.",
       "garmentMaster": "/products/launch-v1/men-ct-03-c1-front.webp"
     },
     {
@@ -6179,9 +6179,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-ct-03-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal comfort fit casual trousers back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-ct-03-c1-front.webp"
     },
     {
@@ -6208,9 +6208,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-ct-03-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal comfort fit casual trousers side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-03-c1-front.webp"
     },
     {
@@ -6237,9 +6237,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-ct-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal comfort fit casual trousers construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ct-03-c1-front.webp"
     },
     {
@@ -6266,9 +6266,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-ft-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey formal slim trousers front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal trousers line.",
       "garmentMaster": "/products/launch-v1/men-ft-01-c1-front.webp"
     },
     {
@@ -6295,9 +6295,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-ft-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey formal slim trousers back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-ft-01-c1-front.webp"
     },
     {
@@ -6324,9 +6324,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-ft-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey formal slim trousers side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ft-01-c1-front.webp"
     },
     {
@@ -6353,9 +6353,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-ft-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Charcoal Grey formal slim trousers construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ft-01-c1-front.webp"
     },
     {
@@ -6382,9 +6382,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "front",
       "asset": "/products/launch-v1/men-ft-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy formal slim trousers front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the formal trousers line.",
       "garmentMaster": "/products/launch-v1/men-ft-02-c1-front.webp"
     },
     {
@@ -6411,9 +6411,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "back",
       "asset": "/products/launch-v1/men-ft-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy formal slim trousers back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-ft-02-c1-front.webp"
     },
     {
@@ -6440,9 +6440,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "side",
       "asset": "/products/launch-v1/men-ft-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy formal slim trousers side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ft-02-c1-front.webp"
     },
     {
@@ -6469,9 +6469,9 @@
       "identityReference": "/campaigns/launch-v1/gateway-men.webp",
       "view": "detail",
       "asset": "/products/launch-v1/men-ft-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Navy formal slim trousers construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-ft-02-c1-front.webp"
     },
     {
@@ -6500,9 +6500,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-sh-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather lace-up derby front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the business casual shoes line.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c1-front.webp"
     },
     {
@@ -6531,9 +6531,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-sh-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather lace-up derby back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c1-front.webp"
     },
     {
@@ -6562,9 +6562,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-sh-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather lace-up derby side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c1-front.webp"
     },
     {
@@ -6593,9 +6593,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-sh-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather lace-up derby construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c1-front.webp"
     },
     {
@@ -6624,9 +6624,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-sh-01-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan Brown leather lace-up derby front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the business casual shoes line.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c1-front.webp"
     },
     {
@@ -6655,9 +6655,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-sh-01-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan Brown leather lace-up derby back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c2-front.webp"
     },
     {
@@ -6686,9 +6686,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-sh-01-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan Brown leather lace-up derby side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c2-front.webp"
     },
     {
@@ -6717,9 +6717,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-sh-01-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan Brown leather lace-up derby construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-01-c2-front.webp"
     },
     {
@@ -6748,9 +6748,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-sh-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather lace-up derby front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the business casual shoes line.",
       "garmentMaster": "/products/launch-v1/men-sh-02-c1-front.webp"
     },
     {
@@ -6779,9 +6779,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-sh-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather lace-up derby back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-sh-02-c1-front.webp"
     },
     {
@@ -6810,9 +6810,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-sh-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather lace-up derby side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-02-c1-front.webp"
     },
     {
@@ -6841,9 +6841,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-sh-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather lace-up derby construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-02-c1-front.webp"
     },
     {
@@ -6872,9 +6872,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-sh-03-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather slip-on loafer front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the business casual shoes line.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c1-front.webp"
     },
     {
@@ -6903,9 +6903,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-sh-03-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather slip-on loafer back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c1-front.webp"
     },
     {
@@ -6934,9 +6934,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-sh-03-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather slip-on loafer side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c1-front.webp"
     },
     {
@@ -6965,9 +6965,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-sh-03-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Dark Brown leather slip-on loafer construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c1-front.webp"
     },
     {
@@ -6996,9 +6996,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-sh-03-c2-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather slip-on loafer front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the business casual shoes line.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c1-front.webp"
     },
     {
@@ -7027,9 +7027,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-sh-03-c2-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather slip-on loafer back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c2-front.webp"
     },
     {
@@ -7058,9 +7058,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-sh-03-c2-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather slip-on loafer side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c2-front.webp"
     },
     {
@@ -7089,9 +7089,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-sh-03-c2-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black leather slip-on loafer construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-sh-03-c2-front.webp"
     },
     {
@@ -7121,9 +7121,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-bl-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black / Brown reversible leather belt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the business casual belts line.",
       "garmentMaster": "/products/launch-v1/men-bl-01-c1-front.webp"
     },
     {
@@ -7153,9 +7153,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-bl-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black / Brown reversible leather belt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-bl-01-c1-front.webp"
     },
     {
@@ -7185,9 +7185,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-bl-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black / Brown reversible leather belt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-bl-01-c1-front.webp"
     },
     {
@@ -7217,9 +7217,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-bl-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Black / Brown reversible leather belt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-bl-01-c1-front.webp"
     },
     {
@@ -7249,9 +7249,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-bl-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan classic leather belt front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the business casual belts line.",
       "garmentMaster": "/products/launch-v1/men-bl-02-c1-front.webp"
     },
     {
@@ -7281,9 +7281,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-bl-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan classic leather belt back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-bl-02-c1-front.webp"
     },
     {
@@ -7313,9 +7313,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-bl-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan classic leather belt side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-bl-02-c1-front.webp"
     },
     {
@@ -7345,9 +7345,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-bl-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Tan classic leather belt construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-bl-02-c1-front.webp"
     },
     {
@@ -7379,9 +7379,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-pf-01-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Citrus Woods vanya men eau de toilette front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the perfume line.",
       "garmentMaster": "/products/launch-v1/men-pf-01-c1-front.webp"
     },
     {
@@ -7413,9 +7413,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-pf-01-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Citrus Woods vanya men eau de toilette back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-pf-01-c1-front.webp"
     },
     {
@@ -7447,9 +7447,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-pf-01-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Citrus Woods vanya men eau de toilette side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-pf-01-c1-front.webp"
     },
     {
@@ -7481,9 +7481,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-pf-01-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Citrus Woods vanya men eau de toilette construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-pf-01-c1-front.webp"
     },
     {
@@ -7515,9 +7515,9 @@
       "identityReference": null,
       "view": "front",
       "asset": "/products/launch-v1/men-pf-02-c1-front.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Amber Musk vanya men eau de toilette front view; studio-consistent neutral background, garment construction and colour match the job spec, model/styling consistent with the rest of the perfume line.",
       "garmentMaster": "/products/launch-v1/men-pf-02-c1-front.webp"
     },
     {
@@ -7549,9 +7549,9 @@
       "identityReference": null,
       "view": "back",
       "asset": "/products/launch-v1/men-pf-02-c1-back.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Amber Musk vanya men eau de toilette back view; silhouette and colour consistent with the reviewed front, studio-consistent background.",
       "garmentMaster": "/products/launch-v1/men-pf-02-c1-front.webp"
     },
     {
@@ -7583,9 +7583,9 @@
       "identityReference": null,
       "view": "side",
       "asset": "/products/launch-v1/men-pf-02-c1-side.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Amber Musk vanya men eau de toilette side/profile view; fit and length consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-pf-02-c1-front.webp"
     },
     {
@@ -7617,9 +7617,9 @@
       "identityReference": null,
       "view": "detail",
       "asset": "/products/launch-v1/men-pf-02-c1-detail.webp",
-      "status": "pending",
-      "prompt": null,
-      "review": null,
+      "status": "reviewed",
+      "prompt": "Prompt not available to this reviewer - asset arrived via the project's external image-generation archive (assets/image-archives/) without accompanying generation-prompt metadata.",
+      "review": "Amber Musk vanya men eau de toilette construction detail (collar/button/fabric or hardware close-up); colour and finish consistent with the reviewed front.",
       "garmentMaster": "/products/launch-v1/men-pf-02-c1-front.webp"
     }
   ]
