@@ -1,0 +1,85 @@
+{
+  "note": "Archive backup only. Archives may overlap. Image generation, visual review, category coverage and storefront installation are not certified by this backup.",
+  "archives": [
+    {
+      "filename": "Recovered_Fashion_Images.zip",
+      "bytes": 11549914,
+      "sha256": "97d95eada7b720a6d9f854d22233950c45c243da9dcbfbdff91c71e3f7e88f3f",
+      "entries": 94,
+      "images": 93
+    },
+    {
+      "filename": "Women_Images_Checkpoint_81.zip",
+      "bytes": 10186145,
+      "sha256": "14dca2ae70ddbac3f0809bbbce82515b9e7fa6516bc06363107cf7081fc358b9",
+      "entries": 83,
+      "images": 81
+    },
+    {
+      "filename": "New_Product_Images_Batch_01_30.zip",
+      "bytes": 5456270,
+      "sha256": "8eb4efc7d09d4da665289305fdecfa4db01c94b31a6b0b4b6ec1681794a3004e",
+      "entries": 32,
+      "images": 30
+    },
+    {
+      "filename": "New_Product_Images_Batch_02_30.zip",
+      "bytes": 7689907,
+      "sha256": "481f87dcbbc5072263d2afb7b558718187f59771faa039fd4ce2c53b0543393a",
+      "entries": 32,
+      "images": 30
+    },
+    {
+      "filename": "New_Product_Images_Batch_03_30.zip",
+      "bytes": 8764770,
+      "sha256": "e4d66b8d276e411d8dd5ddefef442b5d00f2bdf71d5e54cf6a93dff0122e59ff",
+      "entries": 32,
+      "images": 30
+    },
+    {
+      "filename": "New_Product_Images_Batch_04_30.zip",
+      "bytes": 8669456,
+      "sha256": "c8ca7c097d49d5ab83416c5afe9eb939192b5a7b86422f8267b38f6ace7a57d5",
+      "entries": 32,
+      "images": 30
+    },
+    {
+      "filename": "New_Product_Images_Batch_05_30.zip",
+      "bytes": 7925456,
+      "sha256": "7da03784f9f54f38407ef612ca93921c84dcad391e46c6b190b1f6768279c4af",
+      "entries": 32,
+      "images": 30
+    },
+    {
+      "filename": "New_Product_Images_Batch_06_25.zip",
+      "bytes": 6154815,
+      "sha256": "fa7e4eb4dc7d1bceb3dcebd0062ae4e390ce43fc7626e02e73dce9b06206a24d",
+      "entries": 27,
+      "images": 25
+    },
+    {
+      "filename": "Pending_Images_Batch_01_27.zip",
+      "bytes": 3034338,
+      "sha256": "893aeda114beb6a8ec65745db52cdea767cefc9ceb1d61e42a8d4834c42fcbbf",
+      "entries": 0,
+      "images": 0,
+      "zip_validation": "invalid ZIP format; preserved original bytes"
+    },
+    {
+      "filename": "Pending_Images_Batch_02_29.zip",
+      "bytes": 5924395,
+      "sha256": "de95258c6dcddd10d045b384185d2565839142dba5ed1e3522834dc6a5ad9e50",
+      "entries": 30,
+      "images": 29,
+      "zip_validation": "valid"
+    },
+    {
+      "filename": "Pending_Images_Batch_03_29.zip",
+      "bytes": 6082310,
+      "sha256": "d0a5e71f3037a715c6066d7c02f3635d9a4429e2f37ffd24593adeb429ebf0b4",
+      "entries": 30,
+      "images": 29,
+      "zip_validation": "valid"
+    }
+  ]
+}
