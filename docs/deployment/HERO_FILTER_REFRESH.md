@@ -1,0 +1,13 @@
+# Hero and compact filter refresh — 9 October 2026
+
+Requested: replace hero photography and make listing filters compact using the supplied Myntra screenshots. The follow-up specifically replaces Heena with glamorous Deeksha for the women’s entry hero and homepage hero.
+
+Women’s entry and homepage hero use Deeksha’s supplied `Deeksha_ Editorial Model Character Sheet.png` as identity authority. Both wear an emerald satin asymmetric one-shoulder midi dress; the portrait and landscape share the styling. The women’s feature uses a coral embroidered kurti. The men’s entry uses Aryan in a white shirt and navy trousers. Existing public asset URLs are replaced, including both women’s homepage hero filenames. CMS banner identities and links remain unchanged; gateway model metadata now names Deeksha.
+
+Generated with the built-in image generation tool. Prompt set: preserve the reference model’s exact adult face, complexion and body proportions; solo photorealistic premium Indian fashion; bright pale stone courtyard; natural skin and garment texture; no text, logos or dark overlay. Deeksha glamour: emerald opaque satin one-shoulder midi dress, gold earrings and nude heels, relaxed three-quarter posture, soft confident expression. Portrait: centered with headroom and lower-left copy space. Landscape: model on the right, clear architectural space on the left. Aryan: white Oxford shirt, navy trousers, brown belt and lace-up shoes. Feature: coral embroidered cotton kurti with ivory trousers, clear left copy area.
+
+Removed image-level brightness reduction and reduced gradients on hero and feature sections. A darker lower area remains for white text contrast.
+
+Desktop filters: Categories initially expanded, Colour initially collapsed, native keyboard-accessible disclosure headings, seven initial options, search and more/less controls. Selected Colour count is visible in the collapsed heading. URL-backed category/colour filtering, real facet counts, reset and pagination remain in place. Mobile Colour is also collapsed initially; the existing Apply workflow remains. This change does not introduce brand, price or discount filtering controls.
+
+Validation: storefront TypeScript check and all 21 existing storefront unit tests passed; campaign manifest validation passed. Visual inspection of generated assets completed. Browser interaction verification could not run because the Chromium download returned an invalid archive in this environment. No storefront deployment or local desktop session restart was performed here. Pull and restart/rebuild the desktop preview to load the changes; existing banner URLs require no CMS update.

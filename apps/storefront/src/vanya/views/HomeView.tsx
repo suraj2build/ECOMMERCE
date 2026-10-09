@@ -93,11 +93,11 @@ export function HomeView({
             <img
               src={editorial.hero}
               alt={isMen ? 'VANYA Men - Business Casual & Daily Wear' : 'VANYA Women - Daily, Work & Partywear'}
-              className="w-full h-full object-cover object-[68%_top] lg:object-[center_top] brightness-[0.80]"
+              className="w-full h-full object-cover object-[68%_top] lg:object-[center_top]"
             />
           )}
           {/* Subtle gradient vignette */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/20 sm:bg-gradient-to-r sm:from-black/85 sm:via-black/45 sm:to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/20 sm:bg-gradient-to-r sm:from-black/70 sm:via-black/20 sm:to-transparent" />
         </div>
 
         {/* Hero Content */}
@@ -233,11 +233,11 @@ export function HomeView({
               <img
                 src={editorial.feature}
                 alt="Tradition Tailored for Today"
-                className="w-full h-full object-cover object-[72%_20%] lg:object-[center_20%] brightness-[0.78]"
+                className="w-full h-full object-cover object-[72%_20%] lg:object-[center_20%]"
               />
             )}
             {/* Ambient gradients */}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/45 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/20 to-transparent" />
           </div>
 
           <div className="relative z-10 p-8 sm:p-14 lg:p-18 max-w-xl text-white space-y-4">

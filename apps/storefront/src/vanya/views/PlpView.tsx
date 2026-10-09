@@ -116,6 +116,12 @@ export function PlpView({
   // Mobile filter drawer state
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [desktopFilterOpen, setDesktopFilterOpen] = useState(true);
+  const [categorySearch, setCategorySearch] = useState('');
+  const [colourSearch, setColourSearch] = useState('');
+  const [allCategories, setAllCategories] = useState(false);
+  const [allColours, setAllColours] = useState(false);
+  const matchingCategories = categoryFacets.filter(f => f.label.toLowerCase().includes(categorySearch.toLowerCase()));
+  const matchingColours = colourFacets.filter(f => f.label.toLowerCase().includes(colourSearch.toLowerCase()));
 
   // Grid column density (desktop)
   const [gridCols, setGridCols] = useState<3 | 4>(3);
@@ -339,12 +345,15 @@ export function PlpView({
 
             {/* Category Filter */}
             {categoryFacets.length > 0 && (
-              <fieldset>
-                <legend className="font-semibold text-[#2D2722] block mb-2 uppercase tracking-wider text-[11px]">
+              <details open className="group">
+                <summary className="cursor-pointer font-semibold uppercase tracking-wider text-[11px] mb-3">Categories</summary>
+                <input aria-label="Search categories" placeholder="Search categories" value={categorySearch} onChange={e => setCategorySearch(e.target.value)} className="w-full border border-[var(--color-border)] rounded px-3 py-2 mb-3" />
+                <fieldset>
+                <legend className="sr-only">
                   Category
                 </legend>
                 <div className="space-y-1.5">
-                  {categoryFacets.map((cat) => (
+                  {(allCategories || categorySearch ? matchingCategories : matchingCategories.slice(0, 7)).map((cat) => (
                     <label
                       key={cat.value}
                       className="flex items-center gap-2 cursor-pointer hover:text-[#1A1816] text-[#554A40] py-2 px-1 -mx-1 rounded hover:bg-[#FAF7F2]"
@@ -361,16 +370,17 @@ export function PlpView({
                   ))}
                 </div>
               </fieldset>
+              {matchingCategories.length > 7 && !categorySearch && <button type="button" onClick={() => setAllCategories(!allCategories)} className="mt-3 text-[var(--color-primary)]">{allCategories ? 'Show less' : `+ ${matchingCategories.length - 7} more`}</button>}
+              </details>
             )}
 
             {/* Colour Swatches Filter */}
             {colourFacets.length > 0 && (
-              <div className="border-t border-[#EAE3D7] pt-4">
-                <span className="font-semibold text-[#2D2722] block mb-2 uppercase tracking-wider text-[11px]">
-                  Colour Palette
-                </span>
+              <details className="border-t border-[#EAE3D7] pt-4">
+                <summary className="cursor-pointer font-semibold text-[#2D2722] mb-3 uppercase tracking-wider text-[11px]">Colour {selectedColors.length > 0 ? `(${selectedColors.length} selected)` : ''}</summary>
+                <input aria-label="Search colours" placeholder="Search colours" value={colourSearch} onChange={e => setColourSearch(e.target.value)} className="w-full border border-[var(--color-border)] rounded px-3 py-2 mb-3" />
                 <div className="space-y-1.5">
-                  {colourFacets.map((col) => {
+                  {(allColours || colourSearch ? matchingColours : matchingColours.slice(0, 7)).map((col) => {
                     const isSelected = selectedColors.includes(col.value);
                     return (
                       <button
@@ -397,7 +407,8 @@ export function PlpView({
                     );
                   })}
                 </div>
-              </div>
+                {matchingColours.length > 7 && !colourSearch && <button type="button" onClick={() => setAllColours(!allColours)} className="mt-3 text-[var(--color-primary)]">{allColours ? 'Show less' : `+ ${matchingColours.length - 7} more`}</button>}
+              </details>
             )}
 
             {/* In Stock Only Toggle */}
@@ -617,8 +628,8 @@ function MobileFilterSheet({
 
             {/* Colours */}
             {colourFacets.length > 0 && (
-              <fieldset className="border-t border-[#EAE3D7] pt-4">
-                <legend className="font-semibold uppercase tracking-wider text-[11px] block mb-2 pt-4 text-[#1A1816]">
+              <details className="border-t border-[#EAE3D7] pt-4"><summary className="cursor-pointer font-semibold uppercase tracking-wider text-[11px] mb-3">Colour {colours.length > 0 ? `(${colours.length} selected)` : ''}</summary><fieldset>
+                <legend className="sr-only">
                   Colour
                 </legend>
                 <div className="flex flex-wrap gap-2">
@@ -650,7 +661,7 @@ function MobileFilterSheet({
                     );
                   })}
                 </div>
-              </fieldset>
+              </fieldset></details>
             )}
 
             <div className="border-t border-[#EAE3D7] pt-4">

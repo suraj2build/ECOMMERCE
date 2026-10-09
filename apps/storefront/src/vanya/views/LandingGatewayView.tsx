@@ -120,12 +120,12 @@ export function LandingGatewayView({
               <img
                 src={menHeroImage}
                 alt="Modern Indian Menswear"
-                className="w-full h-full object-cover object-[center_top] brightness-[0.82] transition-transform duration-1000 ease-out group-hover:scale-105"
+                className="w-full h-full object-cover object-[center_top] transition-transform duration-1000 ease-out group-hover:scale-105"
               />
             )}
             {/* Ambient Lighting & Shadow Vignette */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/20" />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-black/30" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/15 via-transparent to-transparent" />
           </div>
 
           {/* Men's Content Overlay */}
@@ -174,12 +174,12 @@ export function LandingGatewayView({
               <img
                 src={womenHeroImage}
                 alt="Modern Indian Womenswear"
-                className="w-full h-full object-cover object-[center_top] brightness-[0.82] transition-transform duration-1000 ease-out group-hover:scale-105"
+                className="w-full h-full object-cover object-[center_top] transition-transform duration-1000 ease-out group-hover:scale-105"
               />
             )}
             {/* Ambient Lighting & Shadow Vignette */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/20" />
-            <div className="absolute inset-0 bg-gradient-to-l from-black/40 via-transparent to-black/30" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-l from-black/15 via-transparent to-transparent" />
           </div>
 
           {/* Women's Content Overlay */}
