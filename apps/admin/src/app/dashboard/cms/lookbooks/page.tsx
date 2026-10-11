@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/ui';
-import { apiFetch, errorMessage } from '@/lib/api';
+import { apiFetch, errorMessage, ApiError } from '@/lib/api';
 import { API_URL, getStoredSession } from '@/lib/staff-auth';
 
 type Item = { styleId: string; colourId: string };
@@ -70,6 +70,11 @@ export default function LookbooksPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // Separate from `notice`: this is standing guidance from an import, not a
+  // one-off confirmation, so it must survive every subsequent field edit -
+  // otherwise the very first keystroke after importing a template erases the
+  // one place that told staff which products still need manual linking.
+  const [missingProducts, setMissingProducts] = useState<string[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [known, setKnown] = useState<Record<string, Product>>({});
   const [query, setQuery] = useState('');
@@ -156,25 +161,23 @@ export default function LookbooksPage() {
     setPicker(null);
     setError('');
     setNotice('');
+    setMissingProducts([]);
   }
   async function save(action: 'save' | 'publish' | 'unpublish') {
     if (busy) return;
+    // Unpublish goes through the same save endpoint as everything else, so
+    // it always persists the live editor state as the new draft (never a
+    // stale snapshot from the list) - silently discarding in-progress edits
+    // here would contradict "Unpublished. The draft is kept." below.
+    if (action === 'unpublish' && dirty && !window.confirm('Unpublishing will also save your current unsaved edits as the draft. Continue?'))
+      return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       const row = await apiFetch<RecordRow>('/cms/lookbooks', {
         method: 'POST',
-        body: JSON.stringify({
-          document:
-            action === 'unpublish'
-              ? (records.find(
-                  (r) => r.draft.department === doc.department && r.draft.slug === doc.slug,
-                )?.draft ?? doc)
-              : doc,
-          expectedRevision: revision,
-          action,
-        }),
+        body: JSON.stringify({ document: doc, expectedRevision: revision, action }),
       });
       setDoc(row.draft);
       setRevision(row.revision);
@@ -188,7 +191,16 @@ export default function LookbooksPage() {
       );
       await load();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(
+        e instanceof ApiError && e.status === 409
+          ? `${e.message} Click "Edit" on this lookbook in the list below to load the latest version, then reapply your changes.`
+          : errorMessage(e),
+      );
+      // A conflict means `records` (and this editor's `revision`) is stale -
+      // refresh it so the row's own "Edit" button loads the current server
+      // state instead of reproducing the identical conflict forever. `load`
+      // failing here must not mask the original error already set above.
+      await load().catch(() => {});
     } finally {
       setBusy(false);
     }
@@ -243,6 +255,13 @@ export default function LookbooksPage() {
       {notice && (
         <p role="status" className="card">
           {notice}
+        </p>
+      )}
+      {missingProducts.length > 0 && (
+        <p role="status" className="card">
+          Imported. These products from the original design weren&rsquo;t found in your catalogue -
+          use the look pickers below to link the right ones before publishing:{' '}
+          {missingProducts.join(', ')}
         </p>
       )}
       <div className="card" style={{ marginBottom: 20 }}>
@@ -309,9 +328,10 @@ export default function LookbooksPage() {
               setPicker(null);
               setNotice(
                 t.missing.length
-                  ? 'Import ready. Link missing products before publishing: ' + t.missing.join(', ')
+                  ? ''
                   : 'Import ready. Review the product links, then save or publish.',
               );
+              setMissingProducts(t.missing);
             }}
           >
             Configure {t.document.title}

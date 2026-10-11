@@ -1,7 +1,7 @@
 import { unstable_cache } from 'next/cache';
 import { CATALOG_CACHE_TAG, getProductDetail, type ProductDetail } from './api';
 import { storiesFor, parseStoryContent, type Story, type LookbookDepartment } from './lookbook';
-import { cityIssue, type LookbookIssue } from './lookbook-issue';
+import { cityIssue, looksForBuiltinStory, type LookbookIssue } from './lookbook-issue';
 import { resolveIssueProducts } from './lookbook-issue-products';
 import { getCmsPage } from './lookups';
 export type ManagedStory = Story & {
@@ -43,32 +43,33 @@ export function parseManagedIndex(value: unknown, department: LookbookDepartment
 }
 const cachedManagedLookbooks = unstable_cache(
   async (department: LookbookDepartment): Promise<Index> => {
-    try {
-      const res = await fetch(`${api}/api/v1/storefront/lookbooks?department=${department}`, {
-        cache: 'no-store',
-      });
-      if (res.status === 404) return { stories: [], hiddenBuiltins: [] };
-      if (!res.ok) throw new Error('Lookbook CMS temporarily unavailable');
-      return parseManagedIndex(await res.json(), department);
-    } catch {
-      throw new Error('Lookbook CMS temporarily unavailable');
-    }
+    const res = await fetch(`${api}/api/v1/storefront/lookbooks?department=${department}`, {
+      cache: 'no-store',
+    });
+    if (res.status === 404) return { stories: [], hiddenBuiltins: [] };
+    if (!res.ok) throw new Error('Lookbook CMS temporarily unavailable');
+    return parseManagedIndex(await res.json(), department);
   },
   ['published-lookbooks'],
   { revalidate: 60, tags: [CATALOG_CACHE_TAG] },
 );
+/**
+ * A story is only ever hidden by a SUCCESSFUL response that explicitly lists
+ * it in `hiddenBuiltins` - that is the one and only signal staff actually
+ * unpublished it. A failed/unreachable fetch carries no such information, so
+ * it must never be treated as "everything was unpublished" (that previously
+ * made a transient blip on this one new endpoint 404 every bundled lookbook
+ * page, which had zero runtime dependency before this feature existed) -
+ * the safe default on failure is the same "nothing is known to be hidden"
+ * result an explicit 404 already returns above, so every caller (hub,
+ * story pages, the homepage teaser, the sitemap) falls back to the bundled
+ * content consistently, the same way it did before this endpoint existed.
+ */
 export async function getManagedLookbooks(department: LookbookDepartment): Promise<Index> {
   try {
     return await cachedManagedLookbooks(department);
   } catch {
-    // Fail closed after an unpublish; an API outage must not resurrect a bundled edition.
-    return {
-      stories: [],
-      hiddenBuiltins: [
-        ...storiesFor(department).map((s) => s.slug),
-        ...(department === 'women' ? [cityIssue.slug] : []),
-      ],
-    };
+    return { stories: [], hiddenBuiltins: [] };
   }
 }
 export function managedStoryHref(story: Story & { presentation?: string }) {
@@ -84,9 +85,7 @@ export async function storefrontStories(department: LookbookDepartment) {
     ...index.stories,
     ...builtins.map((s) => ({
       ...s,
-      looks: resolved.issue.looks.filter((l) =>
-        s.slug === 'city-days' ? l.model === 'Riya' : l.model !== 'Riya',
-      ),
+      looks: looksForBuiltinStory(resolved.issue.looks, s.slug),
     })),
   ];
 }
@@ -107,11 +106,7 @@ export async function loadStorefrontStory(department: LookbookDepartment, slug: 
   }
   if (department === 'women') {
     const resolved = await resolveIssueProducts(cityIssue);
-    const ids =
-      slug === 'city-days'
-        ? ['01', '02', '03', '04']
-        : ['05', '06', '07', '08', '09', '10', '11', '12'];
-    return { ...base, looks: resolved.issue.looks.filter((l) => ids.includes(l.id)) };
+    return { ...base, looks: looksForBuiltinStory(resolved.issue.looks, slug) };
   }
   return base;
 }
@@ -131,7 +126,7 @@ export async function managedBook(
     const products = l.items.flatMap((item) => {
       const p = details.get(item.styleId);
       const colour = p?.variants.find((v) => v.colourId === item.colourId);
-      if (!p || !colour || (p.gender ?? p.department ?? '').toLowerCase() !== story.department) {
+      if (!p || !colour || (p.gender || p.department || '').toLowerCase() !== story.department) {
         unavailable = true;
         return [];
       }

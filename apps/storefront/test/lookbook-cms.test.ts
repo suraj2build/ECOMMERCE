@@ -10,6 +10,7 @@ import {
   parseManagedIndex,
   loadStorefrontStory,
 } from '../src/lib/lookbook-cms';
+import { cityIssue } from '../src/lib/lookbook-issue';
 const styleId = '12345678-1234-4234-a234-123456789abc',
   colourId = '12345678-1234-4234-a234-123456789def';
 const story = {
@@ -37,6 +38,11 @@ const story = {
 beforeEach(() => {
   vi.restoreAllMocks();
   mocks.detail.mockReset();
+  // The real resolveIssueProducts() never throws or resolves to undefined -
+  // it catches its own fetch failures internally (lookbook-issue-products.ts)
+  // and always resolves to { issue, catalogueUnavailable }. Mirror that
+  // default here so tests unrelated to its behaviour don't have to stub it.
+  mocks.issue.mockReset().mockResolvedValue({ issue: cityIssue, catalogueUnavailable: false });
 });
 describe('published lookbook consumption', () => {
   it('drops malformed, unmapped, unsafe and cross-department documents', () => {
@@ -53,11 +59,29 @@ describe('published lookbook consumption', () => {
     }
     expect(parseManagedIndex({ stories: [story] }, 'women').stories[0]!.slug).toBe(story.slug);
   });
-  it('never resurrects a bundled edition after a CMS outage', async () => {
+  it('falls back to the bundled edition during a CMS outage, rather than hiding it', async () => {
+    // A failed/unreachable fetch carries no information about what staff
+    // actually unpublished - treating it as "everything is hidden" would
+    // 404 every bundled lookbook page (which has zero runtime dependency
+    // outside this one endpoint) on a transient blip. Only an explicit,
+    // successful response listing a slug in hiddenBuiltins may hide it.
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
     const result = await getManagedLookbooks('women');
-    expect(result.hiddenBuiltins).toContain('city-days');
-    expect(result.hiddenBuiltins).toContain('a-city-three-moods');
+    expect(result.hiddenBuiltins).toEqual([]);
+    expect(await loadStorefrontStory('women', 'city-days')).not.toBeNull();
+    vi.unstubAllGlobals();
+  });
+  it('still hides a bundled edition the endpoint explicitly reports as unpublished', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ stories: [], hiddenBuiltins: ['city-days'] }),
+      }),
+    );
+    const result = await getManagedLookbooks('women');
+    expect(result.hiddenBuiltins).toEqual(['city-days']);
     expect(await loadStorefrontStory('women', 'city-days')).toBeNull();
     vi.unstubAllGlobals();
   });

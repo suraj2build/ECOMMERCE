@@ -13,6 +13,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Heart,
   Star,
@@ -98,13 +99,18 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
   // Color and size selection state (opens on a colour that has stock)
   const firstInStock = Math.max(0, product.colors.findIndex((c) => detail.variants.some((v) => v.colourName === c.name && v.inStock)));
   const [selectedColorIndex, setSelectedColorIndex] = useState(firstInStock);
+  const requestedColourId = useSearchParams().get('colour');
   useEffect(() => {
-    // Resolve the editorial colour after hydration, preserving the style page's cached SSR and canonical URL.
-    const requested = new URLSearchParams(window.location.search).get('colour');
-    const name = initial.variants.find((v) => v.colourId === requested)?.colourName;
+    // Resolve the editorial colour after hydration, preserving the style
+    // page's cached SSR and canonical URL. Depends on the search param
+    // itself (via useSearchParams, which Next.js updates on every client
+    // navigation) rather than `initial` alone - two lookbook looks can link
+    // the same product in two different colourways, and a soft navigation
+    // between them doesn't necessarily give this route a new `initial`.
+    const name = initial.variants.find((v) => v.colourId === requestedColourId)?.colourName;
     const index = detailToProduct(initial).colors.findIndex((c) => c.name === name);
     if (index >= 0) setSelectedColorIndex(index);
-  }, [initial]);
+  }, [initial, requestedColourId]);
   const currentColor = product.colors[selectedColorIndex] || product.colors[0] || { name: '', hex: NO_SWATCH, images: [] };
   const colourSizes = detail.variants
     .filter((v) => v.colourName === currentColor.name)

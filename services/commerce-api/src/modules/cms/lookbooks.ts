@@ -151,7 +151,7 @@ export class LookbookService {
         const style = styles.find((s) => s.id === item.styleId);
         if (
           !style ||
-          (style.gender ?? style.department ?? '').toLowerCase() !== doc.department ||
+          (style.gender || style.department || '').toLowerCase() !== doc.department ||
           !style.colours.some((c) => c.id === item.colourId)
         )
           throw new ValidationError(
@@ -240,7 +240,7 @@ const routes: FastifyPluginAsync = async (app) => {
           const style = styles.find(
             (s) =>
               s.styleCode === p.styleCode &&
-              (s.gender ?? s.department ?? '').toLowerCase() === template.department,
+              (s.gender || s.department || '').toLowerCase() === template.department,
           );
           const colours = style?.colours.filter((c) => c.name === p.colourName) ?? [];
           if (!style || colours.length !== 1) {

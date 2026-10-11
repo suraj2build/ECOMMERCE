@@ -1,5 +1,6 @@
 import issueContent from '@/content/lookbook-issue-01.json';
 import { safeHref } from './cms-links';
+import { looksForBuiltinStory } from './lookbook-issue';
 
 export type LookbookDepartment = 'men' | 'women';
 export interface LookItem {
@@ -109,7 +110,7 @@ const inspirationStories: Story[] = [
 
 export const launchStories: Story[] = inspirationStories.map((story) => {
   if (story.department !== 'women') return story;
-  const looks = issueContent.looks.filter((look) => story.slug === 'city-days' ? look.model === 'Riya' : look.model !== 'Riya');
+  const looks = looksForBuiltinStory(issueContent.looks, story.slug);
   return { ...story, model: story.slug === 'city-days' ? 'Riya' : 'Deeksha & Heena', cover: looks[0]!.image, looks: looks.map((look) => ({ title: look.title, caption: look.caption, image: look.image, alt: look.alt, items: [] })) };
 });
 export function isLookbookDepartment(value: string): value is LookbookDepartment {
