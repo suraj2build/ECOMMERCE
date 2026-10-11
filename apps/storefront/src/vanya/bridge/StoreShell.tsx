@@ -6,7 +6,7 @@
  * quick add, size guide and search overlays. Page content comes from the
  * Next routes; each client navigation gets the design's entrance motion.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion } from 'motion/react';
 import { useDepartment } from '@/components/layout/DepartmentContext';
@@ -24,10 +24,26 @@ export function StoreShell({ children }: { children: React.ReactNode }) {
   const { department, hydrated, chooseDepartment } = useDepartment();
   const { gender } = useShop();
   useEffect(() => markAppHydrated(), []);
+  // Visiting a department's own lookbook selects that department (docs/
+  // lookbook/IMPLEMENTATION.md). Scoped to the actual .../lookbook subtree
+  // (not just any path starting with "men"/"women") so an unrelated 404
+  // under /men/* never flips the shopper's stored department. `department`
+  // is read via a ref, not a dependency, so this effect only re-evaluates
+  // on real navigation - never when `department` itself changes for an
+  // unrelated reason (e.g. the gateway-return flow clearing it), which
+  // would otherwise race and immediately re-select the department the
+  // shopper just tried to leave.
+  const departmentRef = useRef(department);
   useEffect(() => {
-    const routeDepartment = pathname.split("/")[1];
-    if ((routeDepartment === "men" || routeDepartment === "women") && department !== routeDepartment) chooseDepartment(routeDepartment);
-  }, [pathname, department, chooseDepartment]);
+    departmentRef.current = department;
+  }, [department]);
+  useEffect(() => {
+    const segments = pathname.split('/');
+    const routeDepartment = segments[1];
+    if (segments[2] === 'lookbook' && (routeDepartment === 'men' || routeDepartment === 'women') && departmentRef.current !== routeDepartment) {
+      chooseDepartment(routeDepartment);
+    }
+  }, [pathname, chooseDepartment]);
 
   // Rendered first in both layouts and from the server paint, so a keyboard
   // user's first Tab lands on it even while the home page is still choosing

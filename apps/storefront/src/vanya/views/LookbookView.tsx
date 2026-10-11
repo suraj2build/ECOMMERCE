@@ -42,8 +42,15 @@ export function LookbookTeaser({ department }: { department: LookbookDepartment 
 export function LookbookView({ department }: { department: LookbookDepartment }) {
   const [occasion, setOccasion] = useState('All');
   const stories = storiesFor(department);
-  const featured = stories[0]!;
+  const featured = stories[0];
   const filtered = stories.filter((story) => occasion === 'All' || story.occasion === occasion);
+  if (!featured) {
+    return (
+      <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-12 py-24 text-center">
+        <p className="text-sm leading-6">New stories for this department are coming soon.</p>
+      </div>
+    );
+  }
   return (
     <div className="w-full">
       <section className="grid lg:grid-cols-2 max-w-[1440px] mx-auto">

@@ -87,6 +87,7 @@ export function Header() {
   const nav = isMen ? MEN_NAV : WOMEN_NAV;
   const isHome = pathname === '/';
   const isReels = pathname.startsWith('/watch-and-shop');
+  const isLookbook = pathname.startsWith('/' + currentGender + '/lookbook');
   const homeLabel = isMen ? 'MEN' : 'WOMEN';
 
   const searchPill = (
@@ -276,7 +277,14 @@ export function Header() {
                   {item.label}
                 </Link>
               ))}
-              <Link href={"/" + currentGender + "/lookbook"} className="py-2 text-[#60554A] hover:text-[#181716]">LOOKBOOK</Link>
+              <Link
+                href={"/" + currentGender + "/lookbook"}
+                className={`py-2 transition-colors cursor-pointer ${
+                  isLookbook ? 'text-[#181716] font-semibold' : 'text-[#60554A] hover:text-[#181716]'
+                }`}
+              >
+                LOOKBOOK
+              </Link>
               <Link
                 href="/watch-and-shop"
                 className={`py-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
