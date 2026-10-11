@@ -1,0 +1,27 @@
+{
+  "cover": "/campaigns/lookbook-v1/deeksha-editorial.webp",
+  "intro": "Soft shine and effortless silhouettes. An evening edit that lets the garment do the talking.",
+  "looks": [
+    {
+      "title": "The arrival",
+      "image": "/campaigns/lookbook-v1/deeksha-editorial.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Deeksha wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "Satin in motion",
+      "image": "/campaigns/lookbook-v1/heena-editorial.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Heena wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "One more evening",
+      "image": "/campaigns/launch-v1/occasion-women-party.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Heena wearing the complete outfit",
+      "items": []
+    }
+  ]
+}

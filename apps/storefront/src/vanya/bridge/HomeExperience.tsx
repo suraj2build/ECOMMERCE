@@ -5,6 +5,7 @@
  * chosen, then that department's home. The choice is remembered in this
  * browser; "Atelier Portals" in the header returns to the gateway.
  */
+import { LookbookTeaser } from '../views/LookbookView';
 import { useMemo } from 'react';
 import type { ShoppableMediaSummary, StorefrontSearchHit } from '@/lib/api';
 import { useDepartment } from '@/components/layout/DepartmentContext';
@@ -48,6 +49,7 @@ export function HomeExperience({ men, women }: { men: DepartmentHome; women: Dep
   }
 
   return (
+    <>
     <HomeView
       products={products}
       reels={reels}
@@ -65,5 +67,7 @@ export function HomeExperience({ men, women }: { men: DepartmentHome; women: Dep
       policies={shop.policies}
       hrefFor={shop.hrefFor}
     />
+    <LookbookTeaser department={department} />
+    </>
   );
 }

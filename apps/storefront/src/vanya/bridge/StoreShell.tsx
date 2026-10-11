@@ -21,9 +21,13 @@ import { entrance, markAppHydrated } from './entrance';
 
 export function StoreShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { department, hydrated } = useDepartment();
+  const { department, hydrated, chooseDepartment } = useDepartment();
   const { gender } = useShop();
   useEffect(() => markAppHydrated(), []);
+  useEffect(() => {
+    const routeDepartment = pathname.split("/")[1];
+    if ((routeDepartment === "men" || routeDepartment === "women") && department !== routeDepartment) chooseDepartment(routeDepartment);
+  }, [pathname, department, chooseDepartment]);
 
   // Rendered first in both layouts and from the server paint, so a keyboard
   // user's first Tab lands on it even while the home page is still choosing
