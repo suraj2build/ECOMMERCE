@@ -18,7 +18,7 @@ function isNotFoundError(error: unknown): boolean {
 
 type LoadedItem = { status: 'ok'; product: ProductDetail } | { status: 'unavailable' } | { status: 'error' };
 
-function LookShopping({ look, department }: { look: Look; department: Story['department'] }) {
+export function LookShopping({ look, department }: { look: Look; department: Story['department'] }) {
   const { addToBag } = useShop();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<LoadedItem[]>([]);

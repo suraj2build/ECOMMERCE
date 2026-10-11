@@ -1,5 +1,6 @@
 // Isolated UI-test fixture. Never use as a commerce-api implementation.
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 const style = '12345678-1234-1234-1234-123456789abc',
   colour = '12345678-1234-1234-1234-123456789def';
@@ -9,6 +10,64 @@ const doc = JSON.parse(
   ),
 );
 doc.looks[0].items = [{ styleId: style, colourId: colour }];
+const issue = JSON.parse(
+  readFileSync(
+    new URL('../../apps/storefront/src/content/lookbook-issue-01.json', import.meta.url),
+  ),
+);
+const uid = (text) => {
+  const h = createHash('sha256').update(text).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+};
+const bookProducts = new Map();
+for (const reference of issue.looks.flatMap((l) => l.products)) {
+  const id = uid(reference.styleCode);
+  if (!bookProducts.has(id))
+    bookProducts.set(id, {
+      id,
+      styleCode: reference.styleCode,
+      name: reference.title,
+      gender: 'women',
+      department: 'women',
+      currency: 'INR',
+      sellingPrice: 1290,
+      mrp: 1290,
+      brandName: 'Preview catalogue',
+      categoryName: 'Women',
+      categorySlug: 'women',
+      isMarkdown: false,
+      media: [],
+      badges: [],
+      sizeChart: null,
+      ratingSummary: { averageRating: null, reviewCount: 0 },
+      reviews: [],
+      reviewsTotal: 0,
+      crossSell: [],
+      publishedAt: '2026-10-11T00:00:00.000Z',
+      variants: [],
+    });
+  const product = bookProducts.get(id);
+  if (!product.variants.some((v) => v.colourName === reference.colourName)) {
+    product.variants.push({
+      skuId: 'book-' + reference.catalogueId + '-' + reference.colourName + '-small',
+      colourId: uid(reference.styleCode + reference.colourName),
+      colourName: reference.colourName,
+      sizeId: 'small',
+      sizeLabel: 'S',
+      inStock: true,
+      availableQuantity: 2,
+    });
+    product.variants.push({
+      skuId: 'book-' + reference.catalogueId + '-' + reference.colourName + '-medium',
+      colourId: uid(reference.styleCode + reference.colourName),
+      colourName: reference.colourName,
+      sizeId: 'medium',
+      sizeLabel: 'M',
+      inStock: false,
+      availableQuantity: 0,
+    });
+  }
+}
 let soldOut = false,
   additions = [];
 http
@@ -45,6 +104,22 @@ http
         ],
       });
     if (path.includes('/cms/landing-pages/')) return send({}, 404);
+    if (path === '/api/v1/storefront/styles') {
+      const query = new URL(req.url, 'http://localhost').searchParams;
+      const skip = Number(query.get('skip') || 0),
+        take = Number(query.get('take') || 12);
+      return send([...bookProducts.values()].slice(skip, skip + take));
+    }
+    const bookProduct = bookProducts.get(path.split('/').at(-1));
+    if (path.startsWith('/api/v1/storefront/products/') && bookProduct)
+      return send({
+        ...bookProduct,
+        variants: bookProduct.variants.map((v) => ({
+          ...v,
+          inStock: !soldOut && v.inStock,
+          availableQuantity: soldOut ? 0 : v.availableQuantity,
+        })),
+      });
     if (path === '/api/v1/storefront/products/' + style)
       return send({
         id: style,

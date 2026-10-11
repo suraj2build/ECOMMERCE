@@ -3,6 +3,38 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { storiesFor, storyHref, type LookbookDepartment } from '@/lib/lookbook';
+import { cityIssue, issueHref } from '@/lib/lookbook-issue';
+
+function CompleteEdition() {
+  return (
+    <Link
+      href={issueHref(cityIssue)}
+      className="block bg-[#292820] text-[#faf7f2] rounded-2xl overflow-hidden my-10"
+    >
+      <div className="grid md:grid-cols-2">
+        <img
+          src={cityIssue.cover}
+          alt="A City, Three Moods complete book cover"
+          className="w-full h-[420px] object-cover object-top"
+          loading="lazy"
+        />
+        <div className="p-8 sm:p-12 flex flex-col justify-center">
+          <p className="text-xs uppercase tracking-[.22em]">Complete edition 01 / 32 pages</p>
+          <h2 className="font-editorial text-4xl sm:text-5xl my-5">
+            A city.
+            <br />
+            Three moods.
+          </h2>
+          <p className="text-sm leading-7">
+            Riya in the morning. Deeksha through the afternoon. Heena after the light. Twelve
+            complete looks, one story-led book.
+          </p>
+          <span className="underline mt-7 text-sm">Open the complete lookbook →</span>
+        </div>
+      </div>
+    </Link>
+  );
+}
 
 export function LookbookTeaser({ department }: { department: LookbookDepartment }) {
   const stories = storiesFor(department);
@@ -17,6 +49,7 @@ export function LookbookTeaser({ department }: { department: LookbookDepartment 
           Explore the lookbook →
         </Link>
       </div>
+      {department === 'women' && <CompleteEdition />}
       <div className="grid md:grid-cols-2 gap-6">
         {stories.map((story) => (
           <Link key={story.slug} href={storyHref(story)} className="group">
@@ -91,6 +124,7 @@ export function LookbookView({ department }: { department: LookbookDepartment })
             Men
           </Link>
         </nav>
+        {department === 'women' && <CompleteEdition />}
         <div
           role="group"
           aria-label="Filter stories by occasion"
