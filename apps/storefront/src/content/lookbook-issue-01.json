@@ -1,0 +1,382 @@
+{
+  "slug": "a-city-three-moods",
+  "department": "women",
+  "title": "A City, Three Moods",
+  "number": "01",
+  "intro": "A café stop before the streets fill. An afternoon that asks for sharper lines. A dinner plan that deserves a little shine. Twelve complete looks follow a city through its changing moods. Dress for the moment. Keep your own rhythm.",
+  "cover": "/campaigns/issue-01/cover.webp",
+  "pdf": "/lookbooks/a-city-three-moods.pdf",
+  "chapters": [
+    {
+      "title": "Small joys",
+      "model": "Riya",
+      "intro": "The morning belongs to the little things. A good coffee. A new corner. A pause in the sun.",
+      "start": 4,
+      "lookIds": [
+        "01",
+        "02",
+        "03",
+        "04"
+      ]
+    },
+    {
+      "title": "Clear lines",
+      "model": "Deeksha",
+      "intro": "As the afternoon moves, the shapes become a little sharper. Easy tailoring, warm colour and a moment before sunset.",
+      "start": 13,
+      "lookIds": [
+        "05",
+        "06",
+        "07"
+      ]
+    },
+    {
+      "title": "After the light",
+      "model": "Heena",
+      "intro": "The city changes its light. A little shine, confident silhouettes and an evening on your own terms.",
+      "start": 20,
+      "lookIds": [
+        "08",
+        "09",
+        "10",
+        "11",
+        "12"
+      ]
+    }
+  ],
+  "looks": [
+    {
+      "id": "01",
+      "model": "Riya",
+      "title": "Café stop",
+      "caption": "Soft cotton, a familiar denim wash and a morning with no rush.",
+      "scene": "A quiet blue-door café terrace, seated on a wooden chair, full body, level head, friendly direct gaze.",
+      "image": "/campaigns/issue-01/look-01.webp",
+      "alt": "Riya wearing Blush Pink Relaxed Cotton Top, Mid Blue High-Rise Straight Denim",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-TP-02",
+          "colourName": "Blush Pink",
+          "title": "Relaxed Cotton Top",
+          "catalogueId": "women-tp-02",
+          "front": "/products/launch-v1/women-tp-02-c1-front.webp",
+          "detail": "/products/launch-v1/women-tp-02-c1-detail.webp",
+          "garmentDescription": "Relaxed Cotton Top; Blush Pink; Cotton; Relaxed Fit; Round neck; Elbow-length sleeves; Relaxed silhouette; Soft cotton handfeel"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-DN-01",
+          "colourName": "Mid Blue",
+          "title": "High-Rise Straight Denim",
+          "catalogueId": "women-dn-01",
+          "front": "/products/launch-v1/women-dn-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-dn-01-c1-detail.webp",
+          "garmentDescription": "High-Rise Straight Denim; Mid Blue; Cotton Denim with Stretch; High-Rise Straight; Five-pocket styling; High-rise waist; Zip fly with button closure; Stretch comfort"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "02",
+      "model": "Riya",
+      "title": "A brighter street",
+      "caption": "A white tee and easy denim shorts. Leave room for a little spontaneity.",
+      "scene": "A sunlit Delhi pedestrian lane with cream walls, full-body candid step, head upright, playful smile toward camera.",
+      "image": "/campaigns/issue-01/look-02.webp",
+      "alt": "Riya wearing White Essential Crew Neck Tee, Light Wash Denim Shorts",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-TE-01",
+          "colourName": "White",
+          "title": "Essential Crew Neck Tee",
+          "catalogueId": "women-te-01",
+          "front": "/products/launch-v1/women-te-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-te-01-c1-detail.webp",
+          "garmentDescription": "Essential Crew Neck Tee; White; Cotton; Regular Fit; Crew neck; Short sleeves; Regular fit; Pre-shrunk cotton"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-HS-01",
+          "colourName": "Light Wash",
+          "title": "Denim Shorts",
+          "catalogueId": "women-hs-01",
+          "front": "/products/launch-v1/women-hs-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-hs-01-c1-detail.webp",
+          "garmentDescription": "Denim Shorts; Light Wash; Cotton Denim; Regular Fit; Five-pocket styling; Mid-rise waist; Frayed hem; Zip fly with button closure"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "03",
+      "model": "Riya",
+      "title": "Around the corner",
+      "caption": "A powder-blue shirt meets the clean sweep of a charcoal skirt.",
+      "scene": "A quiet bookshop exterior with pale stone steps, full-body standing, shoulders level, slight body turn but head upright, look toward street.",
+      "image": "/campaigns/issue-01/look-03.webp",
+      "alt": "Riya wearing Powder Blue Relaxed Fit Shirt, Charcoal A-Line Midi Skirt",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-SR-02",
+          "colourName": "Powder Blue",
+          "title": "Relaxed Fit Shirt",
+          "catalogueId": "women-sr-02",
+          "front": "/products/launch-v1/women-sr-02-c1-front.webp",
+          "detail": "/products/launch-v1/women-sr-02-c1-detail.webp",
+          "garmentDescription": "Relaxed Fit Shirt; Powder Blue; Cotton; Relaxed Fit; Button-down collar; Chest pocket; Relaxed through the body; Curved hem"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-SK-01",
+          "colourName": "Charcoal",
+          "title": "A-Line Midi Skirt",
+          "catalogueId": "women-sk-01",
+          "front": "/products/launch-v1/women-sk-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-sk-01-c1-detail.webp",
+          "garmentDescription": "A-Line Midi Skirt; Charcoal; Poly-Viscose Suiting; A-Line; High-rise waist; Concealed back zip; A-line flare; Midi length"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "04",
+      "model": "Riya",
+      "title": "Time to pause",
+      "caption": "Ivory satin and beige wide legs bring a softer finish to the morning.",
+      "scene": "A leafy courtyard café, full-body standing beside empty table, one hand resting lightly on table, face forward and level, relaxed smirk.",
+      "image": "/campaigns/issue-01/look-04.webp",
+      "alt": "Riya wearing Ivory Satin Blouse Top, Beige Wide Leg Trousers",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-TP-01",
+          "colourName": "Ivory",
+          "title": "Satin Blouse Top",
+          "catalogueId": "women-tp-01",
+          "front": "/products/launch-v1/women-tp-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-tp-01-c1-detail.webp",
+          "garmentDescription": "Satin Blouse Top; Ivory; Satin; Regular Fit; Tie-neck detail; Long sleeves with button cuffs; Relaxed through the body; Lightly lined"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-TR-02",
+          "colourName": "Beige",
+          "title": "Wide Leg Trousers",
+          "catalogueId": "women-tr-02",
+          "front": "/products/launch-v1/women-tr-02-c1-front.webp",
+          "detail": "/products/launch-v1/women-tr-02-c1-detail.webp",
+          "garmentDescription": "Wide Leg Trousers; Beige; Crepe; Wide Leg; High-rise waist; Side pockets; Wide leg from the hip; Fluid drape"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "05",
+      "model": "Deeksha",
+      "title": "Clear lines",
+      "caption": "A white shirt, black tailoring and a clear afternoon ahead.",
+      "scene": "A modern limestone city arcade in afternoon light, full-body standing with weight evenly balanced, poised direct gaze, upright head.",
+      "image": "/campaigns/issue-01/look-05.webp",
+      "alt": "Deeksha wearing White Classic Collared Shirt, Black Tailored Straight Trousers",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-SR-01",
+          "colourName": "White",
+          "title": "Classic Collared Shirt",
+          "catalogueId": "women-sr-01",
+          "front": "/products/launch-v1/women-sr-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-sr-01-c1-detail.webp",
+          "garmentDescription": "Classic Collared Shirt; White; Cotton Poplin; Regular Fit; Spread collar; Button-through placket; Single-button cuffs; Curved hem"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-TR-01",
+          "colourName": "Black",
+          "title": "Tailored Straight Trousers",
+          "catalogueId": "women-tr-01",
+          "front": "/products/launch-v1/women-tr-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-tr-01-c1-detail.webp",
+          "garmentDescription": "Tailored Straight Trousers; Black; Poly-Viscose Suiting; Straight Fit; Mid-rise waist; Slant side pockets; Back darts; Permanent crease"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "06",
+      "model": "Deeksha",
+      "title": "A softer afternoon",
+      "caption": "Mustard cotton brightens the day; beige trousers keep the rhythm easy.",
+      "scene": "A terracotta courtyard with leafy shadows, full-body gentle walking, gaze slightly away with level head, calm smile.",
+      "image": "/campaigns/issue-01/look-06.webp",
+      "alt": "Deeksha wearing Mustard Yellow Straight Cotton Kurti, Beige Wide Leg Trousers",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-EK-01",
+          "colourName": "Mustard Yellow",
+          "title": "Straight Cotton Kurti",
+          "catalogueId": "women-ek-01",
+          "front": "/products/launch-v1/women-ek-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-ek-01-c1-detail.webp",
+          "garmentDescription": "Straight Cotton Kurti; Mustard Yellow; Cotton; Straight Fit; Round neck with button placket; Three-quarter sleeves; Side slits; Straight hem"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-TR-02",
+          "colourName": "Beige",
+          "title": "Wide Leg Trousers",
+          "catalogueId": "women-tr-02",
+          "front": "/products/launch-v1/women-tr-02-c1-front.webp",
+          "detail": "/products/launch-v1/women-tr-02-c1-detail.webp",
+          "garmentDescription": "Wide Leg Trousers; Beige; Crepe; Wide Leg; High-rise waist; Side pockets; Wide leg from the hip; Fluid drape"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "07",
+      "model": "Deeksha",
+      "title": "The last daylight",
+      "caption": "A rust wrap dress catches the warm light before evening begins.",
+      "scene": "A cream city rooftop at golden hour with distant skyline, full-body standing, relaxed hand by side, head upright, quiet confident gaze.",
+      "image": "/campaigns/issue-01/look-07.webp",
+      "alt": "Deeksha wearing Rust Orange Wrap Midi Dress",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-DR-01",
+          "colourName": "Rust Orange",
+          "title": "Wrap Midi Dress",
+          "catalogueId": "women-dr-01",
+          "front": "/products/launch-v1/women-dr-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-dr-01-c1-detail.webp",
+          "garmentDescription": "Wrap Midi Dress; Rust Orange; Crepe; Wrap Fit; V-neck wrap front; Three-quarter sleeves; Self-tie waist; Midi length"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "08",
+      "model": "Heena",
+      "title": "The arrival",
+      "caption": "An emerald dress, a clean silhouette and the first lights of evening.",
+      "scene": "A refined sandstone terrace at blue hour with warm lanterns, full body upright and elegant, hands relaxed, direct confident gaze.",
+      "image": "/campaigns/issue-01/look-08.webp",
+      "alt": "Heena wearing Emerald Green Cocktail Evening Dress",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-DR-03",
+          "colourName": "Emerald Green",
+          "title": "Cocktail Evening Dress",
+          "catalogueId": "women-dr-03",
+          "front": "/products/launch-v1/women-dr-03-c1-front.webp",
+          "detail": "/products/launch-v1/women-dr-03-c1-detail.webp",
+          "garmentDescription": "Cocktail Evening Dress; Emerald Green; Crepe with Lining; Fitted; V-neckline; Sleeveless; Fitted through the waist; Concealed back zip, fully lined"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "09",
+      "model": "Heena",
+      "title": "A little shine",
+      "caption": "Soft ruffles and a sequin skirt share the light without competing.",
+      "scene": "An elegant restaurant entrance in warm evening light, full body still pose, body angled slightly but head level, subtle inviting smile.",
+      "image": "/campaigns/issue-01/look-09.webp",
+      "alt": "Heena wearing Black Ruffle Sleeve Top, Black Sequin Mini Skirt",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-TP-03",
+          "colourName": "Black",
+          "title": "Ruffle Sleeve Top",
+          "catalogueId": "women-tp-03",
+          "front": "/products/launch-v1/women-tp-03-c1-front.webp",
+          "detail": "/products/launch-v1/women-tp-03-c1-detail.webp",
+          "garmentDescription": "Ruffle Sleeve Top; Black; Crepe; Fitted; Round neck; Ruffle sleeve detail; Fitted through the body; Concealed back zip"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-SK-03",
+          "colourName": "Black",
+          "title": "Sequin Mini Skirt",
+          "catalogueId": "women-sk-03",
+          "front": "/products/launch-v1/women-sk-03-c1-front.webp",
+          "detail": "/products/launch-v1/women-sk-03-c1-detail.webp",
+          "garmentDescription": "Sequin Mini Skirt; Black; Sequin Mesh with Lining; Fitted; High-rise waist; Concealed back zip; All-over sequin embellishment; Fully lined"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "10",
+      "model": "Heena",
+      "title": "Different by design",
+      "caption": "A black evening dress lets a precise neckline and simple shape speak.",
+      "scene": "A quiet dark stone arcade with amber wall lights, full-body elegant standing, upright head, gaze sideways without tilt.",
+      "image": "/campaigns/issue-01/look-10.webp",
+      "alt": "Heena wearing Black Cocktail Evening Dress",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-DR-03",
+          "colourName": "Black",
+          "title": "Cocktail Evening Dress",
+          "catalogueId": "women-dr-03",
+          "front": "/products/launch-v1/women-dr-03-c2-front.webp",
+          "detail": "/products/launch-v1/women-dr-03-c2-detail.webp",
+          "garmentDescription": "Cocktail Evening Dress; Black; Crepe with Lining; Fitted; V-neckline; Sleeveless; Fitted through the waist; Concealed back zip, fully lined"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "11",
+      "model": "Heena",
+      "title": "The dinner plan",
+      "caption": "Black satin and beige tailoring: an evening look with an easy balance.",
+      "scene": "A warm outdoor dining terrace with empty cream chairs, full body standing beside chair, upright head, softly smiling at camera.",
+      "image": "/campaigns/issue-01/look-11.webp",
+      "alt": "Heena wearing Black Satin Blouse Top, Beige Wide Leg Trousers",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-TP-01",
+          "colourName": "Black",
+          "title": "Satin Blouse Top",
+          "catalogueId": "women-tp-01",
+          "front": "/products/launch-v1/women-tp-01-c2-front.webp",
+          "detail": "/products/launch-v1/women-tp-01-c2-detail.webp",
+          "garmentDescription": "Satin Blouse Top; Black; Satin; Regular Fit; Tie-neck detail; Long sleeves with button cuffs; Relaxed through the body; Lightly lined"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-TR-02",
+          "colourName": "Beige",
+          "title": "Wide Leg Trousers",
+          "catalogueId": "women-tr-02",
+          "front": "/products/launch-v1/women-tr-02-c1-front.webp",
+          "detail": "/products/launch-v1/women-tr-02-c1-detail.webp",
+          "garmentDescription": "Wide Leg Trousers; Beige; Crepe; Wide Leg; High-rise waist; Side pockets; Wide leg from the hip; Fluid drape"
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "12",
+      "model": "Heena",
+      "title": "One more moment",
+      "caption": "A crisp white shirt and burgundy pleats carry the evening a little further.",
+      "scene": "A softly lit city terrace after sunset, full-body gentle step, hem movement natural, head upright and looking toward horizon.",
+      "image": "/campaigns/issue-01/look-12.webp",
+      "alt": "Heena wearing White Classic Collared Shirt, Burgundy Pleated Midi Skirt",
+      "products": [
+        {
+          "styleCode": "VNY-LA-WOMEN-SR-01",
+          "colourName": "White",
+          "title": "Classic Collared Shirt",
+          "catalogueId": "women-sr-01",
+          "front": "/products/launch-v1/women-sr-01-c1-front.webp",
+          "detail": "/products/launch-v1/women-sr-01-c1-detail.webp",
+          "garmentDescription": "Classic Collared Shirt; White; Cotton Poplin; Regular Fit; Spread collar; Button-through placket; Single-button cuffs; Curved hem"
+        },
+        {
+          "styleCode": "VNY-LA-WOMEN-SK-02",
+          "colourName": "Burgundy",
+          "title": "Pleated Midi Skirt",
+          "catalogueId": "women-sk-02",
+          "front": "/products/launch-v1/women-sk-02-c1-front.webp",
+          "detail": "/products/launch-v1/women-sk-02-c1-detail.webp",
+          "garmentDescription": "Pleated Midi Skirt; Burgundy; Crepe; Pleated; Elasticated back waist; Accordion pleats throughout; Midi length; Lined"
+        }
+      ],
+      "items": []
+    }
+  ]
+}

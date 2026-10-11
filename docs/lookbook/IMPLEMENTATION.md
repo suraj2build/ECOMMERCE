@@ -1,5 +1,7 @@
 # Separate Lookbooks and Shop the Story
 
+The complete 32-page women's edition is now implemented as a follow-up. See [COMPLETE_BOOK.md](COMPLETE_BOOK.md) for the reader, PDF, exact catalogue references, new photography and explicit validation limits. The inspiration-only statements below describe the original four scrolling stories, not the new registered complete edition.
+
 Implemented on `feat/gender-lookbooks`, based on main e8c87cb. This branch does not include the separate admin-ops branch.
 
 ## Customer experience

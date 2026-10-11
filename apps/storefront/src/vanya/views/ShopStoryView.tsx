@@ -6,7 +6,7 @@ import { getProductDetailLive, type ProductDetail } from '@/lib/api';
 import { addToCart } from '@/lib/cart';
 import type { Look, Story } from '@/lib/lookbook';
 
-function LookShopping({ look, department }: { look: Look; department: Story['department'] }) {
+export function LookShopping({ look, department }: { look: Look; department: Story['department'] }) {
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<(ProductDetail | null)[]>([]);
   const [sizes, setSizes] = useState<Record<number, string>>({});

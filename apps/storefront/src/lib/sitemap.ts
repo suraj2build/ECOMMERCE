@@ -7,6 +7,7 @@
  */
 import { SITE_URL } from './api';
 import { launchStories, storyHref } from './lookbook';
+import { cityIssue, issueHref } from './lookbook-issue';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 export const PRODUCTS_PER_FILE = 10_000;
@@ -81,6 +82,7 @@ export async function sitemapFile(file: string): Promise<SitemapEntry[] | null> 
       { loc: `${SITE_URL}/category/new` },
       { loc: `${SITE_URL}/women/lookbook` },
       { loc: `${SITE_URL}/men/lookbook` },
+      { loc: SITE_URL + issueHref(cityIssue) },
       ...launchStories.map((story) => ({ loc: SITE_URL + storyHref(story) })),
       ...legal,
     ];
