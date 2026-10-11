@@ -230,10 +230,18 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  // Current identity introspection - used by tests and future admin UI.
+  // Current identity introspection - used by tests and the admin UI (the
+  // console's sidebar user menu needs a real display name, not just role
+  // keys - requireStaffAuth's own staffUser object doesn't carry it).
   fastify.get('/auth/staff/me', { preHandler: fastify.requireStaffAuth }, async (request, reply) => {
+    const staffUser = await fastify.prisma.staffUser.findUnique({
+      where: { id: request.staffUser!.id },
+      select: { fullName: true, email: true },
+    });
     reply.status(200).send({
       id: request.staffUser!.id,
+      fullName: staffUser?.fullName ?? null,
+      email: staffUser?.email ?? null,
       roles: request.staffUser!.roles,
       permissions: [...request.staffUser!.permissions],
     });

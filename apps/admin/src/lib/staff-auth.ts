@@ -18,6 +18,8 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000
 export interface StaffSession {
   token: string;
   staffUserId: string;
+  fullName: string | null;
+  email: string | null;
   roles: string[];
   permissions: string[];
 }
@@ -76,9 +78,16 @@ export async function staffLogin(email: string, password: string, mfaCode?: stri
     headers: { authorization: `Bearer ${token}` },
   });
   if (!meRes.ok) throw new Error('Login succeeded but the session could not be verified.');
-  const me = (await meRes.json()) as { id: string; roles: string[]; permissions: string[] };
+  const me = (await meRes.json()) as { id: string; fullName: string | null; email: string | null; roles: string[]; permissions: string[] };
 
-  const session: StaffSession = { token, staffUserId: me.id, roles: me.roles, permissions: me.permissions };
+  const session: StaffSession = {
+    token,
+    staffUserId: me.id,
+    fullName: me.fullName,
+    email: me.email,
+    roles: me.roles,
+    permissions: me.permissions,
+  };
   storeSession(session);
   return session;
 }

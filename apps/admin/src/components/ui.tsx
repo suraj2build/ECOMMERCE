@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatDate, formatDateTime, formatMoney, humanize } from '@/lib/format';
 import { useCan } from '@/lib/session';
@@ -76,6 +77,7 @@ export function ActionMessage({ message }: { message: { kind: 'success' | 'error
 export function LoadingState({ label = 'Loading…' }: { label?: string }) {
   return (
     <p className="loading-state" role="status" aria-live="polite">
+      <Loader2 size={16} aria-hidden="true" />
       {label}
     </p>
   );

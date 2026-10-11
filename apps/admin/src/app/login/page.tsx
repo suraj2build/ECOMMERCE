@@ -38,8 +38,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 380, margin: '4rem auto', padding: '0 1rem' }}>
-      <h1 style={{ fontSize: '1.25rem', marginBottom: '1.5rem' }}>Staff sign in</h1>
+    <main className="auth-shell">
+      <h1>Staff sign in</h1>
       <form onSubmit={onSubmit} className="card">
         {error && (
           <p className="error-banner" role="alert">
