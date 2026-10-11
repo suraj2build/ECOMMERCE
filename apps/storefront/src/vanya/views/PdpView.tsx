@@ -11,7 +11,7 @@
  * "frequently bought together" claim (the pairing is the merchandiser's own
  * cross-sell). Lighting preview starts on "Studio", the unaltered photograph.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -65,6 +65,18 @@ function rememberViewed(id: string): string[] {
   }
 }
 
+/** useSearchParams() forces whatever it's called in to defer to the client
+ * unless wrapped in its own Suspense boundary - without one, a /product/
+ * [styleId] request outside the statically pre-rendered sample 500s instead
+ * of falling back to on-demand rendering. Isolated here, with a no-op
+ * fallback, so only this sliver (never the rest of the statically-rendered
+ * PDP) needs that boundary. */
+function RequestedColourId({ onChange }: { onChange: (id: string | null) => void }) {
+  const requestedColourId = useSearchParams().get('colour');
+  useEffect(() => onChange(requestedColourId), [requestedColourId, onChange]);
+  return null;
+}
+
 export function PdpView({ initial, similar }: { initial: ProductDetail; similar: StorefrontSearchHit[] }) {
   const shop = useShop();
   const [detail, setDetail] = useState(initial);
@@ -99,7 +111,7 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
   // Color and size selection state (opens on a colour that has stock)
   const firstInStock = Math.max(0, product.colors.findIndex((c) => detail.variants.some((v) => v.colourName === c.name && v.inStock)));
   const [selectedColorIndex, setSelectedColorIndex] = useState(firstInStock);
-  const requestedColourId = useSearchParams().get('colour');
+  const [requestedColourId, setRequestedColourId] = useState<string | null>(null);
   useEffect(() => {
     // Resolve the editorial colour after hydration, preserving the style
     // page's cached SSR and canonical URL. Depends on the search param
@@ -244,6 +256,9 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
 
   return (
     <div id="pdp-container" className="pb-20">
+      <Suspense fallback={null}>
+        <RequestedColourId onChange={setRequestedColourId} />
+      </Suspense>
       {/* Breadcrumbs */}
       <Breadcrumb
         items={buildProductBreadcrumb(detail)}
