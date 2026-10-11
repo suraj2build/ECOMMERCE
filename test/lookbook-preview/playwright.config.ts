@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
-  testMatch: process.env.LOOKBOOK_RECORD_PREVIEW ? 'recording.spec.ts' : 'lookbook.spec.ts',
+  testMatch: process.env.LOOKBOOK_RECORD_PREVIEW ? 'recording.spec.ts' : ['lookbook.spec.ts', 'admin-lookbooks.spec.ts'],
   workers: 1,
   timeout: 30000,
   outputDir: '../../lookbook-test-results',
@@ -19,8 +19,9 @@ export default defineConfig({
   },
   webServer: [
     { command: 'node mock-api.mjs', port: 4000, reuseExistingServer: false },
+    { command: 'npm run start --workspace=apps/admin -- --hostname 127.0.0.1', cwd: '../..', port: 3001, reuseExistingServer: false },
     {
-      command: 'npm run start --workspace=apps/storefront -- --port 3000 --hostname 127.0.0.1',
+      command: 'STOREFRONT_REVALIDATE_SECRET=lookbook-fixture-only npm run start --workspace=apps/storefront -- --port 3000 --hostname 127.0.0.1',
       cwd: '../..',
       port: 3000,
       reuseExistingServer: false,

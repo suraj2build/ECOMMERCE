@@ -42,6 +42,14 @@ export interface BookPage {
   chapter?: IssueChapter;
 }
 export const cityIssue: LookbookIssue = { ...content, department: 'women' };
+/** city-days is Riya's half of this issue; the other built-in story gets
+ * every other look. The one place this split is decided - every caller
+ * that needs to partition the issue by built-in story slug reuses this,
+ * rather than each re-implementing the same rule (by model name or by a
+ * hardcoded id range) and risking the copies silently disagreeing. */
+export function looksForBuiltinStory<L extends { model: string }>(looks: L[], slug: string): L[] {
+  return looks.filter((look) => (slug === 'city-days' ? look.model === 'Riya' : look.model !== 'Riya'));
+}
 export function issueHref(issue: Pick<LookbookIssue, 'department' | 'slug'>) {
   return `/${issue.department}/lookbook/issues/${issue.slug}`;
 }

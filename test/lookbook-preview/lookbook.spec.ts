@@ -95,9 +95,9 @@ test('complete book has every page, links, full images and a downloadable PDF', 
   request,
 }) => {
   await page.goto('/women/lookbook');
-  await page.getByRole('link', { name: /Complete edition 01/ }).click();
+  await page.getByRole('link', { name: 'Open the complete lookbook →', exact: true }).click();
   await expect(
-    page.getByRole('heading', { name: 'A City, Three Moods', exact: true }),
+    page.getByRole('heading', { name: 'A City, Three Moods', exact: true, level: 1 }),
   ).toBeVisible();
   const chooser = page.getByRole('combobox', { name: 'Go to page' });
   await expect(chooser.locator('option')).toHaveCount(32);

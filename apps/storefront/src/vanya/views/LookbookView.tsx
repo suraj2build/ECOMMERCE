@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { storiesFor, storyHref, type LookbookDepartment } from '@/lib/lookbook';
+import { storiesFor, storyHref, type LookbookDepartment, type Story } from '@/lib/lookbook';
 import { cityIssue, issueHref } from '@/lib/lookbook-issue';
 
 function CompleteEdition() {
@@ -37,7 +37,41 @@ function CompleteEdition() {
 }
 
 export function LookbookTeaser({ department }: { department: LookbookDepartment }) {
-  const stories = storiesFor(department);
+  const [showComplete, setShowComplete] = useState(true);
+  const [stories, setStories] = useState<
+    (Story & { presentation?: string; showOnHome?: boolean })[]
+  >(storiesFor(department));
+  useEffect(() => {
+    let active = true;
+    setStories(storiesFor(department));
+    void fetch(
+      (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000') +
+        '/api/v1/storefront/lookbooks?department=' +
+        department,
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((index) => {
+        if (!active || !index) return;
+        const published = Array.isArray(index.stories)
+          ? index.stories.filter(
+              (s: Story & { showOnHome?: boolean }) => s.department === department && s.showOnHome,
+            )
+          : [];
+        setShowComplete(
+          !(index.hiddenBuiltins ?? []).includes(cityIssue.slug) &&
+            !(index.stories ?? []).some((s: Story) => s.slug === cityIssue.slug),
+        );
+        const hidden = new Set([
+          ...(index.hiddenBuiltins ?? []),
+          ...(index.stories ?? []).map((s: Story) => s.slug),
+        ]);
+        setStories([...published, ...storiesFor(department).filter((s) => !hidden.has(s.slug))]);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [department]);
   return (
     <section className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-16 w-full">
       <div className="flex justify-between items-end gap-4 mb-8">
@@ -49,10 +83,18 @@ export function LookbookTeaser({ department }: { department: LookbookDepartment 
           Explore the lookbook →
         </Link>
       </div>
-      {department === 'women' && <CompleteEdition />}
+      {department === 'women' && showComplete && <CompleteEdition />}
       <div className="grid md:grid-cols-2 gap-6">
         {stories.map((story) => (
-          <Link key={story.slug} href={storyHref(story)} className="group">
+          <Link
+            key={story.slug}
+            href={
+              story.presentation === 'book'
+                ? '/' + department + '/lookbook/issues/' + story.slug
+                : storyHref(story)
+            }
+            className="group"
+          >
             <div className="aspect-[4/3] overflow-hidden rounded-2xl">
               <img
                 src={story.cover}
@@ -72,10 +114,27 @@ export function LookbookTeaser({ department }: { department: LookbookDepartment 
   );
 }
 
-export function LookbookView({ department }: { department: LookbookDepartment }) {
+export function LookbookView({
+  department,
+  stories: supplied,
+  showComplete = true,
+}: {
+  department: LookbookDepartment;
+  stories?: (Story & { presentation?: string })[];
+  showComplete?: boolean;
+}) {
   const [occasion, setOccasion] = useState('All');
-  const stories = storiesFor(department);
-  const featured = stories[0];
+  const stories = supplied ?? storiesFor(department);
+  const featured =
+    department === 'women' && showComplete
+      ? {
+          ...cityIssue,
+          occasion: 'Complete edition',
+          model: 'Riya, Deeksha & Heena',
+          presentation: 'book' as const,
+        }
+      : stories[0];
+
   const filtered = stories.filter((story) => occasion === 'All' || story.occasion === occasion);
   if (!featured) {
     return (
@@ -96,14 +155,26 @@ export function LookbookView({ department }: { department: LookbookDepartment })
             Photoshoot edits to explore, outfits to make your own. Discover the pieces behind each
             moment.
           </p>
-          <Link className="mt-8 underline" href={storyHref(featured)}>
-            Explore {featured.title} →
+          <Link
+            className="mt-8 underline"
+            href={
+              featured?.presentation === 'book'
+                ? '/' + department + '/lookbook/issues/' + featured.slug
+                : featured
+                  ? storyHref(featured)
+                  : '/' + department
+            }
+          >
+            {featured?.presentation === 'book'
+              ? 'Open the complete lookbook'
+              : 'Explore ' + (featured?.title ?? 'the collection')}{' '}
+            →
           </Link>
         </div>
         <img
-          src={featured.cover}
-          alt={featured.title + ' campaign cover'}
-          className="w-full h-[520px] sm:h-[650px] object-cover object-top"
+          src={featured?.cover ?? cityIssue.cover}
+          alt={(featured?.title ?? 'Lookbook') + ' campaign cover'}
+          className="w-full h-[520px] sm:h-[650px] object-contain bg-[#e9e4dc]"
           fetchPriority="high"
         />
       </section>
@@ -124,7 +195,6 @@ export function LookbookView({ department }: { department: LookbookDepartment })
             Men
           </Link>
         </nav>
-        {department === 'women' && <CompleteEdition />}
         <div
           role="group"
           aria-label="Filter stories by occasion"
@@ -147,7 +217,13 @@ export function LookbookView({ department }: { department: LookbookDepartment })
         <div className="grid md:grid-cols-2 gap-10">
           {filtered.map((story) => (
             <article key={story.slug}>
-              <Link href={storyHref(story)}>
+              <Link
+                href={
+                  story.presentation === 'book'
+                    ? '/' + department + '/lookbook/issues/' + story.slug
+                    : storyHref(story)
+                }
+              >
                 <img
                   src={story.cover}
                   alt={story.title + ' campaign'}
@@ -159,7 +235,11 @@ export function LookbookView({ department }: { department: LookbookDepartment })
                 </p>
                 <h2 className="font-editorial text-4xl mt-3">{story.title}</h2>
                 <p className="text-sm leading-6 mt-3">{story.intro}</p>
-                <span className="inline-block underline mt-5">Shop the story →</span>
+                <span className="inline-block underline mt-5">
+                  {story.looks.every((l) => l.items.length)
+                    ? 'Shop the story →'
+                    : 'Explore the story →'}
+                </span>
               </Link>
             </article>
           ))}

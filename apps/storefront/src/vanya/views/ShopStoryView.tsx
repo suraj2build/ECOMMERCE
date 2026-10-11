@@ -6,6 +6,7 @@ import { getProductDetailLive, type ProductDetail } from '@/lib/api';
 import { useShop } from '@/vanya/bridge/shop';
 import { formatPrice } from '../utils/format';
 import type { Look, Story } from '@/lib/lookbook';
+import { issueHref, cityIssue } from '@/lib/lookbook-issue';
 
 /** `getProductDetailLive` throws `Could not load product (${status})` for
  * any non-OK response. A definite 404 (genuinely unmapped/unpublished
@@ -16,9 +17,16 @@ function isNotFoundError(error: unknown): boolean {
   return error instanceof Error && /\(404\)/.test(error.message);
 }
 
-type LoadedItem = { status: 'ok'; product: ProductDetail } | { status: 'unavailable' } | { status: 'error' };
+type LoadedItem =
+  { status: 'ok'; product: ProductDetail } | { status: 'unavailable' } | { status: 'error' };
 
-export function LookShopping({ look, department }: { look: Look; department: Story['department'] }) {
+export function LookShopping({
+  look,
+  department,
+}: {
+  look: Look;
+  department: Story['department'];
+}) {
   const { addToBag } = useShop();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<LoadedItem[]>([]);
@@ -102,10 +110,22 @@ export function LookShopping({ look, department }: { look: Look; department: Sto
   }
   if (!look.items.length)
     return (
-      <p className="text-sm leading-6 mt-5">
-        Editorial inspiration. Product shopping will appear here when the exact pictured pieces are
-        linked. Accessories may be styling only.
-      </p>
+      <div className="mt-5">
+        <p className="text-sm leading-6">
+          The exact pictured pieces are not available to shop here yet. Accessories may be styling
+          only.
+        </p>
+        <div className="flex flex-wrap gap-4 mt-4">
+          <Link href={'/' + department} className="rounded-full bg-[#241F1A] text-white px-6 py-3">
+            Shop {department === 'women' ? 'women’s' : 'men’s'} collection →
+          </Link>
+          {department === 'women' && (
+            <Link href={issueHref(cityIssue)} className="underline self-center text-sm">
+              Explore the complete catalogue →
+            </Link>
+          )}
+        </div>
+      </div>
     );
   return (
     <>
@@ -120,9 +140,9 @@ export function LookShopping({ look, department }: { look: Look; department: Sto
           <Link
             key={item.styleId + item.colourId}
             className="underline text-sm self-center"
-            href={'/product/' + item.styleId}
+            href={'/product/' + item.styleId + '?colour=' + encodeURIComponent(item.colourId)}
           >
-            Product details
+            View piece {look.items.indexOf(item) + 1} details →
           </Link>
         ))}
       </div>
@@ -169,7 +189,11 @@ export function LookShopping({ look, department }: { look: Look; department: Sto
                   return (
                     <p key={index} className="border-t py-5">
                       Couldn&rsquo;t load this piece right now.{' '}
-                      <button type="button" className="underline" onClick={() => setLoadToken((n) => n + 1)}>
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => setLoadToken((n) => n + 1)}
+                      >
                         Retry
                       </button>
                     </p>
@@ -184,9 +208,26 @@ export function LookShopping({ look, department }: { look: Look; department: Sto
                   );
                 return (
                   <div key={index} className="border-t border-[#cec4b8] py-5">
-                    <Link href={'/product/' + item.styleId} className="underline">
+                    <Link
+                      href={
+                        '/product/' + item.styleId + '?colour=' + encodeURIComponent(item.colourId)
+                      }
+                      className="underline"
+                    >
                       {product.name}
                     </Link>
+                    {product.media.find((m) => m.type === 'IMAGE' && m.colourId === item.colourId)
+                      ?.url && (
+                      <img
+                        src={
+                          product.media.find(
+                            (m) => m.type === 'IMAGE' && m.colourId === item.colourId,
+                          )!.url
+                        }
+                        alt={variants[0]!.colourName + ' ' + product.name}
+                        className="w-28 h-36 object-contain mt-3"
+                      />
+                    )}
                     <p className="text-sm my-2">
                       {variants[0]!.colourName} · {formatPrice(product.sellingPrice)}
                     </p>
@@ -241,6 +282,15 @@ export function ShopStoryView({ story }: { story: Story }) {
           </Link>
           <h1 className="font-editorial text-5xl sm:text-7xl mt-8 mb-6">{story.title}</h1>
           <p className="leading-7 max-w-lg">{story.intro}</p>
+          <p className="mt-5 text-sm">
+            Choose a look below, then select your size or open its product details.
+          </p>
+          <a
+            href="#look-0"
+            className="mt-4 inline-block rounded-full bg-[#241F1A] text-white px-6 py-3 self-start"
+          >
+            Explore and shop the looks ↓
+          </a>
           <nav aria-label="Story chapters" className="flex flex-wrap gap-4 mt-8">
             {story.looks.map((look, i) => (
               <a key={i} href={'#look-' + i} className="text-sm underline">

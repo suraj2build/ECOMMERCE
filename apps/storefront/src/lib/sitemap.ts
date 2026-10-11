@@ -8,6 +8,7 @@
 import { SITE_URL } from './api';
 import { launchStories, storyHref } from './lookbook';
 import { cityIssue, issueHref } from './lookbook-issue';
+import { getManagedLookbooks, managedStoryHref } from './lookbook-cms';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 export const PRODUCTS_PER_FILE = 10_000;
@@ -73,6 +74,14 @@ export async function sitemapFile(file: string): Promise<SitemapEntry[] | null> 
       });
       if (res.ok) legal.push({ loc: `${SITE_URL}/legal/${kind}` });
     }
+    const editorial: SitemapEntry[] = [];
+    for (const department of ['women', 'men'] as const) {
+      const index = await getManagedLookbooks(department);
+      const replaced = new Set([...index.hiddenBuiltins, ...index.stories.map((s) => s.slug)]);
+      editorial.push(...index.stories.map((s) => ({ loc: SITE_URL + managedStoryHref(s) })));
+      editorial.push(...launchStories.filter((s) => s.department === department && !replaced.has(s.slug)).map((s) => ({ loc: SITE_URL + storyHref(s) })));
+      if (department === 'women' && !replaced.has(cityIssue.slug)) editorial.push({ loc: SITE_URL + issueHref(cityIssue) });
+    }
     return [
       { loc: SITE_URL },
       { loc: `${SITE_URL}/collections` },
@@ -82,8 +91,7 @@ export async function sitemapFile(file: string): Promise<SitemapEntry[] | null> 
       { loc: `${SITE_URL}/category/new` },
       { loc: `${SITE_URL}/women/lookbook` },
       { loc: `${SITE_URL}/men/lookbook` },
-      { loc: SITE_URL + issueHref(cityIssue) },
-      ...launchStories.map((story) => ({ loc: SITE_URL + storyHref(story) })),
+      ...editorial,
       ...legal,
     ];
   }

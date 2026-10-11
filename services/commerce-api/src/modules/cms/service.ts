@@ -118,7 +118,14 @@ export class CmsService {
   }
 
   async listContentBlocks(): Promise<CmsContentBlock[]> {
-    return this.prisma.cmsContentBlock.findMany({ orderBy: { key: 'asc' } });
+    // Lookbook documents/uploaded-image metadata share this table but are
+    // managed exclusively through Content → Lookbooks (a document's content
+    // can include an unpublished draft) - every write route already refuses
+    // them here, so the generic read route must exclude them too.
+    return this.prisma.cmsContentBlock.findMany({
+      where: { NOT: [{ key: { startsWith: 'lookbook-document-' } }, { key: { startsWith: 'lookbook-asset-' } }] },
+      orderBy: { key: 'asc' },
+    });
   }
 
   async getPublicContentBlock(key: string): Promise<CmsContentBlock> {
@@ -188,7 +195,7 @@ export class CmsService {
     if (!page || !page.isPublished) throw new NotFoundError('CmsLandingPage', slug);
     const keys = Array.isArray(page.blockKeys) ? (page.blockKeys as string[]) : [];
     const blocks = keys.length
-      ? await this.prisma.cmsContentBlock.findMany({ where: { key: { in: keys }, isActive: true } })
+      ? await this.prisma.cmsContentBlock.findMany({ where: { key: { in: keys }, isActive: true, NOT: [{ key: { startsWith: 'lookbook-document-' } }, { key: { startsWith: 'lookbook-asset-' } }] } })
       : [];
     const blockByKey = new Map(blocks.map((b) => [b.key, b]));
     return {
