@@ -1,5 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import lookbookRoutes from './lookbooks.js';
+import { ValidationError } from '@fcp/shared';
 import { CmsService, type NavMenuItem } from './service.js';
 import { purgeCatalogAfter } from '../pdp/storefront-cache.js';
 
@@ -43,6 +45,7 @@ const navMenuItemSchema: z.ZodType<{ label: string; url: string; sortOrder?: num
  * live content without a code deployment.
  */
 const cmsRoutes: FastifyPluginAsync = async (fastify) => {
+  await fastify.register(lookbookRoutes);
   const cms = new CmsService(fastify);
   const manageAuth = [fastify.requireStaffAuth, fastify.requirePermission('cms:manage')];
   const readAuth = [fastify.requireStaffAuth, fastify.requirePermission('cms:read')];
@@ -65,11 +68,14 @@ const cmsRoutes: FastifyPluginAsync = async (fastify) => {
   // --- Content blocks ---
   fastify.post('/cms/content-blocks', { preHandler: manageAuth }, async (request, reply) => {
     const body = contentBlockSchema.parse(request.body);
+    if (body.key.startsWith('lookbook-document-') || body.key.startsWith('lookbook-asset-')) throw new ValidationError('Use Content → Lookbooks to manage lookbook records');
     reply.status(201).send(await afterChange(cms.createContentBlock(body, request.staffUser!.id)));
   });
   fastify.patch('/cms/content-blocks/:id', { preHandler: manageAuth }, async (request, reply) => {
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const body = contentBlockSchema.partial().extend({ isActive: z.boolean().optional() }).parse(request.body);
+    const block = await fastify.prisma.cmsContentBlock.findUnique({ where: { id } });
+    if (block?.key.startsWith('lookbook-document-') || block?.key.startsWith('lookbook-asset-') || body.key?.startsWith('lookbook-')) throw new ValidationError('Use Content → Lookbooks to manage lookbook records');
     reply.status(200).send(await afterChange(cms.updateContentBlock(id, body, request.staffUser!.id)));
   });
   fastify.get('/cms/content-blocks', { preHandler: readAuth }, async (_request, reply) => {
@@ -110,6 +116,7 @@ const cmsRoutes: FastifyPluginAsync = async (fastify) => {
   });
   fastify.get('/storefront/cms/content-blocks/:key', async (request, reply) => {
     const { key } = z.object({ key: z.string().min(1) }).parse(request.params);
+    if (key.startsWith('lookbook-document-') || key.startsWith('lookbook-asset-')) throw new ValidationError('Read published lookbooks through the storefront lookbook endpoint');
     reply.status(200).send(await cms.getPublicContentBlock(key));
   });
   fastify.get('/storefront/cms/landing-pages/:slug', async (request, reply) => {

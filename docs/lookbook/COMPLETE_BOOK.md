@@ -36,7 +36,7 @@ Assets live in `apps/storefront/public/campaigns/issue-01`. Existing product mas
 5. Run storefront unit tests, typecheck, lint, production build and the isolated lookbook Playwright suite. The suite uses fixtures, explicitly not the real commerce API.
 6. Review the exact live products, stock, desktop/mobile views and downloads before publishing.
 
-This release has a bundled registered edition, not a new admin magazine editor. A separate men's complete edition and future CMS issue editor remain future work.
+The bundled edition can now be imported and managed in Content → Lookbooks. Staff can also create separate men's and women's books, upload photographs and link exact products. See [ADMIN_LOOKBOOKS.md](ADMIN_LOOKBOOKS.md) for configuration and validation limits.
 
 ## Reference books
 

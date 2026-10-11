@@ -1,3 +1,4 @@
+import issueContent from '@/content/lookbook-issue-01.json';
 import { safeHref } from './cms-links';
 
 export type LookbookDepartment = 'men' | 'women';
@@ -6,6 +7,7 @@ export interface LookItem {
   colourId: string;
 }
 export interface Look {
+  model?: string;
   title: string;
   caption: string;
   image: string;
@@ -21,6 +23,9 @@ export interface Story {
   model: string;
   cover: string;
   looks: Look[];
+  presentation?: 'story' | 'book';
+  showOnHome?: boolean;
+  sortOrder?: number;
 }
 const root = '/campaigns/launch-v1/';
 const frame = (title: string, image: string, model: string): Look => ({
@@ -32,7 +37,7 @@ const frame = (title: string, image: string, model: string): Look => ({
 });
 /** Editorial inspiration only until staff map the EXACT pictured product and colour.
  * Never infer mappings from category, name similarity, or a search result. */
-export const launchStories: Story[] = [
+const inspirationStories: Story[] = [
   {
     slug: 'city-days',
     department: 'women',
@@ -102,6 +107,11 @@ export const launchStories: Story[] = [
   },
 ];
 
+export const launchStories: Story[] = inspirationStories.map((story) => {
+  if (story.department !== 'women') return story;
+  const looks = issueContent.looks.filter((look) => story.slug === 'city-days' ? look.model === 'Riya' : look.model !== 'Riya');
+  return { ...story, model: story.slug === 'city-days' ? 'Riya' : 'Deeksha & Heena', cover: looks[0]!.image, looks: looks.map((look) => ({ title: look.title, caption: look.caption, image: look.image, alt: look.alt, items: [] })) };
+});
 export function isLookbookDepartment(value: string): value is LookbookDepartment {
   return value === 'men' || value === 'women';
 }
@@ -122,7 +132,7 @@ export function parseStoryContent(raw: string, base: Story): Story | null {
     const data: unknown = JSON.parse(raw);
     if (!data || typeof data !== 'object') return null;
     const doc = data as Record<string, unknown>;
-    if (!Array.isArray(doc.looks) || doc.looks.length < 1 || doc.looks.length > 12) return null;
+    if (!Array.isArray(doc.looks) || doc.looks.length < 1 || doc.looks.length > 50) return null;
     const looks: Look[] = [];
     for (const value of doc.looks) {
       if (!value || typeof value !== 'object') return null;
@@ -155,6 +165,7 @@ export function parseStoryContent(raw: string, base: Story): Story | null {
       }
       looks.push({
         title: look.title.trim(),
+        model: typeof look.model === 'string' ? look.model.trim() : undefined,
         image,
         alt: look.alt.trim(),
         caption: typeof look.caption === 'string' ? look.caption : '',

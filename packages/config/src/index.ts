@@ -33,6 +33,8 @@ const envSchema = z.object({
   S3_ACCESS_KEY: z.string().default('minioadmin'),
   S3_SECRET_KEY: z.string().default('minioadmin'),
   S3_BUCKET: z.string().default('product-media'),
+  CMS_MEDIA_STORAGE: z.enum(['local', 's3']).default('local'),
+  CMS_MEDIA_STORAGE_DIR: z.string().default('var/lookbook-media'),
   S3_FORCE_PATH_STYLE: z
     .string()
     .default('true')

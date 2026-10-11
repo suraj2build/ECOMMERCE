@@ -98,6 +98,13 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
   // Color and size selection state (opens on a colour that has stock)
   const firstInStock = Math.max(0, product.colors.findIndex((c) => detail.variants.some((v) => v.colourName === c.name && v.inStock)));
   const [selectedColorIndex, setSelectedColorIndex] = useState(firstInStock);
+  useEffect(() => {
+    // Resolve the editorial colour after hydration, preserving the style page's cached SSR and canonical URL.
+    const requested = new URLSearchParams(window.location.search).get('colour');
+    const name = initial.variants.find((v) => v.colourId === requested)?.colourName;
+    const index = detailToProduct(initial).colors.findIndex((c) => c.name === name);
+    if (index >= 0) setSelectedColorIndex(index);
+  }, [initial]);
   const currentColor = product.colors[selectedColorIndex] || product.colors[0] || { name: '', hex: NO_SWATCH, images: [] };
   const colourSizes = detail.variants
     .filter((v) => v.colourName === currentColor.name)

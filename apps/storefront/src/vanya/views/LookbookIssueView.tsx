@@ -32,20 +32,18 @@ function PageContent({
       <div className="relative h-full min-h-[560px] bg-[#38362d] text-white">
         <img
           src={issue.cover}
-          alt="Deeksha in the rust wrap dress at the last light of day"
+          alt={issue.title + ' cover'}
           className="absolute inset-0 w-full h-full object-contain"
           fetchPriority="high"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/70" />
         <div className="relative p-8 sm:p-12 flex flex-col justify-between h-full min-h-[560px]">
-          <p className="uppercase tracking-[.3em] text-xs">The lookbook / Women / 01</p>
+          <p className="uppercase tracking-[.3em] text-xs">The lookbook / {issue.department} / {issue.number}</p>
           <div>
             <h2 className="font-editorial text-5xl sm:text-6xl leading-[1.05]">
-              A city.
-              <br />
-              Three moods.
+{issue.title}
             </h2>
-            <p className="text-sm mt-5">Twelve looks. One changing rhythm.</p>
+            <p className="text-sm mt-5">{issue.looks.length} looks. Your own rhythm.</p>
             <button
               className="mt-8 border border-white/70 rounded-full px-6 py-3 text-sm"
               onClick={() => go(2)}
@@ -71,8 +69,9 @@ function PageContent({
           <h2 className="font-editorial text-4xl mt-3">{look.title}</h2>
           <p className="text-sm leading-6 mt-3 max-w-sm">{look.caption}</p>
           <button onClick={() => go(page.number + 1)} className="text-sm underline mt-4">
-            See the pieces →
+            See and shop the pieces →
           </button>
+
         </div>
       </div>
     );
@@ -107,18 +106,18 @@ function PageContent({
         <h2 className="font-editorial text-3xl mt-2 mb-5">{look.title}</h2>
         <div className="grid grid-cols-2 gap-3">
           {look.products.map((product) => (
-            <div key={product.styleCode}>
-              <img
+            <div key={product.styleCode + product.colourName}>
+              {product.front && <img
                 src={product.front}
                 alt={product.colourName + ' ' + product.title + ', catalogue front view'}
                 loading="lazy"
                 className="w-full aspect-[4/5] object-contain bg-[#e6e4df]"
-              />
+              />}
               <p className="text-xs font-medium mt-2 leading-5">{product.title}</p>
               <p className="text-xs text-[#665b50]">{product.colourName}</p>
             </div>
           ))}
-          {look.products.length === 1 && (
+          {look.products.length === 1 && look.products[0]!.detail && (
             <img
               src={look.products[0]!.detail}
               alt={look.products[0]!.title + ' fabric and construction detail'}
@@ -130,9 +129,9 @@ function PageContent({
         <details className="mt-4 text-xs">
           <summary className="cursor-pointer underline">Fabric & construction details</summary>
           <div className="grid grid-cols-2 gap-3 mt-3">
-            {look.products.map((product) => (
+            {look.products.filter((product) => product.detail).map((product) => (
               <img
-                key={product.styleCode}
+                key={product.styleCode + product.colourName}
                 src={product.detail}
                 alt={product.colourName + ' ' + product.title + ' close detail'}
                 loading="lazy"
@@ -141,18 +140,7 @@ function PageContent({
             ))}
           </div>
         </details>
-        {look.items.length ? (
-          <LookShopping look={look} department={issue.department} />
-        ) : (
-          <p className="text-xs leading-5 mt-5">
-            These catalogue references are not currently available to shop here. No similar item or
-            colour is substituted.
-          </p>
-        )}
-        <p className="text-[10px] leading-4 text-[#665b50] mt-4">
-          Current price, size and stock appear in the shopping panel. Shoes, jewellery and bags may
-          be styling only.
-        </p>
+        <LookShopping look={look} department={issue.department} />
       </div>
     );
   if (page.kind === 'contents')
@@ -163,7 +151,7 @@ function PageContent({
         <nav aria-label="Edition chapters" className="space-y-8">
           {issue.chapters.map((chapter, i) => (
             <button
-              key={chapter.title}
+              key={chapter.start}
               onClick={() => go(chapter.start)}
               className="text-left w-full border-b border-[#c5b7a7] pb-6 flex justify-between gap-4"
             >
@@ -178,8 +166,8 @@ function PageContent({
             </button>
           ))}
         </nav>
-        <button className="text-sm underline mt-9" onClick={() => go(31)}>
-          All twelve looks / page 31 →
+        <button className="text-sm underline mt-9" onClick={() => go(issuePages(issue).find((p) => p.kind === 'index')!.number)}>
+          All {issue.looks.length} looks / page {issuePages(issue).find((p) => p.kind === 'index')!.number} →
         </button>
       </div>
     );
@@ -221,17 +209,14 @@ function PageContent({
             own rhythm.
           </h2>
           <p className="text-sm leading-7 mt-7">
-            Riya. Deeksha. Heena.
-            <br />
-            One city, seen three ways.
+{issue.chapters.map((c) => c.model).join(' · ')}
           </p>
-          <Link href="/women/lookbook" className="underline text-sm inline-block mt-8">
+          <Link href={'/' + issue.department + '/lookbook'} className="underline text-sm inline-block mt-8">
             Explore more stories →
           </Link>
         </div>
         <p className="text-xs leading-6 opacity-80">
-          AI-generated editorial and catalogue imagery for the preview collection. Garments follow
-          the referenced catalogue masters. Product availability is confirmed online. Accessories
+          Product availability is confirmed online. Accessories
           may be styling only.
         </p>
       </div>
@@ -252,7 +237,7 @@ function PageContent({
           you make in them.
         </p>
       </div>
-      <p className="text-xs uppercase tracking-[.2em]">Morning / Afternoon / Evening</p>
+      <p className="text-xs uppercase tracking-[.2em]">{issue.chapters.map((c) => c.title).join(' / ')}</p>
     </div>
   );
 }
@@ -367,23 +352,23 @@ export function LookbookIssueView({
   return (
     <article className="w-full bg-[#e9e4dc] text-[#292820]">
       <header className="max-w-[1360px] mx-auto px-5 sm:px-9 pt-10 pb-7">
-        <Link href="/women/lookbook" className="uppercase text-xs tracking-[.2em] underline">
-          Women / Lookbook
+        <Link href={'/' + issue.department + '/lookbook'} className="uppercase text-xs tracking-[.2em] underline">
+          {issue.department} / Lookbook
         </Link>
         <div className="flex flex-wrap justify-between gap-5 mt-5 items-end">
           <div>
             <p className="uppercase text-xs tracking-[.2em]">
-              Complete edition 01 / 32 pages / 12 looks
+              Complete edition {issue.number} / {pages.length} pages / {issue.looks.length} {issue.looks.length === 1 ? 'look' : 'looks'}
             </p>
             <h1 className="font-editorial text-4xl sm:text-5xl mt-3">{issue.title}</h1>
           </div>
-          <a
+          {issue.pdf && <a
             href={issue.pdf}
             download
             className="border border-[#afa294] rounded-full px-5 py-3 text-sm"
           >
             Download the complete PDF ↓
-          </a>
+          </a>}
         </div>
       </header>
       <div className="max-w-[1360px] mx-auto px-5 sm:px-9 pb-14">
@@ -447,7 +432,7 @@ export function LookbookIssueView({
         <p className="text-xs mb-4" role="status" aria-live="polite">
           {message ||
             (mode === 'all'
-              ? 'All 32 pages, in reading order.'
+              ? `All ${pages.length} pages, in reading order.`
               : `Page ${current} of ${pages.length}: ${active.title}`)}
         </p>
         {catalogueUnavailable && (
@@ -514,7 +499,7 @@ export function LookbookIssueView({
               {c.model} / {c.title}
             </button>
           ))}
-          <button onClick={() => go(31)} className="underline py-2">
+          <button onClick={() => go(issuePages(issue).find((p) => p.kind === 'index')!.number)} className="underline py-2">
             All looks
           </button>
         </nav>

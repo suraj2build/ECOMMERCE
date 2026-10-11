@@ -1,3 +1,7 @@
+# Historical initial release
+
+The launch notes below describe the initial inspiration-only implementation. They are superseded by the complete book and the dedicated admin editor: see [ADMIN_LOOKBOOKS.md](ADMIN_LOOKBOOKS.md). Current women's stories use exact catalogue-linked campaign looks; older unmapped inspiration links honestly to the department collection. Configure new editions through Content → Lookbooks rather than the legacy JSON workflow below.
+
 # Separate Lookbooks and Shop the Story
 
 The complete 32-page women's edition is now implemented as a follow-up. See [COMPLETE_BOOK.md](COMPLETE_BOOK.md) for the reader, PDF, exact catalogue references, new photography and explicit validation limits. The inspiration-only statements below describe the original four scrolling stories, not the new registered complete edition.

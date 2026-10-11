@@ -188,7 +188,7 @@ export class CmsService {
     if (!page || !page.isPublished) throw new NotFoundError('CmsLandingPage', slug);
     const keys = Array.isArray(page.blockKeys) ? (page.blockKeys as string[]) : [];
     const blocks = keys.length
-      ? await this.prisma.cmsContentBlock.findMany({ where: { key: { in: keys }, isActive: true } })
+      ? await this.prisma.cmsContentBlock.findMany({ where: { key: { in: keys }, isActive: true, NOT: [{ key: { startsWith: 'lookbook-document-' } }, { key: { startsWith: 'lookbook-asset-' } }] } })
       : [];
     const blockByKey = new Map(blocks.map((b) => [b.key, b]));
     return {
