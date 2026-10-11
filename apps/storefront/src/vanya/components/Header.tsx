@@ -87,6 +87,7 @@ export function Header() {
   const nav = isMen ? MEN_NAV : WOMEN_NAV;
   const isHome = pathname === '/';
   const isReels = pathname.startsWith('/watch-and-shop');
+  const isLookbook = pathname.startsWith('/' + currentGender + '/lookbook');
   const homeLabel = isMen ? 'MEN' : 'WOMEN';
 
   const searchPill = (
@@ -251,7 +252,7 @@ export function Header() {
           {/* Desktop navigation row */}
           <div className="hidden lg:flex items-center justify-between h-12 gap-4">
             {/* Left Nav: Primary Categories */}
-            <nav aria-label="Primary" className="flex items-center gap-5 xl:gap-6 text-[11px] xl:text-[12px] tracking-[0.16em] uppercase font-medium whitespace-nowrap">
+            <nav aria-label="Primary" className="flex items-center gap-3 xl:gap-4 text-[10px] xl:text-[11px] tracking-[0.16em] uppercase font-medium whitespace-nowrap">
               <Link
                 href="/"
                 className={`py-2 transition-colors relative cursor-pointer ${
@@ -276,6 +277,14 @@ export function Header() {
                   {item.label}
                 </Link>
               ))}
+              <Link
+                href={"/" + currentGender + "/lookbook"}
+                className={`py-2 transition-colors cursor-pointer ${
+                  isLookbook ? 'text-[#181716] font-semibold' : 'text-[#60554A] hover:text-[#181716]'
+                }`}
+              >
+                LOOKBOOK
+              </Link>
               <Link
                 href="/watch-and-shop"
                 className={`py-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
@@ -363,6 +372,7 @@ export function Header() {
                   <Link href="/collections" className="block w-full text-left py-2 border-b border-[#F4F1EA]">
                     Collections
                   </Link>
+                  <Link href={"/" + currentGender + "/lookbook"} className="block w-full text-left py-2 border-b border-[#F4F1EA]">Lookbook</Link>
                   <Link href="/watch-and-shop" className="block w-full text-left py-2 border-b border-[#F4F1EA]">
                     Watch &amp; Shop
                   </Link>

@@ -1,0 +1,27 @@
+{
+  "cover": "/campaigns/launch-v1/home-hero-men.webp",
+  "intro": "Considered shirts, easy layers and clean lines. Business casual for the days that matter.",
+  "looks": [
+    {
+      "title": "A clear start",
+      "image": "/campaigns/launch-v1/home-hero-men.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Aryan wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "The shirt edit",
+      "image": "/campaigns/launch-v1/lifestyle-men-shirt.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Aryan wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "After the meeting",
+      "image": "/campaigns/launch-v1/occasion-men-business.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Aryan wearing the complete outfit",
+      "items": []
+    }
+  ]
+}

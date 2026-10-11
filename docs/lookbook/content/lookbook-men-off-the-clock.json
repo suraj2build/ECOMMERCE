@@ -1,0 +1,27 @@
+{
+  "cover": "/campaigns/launch-v1/occasion-men-everyday.webp",
+  "intro": "Relaxed, never careless. Polished essentials for your own time.",
+  "looks": [
+    {
+      "title": "Easy mornings",
+      "image": "/campaigns/launch-v1/occasion-men-everyday.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Aryan wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "The polo",
+      "image": "/campaigns/launch-v1/lifestyle-men-polo.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Aryan wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "Denim days",
+      "image": "/campaigns/launch-v1/lifestyle-men-denim.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Aryan wearing the complete outfit",
+      "items": []
+    }
+  ]
+}

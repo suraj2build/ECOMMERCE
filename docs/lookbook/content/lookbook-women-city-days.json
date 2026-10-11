@@ -1,0 +1,27 @@
+{
+  "cover": "/campaigns/lookbook-v1/riya-editorial.webp",
+  "intro": "A little colour. A little confidence. Everyday pieces, seen through a fresh lens.",
+  "looks": [
+    {
+      "title": "The café stop",
+      "image": "/campaigns/lookbook-v1/riya-editorial.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Riya wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "Blue hour",
+      "image": "/campaigns/launch-v1/lifestyle-women-denim.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Riya wearing the complete outfit",
+      "items": []
+    },
+    {
+      "title": "Weekend plans",
+      "image": "/campaigns/launch-v1/occasion-women-weekend.webp",
+      "caption": "An outfit study in colour, texture and movement.",
+      "alt": "Riya wearing the complete outfit",
+      "items": []
+    }
+  ]
+}

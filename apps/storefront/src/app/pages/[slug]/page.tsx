@@ -13,8 +13,12 @@ import { getCmsPage } from '@/lib/lookups';
  */
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+// `legal-*` keeps its own route; `lookbook-*` is reserved for story-mapping
+// overrides (lib/lookbook.ts) - a landing page published there is read as a
+// shoppable-look mapping, not a plain content page, so it must never also
+// be reachable (and have its raw JSON block rendered) at /pages/lookbook-*.
 function isContentSlug(slug: string): boolean {
-  return SLUG.test(slug) && !slug.startsWith('legal-');
+  return SLUG.test(slug) && !slug.startsWith('legal-') && !slug.startsWith('lookbook-');
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
