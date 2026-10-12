@@ -362,24 +362,36 @@ export class ExchangeService {
    * rather than racing past it.
    *
    * The outcome of the provider call itself is recorded honestly across
-   * three distinct cases, never collapsed into one:
-   *  - the provider explicitly rejects the request (a non-OK response,
-   *    surfaced by the provider as `status: 'UNAVAILABLE'`) -> FAILED, a
-   *    DEFINITE outcome, since no order was created on their side;
+   * four distinct cases, never collapsed into fewer:
+   *  - the provider is unconfigured, or DEFINITELY rejects the request (a
+   *    4xx response - the provider evaluated it and said no) -> FAILED, a
+   *    DEFINITE outcome, since no order was created on their side
+   *    (`PaymentInitiateResult.status: 'UNAVAILABLE'`);
+   *  - the provider returns a 5xx -> AMBIGUOUS_RECONCILIATION_REQUIRED
+   *    (`status: 'AMBIGUOUS'`). Independent-review finding (2026-10-12):
+   *    an earlier revision treated EVERY non-OK response, 5xx included,
+   *    as the same definite UNAVAILABLE/FAILED outcome - but a 5xx can
+   *    originate from a gateway/load-balancer in front of the provider's
+   *    own order-processing step, meaning the order may have been
+   *    created before the error reached us. Never actually distinguishable
+   *    from a genuine rejection without this split.
    *  - the call throws (network error, timeout - the response itself was
-   *    lost, not refused) -> AMBIGUOUS_RECONCILIATION_REQUIRED, since the
-   *    provider may have already created and recorded the order before
-   *    the failure happened on our side. Independent-review finding
-   *    (2026-10-12): an earlier revision of this method set FAILED for
-   *    this case too, claiming a certainty that doesn't exist and
-   *    letting cancelExchange proceed while a real payment order might
-   *    already be sitting at Razorpay.
+   *    lost entirely, not just an error status) -> also
+   *    AMBIGUOUS_RECONCILIATION_REQUIRED, same reasoning. Independent-
+   *    review finding (2026-10-12, same review): an earlier revision of
+   *    this method set FAILED for this case too, claiming a certainty
+   *    that doesn't exist and letting cancelExchange proceed while a real
+   *    payment order might already be sitting at Razorpay.
    *  - success -> PENDING with the real providerOrderId.
-   * Both FAILED and AMBIGUOUS_RECONCILIATION_REQUIRED are retryable by
+   * FAILED and AMBIGUOUS_RECONCILIATION_REQUIRED are both retryable by
    * simply calling this method again: Razorpay's own idempotency key
    * (`exchange-payment:<id>`) makes a retry always safe - an order
    * genuinely created before is returned again, never duplicated. This
    * is never done automatically; only a fresh caller-initiated retry.
+   * This retry-safety relies on Razorpay's own documented idempotency-key
+   * contract; it has been verified only against mocked HTTP responses in
+   * this environment; no real Razorpay sandbox/test account is configured
+   * anywhere in this codebase to verify it against the genuine API.
    */
   async initiatePriceDifferencePayment(exchangeId: string): Promise<{ providerOrderId: string; publicKeyId?: string; amount: number }> {
     const exchange = await this.getExchange(exchangeId);
@@ -428,9 +440,23 @@ export class ExchangeService {
         amount: Number(exchange.priceDifference),
         idempotencyKey: `exchange-payment:${exchange.id}`,
       });
+      if (result.status === 'AMBIGUOUS') {
+        // 2026-10-12 independent-review finding: a 5xx from the provider
+        // (surfaced here as AMBIGUOUS, see PaymentInitiateResult's own
+        // doc comment) is NOT the same guarantee as a 4xx - the order may
+        // have been created on their side before the error response
+        // reached us. Recorded the same honest way as a thrown exception,
+        // never collapsed into FAILED.
+        await this.prisma.exchange.updateMany({
+          where: { id: exchangeId, paymentStatus: 'PROCESSING' },
+          data: { paymentStatus: 'AMBIGUOUS_RECONCILIATION_REQUIRED' },
+        });
+        throw new ValidationError(result.message ?? 'We could not confirm the result of starting your payment - please try again shortly');
+      }
       if (result.status === 'UNAVAILABLE' || !result.providerReferenceId) {
         // A DEFINITE rejection - the provider was reached and explicitly
-        // said no. No order exists on their side; always safe to retry.
+        // said no (unconfigured, or a 4xx). No order exists on their
+        // side; always safe to retry.
         await this.prisma.exchange.updateMany({ where: { id: exchangeId, paymentStatus: 'PROCESSING' }, data: { paymentStatus: 'FAILED' } });
         throw new ValidationError(result.message ?? 'Online payment is currently unavailable - please try again shortly');
       }

@@ -612,6 +612,37 @@ describe('Gift Cards (M30)', () => {
     expect(giftCardCount).toBe(1);
   });
 
+  it('18b. a 5xx from the payment provider refuses the purchase cleanly, same as a 4xx - no purchase row left stuck with no provider reference', async () => {
+    // 2026-10-12: PaymentInitiateResult started distinguishing a DEFINITE
+    // provider rejection (4xx -> UNAVAILABLE) from an uncertain 5xx/timeout
+    // outcome (AMBIGUOUS) for ExchangeService's own benefit. This module
+    // has no equivalent reconciliation handling, so it must keep refusing
+    // outright for AMBIGUOUS too - otherwise this widening would have
+    // silently started letting a 5xx through to create a purchase row
+    // with no provider reference, an outcome nothing here could ever
+    // recover.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = url.toString();
+        if (href.endsWith('/orders') && init?.method === 'POST') {
+          return new Response(JSON.stringify({ error: { description: 'Internal server error' } }), { status: 503 });
+        }
+        throw new Error(`Unexpected fetch in test: ${href}`);
+      }),
+    );
+    const { token } = await createAuthenticatedCustomer(app);
+    const purchaseRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/gift-cards/purchase',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { amount: 1000, idempotencyKey: `purchase-5xx-${counter}` },
+    });
+    expect(purchaseRes.statusCode).toBe(400);
+    const purchaseCount = await testPrisma.giftCardPurchase.count({ where: { idempotencyKey: `purchase-5xx-${counter}` } });
+    expect(purchaseCount).toBe(0);
+  });
+
   it('19. a failed gift-card purchase webhook never mints a gift card', async () => {
     const headers = { 'x-guest-session-id': `guest-purchase-fail-${counter}` };
     const purchaseRes = await app.inject({

@@ -773,9 +773,9 @@ describe('Exchanges (M21)', () => {
 
     // Simulates a lost response (network error/timeout) - the provider may
     // have already received and acted on the request; we simply never
-    // found out. Never a clean rejection (that path is the existing
-    // UNAVAILABLE -> FAILED one, proven by the "online payment is
-    // currently unavailable" test elsewhere in this file).
+    // found out. Never a clean rejection (that path - a 4xx response ->
+    // UNAVAILABLE -> FAILED - is covered separately below, alongside the
+    // 5xx -> AMBIGUOUS case this same exception path now also shares).
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string | URL, init?: RequestInit) => {
@@ -827,6 +827,77 @@ describe('Exchanges (M21)', () => {
       headers: { [GUEST_HEADER]: guestId },
     });
     expect(cancelAfterRetry.statusCode).toBe(200);
+  });
+
+  it('a 4xx from the provider is a DEFINITE failure (FAILED) - cancellation is immediately allowed', async () => {
+    const ctx = await seedContext();
+    const fixture = await setupExchangeableStyle(1000, ctx, 1800);
+    const guestId = `guest-4xx-${counter}`;
+    const { orderId } = await codOrder(fixture.blackM.id, guestId, `idem-4xx-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-4xx-${counter}`)).json();
+    expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
+
+    // A 4xx means Razorpay itself evaluated the request and rejected it -
+    // a DEFINITE outcome, nothing was created on their side.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = url.toString();
+        if (href.endsWith('/orders') && init?.method === 'POST') {
+          return new Response(JSON.stringify({ error: { description: 'Invalid amount' } }), { status: 400 });
+        }
+        throw new Error(`Unexpected fetch in test: ${href}`);
+      }),
+    );
+    const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
+    expect(payRes.statusCode).toBe(400); // a clean ValidationError, not a raw 500
+
+    const afterFail = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(afterFail.paymentStatus).toBe('FAILED');
+
+    // Unlike AMBIGUOUS/PROCESSING, a definite FAILED never blocks cancellation.
+    const cancelRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/cancel`, headers: { [GUEST_HEADER]: guestId } });
+    expect(cancelRes.statusCode).toBe(200);
+  });
+
+  it('a 5xx from the provider is recorded AMBIGUOUS (not a definite failure), distinctly from a 4xx', async () => {
+    const ctx = await seedContext();
+    const fixture = await setupExchangeableStyle(1000, ctx, 1800);
+    const guestId = `guest-5xx-${counter}`;
+    const { orderId } = await codOrder(fixture.blackM.id, guestId, `idem-5xx-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-5xx-${counter}`)).json();
+    expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
+
+    // Independent-review finding (2026-10-12): a 5xx is a DIFFERENT
+    // guarantee from a 4xx - it can originate from a gateway/load-balancer
+    // in front of Razorpay's own order-processing step, meaning the order
+    // may have been created before the error response reached us. This
+    // must NOT be collapsed into the same definite FAILED outcome a 4xx
+    // produces.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = url.toString();
+        if (href.endsWith('/orders') && init?.method === 'POST') {
+          return new Response(JSON.stringify({ error: { description: 'Internal server error' } }), { status: 503 });
+        }
+        throw new Error(`Unexpected fetch in test: ${href}`);
+      }),
+    );
+    const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
+    expect(payRes.statusCode).toBe(400);
+
+    const afterAmbiguous = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(afterAmbiguous.paymentStatus).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+
+    // Cancellation is refused, same as the thrown-exception case - the
+    // outcome is unknown, a real order may already exist at the provider.
+    const cancelRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/cancel`, headers: { [GUEST_HEADER]: guestId } });
+    expect(cancelRes.statusCode).toBe(409);
   });
 
   it('a stale PROCESSING claim (its owning process crashed) is reclaimed by a later payment attempt', async () => {

@@ -478,7 +478,16 @@ export class GiftCardService {
       idempotencyKey: `${idempotencyKey}:payment`,
     });
 
-    if (paymentResult.status === 'UNAVAILABLE') {
+    if (paymentResult.status === 'UNAVAILABLE' || paymentResult.status === 'AMBIGUOUS') {
+      // 2026-10-12: before PaymentInitiateResult distinguished a DEFINITE
+      // provider rejection (UNAVAILABLE) from an uncertain 5xx/timeout
+      // outcome (AMBIGUOUS), every non-OK response landed here and was
+      // cleanly refused with no purchase row created. Widened to keep
+      // that exact same safe behavior for AMBIGUOUS too - this module has
+      // no equivalent of ExchangeService's own richer
+      // AMBIGUOUS_RECONCILIATION_REQUIRED/retry handling, so refusing
+      // outright (never silently creating a purchase row with no
+      // provider reference) is the correct, minimal, non-regressive fix.
       throw new ValidationError(paymentResult.message ?? 'Online payment is unavailable right now - please try again shortly.');
     }
 

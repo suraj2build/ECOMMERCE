@@ -28,7 +28,20 @@ export interface PaymentInitiateInput {
 }
 
 export interface PaymentInitiateResult {
-  status: 'INITIATED' | 'CONFIRMED' | 'UNAVAILABLE';
+  // UNAVAILABLE: the provider was reached and DEFINITELY did not create an
+  // order - unconfigured credentials, or a 4xx response (the provider
+  // itself evaluated the request and rejected it; nothing was created on
+  // their side). AMBIGUOUS (2026-10-12, independent-review finding): a 5xx
+  // response is NOT the same guarantee - it can mean a gateway/upstream
+  // timeout where the actual order-processing step completed on the
+  // provider's side before the error response reached us. Collapsing both
+  // into UNAVAILABLE let a caller treat a genuinely uncertain outcome as a
+  // safe-to-retry-anything definite failure. Callers that care about this
+  // distinction (see ExchangeService.initiatePriceDifferencePayment) must
+  // check for AMBIGUOUS explicitly; callers that don't (checkout, gift
+  // cards) are unaffected - they already treat anything other than
+  // CONFIRMED the same way, a behavior this change does not alter.
+  status: 'INITIATED' | 'CONFIRMED' | 'UNAVAILABLE' | 'AMBIGUOUS';
   providerReferenceId?: string;
   /** Only meaningful for RAZORPAY - the public key the storefront's Checkout.js needs. Never the secret. */
   publicKeyId?: string;
@@ -173,10 +186,20 @@ export class RazorpayPaymentProvider implements PaymentProvider {
       // logged for operators, never surfaced to the client.
       const body = await res.text().catch(() => '<unreadable>');
       console.error('Razorpay order creation failed', { status: res.status, body });
-      return {
-        status: 'UNAVAILABLE',
-        message: 'We could not start online payment right now. Please try again or choose Cash on Delivery.',
-      };
+      // 2026-10-12 independent-review finding: a 4xx means Razorpay itself
+      // evaluated the request and definitively rejected it (bad request,
+      // auth failure, rate limit) - nothing was created on their side,
+      // safe to treat as a plain failure. A 5xx is a DIFFERENT guarantee -
+      // it can originate from a gateway/load-balancer in front of
+      // Razorpay's own order-processing step, meaning the order may have
+      // been created before the error response reached us. Collapsing
+      // both into the same "definite failure" result (as this did before)
+      // let a caller permit an action (like exchange cancellation) that
+      // assumes nothing exists on the provider's side when that isn't
+      // actually guaranteed for a 5xx.
+      return res.status >= 500
+        ? { status: 'AMBIGUOUS', message: 'We could not confirm the result of starting your payment - please try again shortly.' }
+        : { status: 'UNAVAILABLE', message: 'We could not start online payment right now. Please try again or choose Cash on Delivery.' };
     }
 
     const order = (await res.json()) as { id: string };
