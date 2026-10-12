@@ -564,7 +564,8 @@ export default function OrderDetailPage() {
                 const existing = exchangeForLine(line.id);
                 if (existing) {
                   return (
-                    <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
                       <p className="text-xs text-[#6e6359]">
                         {EXCHANGE_STATUS_LABEL[existing.status]}
                         {/* PENDING: a fresh payment awaiting completion. FAILED/
@@ -588,17 +589,36 @@ export default function OrderDetailPage() {
                               type="button"
                               className="underline underline-offset-2"
                               onClick={async () => {
-                                const payment = await initiateMyExchangePayment(existing.id);
-                                if (payment.publicKeyId) {
-                                  await openRazorpayCheckout({
-                                    orderId: payment.providerOrderId,
-                                    publicKeyId: payment.publicKeyId,
-                                    amountInclusive: payment.amount,
-                                    contactName: order?.contactName ?? '',
-                                    contactMobile: order?.contactMobile ?? '',
-                                    onSuccess: () => refresh(),
-                                    onDismiss: () => refresh(),
-                                  });
+                                // 2026-10-12 review finding: this had no
+                                // try/catch at all - a FAILED/UNAVAILABLE
+                                // rejection (the common case whenever
+                                // Razorpay isn't configured, e.g. this
+                                // local demo) became an uncaught promise
+                                // rejection with nothing shown to the
+                                // customer and the button never updating,
+                                // even though the server had correctly
+                                // recorded the failure. refresh() picks up
+                                // the new paymentStatus either way (it
+                                // flips the label to "Retry payment");
+                                // exchangeError gives an explicit reason.
+                                setExchangeError(null);
+                                try {
+                                  const payment = await initiateMyExchangePayment(existing.id);
+                                  if (payment.publicKeyId) {
+                                    await openRazorpayCheckout({
+                                      orderId: payment.providerOrderId,
+                                      publicKeyId: payment.publicKeyId,
+                                      amountInclusive: payment.amount,
+                                      contactName: order?.contactName ?? '',
+                                      contactMobile: order?.contactMobile ?? '',
+                                      onSuccess: () => refresh(),
+                                      onDismiss: () => refresh(),
+                                    });
+                                  }
+                                } catch (err) {
+                                  setExchangeError(err instanceof Error ? err.message : 'Could not start this payment - please try again.');
+                                } finally {
+                                  await refresh();
                                 }
                               }}
                             >
@@ -617,6 +637,12 @@ export default function OrderDetailPage() {
                           Cancel exchange
                         </button>
                       )}
+                    </div>
+                    {exchangeError && existing.paymentDirection === 'CUSTOMER_PAYS' && (
+                      <p role="alert" className="text-xs text-danger">
+                        {exchangeError}
+                      </p>
+                    )}
                     </div>
                   );
                 }
