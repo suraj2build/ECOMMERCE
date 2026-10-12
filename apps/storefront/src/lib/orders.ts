@@ -105,6 +105,12 @@ export interface OrderView {
   contactName: string;
   contactMobile: string;
   grandTotal: number;
+  promotionDiscountTotal: number;
+  loyaltyPointsRedeemed: number;
+  loyaltyRedemptionValue: number;
+  storeCreditApplied: number;
+  giftCardApplied: number;
+  amountPayable: number;
   currency: string;
   lines: OrderLineView[];
   fulfilments: OrderFulfilmentView[];

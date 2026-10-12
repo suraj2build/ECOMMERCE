@@ -62,6 +62,23 @@ function buildOrderView(order: OrderWithViewIncludes) {
     subtotal: Number(order.subtotal),
     taxAmount: Number(order.taxAmount),
     grandTotal: Number(order.grandTotal),
+    // Frozen at order-creation time (see the schema's own comment above
+    // these columns) - never re-derived from a possibly-since-changed
+    // promotion/rate. amountPayable is the actual cash/payment-method
+    // amount: grandTotal minus every value already redeemed against it,
+    // computed here (not stored) so a single formula stays authoritative
+    // for both the customer-facing order view and this same shared
+    // response the staff order-detail route returns.
+    promotionDiscountTotal: Number(order.promotionDiscountTotal),
+    loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
+    loyaltyRedemptionValue: Number(order.loyaltyRedemptionValue),
+    storeCreditApplied: Number(order.storeCreditApplied),
+    giftCardApplied: Number(order.giftCardApplied),
+    amountPayable:
+      Number(order.grandTotal) -
+      Number(order.loyaltyRedemptionValue) -
+      Number(order.storeCreditApplied) -
+      Number(order.giftCardApplied),
     currency: order.currency,
     invoiceId: order.invoiceId,
     // Durable invoice-recovery state (independent-review finding #2) -

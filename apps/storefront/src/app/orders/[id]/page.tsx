@@ -341,7 +341,8 @@ export default function OrderDetailPage() {
 
   return (
     <Container className="py-10 sm:py-14">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Order details</p>\n      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Order {order.orderNumber}</h1>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Order details</p>
+      <h1 className="mt-2 font-display text-4xl text-[#181716] sm:text-5xl">Order {order.orderNumber}</h1>
       <p role="status" className="mt-2 text-sm text-[#6e6359]">
         {STATUS_LABEL[order.status]}
         {order.refundRequired ? ' - a refund is being processed' : ''}
@@ -699,9 +700,39 @@ export default function OrderDetailPage() {
           </div>
         )}
 
-        <div className="mt-4 flex justify-between border-t border-border pt-4 text-sm font-medium">
-          <span className="text-[#181716]">Total</span>
-          <span className="text-[#181716]">{formatINR(order.grandTotal)}</span>
+        <div className="mt-4 space-y-1 border-t border-border pt-4 text-sm">
+          {order.promotionDiscountTotal > 0 && (
+            <div className="flex justify-between">
+              <span className="text-[#6e6359]">Promotion discount</span>
+              <span className="text-[#181716]">{'-' + formatINR(order.promotionDiscountTotal)}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-[#6e6359]">Total</span>
+            <span className="text-[#181716]">{formatINR(order.grandTotal)}</span>
+          </div>
+          {order.loyaltyPointsRedeemed > 0 && (
+            <div className="flex justify-between">
+              <span className="text-[#6e6359]">Loyalty points redeemed ({order.loyaltyPointsRedeemed} pts)</span>
+              <span className="text-[#181716]">{'-' + formatINR(order.loyaltyRedemptionValue)}</span>
+            </div>
+          )}
+          {order.storeCreditApplied > 0 && (
+            <div className="flex justify-between">
+              <span className="text-[#6e6359]">Store credit applied</span>
+              <span className="text-[#181716]">{'-' + formatINR(order.storeCreditApplied)}</span>
+            </div>
+          )}
+          {order.giftCardApplied > 0 && (
+            <div className="flex justify-between">
+              <span className="text-[#6e6359]">Gift card applied</span>
+              <span className="text-[#181716]">{'-' + formatINR(order.giftCardApplied)}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-border pt-2 font-medium">
+            <span className="text-[#181716]">Amount payable</span>
+            <span className="text-[#181716]">{formatINR(order.amountPayable)}</span>
+          </div>
         </div>
       </div>
 

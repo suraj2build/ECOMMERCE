@@ -76,6 +76,12 @@ interface Order {
   subtotal: number;
   taxAmount: number;
   grandTotal: number;
+  promotionDiscountTotal: number;
+  loyaltyPointsRedeemed: number;
+  loyaltyRedemptionValue: number;
+  storeCreditApplied: number;
+  giftCardApplied: number;
+  amountPayable: number;
   currency: string;
   invoiceStatus: string;
   invoiceFailureReason: string | null;
@@ -245,10 +251,48 @@ export default function OrderDetailPage() {
                 <dd>
                   <Money value={o.shippingCost} />
                 </dd>
+                {o.promotionDiscountTotal > 0 && (
+                  <>
+                    <dt>Promotion discount</dt>
+                    <dd>
+                      -<Money value={o.promotionDiscountTotal} />
+                    </dd>
+                  </>
+                )}
                 <dt>Grand total</dt>
                 <dd>
                   <strong>
                     <Money value={o.grandTotal} currency={o.currency} />
+                  </strong>
+                </dd>
+                {o.loyaltyPointsRedeemed > 0 && (
+                  <>
+                    <dt>Loyalty points redeemed ({o.loyaltyPointsRedeemed} pts)</dt>
+                    <dd>
+                      -<Money value={o.loyaltyRedemptionValue} />
+                    </dd>
+                  </>
+                )}
+                {o.storeCreditApplied > 0 && (
+                  <>
+                    <dt>Store credit applied</dt>
+                    <dd>
+                      -<Money value={o.storeCreditApplied} />
+                    </dd>
+                  </>
+                )}
+                {o.giftCardApplied > 0 && (
+                  <>
+                    <dt>Gift card applied</dt>
+                    <dd>
+                      -<Money value={o.giftCardApplied} />
+                    </dd>
+                  </>
+                )}
+                <dt>Amount payable</dt>
+                <dd>
+                  <strong>
+                    <Money value={o.amountPayable} currency={o.currency} />
                   </strong>
                 </dd>
                 <dt>Invoice</dt>
