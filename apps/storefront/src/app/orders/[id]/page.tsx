@@ -567,8 +567,18 @@ export default function OrderDetailPage() {
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <p className="text-xs text-[#6e6359]">
                         {EXCHANGE_STATUS_LABEL[existing.status]}
+                        {/* PENDING: a fresh payment awaiting completion. FAILED/
+                            AMBIGUOUS_RECONCILIATION_REQUIRED: both safely
+                            retryable via the same idempotency key server-side
+                            (see initiatePriceDifferencePayment's doc comment) -
+                            found missing from this condition during the
+                            2026-10-12 review (a customer whose payment call
+                            failed or came back ambiguous had no way to retry
+                            from this page at all). */}
                         {existing.paymentDirection === 'CUSTOMER_PAYS' &&
-                          existing.paymentStatus === 'PENDING' &&
+                          (existing.paymentStatus === 'PENDING' ||
+                            existing.paymentStatus === 'FAILED' ||
+                            existing.paymentStatus === 'AMBIGUOUS_RECONCILIATION_REQUIRED') &&
                           existing.status !== 'CANCELLED' &&
                           existing.status !== 'QC_FAILED' &&
                           existing.status !== 'REPLACEMENT_UNAVAILABLE' && (
@@ -592,7 +602,7 @@ export default function OrderDetailPage() {
                                 }
                               }}
                             >
-                              Complete payment
+                              {existing.paymentStatus === 'PENDING' ? 'Complete payment' : 'Retry payment'}
                             </button>
                           </>
                         )}

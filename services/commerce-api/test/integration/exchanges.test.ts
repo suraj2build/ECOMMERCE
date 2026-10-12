@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { loadEnv } from '@fcp/config';
 import { createTestApp } from '../helpers/app.js';
 import { resetDatabase, seedRbac, grantPermissions, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
 import { createAuthenticatedStaff } from '../helpers/auth.js';
@@ -701,6 +702,161 @@ describe('Exchanges (M21)', () => {
     // The one outcome this race must never produce: a CANCELLED exchange
     // that still has a live Razorpay order attached to it.
     expect(final.status === 'CANCELLED' && final.paymentProviderOrderId).toBeFalsy();
+  });
+
+  // 2026-10-12 independent-review finding: the test above relies on
+  // Promise.all's incidental scheduling to produce a genuine overlap -
+  // it proves the DB-level guarantee holds whichever side wins, but
+  // never PROVES a concurrent cancel was attempted while the claim was
+  // actually held. This test controls the provider call's timing
+  // directly (a manually-released gate) so the cancel attempt is
+  // deterministically issued only once the claim is confirmed held.
+  it('deterministically refuses a cancel attempt issued while the payment claim is genuinely held', async () => {
+    const ctx = await seedContext();
+    const fixture = await setupExchangeableStyle(1000, ctx, 1800);
+    const guestId = `guest-detrace-${counter}`;
+    const { orderId } = await codOrder(fixture.blackM.id, guestId, `idem-detrace-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-detrace-${counter}`)).json();
+    expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
+
+    let releaseProviderCall!: () => void;
+    const providerGate = new Promise<void>((resolve) => {
+      releaseProviderCall = resolve;
+    });
+    let signalFetchStarted!: () => void;
+    const fetchStarted = new Promise<void>((resolve) => {
+      signalFetchStarted = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = url.toString();
+        if (href.endsWith('/orders') && init?.method === 'POST') {
+          signalFetchStarted();
+          await providerGate; // held open until this test explicitly releases it
+          return new Response(JSON.stringify({ id: `order_detrace_${counter}` }), { status: 200 });
+        }
+        throw new Error(`Unexpected fetch in test: ${href}`);
+      }),
+    );
+
+    const payPromise = app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
+    await fetchStarted; // the claim is DEFINITELY taken by now - the provider call is genuinely in flight
+
+    const duringClaim = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(duringClaim.paymentStatus).toBe('PROCESSING');
+
+    const cancelRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/cancel`, headers: { [GUEST_HEADER]: guestId } });
+    expect(cancelRes.statusCode).toBe(409); // deterministic, not incidental - the claim is confirmed held right now
+
+    releaseProviderCall();
+    const payRes = await payPromise;
+    expect(payRes.statusCode).toBe(200);
+
+    const final = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(final.paymentStatus).toBe('PENDING');
+    expect(final.paymentProviderOrderId).toBeTruthy();
+    expect(final.status).not.toBe('CANCELLED');
+  });
+
+  it('a provider call that throws is recorded AMBIGUOUS_RECONCILIATION_REQUIRED, not FAILED - cancellation is refused until a retry resolves it', async () => {
+    const ctx = await seedContext();
+    const fixture = await setupExchangeableStyle(1000, ctx, 1800);
+    const guestId = `guest-ambiguous-${counter}`;
+    const { orderId } = await codOrder(fixture.blackM.id, guestId, `idem-ambiguous-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-ambiguous-${counter}`)).json();
+    expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
+
+    // Simulates a lost response (network error/timeout) - the provider may
+    // have already received and acted on the request; we simply never
+    // found out. Never a clean rejection (that path is the existing
+    // UNAVAILABLE -> FAILED one, proven by the "online payment is
+    // currently unavailable" test elsewhere in this file).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = url.toString();
+        if (href.endsWith('/orders') && init?.method === 'POST') throw new TypeError('fetch failed');
+        throw new Error(`Unexpected fetch in test: ${href}`);
+      }),
+    );
+    const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
+    expect(payRes.statusCode).toBe(500); // the raw thrown error, not a clean validation rejection
+
+    const afterThrow = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(afterThrow.paymentStatus).toBe('AMBIGUOUS_RECONCILIATION_REQUIRED');
+    expect(afterThrow.paymentProviderOrderId).toBeNull();
+
+    // Cancellation must be refused while the outcome is unknown - a real
+    // payment order may already exist at the provider.
+    const cancelDuringAmbiguous = await app.inject({
+      method: 'POST',
+      url: `/api/v1/storefront/exchanges/${exchange.id}/cancel`,
+      headers: { [GUEST_HEADER]: guestId },
+    });
+    expect(cancelDuringAmbiguous.statusCode).toBe(409);
+
+    // The one safe resolution: a fresh retry via the SAME idempotency key.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL, init?: RequestInit) => {
+        const href = url.toString();
+        if (href.endsWith('/orders') && init?.method === 'POST') {
+          return new Response(JSON.stringify({ id: `order_retry_${counter}` }), { status: 200 });
+        }
+        throw new Error(`Unexpected fetch in test: ${href}`);
+      }),
+    );
+    const retryRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
+    expect(retryRes.statusCode).toBe(200);
+
+    const resolved = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(resolved.paymentStatus).toBe('PENDING');
+    expect(resolved.paymentProviderOrderId).toBe(`order_retry_${counter}`);
+
+    // Now that it has resolved to an ordinary PENDING payment, this
+    // specific guard no longer applies - an uncaptured order is safe to
+    // abandon by cancelling instead.
+    const cancelAfterRetry = await app.inject({
+      method: 'POST',
+      url: `/api/v1/storefront/exchanges/${exchange.id}/cancel`,
+      headers: { [GUEST_HEADER]: guestId },
+    });
+    expect(cancelAfterRetry.statusCode).toBe(200);
+  });
+
+  it('a stale PROCESSING claim (its owning process crashed) is reclaimed by a later payment attempt', async () => {
+    const ctx = await seedContext();
+    const fixture = await setupExchangeableStyle(1000, ctx, 1800);
+    const guestId = `guest-staleclaim-${counter}`;
+    const { orderId } = await codOrder(fixture.blackM.id, guestId, `idem-staleclaim-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-staleclaim-${counter}`)).json();
+
+    // Simulates a genuine crash: a claim was taken (PROCESSING) but the
+    // owning process died before ever calling the provider or recording
+    // an outcome - not reachable through the API itself (the real service
+    // always claims-then-resolves within one call), so this directly
+    // manufactures the exact DB state a real crash would leave behind,
+    // the same idiom refunds.test.ts already uses for its own stale-claim
+    // test.
+    const staleSeconds = loadEnv().EXCHANGE_PAYMENT_PROCESSING_STALE_SECONDS;
+    await testPrisma.exchange.update({
+      where: { id: exchange.id },
+      data: { paymentStatus: 'PROCESSING', updatedAt: new Date(Date.now() - (staleSeconds + 60) * 1000) },
+    });
+
+    const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
+    expect(payRes.statusCode).toBe(200);
+
+    const final = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    expect(final.paymentStatus).toBe('PENDING');
+    expect(final.paymentProviderOrderId).toBeTruthy();
   });
 
   // --- 11. RBAC ---

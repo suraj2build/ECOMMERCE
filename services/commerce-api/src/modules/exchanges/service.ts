@@ -350,14 +350,36 @@ export class ExchangeService {
    * external provider with no lock held across that gap - a concurrent
    * cancelExchange could commit in between, stranding a freshly-created
    * Razorpay order against an exchange that will never ship. Fixed with
-   * a durable PENDING/FAILED -> PROCESSING claim (the same claim-before-
-   * external-call idiom as RefundService.claimProcessing), re-checking
+   * a durable PENDING/FAILED/AMBIGUOUS_RECONCILIATION_REQUIRED ->
+   * PROCESSING claim (the same claim-before-external-call idiom as
+   * RefundService.claimProcessing), re-checking
    * `status NOT IN (CANCELLED, QC_FAILED, REPLACEMENT_UNAVAILABLE)` as
    * part of the SAME atomic UPDATE. cancelExchange itself now refuses to
-   * proceed while paymentStatus is PROCESSING (see its own comment), so
-   * whichever of the two single-row UPDATEs reaches Postgres first wins
-   * cleanly - the loser sees the committed result and fails with a clear
-   * error rather than racing past it.
+   * proceed while paymentStatus is PROCESSING or
+   * AMBIGUOUS_RECONCILIATION_REQUIRED (see its own comment), so whichever
+   * of the two single-row UPDATEs reaches Postgres first wins cleanly -
+   * the loser sees the committed result and fails with a clear error
+   * rather than racing past it.
+   *
+   * The outcome of the provider call itself is recorded honestly across
+   * three distinct cases, never collapsed into one:
+   *  - the provider explicitly rejects the request (a non-OK response,
+   *    surfaced by the provider as `status: 'UNAVAILABLE'`) -> FAILED, a
+   *    DEFINITE outcome, since no order was created on their side;
+   *  - the call throws (network error, timeout - the response itself was
+   *    lost, not refused) -> AMBIGUOUS_RECONCILIATION_REQUIRED, since the
+   *    provider may have already created and recorded the order before
+   *    the failure happened on our side. Independent-review finding
+   *    (2026-10-12): an earlier revision of this method set FAILED for
+   *    this case too, claiming a certainty that doesn't exist and
+   *    letting cancelExchange proceed while a real payment order might
+   *    already be sitting at Razorpay.
+   *  - success -> PENDING with the real providerOrderId.
+   * Both FAILED and AMBIGUOUS_RECONCILIATION_REQUIRED are retryable by
+   * simply calling this method again: Razorpay's own idempotency key
+   * (`exchange-payment:<id>`) makes a retry always safe - an order
+   * genuinely created before is returned again, never duplicated. This
+   * is never done automatically; only a fresh caller-initiated retry.
    */
   async initiatePriceDifferencePayment(exchangeId: string): Promise<{ providerOrderId: string; publicKeyId?: string; amount: number }> {
     const exchange = await this.getExchange(exchangeId);
@@ -378,7 +400,10 @@ export class ExchangeService {
       where: {
         id: exchangeId,
         status: { notIn: ['CANCELLED', 'QC_FAILED', 'REPLACEMENT_UNAVAILABLE'] },
-        OR: [{ paymentStatus: { in: ['PENDING', 'FAILED'] } }, { paymentStatus: 'PROCESSING', updatedAt: { lt: staleCutoff } }],
+        OR: [
+          { paymentStatus: { in: ['PENDING', 'FAILED', 'AMBIGUOUS_RECONCILIATION_REQUIRED'] } },
+          { paymentStatus: 'PROCESSING', updatedAt: { lt: staleCutoff } },
+        ],
       },
       data: { paymentStatus: 'PROCESSING' },
     });
@@ -404,6 +429,8 @@ export class ExchangeService {
         idempotencyKey: `exchange-payment:${exchange.id}`,
       });
       if (result.status === 'UNAVAILABLE' || !result.providerReferenceId) {
+        // A DEFINITE rejection - the provider was reached and explicitly
+        // said no. No order exists on their side; always safe to retry.
         await this.prisma.exchange.updateMany({ where: { id: exchangeId, paymentStatus: 'PROCESSING' }, data: { paymentStatus: 'FAILED' } });
         throw new ValidationError(result.message ?? 'Online payment is currently unavailable - please try again shortly');
       }
@@ -414,11 +441,15 @@ export class ExchangeService {
       });
       return { providerOrderId: result.providerReferenceId, publicKeyId: result.publicKeyId, amount: Number(exchange.priceDifference) };
     } catch (err) {
-      // Any unexpected throw (network error, provider SDK exception) must
-      // not leave the claim stuck at PROCESSING until the stale-cutoff -
-      // release it back to FAILED immediately so a retry isn't blocked.
       if (!(err instanceof ValidationError)) {
-        await this.prisma.exchange.updateMany({ where: { id: exchangeId, paymentStatus: 'PROCESSING' }, data: { paymentStatus: 'FAILED' } });
+        // The call itself threw - the outcome is genuinely unknown, not a
+        // definite failure (see this method's own doc comment). Record it
+        // honestly and leave cancelExchange refusing to proceed until a
+        // retry resolves it one way or the other.
+        await this.prisma.exchange.updateMany({
+          where: { id: exchangeId, paymentStatus: 'PROCESSING' },
+          data: { paymentStatus: 'AMBIGUOUS_RECONCILIATION_REQUIRED' },
+        });
       }
       throw err;
     }
@@ -481,14 +512,25 @@ export class ExchangeService {
       if (existing.status === 'CANCELLED') return tx.exchange.findUniqueOrThrow({ where: { id: exchangeId } });
       // 2026-10-12 UAT concurrency fix: refuse to cancel while a price-
       // difference payment claim is in flight (initiatePriceDifferencePayment's
-      // own PENDING/FAILED -> PROCESSING claim, held only for the duration
-      // of its external provider call). Without this, a claim that won the
-      // row race just before this lock was acquired would have its
-      // provider call proceed against an exchange this transaction is
-      // about to mark CANCELLED underneath it. The claim resolves in
-      // seconds (or is reclaimed as stale) - the caller can simply retry.
-      if (existing.paymentStatus === 'PROCESSING') {
-        throw new ConflictError('A payment for this exchange is currently being processed - please try again shortly');
+      // own PENDING/FAILED/AMBIGUOUS_RECONCILIATION_REQUIRED -> PROCESSING
+      // claim, held only for the duration of its external provider call).
+      // Without this, a claim that won the row race just before this lock
+      // was acquired would have its provider call proceed against an
+      // exchange this transaction is about to mark CANCELLED underneath
+      // it. The claim resolves in seconds (or is reclaimed as stale) - the
+      // caller can simply retry. AMBIGUOUS_RECONCILIATION_REQUIRED is
+      // refused for the same reason it exists at all (independent-review
+      // finding, 2026-10-12): the provider call's outcome is genuinely
+      // unknown, so a real payment order may already exist at Razorpay -
+      // cancelling here could orphan it. The only safe way out of that
+      // state is a retry of the payment itself (always safe, via the
+      // SAME idempotency key), never a silent cancellation.
+      if (existing.paymentStatus === 'PROCESSING' || existing.paymentStatus === 'AMBIGUOUS_RECONCILIATION_REQUIRED') {
+        throw new ConflictError(
+          existing.paymentStatus === 'PROCESSING'
+            ? 'A payment for this exchange is currently being processed - please try again shortly'
+            : 'This exchange has a payment attempt with an unconfirmed outcome - retry the payment before cancelling',
+        );
       }
       if (existing.status !== 'REQUESTED' && existing.status !== 'PICKUP_SCHEDULED') {
         throw new ValidationError(`Cannot cancel an exchange in status '${existing.status}'`);

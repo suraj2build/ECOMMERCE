@@ -2946,7 +2946,27 @@ enum ExchangePaymentStatus {
   // claiming process crashed) is safe to reclaim back to PENDING.
   PROCESSING
   CAPTURED
+  // A DEFINITE, known rejection: the provider explicitly returned a
+  // non-success response. Safe to retry at any time - no order was
+  // created on the provider's side.
   FAILED
+  // Independent-review finding (2026-10-12): the first version of the
+  // PROCESSING claim above set FAILED whenever the provider call itself
+  // threw (network error, timeout) - but a thrown exception means the
+  // RESPONSE was lost, not that the provider never received or acted on
+  // the request. Labeling that FAILED claimed a certainty that doesn't
+  // exist, and let cancelExchange proceed immediately even though a real
+  // payment order might already exist at Razorpay. Mirrors the EXACT
+  // same three-way split (DEFINITE failure vs. AMBIGUOUS/unknown
+  // outcome) already established in this codebase for channel publishing
+  // (M26), marketing delivery (M25) and conversion dispatch - never a
+  // blind auto-retry; the one safe resolution is a human-initiated retry
+  // of initiatePriceDifferencePayment, which reuses the SAME Razorpay
+  // idempotency key (`exchange-payment:<id>`) and is therefore always
+  // safe to re-issue: an order genuinely created before is returned
+  // again, never duplicated. cancelExchange refuses to proceed while a
+  // payment is in this state, same as PROCESSING.
+  AMBIGUOUS_RECONCILIATION_REQUIRED
 }
 
 // First-class entity (EXC-001): the original order/line, the replacement

@@ -53,11 +53,14 @@ export interface ExchangeView {
   status: 'REQUESTED' | 'PICKUP_SCHEDULED' | 'PICKED_UP' | 'RECEIVED' | 'REPLACEMENT_ALLOCATED' | 'COMPLETED' | 'QC_FAILED' | 'REPLACEMENT_UNAVAILABLE' | 'CANCELLED';
   paymentDirection: 'CUSTOMER_PAYS' | 'STORE_CREDIT' | 'EVEN';
   // PROCESSING is a brief, server-internal in-flight claim (see
-  // ExchangePaymentStatus's schema comment) - included here for type
-  // accuracy, but the UI never needs to branch on it specially: it simply
-  // isn't PENDING, so the "Complete payment" action correctly stays
-  // hidden while it's set.
-  paymentStatus: 'NOT_REQUIRED' | 'PENDING' | 'PROCESSING' | 'CAPTURED' | 'FAILED';
+  // ExchangePaymentStatus's schema comment) - the UI never needs to
+  // branch on it specially: it simply isn't PENDING, so the payment
+  // action correctly stays hidden while it's set.
+  // AMBIGUOUS_RECONCILIATION_REQUIRED means a prior payment attempt's
+  // outcome is genuinely unknown (the provider call threw) - the order
+  // detail page's own payment button shows this as "Retry payment",
+  // safe via the server's own idempotency key.
+  paymentStatus: 'NOT_REQUIRED' | 'PENDING' | 'PROCESSING' | 'CAPTURED' | 'FAILED' | 'AMBIGUOUS_RECONCILIATION_REQUIRED';
   priceDifference: string;
   cancelledAt: string | null;
   cancelledReason: string | null;
