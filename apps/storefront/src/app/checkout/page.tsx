@@ -7,6 +7,7 @@ import { buttonClassName } from '@/components/ui/Button';
 import { getCart, type CartView } from '@/lib/cart';
 import { cartItems, checkoutTracking, track } from '@/lib/tracking';
 import { previewCheckout, startCheckout, type Address, type CheckoutPreview } from '@/lib/checkout';
+import { checkServiceability, type ServiceabilityResult } from '@/lib/api';
 import { INDIAN_STATES } from '@/lib/indian-states';
 import { getStoredSession } from '@/lib/customer-auth';
 import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance, getProfile, listAddresses } from '@/lib/account';
@@ -586,6 +587,45 @@ function AddressFields({
   address: Address;
   onChange: (a: Address) => void;
 }) {
+  // City is resolved FROM the PIN code (this demo's data model is one city
+  // per pincode - never multiple candidates to pick from, so a free-text
+  // typo risk is exactly what resolving it this way removes) rather than
+  // typed separately and left to silently disagree with it. 'idle': no
+  // 6-digit PIN yet. 'checking': a lookup is in flight. 'resolved': a
+  // known, serviceable PIN - city/state were just auto-filled.
+  // 'unserviceable': a known PIN this demo doesn't yet deliver to.
+  const [pinLookup, setPinLookup] = useState<{ status: 'idle' | 'checking' | 'resolved' | 'unserviceable'; result?: ServiceabilityResult }>({
+    status: 'idle',
+  });
+
+  useEffect(() => {
+    if (!/^[0-9]{6}$/.test(address.pincode)) {
+      setPinLookup({ status: 'idle' });
+      return;
+    }
+    let cancelled = false;
+    setPinLookup({ status: 'checking' });
+    checkServiceability(address.pincode)
+      .then((result) => {
+        if (cancelled) return;
+        if (result.isServiceable && result.city && result.state) {
+          setPinLookup({ status: 'resolved', result });
+          const match = INDIAN_STATES.find((s) => s.name === result.state);
+          onChange({ ...address, city: result.city, state: result.state, stateCode: match?.code ?? '' });
+        } else {
+          setPinLookup({ status: 'unserviceable', result });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPinLookup({ status: 'idle' });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-run only when the PIN itself changes - address is applied as a
+    // side effect of resolution here, not a dependency of it.
+  }, [address.pincode]);
+
   function update(field: keyof Address, value: string) {
     if (field === 'state') {
       const match = INDIAN_STATES.find((s) => s.name === value);
@@ -621,14 +661,21 @@ function AddressFields({
         className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
       />
       <div className="grid grid-cols-2 gap-3">
-        <input
-          type="text"
+        <select
           required
-          placeholder="City"
+          // A saved/prefilled address already has a real city (from a
+          // previous order) - never hide it just because this page's own
+          // live PIN lookup hasn't resolved yet (or resolves to a PIN
+          // this demo's own short serviceable list doesn't cover). Only
+          // force a blank placeholder when there is truly no city at all.
+          disabled={pinLookup.status === 'checking'}
           value={address.city}
           onChange={(e) => update('city', e.target.value)}
-          className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
-        />
+          className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716] disabled:text-[#9c9284]"
+        >
+          {!address.city && <option value="">{pinLookup.status === 'checking' ? 'Checking PIN code…' : 'Enter PIN code first'}</option>}
+          {address.city && <option value={address.city}>{address.city}</option>}
+        </select>
         <input
           type="text"
           required
@@ -640,6 +687,13 @@ function AddressFields({
           className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
         />
       </div>
+      {pinLookup.status === 'unserviceable' && (
+        <p role="alert" className="text-xs text-danger">
+          {pinLookup.result?.known
+            ? 'Delivery is not currently available to this PIN code.'
+            : "We don't recognise this PIN code yet - please double-check it."}
+        </p>
+      )}
       <select
         required
         value={address.state}
