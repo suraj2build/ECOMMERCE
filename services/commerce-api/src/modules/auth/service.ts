@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@fcp/db';
 import { hashPassword, verifyPassword, MFA_REQUIRED_ROLES, type RoleKey } from '@fcp/shared';
 import { UnauthorizedError, ConflictError, ValidationError } from '@fcp/shared';
-import { loadEnv } from '@fcp/config';
+import { loadEnv, mockProvidersAllowed } from '@fcp/config';
 import { generateOtpCode, ConsoleOtpProvider, type OtpProvider } from './otp-provider.js';
 import { verifyMfaToken } from './mfa.js';
 import { decryptMfaSecret, MfaSecretUnreadableError } from './mfa-secret-crypto.js';
@@ -58,7 +58,10 @@ export class AuthService {
 
   async requestCustomerOtp(mobile: string): Promise<void> {
     const env = loadEnv();
-    const code = generateOtpCode(env.OTP_LENGTH);
+    const code =
+      mockProvidersAllowed(env) && env.DEMO_FIXED_OTP_CODE
+        ? env.DEMO_FIXED_OTP_CODE
+        : generateOtpCode(env.OTP_LENGTH);
     await this.prisma.otpCode.create({
       data: {
         mobile,

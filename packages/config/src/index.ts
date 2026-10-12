@@ -62,6 +62,11 @@ const envSchema = z.object({
   OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
   OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   OTP_LENGTH: z.coerce.number().int().positive().default(6),
+  // Demo/preview convenience only (LR-010): every OTP request returns this
+  // code instead of a random one, so one person can hand it out to testers
+  // without reading the server console. Ignored outside mockProvidersAllowed
+  // (never production), so it can never weaken real OTP delivery.
+  DEMO_FIXED_OTP_CODE: z.string().regex(/^\d+$/).optional(),
 
   // --- Inventory (INV-002) ---
   INVENTORY_RESERVATION_TTL_SECONDS: z.coerce.number().int().positive().default(900), // 15 min, configurable per INV-002
