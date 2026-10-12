@@ -62,6 +62,16 @@ export default function CheckoutPage() {
   const [billingSameAsShipping, setBillingSameAsShipping] = useState(true);
   const [billingAddress, setBillingAddress] = useState<Address>(EMPTY_ADDRESS);
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'PREPAID'>('COD');
+  // 2026-10-12 UAT finding: the profile/address prefill below resolves
+  // asynchronously and used to overwrite contact/address fields
+  // unconditionally the moment it arrived - a slow response could blow
+  // away a few keystrokes the shopper had already typed in the meantime.
+  // These refs record "this field has been edited by the shopper since
+  // the page loaded" the instant onChange fires (synchronous, so it's
+  // always set before a same-tick-or-later prefill response is handled);
+  // the prefill then only fills a field that is still untouched.
+  const contactTouchedRef = useRef(false);
+  const addressTouchedRef = useRef(false);
   const [preview, setPreview] = useState<CheckoutPreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -154,10 +164,14 @@ export default function CheckoutPage() {
     // draft (above) still wins: it reflects what the shopper is actively
     // typing right now, not what their account looked like when they
     // started. Every field stays editable - this only fills in what's
-    // already known, it never locks it.
+    // already known, it never locks it. The *Touched refs guard the same
+    // thing for a SLOW response on this same page load: if the shopper
+    // starts typing before getProfile()/listAddresses() resolves, the
+    // prefill backs off rather than overwriting what's already been typed.
     if (!getStoredSession()) return;
     void getProfile()
       .then((profile) => {
+        if (contactTouchedRef.current) return; // shopper already started typing - don't clobber it
         if (profile.fullName) setContactName(profile.fullName);
         setContactMobile(profile.mobile);
         if (profile.email) setContactEmail(profile.email);
@@ -168,6 +182,7 @@ export default function CheckoutPage() {
       });
     void listAddresses()
       .then((addresses) => {
+        if (addressTouchedRef.current) return; // shopper already started typing - don't clobber it
         const preferred = addresses.find((a) => a.isDefault) ?? addresses[0];
         if (!preferred) return;
         setShippingAddress({
@@ -334,7 +349,10 @@ export default function CheckoutPage() {
               required
               placeholder="Full name"
               value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
+              onChange={(e) => {
+                contactTouchedRef.current = true;
+                setContactName(e.target.value);
+              }}
               className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
             />
             <input
@@ -342,19 +360,32 @@ export default function CheckoutPage() {
               required
               placeholder="10-digit mobile number"
               value={contactMobile}
-              onChange={(e) => setContactMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              onChange={(e) => {
+                contactTouchedRef.current = true;
+                setContactMobile(e.target.value.replace(/\D/g, '').slice(0, 10));
+              }}
               className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
             />
             <input
               type="email"
               placeholder="Email (optional)"
               value={contactEmail}
-              onChange={(e) => setContactEmail(e.target.value)}
+              onChange={(e) => {
+                contactTouchedRef.current = true;
+                setContactEmail(e.target.value);
+              }}
               className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
             />
           </fieldset>
 
-          <AddressFields legend="Shipping address" address={shippingAddress} onChange={setShippingAddress} />
+          <AddressFields
+            legend="Shipping address"
+            address={shippingAddress}
+            onChange={(a) => {
+              addressTouchedRef.current = true;
+              setShippingAddress(a);
+            }}
+          />
 
           <label className="flex items-center gap-2 text-sm text-[#181716]">
             <input
