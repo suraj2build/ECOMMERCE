@@ -9,7 +9,7 @@ import { cartItems, checkoutTracking, track } from '@/lib/tracking';
 import { previewCheckout, startCheckout, type Address, type CheckoutPreview } from '@/lib/checkout';
 import { INDIAN_STATES } from '@/lib/indian-states';
 import { getStoredSession } from '@/lib/customer-auth';
-import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance } from '@/lib/account';
+import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance, getProfile, listAddresses } from '@/lib/account';
 import { randomUuid } from '@/lib/random-id';
 import { formatINR } from '@/lib/money';
 import { CheckoutStepper, type CheckoutStep } from '@/vanya/components/CheckoutStepper';
@@ -145,7 +145,45 @@ export default function CheckoutPage() {
       setContactMobile(draft.contactMobile);
       setContactEmail(draft.contactEmail);
       setShippingAddress(draft.shippingAddress);
+      return;
     }
+
+    // A signed-in customer already gave their name/mobile/email at sign-up
+    // (or a previous checkout) and may have a saved address - re-asking for
+    // all of that here is exactly what this prefill avoids. An in-progress
+    // draft (above) still wins: it reflects what the shopper is actively
+    // typing right now, not what their account looked like when they
+    // started. Every field stays editable - this only fills in what's
+    // already known, it never locks it.
+    if (!getStoredSession()) return;
+    void getProfile()
+      .then((profile) => {
+        if (profile.fullName) setContactName(profile.fullName);
+        setContactMobile(profile.mobile);
+        if (profile.email) setContactEmail(profile.email);
+      })
+      .catch(() => {
+        // Not fatal - the shopper just sees the same blank contact fields
+        // as a guest would.
+      });
+    void listAddresses()
+      .then((addresses) => {
+        const preferred = addresses.find((a) => a.isDefault) ?? addresses[0];
+        if (!preferred) return;
+        setShippingAddress({
+          line1: preferred.line1,
+          line2: preferred.line2 ?? '',
+          landmark: preferred.landmark ?? '',
+          city: preferred.city,
+          state: preferred.state,
+          stateCode: preferred.stateCode,
+          pincode: preferred.pincode,
+        });
+      })
+      .catch(() => {
+        // No saved address (or the lookup failed) - the address fields
+        // stay blank, which is exactly the right prompt to add one.
+      });
   }, []);
 
   useEffect(() => {
