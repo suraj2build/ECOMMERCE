@@ -42,7 +42,17 @@ test.describe('Search page validation beyond 1,000 matches', () => {
   const finalName = `${token} final item`;
 
   test.beforeAll(async () => {
-    await meili('/indexes/styles/documents', 'POST', ids.map((id, i) => ({
+    // 2026-10-12: this document shape has THREE fields ending in "id" (id,
+    // brandId, categoryId) - when this test is the first write to a fresh
+    // `styles` index (the CI E2E seeding step explicitly deletes it first;
+    // see .github/workflows/ci.yml), Meilisearch can no longer auto-infer
+    // a primary key and fails the whole task with
+    // index_primary_key_multiple_candidates_found. The real application
+    // (index-service.ts) never hits this because it always creates the
+    // index with an explicit primaryKey itself - match that explicitly
+    // here too, rather than relying on inference or on some other writer
+    // having touched this index first.
+    await meili('/indexes/styles/documents?primaryKey=id', 'POST', ids.map((id, i) => ({
       id,
       styleCode: `E2E-${token}-${i}`,
       name: i === 0 ? finalName : `${token} item ${i}`,
