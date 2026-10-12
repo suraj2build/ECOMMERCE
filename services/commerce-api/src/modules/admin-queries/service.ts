@@ -193,6 +193,9 @@ export class AdminQueryService {
           status: true,
           paymentMethod: true,
           grandTotal: true,
+          loyaltyRedemptionValue: true,
+          storeCreditApplied: true,
+          giftCardApplied: true,
           currency: true,
           invoiceStatus: true,
           refundRequired: true,
@@ -205,7 +208,19 @@ export class AdminQueryService {
       }),
       this.prisma.order.count({ where }),
     ]);
-    return { items: rows.map((r) => ({ ...r, grandTotal: money(r.grandTotal) })), total };
+    // 2026-10-12 UAT finding: this list showed grandTotal (gross, pre-
+    // redemption) while the order detail route (buildOrderView, M15/order
+    // service) correctly shows amountPayable (net, after loyalty/credit/
+    // gift-card) - a staff member scanning the list saw a different figure
+    // than the one actually collected. Same computation as buildOrderView.
+    return {
+      items: rows.map(({ loyaltyRedemptionValue, storeCreditApplied, giftCardApplied, ...r }) => ({
+        ...r,
+        grandTotal: money(r.grandTotal),
+        amountPayable: money(Number(r.grandTotal) - Number(loyaltyRedemptionValue) - Number(storeCreditApplied) - Number(giftCardApplied)),
+      })),
+      total,
+    };
   }
 
   /** Fulfilment queue (pack / ready-to-ship / ship / deliver work), order- and exchange-sourced alike. */

@@ -55,7 +55,16 @@ export class SupportService {
           where: { customerId },
           orderBy: { createdAt: 'desc' },
           take: 10,
-          select: { id: true, orderNumber: true, status: true, grandTotal: true, createdAt: true },
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            grandTotal: true,
+            loyaltyRedemptionValue: true,
+            storeCreditApplied: true,
+            giftCardApplied: true,
+            createdAt: true,
+          },
         }),
         this.loyalty.getBalanceForCustomer(customerId),
         this.prisma.storeCreditAccount.findUnique({ where: { customerId }, select: { balance: true } }),
@@ -76,11 +85,15 @@ export class SupportService {
       customerSince: customer.createdAt,
       lifetimeOrderCount: orderStats._count._all,
       lifetimeSpend: Number(orderStats._sum.grandTotal ?? 0),
+      // 2026-10-12 UAT finding: grandTotal is gross (pre-redemption); a
+      // support agent reading "recent orders" needs the same net figure
+      // the order detail route and admin order list now both show.
       recentOrders: recentOrders.map((o) => ({
         id: o.id,
         orderNumber: o.orderNumber,
         status: o.status,
         grandTotal: Number(o.grandTotal),
+        amountPayable: Number(o.grandTotal) - Number(o.loyaltyRedemptionValue) - Number(o.storeCreditApplied) - Number(o.giftCardApplied),
         createdAt: o.createdAt,
       })),
       loyalty: { availablePoints: loyaltyBalance.balance, pendingPoints: loyaltyBalance.pendingPoints },

@@ -12,6 +12,7 @@ interface OrderRow {
   status: string;
   paymentMethod: string;
   grandTotal: number;
+  amountPayable: number;
   currency: string;
   invoiceStatus: string;
   refundRequired: boolean;
@@ -84,7 +85,12 @@ export default function OrdersPage() {
                 { header: 'Status', cell: (r) => <StatusBadge status={r.status} /> },
                 { header: 'Payment', cell: (r) => r.paymentMethod },
                 { header: 'Lines', numeric: true, cell: (r) => r._count.lines },
-                { header: 'Total', numeric: true, cell: (r) => <Money value={r.grandTotal} currency={r.currency} /> },
+                // 2026-10-12 UAT finding: this used to show grandTotal (gross,
+                // pre-redemption) while the detail page shows amountPayable
+                // (net) - a staff member scanning the list saw a different
+                // figure than what was actually collected. "Payable" here
+                // matches the detail page's own label for the same field.
+                { header: 'Payable', numeric: true, cell: (r) => <Money value={r.amountPayable} currency={r.currency} /> },
                 { header: 'Invoice', cell: (r) => <StatusBadge status={r.invoiceStatus} /> },
                 { header: 'Refund required', cell: (r) => <YesNo value={r.refundRequired} /> },
                 { header: 'Placed', cell: (r) => <DateText value={r.createdAt} withTime /> },

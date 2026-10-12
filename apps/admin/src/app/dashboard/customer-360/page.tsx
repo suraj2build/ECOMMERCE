@@ -16,7 +16,7 @@ interface Customer360 {
   customerSince: string;
   lifetimeOrderCount: number;
   lifetimeSpend: number;
-  recentOrders: Array<{ id: string; orderNumber: string; status: string; grandTotal: number; createdAt: string }>;
+  recentOrders: Array<{ id: string; orderNumber: string; status: string; grandTotal: number; amountPayable: number; createdAt: string }>;
   loyalty: { availablePoints: number; pendingPoints: number };
   storeCreditBalance: number;
   openReturnsCount: number;
@@ -128,7 +128,7 @@ export default function Customer360Page() {
                 columns={[
                   { header: 'Order', cell: (o) => (canOrders ? <Link href={`/dashboard/orders/${o.id}`}><Ident>{o.orderNumber}</Ident></Link> : <Ident>{o.orderNumber}</Ident>) },
                   { header: 'Status', cell: (o) => <StatusBadge status={o.status} /> },
-                  { header: 'Total', numeric: true, cell: (o) => <Money value={o.grandTotal} /> },
+                  { header: 'Payable', numeric: true, cell: (o) => <Money value={o.amountPayable} /> },
                   { header: 'Placed', cell: (o) => <DateText value={o.createdAt} /> },
                 ]}
               />
