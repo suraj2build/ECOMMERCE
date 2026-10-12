@@ -1516,6 +1516,35 @@ Not self-certified; awaiting independent re-review.
     - five price-difference tests that had crossed products now use a
       colour of the same product with its own colour-level price.
 
+- **UAT finding and reverted mis-fix, 2026-10-12:** a live UAT pass found
+  that a same-size-family exchange on a coupon-discounted order line
+  demanded a price-difference payment equal to the original discount,
+  which the agent running the UAT assumed was a bug and "fixed" by
+  re-deriving `originalLineValue` from the CURRENT catalog price at
+  exchange-request time instead of the order's frozen `lineTotalInclusive`.
+  That fix directly contradicted this decision's own already-documented,
+  already-tested design (`Exchange.originalLineValue`'s schema comment;
+  `test/e2e-storefront/exchanges.spec.ts`'s "now-cheaper replacement"
+  test, which deliberately freezes a HIGH `originalLineValue` and lowers
+  the catalog price afterward specifically to prove `STORE_CREDIT` comes
+  from the FROZEN value, not today's price) and broke that pre-existing,
+  previously-passing E2E test outright - caught only because CI was
+  actually checked, not assumed green. **Reverted the same day**:
+  `originalLineValue` is `line.lineTotalInclusive` again, full stop, with
+  no behavior change. **Genuinely open question, not resolved by this
+  revert:** should a discount applied at original purchase (a coupon,
+  loyalty redemption, or store credit) carry over into a same-size/
+  colour-family exchange - i.e., should the comparison use what was
+  ACTUALLY PAID (today's documented behavior - the customer effectively
+  forfeits the original discount percentage on the replacement) or should
+  it apply an equivalent discount to the replacement's current price too
+  (so a pure size/colour swap is always EVEN when the list prices match)?
+  This is a commercial policy question an engineering agent must not
+  guess at twice - **`DECISION_REQUIRED`**, pending explicit Product
+  Owner direction. Until decided, the documented/tested behavior (pay or
+  credit the difference between the amount actually paid and the
+  replacement's current price) remains the only behavior in the codebase.
+
 #### EXC-003 — Exchange eligibility window · **P2**
 - **Question:** Same window as returns, or distinct?
 - **Dependencies:** RET-001

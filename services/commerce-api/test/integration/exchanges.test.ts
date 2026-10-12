@@ -293,13 +293,27 @@ describe('Exchanges (M21)', () => {
     expect(reservationAfter.status).toBe('CONVERTED');
   });
 
-  // UAT finding (2026-10-12): a same-price size exchange on an order line
-  // that was discounted by a cart-level coupon was wrongly computed as
-  // CUSTOMER_PAYS, for exactly the discount amount - comparing the
-  // original line's discounted lineTotalInclusive against the
-  // replacement's undiscounted current selling price. Fixed to compare
-  // both sides' current selling price instead.
-  it('a same-price size exchange on a coupon-discounted line is still EVEN, not CUSTOMER_PAYS', async () => {
+  // UAT finding (2026-10-12), corrected the same day: an earlier revision
+  // of this test (and of performInitiate itself) asserted that a same-
+  // size-family exchange on a coupon-discounted line should be EVEN -
+  // reasoning that re-paying the original discount on a plain size swap
+  // "felt" wrong. That reasoning was never checked against this system's
+  // own documented design: Exchange.originalLineValue's schema comment,
+  // and the pre-existing test/e2e-storefront/exchanges.spec.ts "now-
+  // cheaper replacement" test, both establish - deliberately and
+  // already-tested - that originalLineValue is the order's frozen
+  // lineTotalInclusive (what was actually paid, discount included) and
+  // replacementValue is the replacement's current, undiscounted selling
+  // price. The earlier "fix" silently overrode that documented invariant
+  // and broke the pre-existing E2E test outright. Reverted; this test now
+  // asserts the documented, correct behavior instead - a coupon discount
+  // does not carry over to a same-size-family exchange, so the customer
+  // pays the difference between what they paid and the replacement's
+  // current price. Whether that is the RIGHT commercial policy (should a
+  // discount follow the item into a same-tier exchange?) is a genuine
+  // open question, not re-litigated here - see EXC-002's
+  // DECISION_REQUIRED addendum in blueprint/DECISION_REGISTER.md.
+  it('a same-price size exchange on a coupon-discounted line is CUSTOMER_PAYS for the discount amount (documented behavior)', async () => {
     const fixture = await setupExchangeableStyle(1500);
     const promotionType = await testPrisma.promotionType.upsert({
       where: { key: 'PROMOTIONAL' },
@@ -337,16 +351,20 @@ describe('Exchanges (M21)', () => {
     expect(checkoutRes.statusCode).toBe(201);
     const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: checkoutRes.json().id }, include: { lines: true } });
     // The discount really did reduce this line below its SKU's own selling
-    // price - otherwise this test would not actually exercise the bug.
-    expect(Number(order.lines[0]!.lineTotalInclusive)).toBeLessThan(1500);
+    // price - otherwise this test would not actually exercise the scenario.
+    const paidAmount = Number(order.lines[0]!.lineTotalInclusive);
+    expect(paidAmount).toBeLessThan(1500);
 
     const wT = await warehouseToken();
     const { lineId } = await deliverOrderLine(order.id, wT);
     const res = await initiateExchange(order.id, lineId, fixture.blackL.id, wT, `exc-discounted-size-${counter}`);
     expect(res.statusCode).toBe(201);
     const exchange = res.json();
-    expect(exchange.paymentDirection).toBe('EVEN');
-    expect(Number(exchange.priceDifference)).toBe(0);
+    // Replacement (L) has no discount, so it costs the full ₹1,500 while
+    // the original line was paid at a 10% discount - the documented
+    // design charges the customer that difference, it does not waive it.
+    expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
+    expect(Number(exchange.priceDifference)).toBeCloseTo(1500 - paidAmount, 2);
   });
 
   // --- 2. Colour exchange ---
@@ -640,6 +658,49 @@ describe('Exchanges (M21)', () => {
     const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
     expect(payRes.statusCode).toBe(400);
     expect(payRes.json().error.message).toMatch(/CANCELLED/);
+  });
+
+  // 2026-10-12 UAT finding, fixed the same day: the test above only proves
+  // the SEQUENTIAL case (cancel, then try to pay). A genuinely concurrent
+  // pay/cancel pair raced the gap between initiatePriceDifferencePayment's
+  // status check and its (previously unguarded) external provider call -
+  // not provable sequentially, since both requests must genuinely overlap
+  // in Postgres for the race to exist at all.
+  it('a genuinely concurrent pay-and-cancel pair never strands a payment order on a cancelled exchange', async () => {
+    const ctx = await seedContext();
+    const fixture = await setupExchangeableStyle(1000, ctx, 1800);
+    const guestId = `guest-payrace-${counter}`;
+    const { orderId } = await codOrder(fixture.blackM.id, guestId, `idem-payrace-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-payrace-${counter}`)).json();
+    expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
+    expect(exchange.status).toBe('REQUESTED'); // still cancellable
+
+    const [payRes, cancelRes] = await Promise.all([
+      app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } }),
+      app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/cancel`, headers: { [GUEST_HEADER]: guestId } }),
+    ]);
+
+    const final = await testPrisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+    if (final.status === 'CANCELLED') {
+      // Cancellation reached the row first (or the payment claim lost the
+      // race) - the exchange must NEVER carry a live payment order.
+      expect(cancelRes.statusCode).toBe(200);
+      expect(final.paymentProviderOrderId).toBeNull();
+      expect(payRes.statusCode).toBeGreaterThanOrEqual(400);
+    } else {
+      // The payment claim won - cancellation must have been refused (409,
+      // "being processed"), never silently applied underneath a payment
+      // the provider was already asked to create.
+      expect(payRes.statusCode).toBe(200);
+      expect(final.paymentProviderOrderId).toBeTruthy();
+      expect(cancelRes.statusCode).toBe(409);
+      expect(final.status).not.toBe('CANCELLED');
+    }
+    // The one outcome this race must never produce: a CANCELLED exchange
+    // that still has a live Razorpay order attached to it.
+    expect(final.status === 'CANCELLED' && final.paymentProviderOrderId).toBeFalsy();
   });
 
   // --- 11. RBAC ---

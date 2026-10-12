@@ -231,6 +231,14 @@ const envSchema = z.object({
   // reclaim" idiom as PAYMENT_TIMEOUT_SECONDS/expireStalePayments.
   REFUND_PROCESSING_STALE_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
 
+  // --- Exchanges (EXC-002 concurrency fix, 2026-10-12 UAT finding) ---
+  // Same "stale after N seconds is safe to reclaim" idiom as
+  // REFUND_PROCESSING_STALE_SECONDS, for an Exchange.paymentStatus stuck
+  // in PROCESSING because the process that claimed it crashed before
+  // recording an outcome. A single Razorpay order-creation call is
+  // expected to complete on the same timescale as a refund settlement.
+  EXCHANGE_PAYMENT_PROCESSING_STALE_SECONDS: z.coerce.number().int().positive().default(300), // 5 min
+
   // --- Customer 360 (M22, specs/21-customer-profile.md) ---
   // Bounds the "recently viewed products" log per customer - product-
   // behavior storage bounding (never grow unbounded), NOT a stand-in for

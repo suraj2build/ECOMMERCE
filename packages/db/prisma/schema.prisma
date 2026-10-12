@@ -2933,6 +2933,18 @@ enum ExchangePaymentDirection {
 enum ExchangePaymentStatus {
   NOT_REQUIRED
   PENDING
+  // A durable in-flight claim taken by initiatePriceDifferencePayment
+  // BEFORE calling the external payment provider (the same claim-before-
+  // external-call idiom as RefundService.claimProcessing/
+  // REFUND_PROCESSING_STALE_SECONDS) - closes the race a 2026-10-12 UAT
+  // pass found, where a concurrent cancelExchange could commit between
+  // this method's status check and its (unguarded) provider call,
+  // stranding a payment order against an already-cancelled exchange.
+  // cancelExchange itself refuses to proceed while a payment is
+  // PROCESSING, so whichever of the two reaches the row first wins
+  // cleanly. Stuck beyond EXCHANGE_PAYMENT_PROCESSING_STALE_SECONDS (the
+  // claiming process crashed) is safe to reclaim back to PENDING.
+  PROCESSING
   CAPTURED
   FAILED
 }

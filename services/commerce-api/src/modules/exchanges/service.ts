@@ -215,19 +215,28 @@ export class ExchangeService {
     const price = await this.catalog.getActivePrice(replacementSku.styleId, replacementSku.colourId);
     if (!price) throw new ValidationError(`Replacement SKU '${input.replacementSkuId}' has no active price - cannot compute the exchange price difference`);
 
-    // EXC-002 ("if the replacement costs MORE, the customer pays the
-    // difference") compares what each side costs, not what the customer
-    // happened to pay for the original after an unrelated cart-level
-    // promotion/coupon. line.lineTotalInclusive is the ORDER's frozen,
-    // already-discounted amount - comparing it against the replacement's
-    // undiscounted current selling price fabricates a "price difference"
-    // equal to the original discount on every exchange, even a same-size-
-    // family swap of two identically-priced colours. Compare current
-    // selling prices on both sides instead; fall back to the historical
-    // paid amount only if the original SKU no longer has an active price
-    // to compare against (e.g. discontinued).
-    const originalPrice = await this.catalog.getActivePrice(line.sku.styleId, line.sku.colourId);
-    const originalLineValue = originalPrice ? Number(originalPrice.sellingPrice) * line.quantity : Number(line.lineTotalInclusive);
+    // EXC-002/REF-003 ("original transaction value"): originalLineValue is
+    // the order's own frozen lineTotalInclusive - what the customer
+    // actually paid, including any cart-level promotion/coupon discount -
+    // never re-derived from today's catalog price. replacementValue is the
+    // replacement SKU's current selling price AT REQUEST TIME, since the
+    // replacement was never previously purchased in this order. Both are
+    // frozen at request time and never re-derived from a later catalog
+    // price change (see Exchange.originalLineValue's own schema comment).
+    //
+    // UAT finding (2026-10-12): an earlier revision of this method instead
+    // re-derived originalLineValue from getActivePrice() at request time,
+    // reasoning that a same-size-family swap of identically-priced colours
+    // should never require a payment. That "fix" was itself wrong - it
+    // silently overrode this documented, already-tested invariant (see
+    // test/e2e-storefront/exchanges.spec.ts's "now-cheaper replacement"
+    // test, which deliberately freezes a HIGH originalLineValue and lowers
+    // the catalog price afterward to prove STORE_CREDIT is based on the
+    // frozen value, not today's price) and broke that test outright. Left
+    // genuinely open as a business-policy question - see EXC-002's
+    // DECISION_REQUIRED addendum in blueprint/DECISION_REGISTER.md - rather
+    // than guessed at again.
+    const originalLineValue = Number(line.lineTotalInclusive);
     const replacementValue = Number(price.sellingPrice) * line.quantity;
     const priceDifference = Math.round((replacementValue - originalLineValue + Number.EPSILON) * 100) / 100;
     const paymentDirection = priceDifference > 0 ? 'CUSTOMER_PAYS' : priceDifference < 0 ? 'STORE_CREDIT' : 'EVEN';
@@ -335,6 +344,20 @@ export class ExchangeService {
    * launches for checkout. Idempotent: a repeat call while PENDING
    * simply re-returns the SAME Razorpay order rather than creating a
    * second one.
+   *
+   * Concurrency (2026-10-12 UAT finding): the original version of this
+   * method read the exchange, checked its status, THEN called the
+   * external provider with no lock held across that gap - a concurrent
+   * cancelExchange could commit in between, stranding a freshly-created
+   * Razorpay order against an exchange that will never ship. Fixed with
+   * a durable PENDING/FAILED -> PROCESSING claim (the same claim-before-
+   * external-call idiom as RefundService.claimProcessing), re-checking
+   * `status NOT IN (CANCELLED, QC_FAILED, REPLACEMENT_UNAVAILABLE)` as
+   * part of the SAME atomic UPDATE. cancelExchange itself now refuses to
+   * proceed while paymentStatus is PROCESSING (see its own comment), so
+   * whichever of the two single-row UPDATEs reaches Postgres first wins
+   * cleanly - the loser sees the committed result and fails with a clear
+   * error rather than racing past it.
    */
   async initiatePriceDifferencePayment(exchangeId: string): Promise<{ providerOrderId: string; publicKeyId?: string; amount: number }> {
     const exchange = await this.getExchange(exchangeId);
@@ -342,38 +365,63 @@ export class ExchangeService {
       throw new ValidationError('This exchange does not require a price-difference payment');
     }
     if (exchange.paymentStatus === 'CAPTURED') throw new ValidationError('The price-difference payment has already been captured');
-    // UAT finding: cancelExchange/QC-fail/replacement-unavailable never
-    // reset paymentDirection/paymentStatus (by design - a payment already
-    // CAPTURED before reaching one of these needs a human refund decision,
-    // never a silent auto-refund; see the QC_FAILED schema comment). But
-    // that means nothing stopped a customer from newly collecting a
-    // Razorpay payment AFTER the exchange already became CANCELLED/
-    // QC_FAILED/REPLACEMENT_UNAVAILABLE - a replacement that will never
-    // ship. tryComplete() already refuses to act once terminal, so the
-    // payment would simply be stranded with no automatic refund.
     if (exchange.status === 'CANCELLED' || exchange.status === 'QC_FAILED' || exchange.status === 'REPLACEMENT_UNAVAILABLE') {
       throw new ValidationError(`Cannot collect a price-difference payment for an exchange in status '${exchange.status}'`);
     }
 
     if (exchange.paymentProviderOrderId) {
-      const provider = resolvePaymentProvider('RAZORPAY');
-      const creds = provider.name; // presence check only - key is read inside initiate()
-      void creds;
       return { providerOrderId: exchange.paymentProviderOrderId, amount: exchange.priceDifference as unknown as number };
     }
 
-    const provider = resolvePaymentProvider('RAZORPAY');
-    const result = await provider.initiate({
-      checkoutSessionId: exchange.id,
-      amount: Number(exchange.priceDifference),
-      idempotencyKey: `exchange-payment:${exchange.id}`,
+    const staleCutoff = new Date(Date.now() - loadEnv().EXCHANGE_PAYMENT_PROCESSING_STALE_SECONDS * 1000);
+    const claim = await this.prisma.exchange.updateMany({
+      where: {
+        id: exchangeId,
+        status: { notIn: ['CANCELLED', 'QC_FAILED', 'REPLACEMENT_UNAVAILABLE'] },
+        OR: [{ paymentStatus: { in: ['PENDING', 'FAILED'] } }, { paymentStatus: 'PROCESSING', updatedAt: { lt: staleCutoff } }],
+      },
+      data: { paymentStatus: 'PROCESSING' },
     });
-    if (result.status === 'UNAVAILABLE' || !result.providerReferenceId) {
-      throw new ValidationError(result.message ?? 'Online payment is currently unavailable - please try again shortly');
+    if (claim.count === 0) {
+      // Something changed between the read above and this claim attempt -
+      // re-fetch to report the real, current reason rather than a stale one.
+      const current = await this.getExchange(exchangeId);
+      if (current.paymentProviderOrderId) {
+        return { providerOrderId: current.paymentProviderOrderId, amount: current.priceDifference as unknown as number };
+      }
+      if (current.status === 'CANCELLED' || current.status === 'QC_FAILED' || current.status === 'REPLACEMENT_UNAVAILABLE') {
+        throw new ValidationError(`Cannot collect a price-difference payment for an exchange in status '${current.status}'`);
+      }
+      if (current.paymentStatus === 'CAPTURED') throw new ValidationError('The price-difference payment has already been captured');
+      throw new ConflictError('A payment for this exchange is already being processed - please try again shortly');
     }
 
-    await this.prisma.exchange.update({ where: { id: exchange.id }, data: { paymentProviderOrderId: result.providerReferenceId } });
-    return { providerOrderId: result.providerReferenceId, publicKeyId: result.publicKeyId, amount: Number(exchange.priceDifference) };
+    try {
+      const provider = resolvePaymentProvider('RAZORPAY');
+      const result = await provider.initiate({
+        checkoutSessionId: exchange.id,
+        amount: Number(exchange.priceDifference),
+        idempotencyKey: `exchange-payment:${exchange.id}`,
+      });
+      if (result.status === 'UNAVAILABLE' || !result.providerReferenceId) {
+        await this.prisma.exchange.updateMany({ where: { id: exchangeId, paymentStatus: 'PROCESSING' }, data: { paymentStatus: 'FAILED' } });
+        throw new ValidationError(result.message ?? 'Online payment is currently unavailable - please try again shortly');
+      }
+
+      await this.prisma.exchange.updateMany({
+        where: { id: exchangeId, paymentStatus: 'PROCESSING' },
+        data: { paymentProviderOrderId: result.providerReferenceId, paymentStatus: 'PENDING' },
+      });
+      return { providerOrderId: result.providerReferenceId, publicKeyId: result.publicKeyId, amount: Number(exchange.priceDifference) };
+    } catch (err) {
+      // Any unexpected throw (network error, provider SDK exception) must
+      // not leave the claim stuck at PROCESSING until the stale-cutoff -
+      // release it back to FAILED immediately so a retry isn't blocked.
+      if (!(err instanceof ValidationError)) {
+        await this.prisma.exchange.updateMany({ where: { id: exchangeId, paymentStatus: 'PROCESSING' }, data: { paymentStatus: 'FAILED' } });
+      }
+      throw err;
+    }
   }
 
   /**
@@ -431,6 +479,17 @@ export class ExchangeService {
       }
 
       if (existing.status === 'CANCELLED') return tx.exchange.findUniqueOrThrow({ where: { id: exchangeId } });
+      // 2026-10-12 UAT concurrency fix: refuse to cancel while a price-
+      // difference payment claim is in flight (initiatePriceDifferencePayment's
+      // own PENDING/FAILED -> PROCESSING claim, held only for the duration
+      // of its external provider call). Without this, a claim that won the
+      // row race just before this lock was acquired would have its
+      // provider call proceed against an exchange this transaction is
+      // about to mark CANCELLED underneath it. The claim resolves in
+      // seconds (or is reclaimed as stale) - the caller can simply retry.
+      if (existing.paymentStatus === 'PROCESSING') {
+        throw new ConflictError('A payment for this exchange is currently being processed - please try again shortly');
+      }
       if (existing.status !== 'REQUESTED' && existing.status !== 'PICKUP_SCHEDULED') {
         throw new ValidationError(`Cannot cancel an exchange in status '${existing.status}'`);
       }

@@ -52,7 +52,12 @@ export interface ExchangeView {
   replacementSkuId: string;
   status: 'REQUESTED' | 'PICKUP_SCHEDULED' | 'PICKED_UP' | 'RECEIVED' | 'REPLACEMENT_ALLOCATED' | 'COMPLETED' | 'QC_FAILED' | 'REPLACEMENT_UNAVAILABLE' | 'CANCELLED';
   paymentDirection: 'CUSTOMER_PAYS' | 'STORE_CREDIT' | 'EVEN';
-  paymentStatus: 'NOT_REQUIRED' | 'PENDING' | 'CAPTURED' | 'FAILED';
+  // PROCESSING is a brief, server-internal in-flight claim (see
+  // ExchangePaymentStatus's schema comment) - included here for type
+  // accuracy, but the UI never needs to branch on it specially: it simply
+  // isn't PENDING, so the "Complete payment" action correctly stays
+  // hidden while it's set.
+  paymentStatus: 'NOT_REQUIRED' | 'PENDING' | 'PROCESSING' | 'CAPTURED' | 'FAILED';
   priceDifference: string;
   cancelledAt: string | null;
   cancelledReason: string | null;
