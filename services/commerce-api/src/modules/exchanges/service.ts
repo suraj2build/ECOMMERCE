@@ -342,6 +342,18 @@ export class ExchangeService {
       throw new ValidationError('This exchange does not require a price-difference payment');
     }
     if (exchange.paymentStatus === 'CAPTURED') throw new ValidationError('The price-difference payment has already been captured');
+    // UAT finding: cancelExchange/QC-fail/replacement-unavailable never
+    // reset paymentDirection/paymentStatus (by design - a payment already
+    // CAPTURED before reaching one of these needs a human refund decision,
+    // never a silent auto-refund; see the QC_FAILED schema comment). But
+    // that means nothing stopped a customer from newly collecting a
+    // Razorpay payment AFTER the exchange already became CANCELLED/
+    // QC_FAILED/REPLACEMENT_UNAVAILABLE - a replacement that will never
+    // ship. tryComplete() already refuses to act once terminal, so the
+    // payment would simply be stranded with no automatic refund.
+    if (exchange.status === 'CANCELLED' || exchange.status === 'QC_FAILED' || exchange.status === 'REPLACEMENT_UNAVAILABLE') {
+      throw new ValidationError(`Cannot collect a price-difference payment for an exchange in status '${exchange.status}'`);
+    }
 
     if (exchange.paymentProviderOrderId) {
       const provider = resolvePaymentProvider('RAZORPAY');

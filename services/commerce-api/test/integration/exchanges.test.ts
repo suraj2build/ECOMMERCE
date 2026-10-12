@@ -617,6 +617,31 @@ describe('Exchanges (M21)', () => {
     expect(reservation.status).toBe('RELEASED');
   });
 
+  // UAT finding (2026-10-12): cancelExchange never resets paymentDirection/
+  // paymentStatus (by design, for a payment already captured before
+  // cancellation - see the QC_FAILED schema comment). But nothing stopped
+  // a customer from newly initiating a real Razorpay payment for the
+  // price difference AFTER their own exchange was already cancelled - a
+  // replacement that will never ship, with no automatic refund path.
+  it('refuses to collect a price-difference payment for an already-cancelled exchange', async () => {
+    const ctx = await seedContext();
+    const fixture = await setupExchangeableStyle(1000, ctx, 1800);
+    const guestId = `guest-cancelled-pay-${counter}`;
+    const { orderId } = await codOrder(fixture.blackM.id, guestId, `idem-cancelled-pay-${counter}`);
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(orderId, wT);
+    const exchange = (await initiateExchange(orderId, lineId, fixture.whiteM.id, wT, `exc-cancelled-pay-${counter}`)).json();
+    expect(exchange.paymentDirection).toBe('CUSTOMER_PAYS');
+
+    const cancelRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/cancel`, headers: { [GUEST_HEADER]: guestId } });
+    expect(cancelRes.statusCode).toBe(200);
+    expect(cancelRes.json().status).toBe('CANCELLED');
+
+    const payRes = await app.inject({ method: 'POST', url: `/api/v1/storefront/exchanges/${exchange.id}/pay`, headers: { [GUEST_HEADER]: guestId } });
+    expect(payRes.statusCode).toBe(400);
+    expect(payRes.json().error.message).toMatch(/CANCELLED/);
+  });
+
   // --- 11. RBAC ---
 
   it('rejects initiating an exchange from a staff member without exchange:initiate', async () => {

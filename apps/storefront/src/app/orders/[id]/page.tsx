@@ -567,7 +567,11 @@ export default function OrderDetailPage() {
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <p className="text-xs text-[#6e6359]">
                         {EXCHANGE_STATUS_LABEL[existing.status]}
-                        {existing.paymentDirection === 'CUSTOMER_PAYS' && existing.paymentStatus === 'PENDING' && (
+                        {existing.paymentDirection === 'CUSTOMER_PAYS' &&
+                          existing.paymentStatus === 'PENDING' &&
+                          existing.status !== 'CANCELLED' &&
+                          existing.status !== 'QC_FAILED' &&
+                          existing.status !== 'REPLACEMENT_UNAVAILABLE' && (
                           <>
                             {' - '}
                             <button
