@@ -31,12 +31,17 @@ export function CheckoutStepper({
       {STEPS.map((step, i) => {
         const isDone = i < currentIndex;
         const isCurrent = i === currentIndex;
+        // 2026-10-12: #B9AE9F for the not-yet-reached step failed WCAG AA
+        // (2.04:1 against both department backgrounds, #FAF6FB/#FAF7F2;
+        // needs 4.5:1) - darkened one tone to #7B6F5F (4.59:1 on both),
+        // kept lighter than the #756A5E "done" tone so the three states
+        // stay visually distinct.
         const badgeClass = isCurrent
           ? 'bg-[var(--color-primary)] text-white'
           : isDone
           ? 'bg-[#EAE3D7] text-[#5C5146]'
-          : 'border border-[#DDD3C5] text-[#B9AE9F]';
-        const labelClass = isCurrent ? 'text-[#1A1816] font-semibold' : isDone ? 'text-[#756A5E]' : 'text-[#B9AE9F]';
+          : 'border border-[#DDD3C5] text-[#7B6F5F]';
+        const labelClass = isCurrent ? 'text-[#1A1816] font-semibold' : isDone ? 'text-[#756A5E]' : 'text-[#7B6F5F]';
         const content = (
           <span className={`flex items-center gap-1.5 ${labelClass}`}>
             <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${badgeClass}`}>

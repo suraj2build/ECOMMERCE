@@ -20,7 +20,10 @@ const PAGES = [
   '/category/men',
   '/category/new',
   '/category/sale',
-  '/category/kurtas',
+  // 2026-10-12: was '/category/kurtas', a category slug retired by the
+  // 2026-10-04 launch-assortment replacement (CLAUDE.md §0) - the current
+  // approved taxonomy's equivalent is 'everyday-kurtis'.
+  '/category/everyday-kurtis',
   '/legal/privacy',
   '/legal/terms',
   '/bag',
