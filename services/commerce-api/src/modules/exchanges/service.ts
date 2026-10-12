@@ -215,7 +215,19 @@ export class ExchangeService {
     const price = await this.catalog.getActivePrice(replacementSku.styleId, replacementSku.colourId);
     if (!price) throw new ValidationError(`Replacement SKU '${input.replacementSkuId}' has no active price - cannot compute the exchange price difference`);
 
-    const originalLineValue = Number(line.lineTotalInclusive);
+    // EXC-002 ("if the replacement costs MORE, the customer pays the
+    // difference") compares what each side costs, not what the customer
+    // happened to pay for the original after an unrelated cart-level
+    // promotion/coupon. line.lineTotalInclusive is the ORDER's frozen,
+    // already-discounted amount - comparing it against the replacement's
+    // undiscounted current selling price fabricates a "price difference"
+    // equal to the original discount on every exchange, even a same-size-
+    // family swap of two identically-priced colours. Compare current
+    // selling prices on both sides instead; fall back to the historical
+    // paid amount only if the original SKU no longer has an active price
+    // to compare against (e.g. discontinued).
+    const originalPrice = await this.catalog.getActivePrice(line.sku.styleId, line.sku.colourId);
+    const originalLineValue = originalPrice ? Number(originalPrice.sellingPrice) * line.quantity : Number(line.lineTotalInclusive);
     const replacementValue = Number(price.sellingPrice) * line.quantity;
     const priceDifference = Math.round((replacementValue - originalLineValue + Number.EPSILON) * 100) / 100;
     const paymentDirection = priceDifference > 0 ? 'CUSTOMER_PAYS' : priceDifference < 0 ? 'STORE_CREDIT' : 'EVEN';

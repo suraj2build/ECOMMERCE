@@ -293,6 +293,62 @@ describe('Exchanges (M21)', () => {
     expect(reservationAfter.status).toBe('CONVERTED');
   });
 
+  // UAT finding (2026-10-12): a same-price size exchange on an order line
+  // that was discounted by a cart-level coupon was wrongly computed as
+  // CUSTOMER_PAYS, for exactly the discount amount - comparing the
+  // original line's discounted lineTotalInclusive against the
+  // replacement's undiscounted current selling price. Fixed to compare
+  // both sides' current selling price instead.
+  it('a same-price size exchange on a coupon-discounted line is still EVEN, not CUSTOMER_PAYS', async () => {
+    const fixture = await setupExchangeableStyle(1500);
+    const promotionType = await testPrisma.promotionType.upsert({
+      where: { key: 'PROMOTIONAL' },
+      update: {},
+      create: { key: 'PROMOTIONAL', name: 'PROMOTIONAL' },
+    });
+    await testPrisma.promotion.create({
+      data: {
+        name: 'UAT regression coupon',
+        promotionTypeId: promotionType.id,
+        isCoupon: true,
+        couponCode: `UATREG${counter}`,
+        discountType: 'PERCENTAGE',
+        discountValue: 10,
+        startsAt: new Date(Date.now() - 86_400_000),
+      },
+    });
+    const guestId = `guest-discounted-size-${counter}`;
+    const headers = { [GUEST_HEADER]: guestId };
+    await addToCart(fixture.blackM.id, headers);
+    const checkoutRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/storefront/checkout',
+      headers,
+      payload: {
+        contactName: 'Jane Doe',
+        contactMobile: '9876543210',
+        billingAddress: validAddress(),
+        shippingAddress: validAddress(),
+        paymentMethod: 'COD',
+        couponCode: `UATREG${counter}`,
+        idempotencyKey: `idem-discounted-size-${counter}`,
+      },
+    });
+    expect(checkoutRes.statusCode).toBe(201);
+    const order = await testPrisma.order.findUniqueOrThrow({ where: { checkoutSessionId: checkoutRes.json().id }, include: { lines: true } });
+    // The discount really did reduce this line below its SKU's own selling
+    // price - otherwise this test would not actually exercise the bug.
+    expect(Number(order.lines[0]!.lineTotalInclusive)).toBeLessThan(1500);
+
+    const wT = await warehouseToken();
+    const { lineId } = await deliverOrderLine(order.id, wT);
+    const res = await initiateExchange(order.id, lineId, fixture.blackL.id, wT, `exc-discounted-size-${counter}`);
+    expect(res.statusCode).toBe(201);
+    const exchange = res.json();
+    expect(exchange.paymentDirection).toBe('EVEN');
+    expect(Number(exchange.priceDifference)).toBe(0);
+  });
+
   // --- 2. Colour exchange ---
 
   it('supports colour exchange (same size, different colour), the same mechanism as size exchange', async () => {
