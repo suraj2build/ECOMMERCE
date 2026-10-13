@@ -17,6 +17,26 @@ import { CheckoutStepper, type CheckoutStep } from '@/vanya/components/CheckoutS
 
 const EMPTY_ADDRESS: Address = { line1: '', line2: '', landmark: '', city: '', state: '', stateCode: '', pincode: '' };
 
+// 2026-10-12 UAT feedback: this demo's deliverability is a small static
+// whitelist (IND-002's own "never a real carrier check" fallback - see
+// ServiceabilityService's doc comment), not real courier coverage, and a
+// tester typing their own address has almost no chance of landing on one
+// of the few PINs it covers. Rather than let that read as a broken
+// checkout, this offers a HONEST, explicit "these are the only areas
+// this demo can complete an order for" pick-list. Kept intentionally
+// small (a representative handful of the full list) and must be kept in
+// sync with the seed list in scripts/seed-demo.mjs - these are the SAME
+// demo-only PINs, just a named subset for a clean row of chips rather
+// than every one of them.
+const DEMO_TEST_PINCODES: { pincode: string; city: string; state: string }[] = [
+  { pincode: '400001', city: 'Mumbai', state: 'Maharashtra' },
+  { pincode: '110001', city: 'New Delhi', state: 'Delhi' },
+  { pincode: '560001', city: 'Bengaluru', state: 'Karnataka' },
+  { pincode: '600001', city: 'Chennai', state: 'Tamil Nadu' },
+  { pincode: '700001', city: 'Kolkata', state: 'West Bengal' },
+  { pincode: '411001', city: 'Pune', state: 'Maharashtra' },
+];
+
 function isAddressComplete(a: Address): boolean {
   return Boolean(a.line1 && a.city && a.stateCode && /^[0-9]{6}$/.test(a.pincode));
 }
@@ -382,6 +402,7 @@ export default function CheckoutPage() {
           <AddressFields
             legend="Shipping address"
             address={shippingAddress}
+            showTestPincodes
             onChange={(a) => {
               addressTouchedRef.current = true;
               setShippingAddress(a);
@@ -582,10 +603,13 @@ function AddressFields({
   legend,
   address,
   onChange,
+  showTestPincodes = false,
 }: {
   legend: string;
   address: Address;
   onChange: (a: Address) => void;
+  /** Shipping address only - billing's own serviceability is never checked. */
+  showTestPincodes?: boolean;
 }) {
   // City is resolved FROM the PIN code (this demo's data model is one city
   // per pincode - never multiple candidates to pick from, so a free-text
@@ -638,6 +662,25 @@ function AddressFields({
   return (
     <fieldset className="space-y-4 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
       <legend className="font-display text-2xl text-[#181716]">{legend}</legend>
+      {showTestPincodes && (
+        <div className="rounded-[14px] border border-[#e6ddd0] bg-[#faf8f5] p-3">
+          <p className="text-xs text-[#6e6359]">
+            This demo delivers to a small set of test areas only - not real courier coverage. Pick one to try checkout, or enter your own PIN to check it.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {DEMO_TEST_PINCODES.map((p) => (
+              <button
+                key={p.pincode}
+                type="button"
+                onClick={() => update('pincode', p.pincode)}
+                className="rounded-full border border-[#d8d0c6] bg-white px-3 py-1.5 text-xs text-[#181716] hover:border-[#181716]"
+              >
+                {p.city} · {p.pincode}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <input
         type="text"
         required
@@ -663,6 +706,7 @@ function AddressFields({
       <div className="grid grid-cols-2 gap-3">
         <select
           required
+          aria-label="City"
           // A saved/prefilled address already has a real city (from a
           // previous order) - never hide it just because this page's own
           // live PIN lookup hasn't resolved yet (or resolves to a PIN
@@ -696,6 +740,7 @@ function AddressFields({
       )}
       <select
         required
+        aria-label="State"
         value={address.state}
         onChange={(e) => update('state', e.target.value)}
         className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"

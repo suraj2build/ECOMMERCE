@@ -186,9 +186,9 @@ test.describe('Order history', () => {
     await page.getByPlaceholder('Full name').fill('E2E Order History Buyer');
     await page.getByPlaceholder('10-digit mobile number').fill('9876543210');
     await page.getByPlaceholder('House / Flat, Building, Street').first().fill('221B Test Street');
-    await page.getByPlaceholder('City').first().fill('New Delhi');
     await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
-    await page.locator('select').first().selectOption('Delhi');
+    await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+    await expect(page.getByLabel('State').first()).toHaveValue('Delhi');
     await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
     await page.getByLabel('Cash on Delivery').check();
     await page.getByRole('button', { name: 'Place Order' }).click();

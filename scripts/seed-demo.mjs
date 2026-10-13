@@ -210,7 +210,33 @@ if (!location) {
     await call('POST', '/tax/rates', { hsnCode, gstRatePercent, effectiveFrom: yesterday }, token).catch(() => undefined);
   }
 }
-for (const [pincode, city, state] of [['110001', 'New Delhi', 'Delhi'], ['400001', 'Mumbai', 'Maharashtra'], ['560001', 'Bengaluru', 'Karnataka'], ['600001', 'Chennai', 'Tamil Nadu'], ['700001', 'Kolkata', 'West Bengal']]) {
+// IND-002: a static whitelist fallback, never a real courier-coverage
+// check (SHIP-002's real carrier API remains unbuilt/unscoped - see its
+// own module doc comment). This list exists ONLY so a demo tester has
+// somewhere to actually complete checkout; it is not, and must never be
+// presented as, nationwide deliverability. Widened 2026-10-12 (UAT
+// feedback: the original 5-pincode list was too narrow for real
+// testers using their own address) and moved here from a one-off manual
+// DB edit specifically so a demo reset doesn't silently shrink it back
+// down - this array IS the source of truth, matching
+// DEMO_TEST_PINCODES in apps/storefront's checkout page, which renders
+// it as an explicit "try a demo test address" quick-select rather than
+// asking a tester to guess a working PIN blind.
+for (const [pincode, city, state] of [
+  ['110001', 'New Delhi', 'Delhi'], ['110020', 'New Delhi', 'Delhi'], ['110092', 'New Delhi', 'Delhi'],
+  ['122001', 'Gurugram', 'Haryana'], ['201301', 'Noida', 'Uttar Pradesh'], ['226001', 'Lucknow', 'Uttar Pradesh'],
+  ['302001', 'Jaipur', 'Rajasthan'], ['380001', 'Ahmedabad', 'Gujarat'], ['390001', 'Vadodara', 'Gujarat'],
+  ['400001', 'Mumbai', 'Maharashtra'], ['400051', 'Mumbai', 'Maharashtra'], ['400601', 'Thane', 'Maharashtra'],
+  ['411001', 'Pune', 'Maharashtra'], ['440001', 'Nagpur', 'Maharashtra'], ['452001', 'Indore', 'Madhya Pradesh'],
+  ['462001', 'Bhopal', 'Madhya Pradesh'], ['500001', 'Hyderabad', 'Telangana'], ['500081', 'Hyderabad', 'Telangana'],
+  ['520001', 'Vijayawada', 'Andhra Pradesh'], ['530001', 'Visakhapatnam', 'Andhra Pradesh'], ['560001', 'Bengaluru', 'Karnataka'],
+  ['560066', 'Bengaluru', 'Karnataka'], ['560100', 'Bengaluru', 'Karnataka'], ['570001', 'Mysuru', 'Karnataka'],
+  ['600001', 'Chennai', 'Tamil Nadu'], ['600040', 'Chennai', 'Tamil Nadu'], ['641001', 'Coimbatore', 'Tamil Nadu'],
+  ['682001', 'Kochi', 'Kerala'], ['695001', 'Thiruvananthapuram', 'Kerala'], ['700001', 'Kolkata', 'West Bengal'],
+  ['700091', 'Kolkata', 'West Bengal'], ['751001', 'Bhubaneswar', 'Odisha'], ['781001', 'Guwahati', 'Assam'],
+  ['800001', 'Patna', 'Bihar'], ['834001', 'Ranchi', 'Jharkhand'], ['160001', 'Chandigarh', 'Chandigarh'],
+  ['141001', 'Ludhiana', 'Punjab'], ['248001', 'Dehradun', 'Uttarakhand'], ['492001', 'Raipur', 'Chhattisgarh'],
+]) {
   await call('POST', '/pdp/pincodes', { pincode, city, state, isServiceable: true, codAvailable: true }, token).catch(() => undefined);
 }
 

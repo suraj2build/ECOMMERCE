@@ -150,9 +150,9 @@ test.describe('Loyalty (M23)', () => {
     await page.getByPlaceholder('Full name').fill('E2E Loyalty Buyer');
     await page.getByPlaceholder('10-digit mobile number').fill(contactMobile);
     await page.getByPlaceholder('House / Flat, Building, Street').first().fill('17 Loyalty Lane');
-    await page.getByPlaceholder('City').first().fill('New Delhi');
     await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
-    await page.locator('select').first().selectOption('Delhi');
+    await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+    await expect(page.getByLabel('State').first()).toHaveValue('Delhi');
     await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
     return { placeOrder: () => page.getByLabel('Cash on Delivery').check().then(() => page.getByRole('button', { name: 'Place Order' }).click()) };
   }

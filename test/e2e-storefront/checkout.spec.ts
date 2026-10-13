@@ -27,6 +27,7 @@ async function expectOk(res: APIResponse, label: string): Promise<unknown> {
 test.describe('Checkout', () => {
   let styleId: string;
   let api: APIRequestContext;
+  let authHeaders: Record<string, string>;
   const prisma = new PrismaClient();
 
   test.beforeAll(async () => {
@@ -36,7 +37,7 @@ test.describe('Checkout', () => {
       data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
     });
     const { token } = (await expectOk(loginRes, 'Staff login')) as { token: string };
-    const authHeaders = { authorization: `Bearer ${token}` };
+    authHeaders = { authorization: `Bearer ${token}` };
 
     const category = await prisma.category.upsert({
       where: { slug: 'e2e-checkout-category' },
@@ -185,9 +186,11 @@ test.describe('Checkout', () => {
     await page.getByPlaceholder('Full name').fill('E2E Test Buyer');
     await page.getByPlaceholder('10-digit mobile number').fill('9876543210');
     await page.getByPlaceholder('House / Flat, Building, Street').first().fill('221B Test Street');
-    await page.getByPlaceholder('City').first().fill('New Delhi');
     await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
-    await page.locator('select').first().selectOption('Delhi');
+    // City/state are resolved from the PIN code, not typed - wait for the
+    // real lookup against the registered SERVICEABLE_PINCODE to land.
+    await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+    await expect(page.getByLabel('State').first()).toHaveValue('Delhi');
 
     await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
 
@@ -292,9 +295,9 @@ test.describe('Checkout', () => {
     await page.getByPlaceholder('Full name').fill('E2E Mobile Buyer');
     await page.getByPlaceholder('10-digit mobile number').fill('9876543211');
     await page.getByPlaceholder('House / Flat, Building, Street').first().fill('42 Mobile Test Lane');
-    await page.getByPlaceholder('City').first().fill('New Delhi');
     await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
-    await page.locator('select').first().selectOption('Delhi');
+    await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+    await expect(page.getByLabel('State').first()).toHaveValue('Delhi');
 
     // Shipping/tax review renders and is genuinely reachable (not
     // clipped/hidden) before payment method selection.
@@ -348,5 +351,160 @@ test.describe('Checkout', () => {
     });
     expect(orders).toHaveLength(1);
     expect(orders[0]!.status).toBe('CONFIRMED');
+  });
+
+  /**
+   * City/state-from-PIN behaviour (2026-10-12 UAT feedback). The City
+   * field used to be free text; it is now resolved live from the PIN
+   * code against ServiceabilityService, since a typed city could
+   * silently disagree with the PIN. These tests exercise exactly what
+   * the review asked for: the PIN -> city/state resolution itself, a
+   * genuine delayed-response race (a slow lookup for a PIN the shopper
+   * has already moved on from must never overwrite what a later PIN
+   * resolved to), and an unsupported PIN's message leaving every other
+   * already-entered field untouched.
+   */
+  test.describe('City/state resolution from PIN code', () => {
+    const SECOND_PINCODE = '400011'; // Mumbai, Maharashtra - deliberately a different city/state from SERVICEABLE_PINCODE
+    const UNKNOWN_PINCODE = '999999'; // syntactically valid, deliberately never registered
+
+    test.beforeAll(async () => {
+      await expectOk(
+        await api.post('/api/v1/pdp/pincodes', {
+          headers: authHeaders,
+          data: { pincode: SECOND_PINCODE, city: 'Mumbai', state: 'Maharashtra', isServiceable: true, codAvailable: true },
+        }),
+        'Upsert second serviceable pincode',
+      );
+    });
+
+    async function goToCheckoutAddressForm(page: import('@playwright/test').Page) {
+      await page.goto(`/product/${styleId}`);
+      await page.locator('fieldset', { hasText: 'Size' }).getByRole('button').first().click();
+      await page.getByRole('button', { name: 'Add to Bag' }).first().click();
+      await expect(page.getByText('Added to bag.').first()).toBeVisible({ timeout: 10_000 });
+      await page.goto('/bag');
+      await page.getByRole('link', { name: 'Proceed to Checkout' }).click();
+      await expect(page).toHaveURL(/\/checkout$/);
+    }
+
+    test('resolves city/state from a valid PIN, then re-resolves to a different city/state when the PIN changes', async ({ page }) => {
+      await goToCheckoutAddressForm(page);
+
+      await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
+      await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+      await expect(page.getByLabel('State').first()).toHaveValue('Delhi');
+
+      // Changing the PIN re-runs the lookup and overwrites both fields -
+      // never leaves the previous PIN's city/state stuck behind.
+      await page.getByPlaceholder('PIN code').first().fill('');
+      await page.getByPlaceholder('PIN code').first().fill(SECOND_PINCODE);
+      await expect(page.getByLabel('City').first()).toHaveValue('Mumbai', { timeout: 10_000 });
+      await expect(page.getByLabel('State').first()).toHaveValue('Maharashtra');
+    });
+
+    test('ignores a stale, delayed response for a PIN the shopper has already moved on from', async ({ page }) => {
+      await goToCheckoutAddressForm(page);
+
+      // Deterministically reproduce the race the review asked about:
+      // delay ONLY the slow (first-typed) PIN's response so it resolves
+      // AFTER the fast (second-typed) PIN's response has already landed
+      // and been applied - the stale 'cancelled' effect-cleanup flag
+      // must then discard it rather than overwrite the newer result.
+      let sawDelayedRequest = false;
+      await page.route('**/api/v1/storefront/serviceability**', async (route) => {
+        const url = new URL(route.request().url());
+        if (url.searchParams.get('pincode') === SERVICEABLE_PINCODE) {
+          sawDelayedRequest = true;
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+        await route.continue();
+      });
+
+      const pinField = page.getByPlaceholder('PIN code').first();
+      await pinField.fill(SERVICEABLE_PINCODE); // slow - response delayed 1.5s above
+      await pinField.fill('');
+      await pinField.fill(SECOND_PINCODE); // fast - resolves immediately
+
+      await expect(page.getByLabel('City').first()).toHaveValue('Mumbai', { timeout: 10_000 });
+      await expect(page.getByLabel('State').first()).toHaveValue('Maharashtra');
+
+      // Wait past the artificial delay and confirm the stale response,
+      // once it finally arrives, did NOT clobber the newer, correct
+      // result back to the first PIN's city/state.
+      await page.waitForTimeout(2000);
+      expect(sawDelayedRequest, 'test setup: the delayed request for the first PIN was never actually made').toBe(true);
+      await expect(page.getByLabel('City').first()).toHaveValue('Mumbai');
+      await expect(page.getByLabel('State').first()).toHaveValue('Maharashtra');
+    });
+
+    test('shows a clear message for an unsupported PIN without clearing other already-entered fields or an already-known city', async ({
+      page,
+    }) => {
+      await goToCheckoutAddressForm(page);
+
+      await page.getByPlaceholder('House / Flat, Building, Street').first().fill('221B Test Street');
+      await page.getByPlaceholder('Landmark (optional)').first().fill('Near Test Landmark');
+
+      // Resolve a real city/state first, standing in for an
+      // already-known/saved value, before switching to the unsupported PIN.
+      await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
+      await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+
+      await page.getByPlaceholder('PIN code').first().fill('');
+      await page.getByPlaceholder('PIN code').first().fill(UNKNOWN_PINCODE);
+
+      // Not getByRole('alert') - Next's own route announcer div also carries
+      // role="alert" on this page, making that locator ambiguous.
+      await expect(page.getByText("We don't recognise this PIN code yet")).toBeVisible({ timeout: 10_000 });
+
+      // The city select is never blanked back to a placeholder, and
+      // every other field the shopper already typed survives untouched.
+      await expect(page.getByLabel('City').first()).toHaveValue('New Delhi');
+      await expect(page.getByPlaceholder('House / Flat, Building, Street').first()).toHaveValue('221B Test Street');
+      await expect(page.getByPlaceholder('Landmark (optional)').first()).toHaveValue('Near Test Landmark');
+    });
+
+    test('preserves an already-known city across page load even when the saved PIN has not (yet) resolved', async ({ page }) => {
+      // Simulates a returning shopper whose in-progress address (saved
+      // via this page's own sessionStorage draft) already carries a real
+      // city - the live PIN re-check on load must never blank it back to
+      // a placeholder while waiting for (or failing) that re-check.
+      await page.addInitScript(
+        ([unknownPincode]: [string]) => {
+          sessionStorage.setItem(
+            'vanya_checkout_draft',
+            JSON.stringify({
+              contactName: 'E2E Saved Buyer',
+              contactMobile: '9876500000',
+              contactEmail: '',
+              shippingAddress: {
+                line1: '9 Saved Address Lane',
+                line2: '',
+                landmark: '',
+                city: 'Mumbai',
+                state: 'Maharashtra',
+                stateCode: 'MH',
+                pincode: unknownPincode,
+              },
+            }),
+          );
+        },
+        [UNKNOWN_PINCODE],
+      );
+
+      await goToCheckoutAddressForm(page);
+
+      // The saved city renders immediately (not blanked while the
+      // live re-check for this PIN is in flight)...
+      await expect(page.getByLabel('City').first()).toHaveValue('Mumbai');
+      // ...and stays exactly as it was once the re-check resolves the
+      // PIN as unsupported - the unserviceable branch never clears it.
+      // Not getByRole('alert') - Next's own route announcer div also carries
+      // role="alert" on this page, making that locator ambiguous.
+      await expect(page.getByText("We don't recognise this PIN code yet")).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByLabel('City').first()).toHaveValue('Mumbai');
+      await expect(page.getByPlaceholder('House / Flat, Building, Street').first()).toHaveValue('9 Saved Address Lane');
+    });
   });
 });

@@ -172,9 +172,9 @@ test.describe('Consent-aware analytics (LR-003)', () => {
     await page.getByPlaceholder('Full name').fill('Consent Buyer');
     await page.getByPlaceholder('10-digit mobile number').fill('9876500001');
     await page.getByPlaceholder('House / Flat, Building, Street').first().fill('7 Consent Lane');
-    await page.getByPlaceholder('City').first().fill('New Delhi');
     await page.getByPlaceholder('PIN code').first().fill(PINCODE);
-    await page.locator('select').first().selectOption('Delhi');
+    await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+    await expect(page.getByLabel('State').first()).toHaveValue('Delhi');
     await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
     const beginCheckout = (await tagCalls(page)).ga.find((c) => c.name === 'begin_checkout');
     expect(beginCheckout?.params).toMatchObject({ currency: 'INR', items: [expect.objectContaining({ item_id: skuCode })] });
