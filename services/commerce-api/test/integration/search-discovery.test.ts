@@ -667,4 +667,52 @@ describe('Search / Discovery (M10)', () => {
     expect((await index.getPagination()).maxTotalHits).toBeGreaterThan(1005);
   });
 
+  /**
+   * 2026-10-13 UAT feedback: "the claimed Meilisearch race remains a
+   * diagnosis to prove - add explicit index-readiness checks and reproduce
+   * before/after". Reproduced here directly, not assumed: `configureIndex()`
+   * is fire-and-forget from app.ts specifically so a slow/down Meilisearch
+   * never blocks server readiness (see its own doc comment) - this test
+   * recreates exactly that boot-time shape by deleting the index outright
+   * (not just its documents, which `beforeEach` already does) and firing
+   * `configureIndex()` WITHOUT awaiting it, the same way app.ts does. The
+   * very next statement issues a sort-dependent search on the same tick -
+   * configureIndex()'s first await is a real Meilisearch network round
+   * trip (createIndex().waitTask()), so this genuinely races its two
+   * sequential waitTask() calls rather than simulating a timing guess.
+   * Before SearchIndexService.ensureConfigured() existed, this search hit
+   * Meilisearch before configureIndex() had even finished CREATING the
+   * index (confirmed by reverting the fix and re-running this exact test:
+   * `MeilisearchApiError: Index 'styles_test' not found`), which routes.ts's
+   * own catch-all degrades to a silent `unavailable: true, totalHits: 0`
+   * rather than surfacing the error - the same degrade-and-swallow shape
+   * that, against a REAL cold-started server instead of this test's
+   * artificially-recreated race, produced search-deep-pages.spec.ts's
+   * page-42 failure in CI (run 38417291656, commit ee02294): the storefront
+   * computed a last page of 0 from that degraded response and redirected
+   * away from the page query param entirely. The two reproductions differ
+   * in exactly which Meilisearch call loses the race (index-creation here
+   * vs. attribute-configuration there, since a real boot's race window
+   * depends on how far configureIndex() had gotten) - both are the SAME
+   * underlying gap, which ensureConfigured() closes at its true source
+   * rather than papering over either symptom.
+   */
+  it('a sort-dependent search issued while configureIndex() is still mid-flight is never silently degraded (reproduces the CI startup race)', async () => {
+    const index = app.meilisearch.index(STYLES_INDEX_UID);
+    // Recreate the genuine cold-boot condition: no index, no settings at
+    // all - not just an emptied one (beforeEach only clears documents).
+    await index.delete().waitTask();
+
+    // Mirrors app.ts's own `void app.searchIndex.configureIndex()` exactly -
+    // deliberately not awaited here, so the search below races it for real.
+    const configuring = app.searchIndex.configureIndex();
+    const res = await app.inject({ method: 'GET', url: '/api/v1/storefront/search?q=&sort=newest&page=1' });
+    await configuring; // let the race finish settling before the next test
+
+    expect(res.statusCode).toBe(200);
+    // The pre-fix behavior: routes.ts's catch-all swallows Meilisearch's
+    // "publishedAt is not sortable" rejection and reports this instead.
+    expect(res.json().unavailable).toBeUndefined();
+  });
+
 });

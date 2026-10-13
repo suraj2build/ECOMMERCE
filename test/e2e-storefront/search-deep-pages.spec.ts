@@ -17,6 +17,20 @@ const MEILI_HEADERS: Record<string, string> = {
   'content-type': 'application/json',
   ...(process.env.MEILISEARCH_API_KEY ? { authorization: `Bearer ${process.env.MEILISEARCH_API_KEY}` } : {}),
 };
+/**
+ * 2026-10-13 UAT feedback: this MUST resolve exactly like
+ * services/commerce-api/src/modules/search/index-service.ts's own
+ * STYLES_INDEX_UID. CI runs this test's own process with the SAME
+ * NODE_ENV=test the workflow sets globally (.github/workflows/ci.yml),
+ * so the live commerce-api it starts for this E2E step ALSO resolves to
+ * 'styles_test' - a hardcoded 'styles' here writes fixtures into an index
+ * the server it's testing against never reads from. This was real, not
+ * hypothetical: every CI run checked while diagnosing this test's page-42
+ * failure (e.g. runs 38417291656, 38287481980, 38279437011) had
+ * NODE_ENV=test in effect for the whole job, confirmed directly from each
+ * run's own printed step environment.
+ */
+const STYLES_INDEX = process.env.NODE_ENV === 'test' ? 'styles_test' : 'styles';
 const TOTAL = 1005;
 const PAGE_SIZE = 24;
 const LAST_PAGE = Math.ceil(TOTAL / PAGE_SIZE); // 42, holding items 985..1005
@@ -44,15 +58,15 @@ test.describe('Search page validation beyond 1,000 matches', () => {
   test.beforeAll(async () => {
     // 2026-10-12: this document shape has THREE fields ending in "id" (id,
     // brandId, categoryId) - when this test is the first write to a fresh
-    // `styles` index (the CI E2E seeding step explicitly deletes it first;
-    // see .github/workflows/ci.yml), Meilisearch can no longer auto-infer
+    // index (the CI E2E seeding step explicitly deletes it first; see
+    // .github/workflows/ci.yml), Meilisearch can no longer auto-infer
     // a primary key and fails the whole task with
     // index_primary_key_multiple_candidates_found. The real application
     // (index-service.ts) never hits this because it always creates the
     // index with an explicit primaryKey itself - match that explicitly
     // here too, rather than relying on inference or on some other writer
     // having touched this index first.
-    await meili('/indexes/styles/documents?primaryKey=id', 'POST', ids.map((id, i) => ({
+    await meili(`/indexes/${STYLES_INDEX}/documents?primaryKey=id`, 'POST', ids.map((id, i) => ({
       id,
       styleCode: `E2E-${token}-${i}`,
       name: i === 0 ? finalName : `${token} item ${i}`,
@@ -65,7 +79,7 @@ test.describe('Search page validation beyond 1,000 matches', () => {
   });
 
   test.afterAll(async () => {
-    await meili('/indexes/styles/documents/delete-batch', 'POST', ids);
+    await meili(`/indexes/${STYLES_INDEX}/documents/delete-batch`, 'POST', ids);
   });
 
   test('the last populated page shows the final item, and a page past it redirects there', async ({ page }) => {

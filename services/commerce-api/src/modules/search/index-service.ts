@@ -102,6 +102,12 @@ export class SearchIndexService {
   private paginationUpdate: Promise<void> | undefined;
   private paginationReady = false;
   private paginationCapacity = 0;
+  /**
+   * Set once, at the start of {@link configureIndex}'s own work, so any
+   * concurrent caller can await the SAME in-flight attempt rather than
+   * assuming it has already finished. See {@link ensureConfigured}.
+   */
+  private configuredPromise: Promise<void> | undefined;
 
   /** Synchronize on index writes/startup, not on every public read. Deep
    * pages also refresh the window, covering restored/bulk-loaded indexes.
@@ -131,6 +137,26 @@ export class SearchIndexService {
     try { await update; } finally { this.paginationUpdate = undefined; }
   }
 
+  /**
+   * Closes a genuine startup race (2026-10-13 UAT feedback, reproduced
+   * directly - see search-deep-pages.spec.ts's own regression test below):
+   * `configureIndex()` is deliberately fire-and-forget from app.ts (a slow
+   * or not-yet-up Meilisearch must never block server readiness), so a
+   * request that reaches a search in the narrow window before that
+   * background work has finished creating the index and registering its
+   * sortable/filterable attributes would have its sort/filter rejected by
+   * Meilisearch, silently degrading to zero results (caught and logged as
+   * "storefront search failed" in routes.ts) rather than erroring loudly.
+   * Awaiting this resolves instantly once configuration has converged
+   * (success or already-logged failure - configureIndex() never rejects),
+   * so it costs nothing after the first moment of boot; before that, it
+   * makes the very first requests briefly wait for the SAME in-flight
+   * attempt instead of racing it.
+   */
+  async ensureConfigured(): Promise<void> {
+    if (this.configuredPromise) await this.configuredPromise;
+  }
+
   /** Runs a search and returns it only when it cannot have been cut off.
    * Meilisearch caps totalHits at the index's live maxTotalHits, and the
    * window is otherwise kept above the document count, so a result is
@@ -141,6 +167,7 @@ export class SearchIndexService {
    * if that keeps failing the search throws rather than return a capped list.
    */
   async searchComplete<T extends { totalHits?: number }>(minimumCapacity: number, run: () => Promise<T>): Promise<T> {
+    await this.ensureConfigured();
     for (let attempt = 0; attempt < COMPLETE_SEARCH_ATTEMPTS; attempt += 1) {
       await this.ensureCompletePagination(attempt > 0, minimumCapacity);
       const before = await this.liveWindow();
@@ -170,9 +197,18 @@ export class SearchIndexService {
   /**
    * Configures the index's searchable/filterable/sortable attributes and
    * custom ranking rules. Idempotent - safe to call on every server boot.
-   * Called from app.ts at startup, fire-and-forget (never blocks readiness).
+   * Called from app.ts at startup, fire-and-forget (never blocks readiness) -
+   * see {@link ensureConfigured} for how an individual search request
+   * still gets a correct (not silently degraded) answer during the narrow
+   * window before this has finished.
    */
   async configureIndex(): Promise<void> {
+    const attempt = this.configureIndexAttempt();
+    this.configuredPromise = attempt;
+    await attempt;
+  }
+
+  private async configureIndexAttempt(): Promise<void> {
     try {
       await this.fastify.meilisearch.createIndex(STYLES_INDEX_UID, { primaryKey: 'id' }).waitTask();
       await this.index()

@@ -17,6 +17,19 @@ export function isPreviewDeployment(): boolean {
   return process.env.DEPLOYMENT_STAGE === 'preview';
 }
 
+/**
+ * Client-component counterpart of {@link isPreviewDeployment}. `DEPLOYMENT_STAGE`
+ * itself is server-only and never reaches the browser bundle; a 'use client'
+ * component (e.g. checkout's demo-only test-PIN picker) must read the
+ * separate `NEXT_PUBLIC_DEPLOYMENT_STAGE`, which deployment tooling sets to
+ * the same value wherever `DEPLOYMENT_STAGE=preview` is set for the API.
+ * Defaults closed (false) so a production build never shows preview-only UI
+ * just because this var was left unset.
+ */
+export function isPreviewDeploymentClient(): boolean {
+  return process.env.NEXT_PUBLIC_DEPLOYMENT_STAGE === 'preview';
+}
+
 /** Paths a crawler must never index (customer-only or transient). */
 export const PRIVATE_PATHS = ['/account', '/bag', '/checkout', '/orders', '/wishlist', '/search', '/api/'];
 

@@ -158,6 +158,11 @@ const apiEnv = {
 const storefrontEnv = {
   NODE_ENV: 'production',
   DEPLOYMENT_STAGE: 'preview',
+  // Client-side counterpart (seo.ts's isPreviewDeploymentClient) - the
+  // plain DEPLOYMENT_STAGE above never reaches the browser bundle, so
+  // preview-only client UI (checkout's demo test-PIN picker) needs its own
+  // NEXT_PUBLIC_ copy, baked in at this build.
+  NEXT_PUBLIC_DEPLOYMENT_STAGE: 'preview',
   NEXT_PUBLIC_API_URL: url(PORTS.api),
   NEXT_PUBLIC_SITE_URL: url(PORTS.storefront),
   STOREFRONT_REVALIDATE_SECRET: settings.revalidateSecret,

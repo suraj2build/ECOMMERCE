@@ -174,7 +174,16 @@ jobs:
         # would otherwise be judging leftover test data.
         run: |
           (cd packages/db && npx prisma migrate reset --force --skip-seed)
+          # The E2E step's commerce-api inherits this job's NODE_ENV=test
+          # default (no override - see "E2E smoke" below), which resolves
+          # STYLES_INDEX_UID to 'styles_test' (index-service.ts), not
+          # 'styles' - deleting only 'styles' here left a stale/absent
+          # 'styles_test' index for that server to actually serve from.
+          # Delete both defensively so this stays correct even if NODE_ENV
+          # handling here ever changes; a missing index is already a soft
+          # no-op (|| true).
           curl -sf -X DELETE http://localhost:7700/indexes/styles || true
+          curl -sf -X DELETE http://localhost:7700/indexes/styles_test || true
           npm run db:seed
         env:
           SEED_SUPER_ADMIN_EMAIL: ci-admin@example.com

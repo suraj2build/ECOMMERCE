@@ -20,6 +20,8 @@ import {
   Truck,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Ruler,
   Sparkles,
   Check,
@@ -141,6 +143,48 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
   const [zoomModalOpen, setZoomModalOpen] = useState(false);
   const zoomRef = useRef<HTMLDivElement>(null);
   useModalFocus(zoomModalOpen, zoomRef, () => setZoomModalOpen(false));
+
+  // 2026-10-13 UAT feedback: the mobile gallery's dot indicators could
+  // change the active image, but the "swipeable" in its name was never
+  // actually implemented - no touch/scroll mechanism existed at all. This
+  // ref backs a real horizontally-scrolling, scroll-snap gallery (native
+  // touch swipe, no custom gesture code needed) kept in sync with
+  // activeImageIndex in both directions: scrolling it updates the state
+  // (handleMobileGalleryScroll), and tapping a dot or changing colour
+  // scrolls it to match (scrollToImage / the colour-change effect below).
+  const mobileGalleryRef = useRef<HTMLDivElement>(null);
+  function scrollToImage(idx: number) {
+    const el = mobileGalleryRef.current;
+    if (el) el.scrollTo({ left: idx * el.clientWidth, behavior: 'smooth' });
+    setActiveImageIndex(idx);
+  }
+  function handleMobileGalleryScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (el.clientWidth === 0) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setActiveImageIndex((prev) => (prev === idx ? prev : idx));
+  }
+
+  // 2026-10-13 UAT feedback: the fullscreen zoom view had no way to move
+  // between photos at all (not even the mobile gallery's own dots) - only
+  // close-and-reopen a different thumbnail. Circular (wraps at both ends,
+  // the same convention the colour swatches and most photo viewers use).
+  const imageCount = currentColor.images.length;
+  function showPreviousImage() {
+    setActiveImageIndex((idx) => (idx - 1 + imageCount) % imageCount);
+  }
+  function showNextImage() {
+    setActiveImageIndex((idx) => (idx + 1) % imageCount);
+  }
+  useEffect(() => {
+    if (!zoomModalOpen || imageCount <= 1) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'ArrowLeft') showPreviousImage();
+      else if (e.key === 'ArrowRight') showNextImage();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [zoomModalOpen, imageCount]);
 
   // Contextual lighting preview
   const [lightingMode, setLightingMode] = useState<LightingMode>('studio');
@@ -310,29 +354,52 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
                   ))}
                 </div>
 
-                {/* Mobile Swipeable Gallery */}
-                <div className="sm:hidden relative aspect-[3/4] bg-[#F0EBE2] overflow-hidden rounded-2xl">
-                  <button type="button" onClick={() => setZoomModalOpen(true)} aria-label={`Enlarge ${product.title}`} className="block w-full h-full">
-                    <img
-                      src={images[activeImageIndex] || images[0]}
-                      alt={product.title}
-                      style={{ filter: lightingConfig.filter, transition: 'filter 0.4s ease' }}
-                      className="w-full h-full object-cover"
-                    />
-                  </button>
+                {/* Mobile Swipeable Gallery - a real horizontally-scrolling,
+                    scroll-snap track (native touch swipe), not just a single
+                    image with tap-only dots. */}
+                <div className="sm:hidden relative aspect-[3/4] overflow-hidden rounded-2xl">
+                  <div
+                    ref={mobileGalleryRef}
+                    onScroll={handleMobileGalleryScroll}
+                    className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
+                    {images.map((img, idx) => (
+                      <button
+                        key={img + idx}
+                        type="button"
+                        onClick={() => {
+                          setActiveImageIndex(idx);
+                          setZoomModalOpen(true);
+                        }}
+                        aria-label={`Enlarge ${product.title} view ${idx + 1}`}
+                        className="relative block h-full w-full shrink-0 snap-center bg-[#F0EBE2]"
+                      >
+                        <img
+                          src={img}
+                          alt={`${product.title} view ${idx + 1}`}
+                          loading={idx === 0 ? 'eager' : 'lazy'}
+                          style={{ filter: lightingConfig.filter, transition: 'filter 0.4s ease' }}
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
                   <div className="absolute inset-0 pointer-events-none transition-all duration-500" style={lightingConfig.overlayStyle} />
 
-                  {/* Image Indicators */}
+                  {/* Image Indicators - a 44x44 tap target around each
+                      visual dot (2026-10-13 UAT feedback: the dots
+                      themselves were a 22x22 tap target, under this
+                      project's own minimum touch-target size elsewhere). */}
                   {images.length > 1 && (
                     <div className="absolute bottom-1 inset-x-0 flex justify-center">
                       {images.map((_, idx) => (
                         <button
                           key={idx}
                           type="button"
-                          onClick={() => setActiveImageIndex(idx)}
+                          onClick={() => scrollToImage(idx)}
                           aria-label={`Show view ${idx + 1}`}
                           aria-current={activeImageIndex === idx}
-                          className="p-2"
+                          className="flex h-11 w-11 items-center justify-center"
                         >
                           <span className={`block h-1.5 rounded-full transition-all ${activeImageIndex === idx ? 'w-5 bg-[#1A1816]' : 'w-1.5 bg-black/30'}`} />
                         </button>
@@ -457,6 +524,7 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
                       onClick={() => {
                         setSelectedColorIndex(idx);
                         setActiveImageIndex(0);
+                        mobileGalleryRef.current?.scrollTo({ left: 0 });
                         setSelectedSize('');
                         setMessage(null);
                       }}
@@ -840,6 +908,29 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
             >
               <X className="w-6 h-6" />
             </button>
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={showPreviousImage}
+                  aria-label="Previous photo"
+                  className="absolute z-10 left-2 sm:left-4 top-1/2 -translate-y-1/2 text-white p-2 rounded-full bg-white/10 hover:bg-white/20"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  type="button"
+                  onClick={showNextImage}
+                  aria-label="Next photo"
+                  className="absolute z-10 right-2 sm:right-4 top-1/2 -translate-y-1/2 text-white p-2 rounded-full bg-white/10 hover:bg-white/20"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+                <div className="absolute z-10 bottom-4 inset-x-0 flex justify-center text-xs font-medium tracking-wide text-white/90">
+                  {activeImageIndex + 1} / {images.length}
+                </div>
+              </>
+            )}
             <img
               src={images[activeImageIndex] || images[0]}
               alt={`${product.title}, enlarged`}

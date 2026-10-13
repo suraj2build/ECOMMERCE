@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import robots from '@/app/robots';
-import { hasFilterParams, pageRedirect, requestedPage } from '@/lib/seo';
+import { hasFilterParams, isPreviewDeploymentClient, pageRedirect, requestedPage } from '@/lib/seo';
 
 const original = process.env.SITE_INDEXING;
 afterEach(() => {
   if (original === undefined) delete process.env.SITE_INDEXING;
   else process.env.SITE_INDEXING = original;
   delete process.env.DEPLOYMENT_STAGE;
+  delete process.env.NEXT_PUBLIC_DEPLOYMENT_STAGE;
 });
 
 describe('robots (LR-002)', () => {
@@ -32,6 +33,23 @@ describe('robots (LR-002)', () => {
       expect(rules.disallow).toContain(path);
     }
     expect(result.sitemap).toMatch(/\/sitemap\.xml$/);
+  });
+});
+
+describe('isPreviewDeploymentClient (2026-10-13 UAT feedback)', () => {
+  it('is false by default, so preview-only client UI never shows up in a production build', () => {
+    delete process.env.NEXT_PUBLIC_DEPLOYMENT_STAGE;
+    expect(isPreviewDeploymentClient()).toBe(false);
+  });
+
+  it('is false for any value other than the exact string "preview"', () => {
+    process.env.NEXT_PUBLIC_DEPLOYMENT_STAGE = 'production';
+    expect(isPreviewDeploymentClient()).toBe(false);
+  });
+
+  it('is true only when explicitly set to "preview"', () => {
+    process.env.NEXT_PUBLIC_DEPLOYMENT_STAGE = 'preview';
+    expect(isPreviewDeploymentClient()).toBe(true);
   });
 });
 

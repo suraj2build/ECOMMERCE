@@ -8,6 +8,7 @@ import { getCart, type CartView } from '@/lib/cart';
 import { cartItems, checkoutTracking, track } from '@/lib/tracking';
 import { previewCheckout, startCheckout, type Address, type CheckoutPreview } from '@/lib/checkout';
 import { checkServiceability, type ServiceabilityResult } from '@/lib/api';
+import { isPreviewDeploymentClient } from '@/lib/seo';
 import { INDIAN_STATES } from '@/lib/indian-states';
 import { getStoredSession } from '@/lib/customer-auth';
 import { getLoyaltyBalance, type LoyaltyBalance, getStoreCredit, type StoreCreditBalance, getProfile, listAddresses } from '@/lib/account';
@@ -420,7 +421,12 @@ export default function CheckoutPage() {
           </label>
 
           {!billingSameAsShipping && (
-            <AddressFields legend="Billing address" address={billingAddress} onChange={setBillingAddress} />
+            <AddressFields
+              legend="Billing address"
+              address={billingAddress}
+              onChange={setBillingAddress}
+              requireDeliverability={false}
+            />
           )}
           </div>
 
@@ -604,12 +610,22 @@ function AddressFields({
   address,
   onChange,
   showTestPincodes = false,
+  requireDeliverability = true,
 }: {
   legend: string;
   address: Address;
   onChange: (a: Address) => void;
   /** Shipping address only - billing's own serviceability is never checked. */
   showTestPincodes?: boolean;
+  /**
+   * False for billing (2026-10-13 UAT feedback): a billing address is for
+   * invoicing, not delivery, so it must stay enterable even for a PIN this
+   * demo's small serviceability list doesn't recognise. City still
+   * auto-fills as a convenience when the PIN happens to be a recognised
+   * one, but only a deliverability-required address (shipping) ever
+   * disables City or shows the courier-availability warning.
+   */
+  requireDeliverability?: boolean;
 }) {
   // City is resolved FROM the PIN code (this demo's data model is one city
   // per pincode - never multiple candidates to pick from, so a free-text
@@ -621,6 +637,17 @@ function AddressFields({
   const [pinLookup, setPinLookup] = useState<{ status: 'idle' | 'checking' | 'resolved' | 'unserviceable'; result?: ServiceabilityResult }>({
     status: 'idle',
   });
+
+  // 2026-10-13 UAT feedback: the PIN lookup's own async resolution used to
+  // spread the `address` object captured when the effect STARTED. If the
+  // shopper edited another field (street, landmark) while that lookup was
+  // still in flight, its resolution would silently overwrite that edit with
+  // the stale pre-edit address. This ref always holds the latest address
+  // (updated every render, including from the shopper's own typing), so the
+  // resolution merges city/state/stateCode into whatever is current right
+  // now, never a stale snapshot.
+  const addressRef = useRef(address);
+  addressRef.current = address;
 
   useEffect(() => {
     if (!/^[0-9]{6}$/.test(address.pincode)) {
@@ -635,7 +662,7 @@ function AddressFields({
         if (result.isServiceable && result.city && result.state) {
           setPinLookup({ status: 'resolved', result });
           const match = INDIAN_STATES.find((s) => s.name === result.state);
-          onChange({ ...address, city: result.city, state: result.state, stateCode: match?.code ?? '' });
+          onChange({ ...addressRef.current, city: result.city, state: result.state, stateCode: match?.code ?? '' });
         } else {
           setPinLookup({ status: 'unserviceable', result });
         }
@@ -662,7 +689,7 @@ function AddressFields({
   return (
     <fieldset className="space-y-4 rounded-[20px] border border-[#e6ddd0] bg-white p-5 sm:p-6">
       <legend className="font-display text-2xl text-[#181716]">{legend}</legend>
-      {showTestPincodes && (
+      {showTestPincodes && isPreviewDeploymentClient() && (
         <div className="rounded-[14px] border border-[#e6ddd0] bg-[#faf8f5] p-3">
           <p className="text-xs text-[#6e6359]">
             This demo delivers to a small set of test areas only - not real courier coverage. Pick one to try checkout, or enter your own PIN to check it.
@@ -704,22 +731,36 @@ function AddressFields({
         className="block min-h-[44px] w-full rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
       />
       <div className="grid grid-cols-2 gap-3">
-        <select
-          required
-          aria-label="City"
-          // A saved/prefilled address already has a real city (from a
-          // previous order) - never hide it just because this page's own
-          // live PIN lookup hasn't resolved yet (or resolves to a PIN
-          // this demo's own short serviceable list doesn't cover). Only
-          // force a blank placeholder when there is truly no city at all.
-          disabled={pinLookup.status === 'checking'}
-          value={address.city}
-          onChange={(e) => update('city', e.target.value)}
-          className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716] disabled:text-[#9c9284]"
-        >
-          {!address.city && <option value="">{pinLookup.status === 'checking' ? 'Checking PIN code…' : 'Enter PIN code first'}</option>}
-          {address.city && <option value={address.city}>{address.city}</option>}
-        </select>
+        {requireDeliverability ? (
+          <select
+            required
+            aria-label="City"
+            // A saved/prefilled address already has a real city (from a
+            // previous order) - never hide it just because this page's own
+            // live PIN lookup hasn't resolved yet (or resolves to a PIN
+            // this demo's own short serviceable list doesn't cover). Only
+            // force a blank placeholder when there is truly no city at all.
+            disabled={pinLookup.status === 'checking'}
+            value={address.city}
+            onChange={(e) => update('city', e.target.value)}
+            className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716] disabled:text-[#9c9284]"
+          >
+            {!address.city && <option value="">{pinLookup.status === 'checking' ? 'Checking PIN code…' : 'Enter PIN code first'}</option>}
+            {address.city && <option value={address.city}>{address.city}</option>}
+          </select>
+        ) : (
+          // Billing is never gated on deliverability - a city this demo's
+          // serviceability list doesn't recognise must still be typeable.
+          <input
+            type="text"
+            required
+            aria-label="City"
+            placeholder="City"
+            value={address.city}
+            onChange={(e) => update('city', e.target.value)}
+            className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
+          />
+        )}
         <input
           type="text"
           required
@@ -731,7 +772,7 @@ function AddressFields({
           className="min-h-[44px] rounded-[14px] border border-[#d8d0c6] bg-[#faf8f5] px-4 text-sm text-[#181716] outline-none focus:border-[#181716]"
         />
       </div>
-      {pinLookup.status === 'unserviceable' && (
+      {requireDeliverability && pinLookup.status === 'unserviceable' && (
         <p role="alert" className="text-xs text-danger">
           {pinLookup.result?.known
             ? 'Delivery is not currently available to this PIN code.'

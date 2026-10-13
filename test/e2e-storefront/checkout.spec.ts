@@ -506,5 +506,112 @@ test.describe('Checkout', () => {
       await expect(page.getByLabel('City').first()).toHaveValue('Mumbai');
       await expect(page.getByPlaceholder('House / Flat, Building, Street').first()).toHaveValue('9 Saved Address Lane');
     });
+
+    /**
+     * 2026-10-13 UAT feedback: the PIN lookup's resolution used to spread
+     * the `address` object captured when the lookup STARTED, so an edit to
+     * a different field made while that lookup was still in flight could be
+     * silently reverted the moment the (now-stale) resolution landed. Proven
+     * here by deliberately delaying the PIN response and editing the street
+     * address during that delay.
+     */
+    test('an edit to another field made while a PIN lookup is in flight survives the lookup resolving', async ({ page }) => {
+      await goToCheckoutAddressForm(page);
+
+      await page.route('**/api/v1/storefront/serviceability**', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      });
+
+      await page.getByPlaceholder('House / Flat, Building, Street').first().fill('Original Street');
+      await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
+
+      // The lookup is now in flight (delayed 1.5s above) - edit a different
+      // field before it resolves.
+      await page.getByPlaceholder('House / Flat, Building, Street').first().fill('Edited While Waiting');
+      await page.getByPlaceholder('Landmark (optional)').first().fill('Added While Waiting');
+
+      // Wait for the lookup to actually resolve and apply city/state.
+      await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+      await expect(page.getByLabel('State').first()).toHaveValue('Delhi');
+
+      // The edits made during the wait were not reverted by the stale
+      // pre-edit address the lookup's resolution would otherwise restore.
+      await expect(page.getByPlaceholder('House / Flat, Building, Street').first()).toHaveValue('Edited While Waiting');
+      await expect(page.getByPlaceholder('Landmark (optional)').first()).toHaveValue('Added While Waiting');
+    });
+
+    /**
+     * 2026-10-13 UAT feedback: billing is for invoicing, not delivery, so it
+     * must never be gated on this demo's small courier-serviceability list.
+     * Proven here with a PIN this demo never registers at all - City must
+     * still be directly typeable, and the order must still be placeable.
+     */
+    test('a billing address stays enterable for a PIN this demo does not recognise as deliverable', async ({ page }) => {
+      await goToCheckoutAddressForm(page);
+
+      await page.getByPlaceholder('Full name').fill('E2E Billing Buyer');
+      await page.getByPlaceholder('10-digit mobile number').fill('9876500001');
+      await page.getByPlaceholder('House / Flat, Building, Street').first().fill('1 Shipping Lane');
+      await page.getByPlaceholder('PIN code').first().fill(SERVICEABLE_PINCODE);
+      await expect(page.getByLabel('City').first()).toHaveValue('New Delhi', { timeout: 10_000 });
+
+      await page.getByLabel('Billing address is the same as shipping').uncheck();
+
+      const billingCity = page.getByLabel('City').nth(1);
+      const billingPincode = page.getByPlaceholder('PIN code').nth(1);
+      const billingState = page.getByLabel('State').nth(1);
+
+      await page.getByPlaceholder('House / Flat, Building, Street').nth(1).fill('2 Billing Lane');
+      await billingPincode.fill(UNKNOWN_PINCODE);
+
+      // Billing's City is a plain text input, never a disabled/placeholder-only
+      // select - directly typeable regardless of this PIN's (non-)coverage.
+      await expect(billingCity).toBeEditable();
+      await billingCity.fill('Faraway Town');
+      await expect(billingCity).toHaveValue('Faraway Town');
+      await billingState.selectOption('Delhi');
+
+      // No courier-availability warning is shown for billing - it would be
+      // misleading, since billing was never about deliverability.
+      await expect(page.getByText('Delivery is not currently available')).toHaveCount(0);
+      await expect(page.getByText("We don't recognise this PIN code yet")).toHaveCount(0);
+
+      await expect(page.getByText('Total (tax incl.)')).toBeVisible({ timeout: 10_000 });
+      await page.getByLabel('Cash on Delivery').check();
+      await page.getByRole('button', { name: 'Place Order' }).click();
+      await expect(page).toHaveURL(/\/checkout\/[0-9a-f-]+$/, { timeout: 10_000 });
+      await expect(page.getByRole('heading', { name: 'Order placed' })).toBeVisible();
+    });
+
+    /**
+     * 2026-10-13 UAT feedback: the demo notice and test-PIN picker must not
+     * appear on a production build just because this address happens to be
+     * shipping. This reflects whatever NEXT_PUBLIC_DEPLOYMENT_STAGE the
+     * CURRENT storefront build was made with - neither CI nor a normal
+     * production build ever sets it, so this runs unconditionally and
+     * proves the real default.
+     */
+    test('the demo test-PIN picker is absent unless this build was explicitly made with NEXT_PUBLIC_DEPLOYMENT_STAGE=preview', async ({
+      page,
+    }) => {
+      test.skip(process.env.E2E_PREVIEW_DEMO_UI === '1', 'This run was built WITH the preview flag - see the paired "shows" test instead');
+      await goToCheckoutAddressForm(page);
+      await expect(page.getByText('This demo delivers to a small set of test areas only')).toHaveCount(0);
+    });
+
+    /**
+     * Paired with the test above: proves the picker DOES show up when the
+     * build genuinely opts in, so "absent by default" isn't just "always
+     * absent, gate has no effect." Needs a storefront built with
+     * NEXT_PUBLIC_DEPLOYMENT_STAGE=preview - same opt-in convention as
+     * consent.spec.ts's E2E_TRACKING_IDS.
+     */
+    test('the demo test-PIN picker shows up on a build explicitly made with NEXT_PUBLIC_DEPLOYMENT_STAGE=preview', async ({ page }) => {
+      test.skip(process.env.E2E_PREVIEW_DEMO_UI !== '1', 'Needs a storefront built with NEXT_PUBLIC_DEPLOYMENT_STAGE=preview (E2E_PREVIEW_DEMO_UI=1)');
+      await goToCheckoutAddressForm(page);
+      await expect(page.getByText('This demo delivers to a small set of test areas only')).toBeVisible();
+      await expect(page.getByRole('button', { name: /New Delhi · 110001/ })).toBeVisible();
+    });
   });
 });
