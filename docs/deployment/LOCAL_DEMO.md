@@ -91,6 +91,7 @@ Keep the window open while you review. Press **Ctrl+C** to stop.
 | **Storefront** | Department gateway, the Men and Women categories, a product page (colour, size, size guide), bag, checkout with **cash on delivery**, order confirmation, search, Watch & Shop, collections. |
 | **Customer sign-in** | "Sign in" with any 10-digit mobile number. There is no SMS service yet, so the 6-digit code appears in the demo window. |
 | **Admin** | Sign in with the printed email and password. The orders you place appear under Orders, where you can view them, cancel lines, and record the COD collection after delivery. Products, stock, collections, promotions, content and analytics are all there too. |
+| **Dispatch** | Before booking a parcel with the test courier, enter the demo warehouse's address under **Business & warehouse**. The demo leaves it blank rather than inventing one, and booking is refused without it because it is the label's return address. |
 | **Edit and check** | Publish, unpublish, re-price a product, or edit a collection in the admin, then reload the storefront. Changes show at once. |
 
 Demo data (the approved AI Studio design's own catalogue, loaded through

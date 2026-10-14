@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient, Channel, ChannelListing } from '@fcp/db';
 import { loadEnv } from '@fcp/config';
-import { NotFoundError, ValidationError } from '@fcp/shared';
+import { ConflictError, NotFoundError, ValidationError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { withUniqueConstraintCheck } from '../../lib/prisma-error-mapping.js';
 import { CatalogService } from '../catalog/service.js';
@@ -82,6 +82,39 @@ export class ChannelService {
       newValue: { key: channel.key, providerName: channel.providerName },
     });
     return channel;
+  }
+
+  /**
+   * Admin Ops Phase 1: the owner's channel controls, previously only
+   * settable through the API at creation. `publishAll` is the existing
+   * LR-004 scope switch (every product that can be bought vs only SKUs
+   * sent by hand); `isActive: false` pauses the channel: nothing new is
+   * sent and listings are not resynced until it is resumed (the next
+   * resync after resuming corrects any drift). Taking a listing down
+   * still works while paused.
+   */
+  async updateChannel(id: string, patch: { name?: string; isActive?: boolean; publishAll?: boolean }, actorStaffId: string): Promise<Channel> {
+    const channel = await this.getChannel(id);
+    const config = { ...((channel.config as Record<string, unknown>) ?? {}) };
+    if (patch.publishAll !== undefined) config.publishAll = patch.publishAll;
+    const updated = await this.prisma.channel.update({
+      where: { id },
+      data: {
+        ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+        ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
+        config: config as object,
+      },
+    });
+    await recordAudit(this.prisma, {
+      actorType: 'STAFF',
+      actorStaffId,
+      action: 'channel.update',
+      entityType: 'Channel',
+      entityId: id,
+      oldValue: { isActive: channel.isActive, publishAll: (channel.config as { publishAll?: unknown } | null)?.publishAll === true },
+      newValue: { isActive: updated.isActive, publishAll: config.publishAll === true },
+    });
+    return updated;
   }
 
   async listChannels(): Promise<Channel[]> {
@@ -255,6 +288,7 @@ export class ChannelService {
 
   async publishSku(channelId: string, skuId: string, actorStaffId: string | null): Promise<ChannelListing> {
     const channel = await this.getChannel(channelId);
+    if (!channel.isActive) throw new ConflictError(`${channel.name} is paused. Resume it in Channels before sending products.`);
     // Postgres's own ON CONFLICT (the upsert's implementation) makes
     // first-ever-listing creation safe under real concurrency without
     // needing claimProcessing's own CAS - two concurrent FIRST publish
@@ -552,7 +586,8 @@ export class ChannelService {
    * explicitly invoked.
    */
   async resyncStaleListings(actorStaffId: string | null): Promise<{ resynced: number; listingIds: string[]; unpublished: number; published: number }> {
-    const published = await this.prisma.channelListing.findMany({ where: { status: 'PUBLISHED' }, include: { channel: true } });
+    // A paused channel (Admin Ops Phase 1) is left alone until it is resumed.
+    const published = await this.prisma.channelListing.findMany({ where: { status: 'PUBLISHED', channel: { isActive: true } }, include: { channel: true } });
     const resyncedIds: string[] = [];
     let unpublished = 0;
     for (const listing of published) {
@@ -582,7 +617,7 @@ export class ChannelService {
   /** LR-004: channels configured with `publishAll: true` carry every
    * storefront-visible SKU; newly published ones are added here. */
   private async publishNewSkus(actorStaffId: string | null, limitPerChannel = 200): Promise<number> {
-    const channels = await this.prisma.channel.findMany();
+    const channels = await this.prisma.channel.findMany({ where: { isActive: true } });
     let count = 0;
     for (const channel of channels) {
       if ((channel.config as { publishAll?: unknown } | null)?.publishAll !== true) continue;

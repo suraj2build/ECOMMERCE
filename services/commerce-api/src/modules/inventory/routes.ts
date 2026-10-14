@@ -1,7 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
-import { ValidationError } from '@fcp/shared';
 import { InventoryService } from './service.js';
+import { ConflictError, NotFoundError } from '@fcp/shared';
+import { ApprovalPolicyService, selfApprovalSchema } from '../approvals/service.js';
+import { ApprovalQueueService } from '../approvals/queue.js';
 
 const reserveSchema = z.object({
   skuId: z.string().uuid(),
@@ -31,6 +33,7 @@ const transferOutSchema = z.object({
 
 const inventoryRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new InventoryService(fastify);
+  const approvals = new ApprovalPolicyService(fastify.prisma);
   const readAuth = [fastify.requireStaffAuth, fastify.requirePermission('inventory:read')];
   const reserveAuth = [fastify.requireStaffAuth, fastify.requirePermission('inventory:reserve')];
   const adjustAuth = [fastify.requireStaffAuth, fastify.requirePermission('inventory:adjust')];
@@ -76,33 +79,59 @@ const inventoryRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   /**
-   * Co-approval threshold enforcement (ADM-003): the service checks the
-   * field is present when the magnitude requires it, but the ability to
-   * actually SUPPLY a coApproverStaffId requires the co-approver to hold
-   * the finance-tier `inventory:adjust:coapprove` permission themselves -
-   * checked here, not in the service, because it's an authorization
-   * concern about a *different* staff member than the caller.
+   * Co-approval threshold enforcement (ADM-003): the service requires a
+   * co-approver at/above the threshold. Naming someone else does not
+   * approve anything: the adjustment waits, unposted, until that person
+   * approves it from their own login (approvals/queue.ts; 202 with the
+   * request). Naming yourself is owner approval (AO-D4): only when it is
+   * switched on, with a reason and your password, posted immediately.
    */
   fastify.post('/inventory/adjustments', { preHandler: adjustAuth }, async (request, reply) => {
-    const body = adjustSchema.parse(request.body);
+    const { selfApproval, ...body } = adjustSchema.extend({ selfApproval: selfApprovalSchema.optional() }).parse(request.body);
+    const me = request.staffUser!.id;
 
-    if (body.coApproverStaffId) {
-      const coApprover = await fastify.prisma.staffUser.findUnique({
-        where: { id: body.coApproverStaffId },
-        include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } },
+    if (body.coApproverStaffId && body.coApproverStaffId !== me) {
+      const [sku, location, balance, used] = await Promise.all([
+        fastify.prisma.sku.findUnique({ where: { id: body.skuId }, select: { skuCode: true, style: { select: { name: true } }, colour: { select: { name: true } }, size: { select: { label: true } } } }),
+        fastify.prisma.location.findUnique({ where: { id: body.locationId }, select: { name: true } }),
+        fastify.prisma.inventoryBalance.findUnique({ where: { skuId_locationId: { skuId: body.skuId, locationId: body.locationId } }, select: { onHand: true } }),
+        fastify.prisma.inventoryTransaction.findUnique({ where: { idempotencyKey: body.idempotencyKey }, select: { id: true } }),
+      ]);
+      if (!sku) throw new NotFoundError('Sku', body.skuId);
+      if (!location) throw new NotFoundError('Location', body.locationId);
+      if (used) throw new ConflictError('This adjustment has already been posted');
+      const { coApproverStaffId, ...payload } = body;
+      const pendingApproval = await new ApprovalQueueService(fastify).request({
+        kind: 'STOCK_ADJUSTMENT',
+        requestedByStaffId: me,
+        approverStaffId: coApproverStaffId,
+        payload,
+        summary: {
+          skuCode: sku.skuCode,
+          item: `${sku.style.name} · ${sku.colour.name} · ${sku.size.label}`,
+          location: location.name,
+          quantityDelta: body.quantityDelta,
+          onHandWhenRequested: balance?.onHand ?? 0,
+          reason: body.reason,
+        },
+        subjectKey: `adjustment:${body.idempotencyKey}`,
       });
-      const hasCoApprovePermission = coApprover?.roles.some((ur) =>
-        ur.role.permissions.some((rp) => rp.permission.key === 'inventory:adjust:coapprove'),
-      );
-      if (!coApprover || !hasCoApprovePermission) {
-        throw new ValidationError('coApproverStaffId must reference a staff user with inventory:adjust:coapprove permission');
-      }
-      if (coApprover.id === request.staffUser!.id) {
-        throw new ValidationError('The co-approver must be a different staff member than the requester');
-      }
+      reply.status(202).send({ pendingApproval });
+      return;
     }
 
-    const result = await service.postAdjustment({ ...body, actorStaffId: request.staffUser!.id });
+    const approval = body.coApproverStaffId
+      ? await approvals.decide({
+          kind: 'STOCK_ADJUSTMENT',
+          requestedByStaffId: me,
+          approverStaffId: body.coApproverStaffId,
+          actingStaffId: me,
+          permission: 'inventory:adjust:coapprove',
+          selfApproval,
+        })
+      : undefined;
+
+    const result = await service.postAdjustment({ ...body, actorStaffId: me, approval });
     await fastify.searchIndex.indexStyleForSku(body.skuId); // M10
     reply.status(201).send(result);
   });

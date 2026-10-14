@@ -55,7 +55,7 @@ export interface ProvisionedStyle {
   skus: Array<{ skuId: string; skuCode: string; sizeLabel: string }>;
 }
 
-async function ensureStaff(email: string, roleKey: string, fullName: string) {
+export async function ensureStaff(email: string, roleKey: string, fullName: string) {
   const role = await prisma.role.findUniqueOrThrow({ where: { key: roleKey } });
   const passwordHash = await hashPassword(STAFF_PASSWORD);
   const staff = await prisma.staffUser.upsert({
@@ -112,7 +112,11 @@ export async function setUpFixture(): Promise<Fixture> {
     'Brand',
   );
   const locationA = await expectOk<{ id: string; code: string; name: string }>(
-    await api.post('/api/v1/organization/locations', { headers: auth, data: { code: `P1A${RUN}`, name: `P1 Warehouse A ${RUN}`, type: 'WAREHOUSE' } }),
+    await api.post('/api/v1/organization/locations', {
+      headers: auth,
+      // A full address: courier booking needs it as the sender and return address.
+      data: { code: `P1A${RUN}`, name: `P1 Warehouse A ${RUN}`, type: 'WAREHOUSE', addressLine1: '4 Dispatch Yard', city: 'New Delhi', state: 'Delhi', pinCode: '110020' },
+    }),
     'Location A',
   );
   const locationB = await expectOk<{ id: string; code: string; name: string }>(

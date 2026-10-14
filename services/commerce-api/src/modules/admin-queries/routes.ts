@@ -95,6 +95,8 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
       .object({
         q: z.string().trim().max(100).optional(),
         lifecycleState: z.enum(['DRAFT', 'READY_FOR_ENRICHMENT', 'READY_FOR_QA', 'PUBLISHED', 'UNPUBLISHED', 'ARCHIVED']).optional(),
+        categoryId: z.string().uuid().optional(),
+        gender: z.enum(['Men', 'Women']).optional(),
         ...page,
       })
       .parse(request.query);
@@ -190,12 +192,17 @@ const adminQueryRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get('/admin/fulfilments', auth('order:read'), async (request) => {
     const q = z
-      .object({ status: z.enum(['PENDING', 'PACKED', 'READY_TO_SHIP', 'SHIPPED', 'DELIVERED']).optional(), ...page })
+      .object({ status: z.enum(['IN_PROGRESS', 'PENDING', 'PACKED', 'READY_TO_SHIP', 'SHIPPED', 'BOOKED_AWAITING_COLLECTION', 'HANDED_OVER', 'DELIVERED', 'CANCELLED']).optional(), ...page })
       .parse(request.query);
     return service.listFulfilments(q);
   });
 
-  fastify.get('/admin/dashboard/workload', staffOnly, async (request) => service.workload(request.staffUser!.permissions));
+  fastify.get('/admin/fulfilments/ready-to-pack', auth('order:read'), async (request) => {
+    const q = z.object({ take: z.coerce.number().int().positive().max(200).optional() }).parse(request.query);
+    return service.readyToPack(q);
+  });
+
+  fastify.get('/admin/dashboard/workload', staffOnly, async (request) => service.workload(request.staffUser!.permissions, request.staffUser!.id));
 };
 
 export default adminQueryRoutes;

@@ -5,7 +5,7 @@ import { DataState, PageHeader } from '@/components/ui';
 import { formatNumber } from '@/lib/format';
 import { useApi, useSession } from '@/lib/session';
 
-type Workload = Partial<Record<'orders' | 'warehouse' | 'returns' | 'exchanges' | 'refunds' | 'procurement' | 'inventory', Record<string, number>>>;
+type Workload = Partial<Record<'approvals' | 'orders' | 'warehouse' | 'dispatch' | 'returns' | 'exchanges' | 'refunds' | 'procurement' | 'inventory', Record<string, number>>>;
 
 /**
  * Work waiting for this operator. Each tile is a plain count from GET
@@ -13,12 +13,16 @@ type Workload = Partial<Record<'orders' | 'warehouse' | 'returns' | 'exchanges' 
  * caller may read, and links to the queue where the work is done.
  */
 const TILES: Array<{ section: keyof Workload; key: string; label: string; href: string }> = [
+  { section: 'approvals', key: 'waitingForYou', label: 'Approvals waiting for you', href: '/dashboard/approvals' },
   { section: 'orders', key: 'confirmed', label: 'Orders confirmed', href: '/dashboard/orders?status=CONFIRMED' },
   { section: 'orders', key: 'processing', label: 'Orders processing', href: '/dashboard/orders?status=PROCESSING' },
   { section: 'orders', key: 'exception', label: 'Orders in exception', href: '/dashboard/orders?status=EXCEPTION' },
   { section: 'orders', key: 'invoiceFailed', label: 'Invoice generation failed', href: '/dashboard/orders?invoiceStatus=FAILED' },
   { section: 'warehouse', key: 'pendingPicks', label: 'Picks pending', href: '/dashboard/warehouse/picks?status=PENDING' },
   { section: 'warehouse', key: 'pickExceptions', label: 'Pick shortfalls / exceptions', href: '/dashboard/warehouse/picks?status=EXCEPTION' },
+  { section: 'dispatch', key: 'readyToPack', label: 'Picked, waiting for a package', href: '/dashboard/fulfilments' },
+  { section: 'dispatch', key: 'toPackOrShip', label: 'Packages to pack or ship', href: '/dashboard/fulfilments' },
+  { section: 'dispatch', key: 'awaitingCollection', label: 'Booked, awaiting collection', href: '/dashboard/fulfilments/handover' },
   { section: 'procurement', key: 'awaitingApproval', label: 'POs awaiting approval', href: '/dashboard/purchase-orders?status=SUBMITTED' },
   { section: 'procurement', key: 'awaitingReceipt', label: 'POs awaiting receipt', href: '/dashboard/receiving' },
   { section: 'inventory', key: 'transfersInTransit', label: 'Transfers in transit', href: '/dashboard/inventory/transfers?status=IN_TRANSIT' },

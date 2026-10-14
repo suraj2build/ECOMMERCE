@@ -159,20 +159,29 @@ model CustomerRefreshToken {
 }
 
 model StaffUser {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  fullName     String
-  isActive     Boolean  @default(true)
-  mfaEnabled   Boolean  @default(false)
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String
+  fullName           String
+  isActive           Boolean   @default(true)
+  mfaEnabled         Boolean   @default(false)
   // TOTP secret, AES-256-GCM encrypted at rest by the application layer
   // (M31 Security Hardening - modules/auth/mfa-secret-crypto.ts) - this
   // comment previously claimed encryption that was never actually
   // implemented; a genuine gap this pass found and fixed, not a
   // pre-existing accurate claim.
-  mfaSecret    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  mfaSecret          String?
+  // Staff management (AO-D7, 2026-10-06): set when an administrator creates
+  // the account or resets its password with a temporary password; until the
+  // person chooses their own, every route except changing it is refused.
+  mustChangePassword Boolean   @default(false)
+  passwordChangedAt  DateTime?
+  // Sessions issued before this moment are refused (password reset,
+  // deactivation, role change, own password change), even if their Redis
+  // key could not be deleted.
+  sessionsRevokedAt  DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   roles                         StaffUserRole[]
   sessions                      StaffSession[]
@@ -184,6 +193,14 @@ model StaffUser {
   coApprovedAdjustments         InventoryTransaction[]      @relation("InventoryAdjustmentCoApprover")
   publishedStyles               Style[]                     @relation("StylePublishedBy")
   auditLogEntries               AuditLog[]
+  approvalOwnerEntry            ApprovalOwner?              @relation("ApprovalOwnerStaff")
+  approvalOwnersAdded           ApprovalOwner[]             @relation("ApprovalOwnerAddedBy")
+  approvalPolicyUpdates         ApprovalPolicy[]
+  approvalsRequested            ApprovalRecord[]            @relation("ApprovalRequestedBy")
+  approvalsGiven                ApprovalRecord[]            @relation("ApprovalApprovedBy")
+  approvalRequestsMade          ApprovalRequest[]           @relation("ApprovalRequestRequestedBy")
+  approvalRequestsAssigned      ApprovalRequest[]           @relation("ApprovalRequestApprover")
+  approvalRequestsDecided       ApprovalRequest[]           @relation("ApprovalRequestDecidedBy")
   moderatedShoppableMedia       ShoppableMedia[]            @relation("ShoppableMediaModeratedBy")
   moderatedReviews              Review[]                    @relation("ReviewModeratedBy")
   crossSellOverrides            CrossSellOverride[]
@@ -206,6 +223,8 @@ model StaffUser {
   updatedCmsNavigationMenus     CmsNavigationMenu[]
   disabledGiftCards             GiftCard[]                  @relation("GiftCardDisabledBy")
   giftCardLedgerEntriesActed    GiftCardLedgerEntry[]       @relation("GiftCardLedgerEntryActor")
+  productImportRuns             ProductImportRun[]
+  uploadedContentAssets         ContentAsset[]
 
   @@map("staff_users")
 }
@@ -318,11 +337,15 @@ enum StyleLifecycleState {
 }
 
 model Category {
-  id       String  @id @default(uuid())
-  name     String
-  slug     String  @unique
-  parentId String?
-  isActive Boolean @default(true)
+  id          String      @id @default(uuid())
+  name        String
+  slug        String      @unique
+  parentId    String?
+  isActive    Boolean     @default(true)
+  // Admin Ops Phase 1: which attributes and sizes the product workspace
+  // offers for this category (apparel, shoes, belts, perfume). Guidance
+  // for data entry only - it never restricts what the server accepts.
+  productType ProductType @default(APPAREL)
 
   parent       Category?           @relation("CategoryTree", fields: [parentId], references: [id])
   children     Category[]          @relation("CategoryTree")
@@ -501,6 +524,13 @@ enum MediaType {
   VIDEO
 }
 
+enum ProductType {
+  APPAREL
+  FOOTWEAR
+  BELT
+  FRAGRANCE
+}
+
 model ProductMedia {
   id          String    @id @default(uuid())
   styleId     String
@@ -516,7 +546,22 @@ model ProductMedia {
   // Never required, never fabricated - null when not captured by
   // merchandising, exactly reflecting what was actually entered.
   modelInfo   Json?
+  // Admin Ops Phase 1: set only for a file uploaded through admin, which
+  // lives in the PUBLIC product-media store (never the private return-
+  // evidence store). Null for media referenced by URL.
+  // Admin Ops Phase 1: the owner's chosen listing photo. Listing cards
+  // show it before the existing order (all-colour photos first, then
+  // sortOrder); at most one per style (partial unique index in SQL).
+  // False everywhere by default, so existing listings are unchanged.
+  isCover     Boolean   @default(false)
+  storageKey  String?   @unique
+  mimeType    String?
+  byteSize    Int?
+  // Pixel size, read while the upload is decoded (null for URL media).
+  width       Int?
+  height      Int?
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
 
   style  Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
   colour Colour? @relation(fields: [colourId], references: [id], onDelete: Cascade)
@@ -1835,6 +1880,10 @@ enum OrderLineStatus {
   EXCEPTION
 }
 
+// AO-D5 option B (2026-10-06): a courier booking now moves READY_TO_SHIP
+// -> BOOKED, and the handover moves BOOKED -> SHIPPED and posts the SALE;
+// a shipment recorded by hand (the staff /ship route) still goes
+// READY_TO_SHIP -> SHIPPED. Original M16 note:
 // M16 inserts READY_TO_SHIP between PACKED and SHIPPED - the explicit
 // warehouse/shipping hand-off boundary the M16 build instruction requires
 // ("create only the explicit adapter/handoff boundary required by M16").
@@ -1848,8 +1897,15 @@ enum FulfilmentStatus {
   PENDING
   PACKED
   READY_TO_SHIP
+  // AO-D5 option B (Product Owner, 2026-10-06): booked with a courier,
+  // waiting for collection. No stock movement yet; the sale (or exchange
+  // dispatch), SHIPPED and the customer's message come at handover.
+  BOOKED
   SHIPPED
   DELIVERED
+  // A booked package cancelled by staff before handover, after the courier
+  // booking was cancelled; its lines are cancelled and detached.
+  CANCELLED
 }
 
 enum PickTaskStatus {
@@ -1934,6 +1990,8 @@ model PickTask {
   idempotencyKey    String?
   pickedByStaffId   String?
   pickedAt          DateTime?
+  /// The barcode scanned at pick, when one was (checked against the SKU's barcode).
+  scannedBarcode    String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
@@ -2147,24 +2205,45 @@ model OrderLine {
 // preserving every existing orderId-scoped index/query/RTO-lookup
 // unchanged.
 model OrderFulfilment {
-  id          String           @id @default(uuid())
-  orderId     String
-  exchangeId  String?          @unique
-  status      FulfilmentStatus @default(PENDING)
-  carrierName String?
-  trackingRef String?
-  packedAt    DateTime?
-  shippedAt   DateTime?
-  deliveredAt DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id                  String           @id @default(uuid())
+  orderId             String
+  exchangeId          String?          @unique
+  status              FulfilmentStatus @default(PENDING)
+  carrierName         String?
+  trackingRef         String?
+  packedAt            DateTime?
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
+  // Dispatch (docs/admin/DISPATCH.md): measured at pack, sent with the
+  // courier booking. Gross weight in grams, dimensions in whole cm.
+  parcelWeightGrams   Int?
+  parcelLengthCm      Int?
+  parcelWidthCm       Int?
+  parcelHeightCm      Int?
+  /// Set when every unit was scanned into the parcel and matched the package.
+  packScanVerifiedAt  DateTime?
+  // An exchange replacement package whose courier booking was cancelled
+  // before collection (wrong booking): `exchangeId` is cleared so the
+  // exchange can get a new package, and the exchange it belonged to is
+  // kept here. `bookingCancelKey` makes that cancellation idempotent.
+  cancelledExchangeId String?
+  bookingCancelKey    String?          @unique
+  // An order package whose courier booking was cancelled before collection
+  // with its items kept (cancel booking and rebook): the lines went back to
+  // PICKED, with no package, to be packed and booked again. Its line ids
+  // are in the audit log; the order itself was not cancelled.
+  releasedForRebook   Boolean          @default(false)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
-  order    Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  exchange Exchange?   @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
-  lines    OrderLine[]
-  shipment Shipment?
+  order             Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  exchange          Exchange?   @relation("ExchangeReplacementPackage", fields: [exchangeId], references: [id], onDelete: Cascade)
+  cancelledExchange Exchange?   @relation("ExchangeCancelledReplacementPackages", fields: [cancelledExchangeId], references: [id], onDelete: SetNull)
+  lines             OrderLine[]
+  shipment          Shipment?
 
   @@index([orderId])
+  @@index([cancelledExchangeId])
   @@map("order_fulfilments")
 }
 
@@ -2200,6 +2279,9 @@ enum ShipmentTrackingStatus {
   DELIVERED
   RTO_INITIATED
   RTO_DELIVERED
+  // AO-D5 option B: the courier booking was cancelled (confirmed by staff)
+  // before handover. Terminal; no carrier event moves it.
+  CANCELLED
 }
 
 enum ShipmentEventSource {
@@ -2222,33 +2304,44 @@ enum ShipmentEventStatus {
 }
 
 model Shipment {
-  id                  String                 @id @default(uuid())
-  fulfilmentId        String                 @unique
-  orderId             String
-  provider            String
-  providerShipmentRef String?
-  trackingRef         String?
-  status              ShipmentTrackingStatus @default(CREATED)
-  deliveryAttempts    Int                    @default(0)
+  id                           String                 @id @default(uuid())
+  fulfilmentId                 String                 @unique
+  orderId                      String
+  provider                     String
+  providerShipmentRef          String?
+  trackingRef                  String?
+  status                       ShipmentTrackingStatus @default(CREATED)
+  deliveryAttempts             Int                    @default(0)
   // Snapshot of the configured SHIPPING_MAX_REDELIVERY_ATTEMPTS at
   // creation time (SHIP-004: "configurable, engineering default 2") - a
   // later config change must never retroactively alter the attempt
   // budget of a shipment already in flight.
-  maxDeliveryAttempts Int
+  maxDeliveryAttempts          Int
   // Carrier-call idempotency key (SHIP §7) - the local Shipment.id itself
   // is already unique per fulfilment, but this column lets a retried
   // create-shipment HTTP request (same client idempotency key) resolve to
   // the SAME shipment row rather than a second one, mirroring Payment.
   // idempotencyKey / InventoryReservation.idempotencyKey / PickTask.
   // idempotencyKey.
-  idempotencyKey      String                 @unique
-  createdByStaffId    String?
-  bookedAt            DateTime?
-  deliveredAt         DateTime?
-  rtoInitiatedAt      DateTime?
-  rtoDeliveredAt      DateTime?
-  createdAt           DateTime               @default(now())
-  updatedAt           DateTime               @updatedAt
+  idempotencyKey               String                 @unique
+  createdByStaffId             String?
+  bookedAt                     DateTime?
+  deliveredAt                  DateTime?
+  rtoInitiatedAt               DateTime?
+  rtoDeliveredAt               DateTime?
+  // AO-D5: handover to the courier, recorded separately from booking (the
+  // stock SALE is still posted at booking). Source: STAFF (handover
+  // manifest) or CARRIER_EVENT (first in-transit tracking event).
+  handedOverAt                 DateTime?
+  handoverSource               String?
+  handedOverByStaffId          String?
+  handoverReference            String?
+  // AO-D5 option B: staff confirmed the courier booking was cancelled.
+  bookingCancelledAt           DateTime?
+  bookingCancelledByStaffId    String?
+  bookingCancellationReference String?
+  createdAt                    DateTime               @default(now())
+  updatedAt                    DateTime               @updatedAt
 
   fulfilment     OrderFulfilment         @relation(fields: [fulfilmentId], references: [id], onDelete: Restrict)
   order          Order                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
@@ -3078,16 +3171,16 @@ model Exchange {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  order                       Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  orderLine                   OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
-  originalSku                 Sku                 @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
-  originalLocation            Location            @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
-  replacementSku              Sku                 @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
-  initiatedStaff              StaffUser?          @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
-  qcActorStaff                StaffUser?          @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
-  replacementFulfilledByStaff StaffUser?          @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
-  storeCreditEntry            StoreCreditEntry?   @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
-  paymentEvents               PaymentEvent[]
+  order                        Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderLine                    OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  originalSku                  Sku                 @relation("ExchangeOriginalSku", fields: [originalSkuId], references: [id], onDelete: Restrict)
+  originalLocation             Location            @relation(fields: [originalLocationId], references: [id], onDelete: Restrict)
+  replacementSku               Sku                 @relation("ExchangeReplacementSku", fields: [replacementSkuId], references: [id], onDelete: Restrict)
+  initiatedStaff               StaffUser?          @relation("ExchangeInitiatedBy", fields: [initiatedByStaffId], references: [id], onDelete: Restrict)
+  qcActorStaff                 StaffUser?          @relation("ExchangeQcBy", fields: [qcActorStaffId], references: [id], onDelete: Restrict)
+  replacementFulfilledByStaff  StaffUser?          @relation("ExchangeReplacementFulfilledBy", fields: [replacementFulfilledByStaffId], references: [id], onDelete: Restrict)
+  storeCreditEntry             StoreCreditEntry?   @relation(fields: [storeCreditEntryId], references: [id], onDelete: Restrict)
+  paymentEvents                PaymentEvent[]
   // EXC-004 Option 2 repair (2026-09-26): the replacement's physical
   // forward fulfilment - one PickTask (auto-created the instant this
   // Exchange reaches REPLACEMENT_ALLOCATED) and, once picked and
@@ -3095,12 +3188,13 @@ model Exchange {
   // M16/M17 pipeline normal orders use) - reusing the certified
   // primitives rather than duplicating them (see the schema comments on
   // PickTask/OrderFulfilment above).
-  pickTask                    PickTask?
-  fulfilment                  OrderFulfilment?
+  pickTask                     PickTask?
+  fulfilment                   OrderFulfilment?    @relation("ExchangeReplacementPackage")
+  cancelledReplacementPackages OrderFulfilment[]   @relation("ExchangeCancelledReplacementPackages")
   // 2026-09-27 LOY-006 resolution: set the instant this Exchange's QC
   // result is PASS (LoyaltyService.reverseForExchangeLine, mirroring
   // ReturnService's own reverseForReturnLine call exactly).
-  loyaltyReversalEntry        LoyaltyLedgerEntry?
+  loyaltyReversalEntry         LoyaltyLedgerEntry?
 
   @@index([orderId])
   @@map("exchanges")
@@ -4293,4 +4387,176 @@ model MaintenanceJobState {
   updatedAt     DateTime  @default(now()) @db.Timestamptz(3)
 
   @@map("maintenance_job_states")
+}
+
+/// Admin Ops Phase 1: one bulk product import (a file the owner uploaded),
+/// applied in bounded batches. Each batch's per-row outcomes are kept so the
+/// owner can come back to the results, download errors and retry; rows are
+/// matched by stable identifiers, so a retried batch never duplicates work.
+model ProductImportRun {
+  id               String   @id @default(uuid())
+  fileName         String
+  totalRows        Int
+  totalBatches     Int
+  // { "<batchIndex>": [{ row, styleCode, outcome, message, changes }] } -
+  // a retried batch replaces its own entry.
+  batchResults     Json     @default("{}")
+  createdByStaffId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@map("product_import_runs")
+}
+
+/// Admin Ops Phase 1: an image the owner uploaded for banners or pages
+/// (not a product photo). Stored in the public product-media store and
+/// served at /media/content/<storageKey> only while this row exists.
+model ContentAsset {
+  id               String   @id @default(uuid())
+  storageKey       String   @unique
+  mimeType         String
+  byteSize         Int
+  width            Int?
+  height           Int?
+  altText          String?
+  createdByStaffId String
+  createdAt        DateTime @default(now())
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@map("content_assets")
+}
+
+// ---------------------------------------------------------------------------
+// Approval policy (AO-D4, Product Owner 2026-10-05; docs/admin/APPROVALS.md).
+// One rule for purchase-order approval, large stock adjustments, receiving
+// QC sign-off and large pick shortfalls: the approver must hold the
+// approving permission and be someone other than the requester, unless
+// owner approval is switched on and the requester is a named owner who
+// gives a reason and re-confirms with their password (and MFA code when
+// enrolled). Every approval of either kind is recorded here.
+// ---------------------------------------------------------------------------
+
+/// Single row (id = "default"). Owner approval is off until an org:manage
+/// holder turns it on.
+model ApprovalPolicy {
+  id                   String     @id @default("default")
+  ownerApprovalEnabled Boolean    @default(false)
+  updatedAt            DateTime   @updatedAt
+  updatedByStaffId     String?
+  updatedByStaff       StaffUser? @relation(fields: [updatedByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("approval_policies")
+}
+
+/// Staff members who may approve their own actions while owner approval is on.
+model ApprovalOwner {
+  staffUserId    String    @id
+  addedByStaffId String
+  createdAt      DateTime  @default(now())
+  staffUser      StaffUser @relation("ApprovalOwnerStaff", fields: [staffUserId], references: [id], onDelete: Restrict)
+  addedByStaff   StaffUser @relation("ApprovalOwnerAddedBy", fields: [addedByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("approval_owners")
+}
+
+enum ApprovalKind {
+  PURCHASE_ORDER
+  STOCK_ADJUSTMENT
+  RECEIVING_QC
+  PICK_SHORTFALL
+}
+
+/// Append-only record of every approval given under the policy.
+model ApprovalRecord {
+  id                 String       @id @default(uuid())
+  kind               ApprovalKind
+  entityType         String
+  entityId           String
+  requestedByStaffId String
+  approvedByStaffId  String
+  /// True when the requester approved their own action under owner approval.
+  selfApproved       Boolean
+  /// Required for a self-approval; null otherwise.
+  reason             String?
+  detail             Json?
+  /// Set when the approval was given on an approval request (never a self-approval).
+  approvalRequestId  String?      @unique
+  createdAt          DateTime     @default(now())
+
+  requestedByStaff StaffUser        @relation("ApprovalRequestedBy", fields: [requestedByStaffId], references: [id], onDelete: Restrict)
+  approvedByStaff  StaffUser        @relation("ApprovalApprovedBy", fields: [approvedByStaffId], references: [id], onDelete: Restrict)
+  approvalRequest  ApprovalRequest? @relation(fields: [approvalRequestId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([selfApproved, createdAt])
+  @@index([entityType, entityId])
+  @@map("approval_records")
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  FAILED
+}
+
+/// An action waiting for a named person to approve it from their own login
+/// (Product Owner review 2026-10-05: naming someone must not count as their
+/// approval). The action runs only when that person approves; owner
+/// self-approval is a separate, immediate path and never creates one.
+/// docs/admin/APPROVALS.md.
+model ApprovalRequest {
+  id                 String                @id @default(uuid())
+  kind               ApprovalKind
+  status             ApprovalRequestStatus @default(PENDING)
+  requestedByStaffId String
+  approverStaffId    String
+  /// One open request per subject (a pick task, an adjustment's idempotency key).
+  subjectKey         String?
+  /// The action exactly as submitted (never credentials); run on approval.
+  payload            Json
+  /// What the approver is shown.
+  summary            Json
+  decidedAt          DateTime?
+  decidedByStaffId   String?
+  /// The approver's note when rejecting.
+  decisionNote       String?
+  /// Why approval could not be carried out (stock changed, task already picked, ...).
+  failureReason      String?
+  /// Set while an approval is being carried out, so a second approval of the
+  /// same request is refused instead of racing it; expires if the process dies.
+  claimedAt          DateTime?
+  resultEntityType   String?
+  resultEntityId     String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  requestedByStaff StaffUser       @relation("ApprovalRequestRequestedBy", fields: [requestedByStaffId], references: [id], onDelete: Restrict)
+  approverStaff    StaffUser       @relation("ApprovalRequestApprover", fields: [approverStaffId], references: [id], onDelete: Restrict)
+  decidedByStaff   StaffUser?      @relation("ApprovalRequestDecidedBy", fields: [decidedByStaffId], references: [id], onDelete: Restrict)
+  approvalRecord   ApprovalRecord?
+
+  @@index([approverStaffId, status, createdAt])
+  @@index([requestedByStaffId, status, createdAt])
+  @@index([status, createdAt])
+  @@map("approval_requests")
+}
+
+/// Dispatch checks the owner chooses (B-2, B-3 in docs/admin/NEXT_PHASES_RESEARCH.md);
+/// all off by default. Single row, id = "default".
+model DispatchSettings {
+  id                        String   @id @default("default")
+  requireScanAtPick         Boolean  @default(false)
+  requireScanAtPack         Boolean  @default(false)
+  requireParcelMeasurements Boolean  @default(false)
+  updatedByStaffId          String?
+  updatedAt                 DateTime @updatedAt
+
+  @@map("dispatch_settings")
 }

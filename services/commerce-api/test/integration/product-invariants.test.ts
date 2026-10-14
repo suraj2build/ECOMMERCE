@@ -194,7 +194,9 @@ describe('Product Master invariants certification', () => {
       const styleId = await buildQaPassedStyle(service, staffId);
       await service.archive(styleId, staffId);
 
-      await expect(service.runQaCheck(styleId, staffId)).rejects.toThrow(/must be in READY_FOR_ENRICHMENT or READY_FOR_QA/i);
+      await expect(service.runQaCheck(styleId, staffId)).rejects.toThrow(/Cannot run QA check from state 'ARCHIVED'/i);
+      // Archived stays separate from republish (AO-D1): the style is unchanged.
+      expect((await testPrisma.style.findUniqueOrThrow({ where: { id: styleId } })).lifecycleState).toBe('ARCHIVED');
     });
 
     it('publishing a style that legitimately passed QA still succeeds (positive control)', async () => {

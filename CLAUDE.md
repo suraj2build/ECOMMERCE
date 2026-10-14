@@ -6,6 +6,259 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-06 (after `71230f9`): `CANCEL BOOKING AND REBOOK
+FOR ORDER PACKAGES, PLAYWRIGHT ARTIFACTS ON CI FAILURE AND AN EXCHANGE
+SCREEN NOTE BUILT ON claude/admin-ops-phase1 — AWAITING REVIEW; COURIER
+(LR-008) STILL UNDECIDED.`** Instruction recorded verbatim in
+`blueprint/DECISION_REGISTER.md` → AO. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Follow-up after `71230f9`").
+
+- **Cancel booking and rebook.** A courier booking made by mistake is
+  cancelled before collection and the order kept: no stock moves, the
+  items return to "Picked, waiting for a package", and the new package's
+  handover posts the sale once. Courier cancellation confirmed, a reason
+  and `shipping:manage` are required. **Cancel booking and items** stays
+  separate (`order:cancel`). Races with handover, carrier events and line
+  cancellation are tested. `docs/admin/DISPATCH.md`.
+- **CI artifacts.** A failed browser run uploads the HTML report, traces
+  and screenshots. The cause of the earlier link-audit timeout is still
+  unconfirmed.
+- **AO-D8 (changing an allocated exchange item):** deferred by the
+  Product Owner. The exchange page explains the recovery path (none in
+  the system after receipt); options are recorded, nothing built.
+- **Tests before push:** unit 90 + 21, integration 998/998 (65 files,
+  none skipped), browser 92/92 with the load checks passing. One earlier
+  browser run failed on a test-timing race (P1-07); the cause is in the
+  record.
+- **Retry follow-up (2026-10-07):** a same-key retry of a booking
+  cancellation (order rebook or exchange replacement) returns the
+  original result, now also when it arrives while the first request is
+  still running (it used to get 409); a different request against a
+  released package is refused. Integration 1000/1000, browser 92/92.
+  Next: courier selection (LR-008), real integration, then an
+  end-to-end UAT.
+- **Retry rule (Product Owner, 2026-10-07):** the first successful
+  request's reason and result are authoritative; a same-key retry with a
+  different reason changes nothing and cannot alter the audit record
+  (documented in `docs/admin/DISPATCH.md`, tested for both paths).
+  Further admin expansion waits for the courier integration and UAT.
+
+Not self-certified; no go-live claimed. Green CI does not establish
+go-live readiness.
+
+**Status as of 2026-10-06 (review of `a807ef6`): `WALKTHROUGH OF STAFF
+SIGN-IN, REVOCATION, BOOKING, HANDOVER AND CANCELLATION RUN, ITS SCREEN
+DEFECTS FIXED, AND A RECOVERY PATH FOR A MISTAKEN EXCHANGE REPLACEMENT
+BOOKING BUILT ON claude/admin-ops-phase1 — AWAITING REVIEW; COURIER
+(LR-008) STILL UNDECIDED.`** Record: `docs/admin/ADMIN_OPS_PHASE1.md`
+("Follow-up after `a807ef6`") and `docs/admin/WALKTHROUGH_2026-10-06.md`.
+
+- **Validation record corrected** (documentation-only commit `3656b9e`):
+  the post-lockfile integration rerun was 989/989, none skipped.
+- **Walkthrough.** Temporary-password sign-in, revocation on role change,
+  reset, deactivation and own password change, booking (no stock moved),
+  handover (one sale; a later carrier poll posted nothing) and booking
+  cancellation (reservation released) all behaved as specified. Nine
+  screen defects were fixed (W2-1..W2-9), for example a signed-out person
+  now gets a "Sign in again" link instead of a Retry that could never
+  work, and a shipped package no longer reads "Booked".
+- **Replacement booked by mistake.** Staff cancel the replacement's
+  booking from the exchange (`exchange:fulfil`); no stock moves, the
+  exchange stays allocated, and a new package is booked; its handover
+  posts the dispatch once. `docs/admin/DISPATCH.md`.
+- **Also fixed (found by the browser runs):** a brief duplicate
+  confirmation after cancelling a replacement booking, and the navigation
+  menu editor asking to discard just-saved changes when switching menus
+  straight after saving (now covered deterministically by AO-05).
+- **Tests before push:** unit 90 + 21, integration 992/992 (65 files,
+  none skipped), browser 91/91 with the load checks passing; earlier
+  failed runs and their causes are in the record.
+- **Reported, not built:** an order package booked by mistake can only be
+  cancelled whole (no rebook path); changing an exchange's replacement
+  item after allocation has no path.
+
+Not self-certified; no go-live claimed. Green CI does not establish
+go-live readiness.
+
+**Status as of 2026-10-06: `AO-D5 OPTION B, AO-D6 METADATA REMOVAL AND
+STAFF MANAGEMENT (AO-D7) BUILT ON claude/admin-ops-phase1 — AWAITING
+REVIEW; COURIER (LR-008) STILL UNDECIDED.`** The Product Owner's
+instruction of 2026-10-06 ("Proceed with AO-D5 option B, AO-D6 metadata
+removal, and staff management option (a) …") is recorded verbatim in
+`blueprint/DECISION_REGISTER.md` → AO. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Product Owner go-ahead, 2026-10-06").
+
+- **AO-D5 option B.** Booking makes the package `BOOKED` and moves no
+  stock. The courier handover (staff confirmation or the carrier's first
+  movement, once) posts the sale, marks it shipped and sends the message
+  after commit. Booked packages are cancelled whole by staff after the
+  courier booking is cancelled. Packages booked earlier are not posted
+  twice. `docs/admin/DISPATCH.md`.
+- **AO-D6.** Public product and content images are re-encoded without
+  EXIF/GPS/XMP, upright, with their colour profile. Return evidence is
+  untouched.
+- **AO-D7 staff management.** Staff page; temporary passwords shown once
+  with a forced change; sessions end on reset, deactivation, role change
+  and own password change; last Super Admin and approval owners
+  protected. `docs/admin/STAFF.md`.
+
+Not self-certified; no go-live claimed. Green CI does not establish
+go-live readiness.
+
+**Status as of 2026-10-05 (review after `6217031`): `APPROVAL SECRETS
+CLEARED AFTER REFUSAL AND SENDER ADDRESS REQUIRED FOR COURIER BOOKING ON
+claude/admin-ops-phase1 — AWAITING REVIEW; STAFF SCREEN, AO-D5 AND AO-D6
+AWAIT THE PRODUCT OWNER.`** Record: `docs/admin/ADMIN_OPS_PHASE1.md`
+("Review after `6217031`").
+
+- **Approval passwords.** After a refused approval, the password and
+  authenticator code are cleared and the reason is kept. They are also
+  cleared on success, close and hide (PO approval, receiving sign-off,
+  adjustments, pick shortfalls).
+- **Courier booking.** Refused until the dispatching warehouse has a full
+  address (address line, city, state, PIN code), before the courier is
+  called; a replay of an existing booking still converges. The demo
+  warehouse is left blank, not given an invented address.
+- **Still open.**
+  - The staff management screen: proposal in the record above; it needs
+    a go-ahead and a reset-method choice.
+  - AO-D5 option B and AO-D6, recommended again and still not approved.
+  - The courier (LR-008).
+
+Not self-certified; no go-live claimed.
+
+**Status as of 2026-10-05 (walkthrough): `SOLO-OWNER DESKTOP WALKTHROUGH
+RUN AND ITS SCREEN DEFECTS FIXED ON claude/admin-ops-phase1 — AWAITING
+REVIEW; AO-D5/AO-D6 RECOMMENDED BUT NOT APPROVED.`** After CI passed on
+`57f0f53`, the Product Owner asked for one desktop walkthrough (publish,
+receive with owner approval, pick/pack/print, book/hand over/track,
+failure cases) before more features. Record:
+`docs/admin/WALKTHROUGH_2026-10-05.md`.
+
+- **Fixed.** Next steps and states are now clear:
+  - picked orders now appear on Pack & ship under "Picked, waiting for
+    a package", and the page opens on work in progress;
+  - only actions valid for the current status are offered on purchase
+    orders, packages and order lines;
+  - refused dialogs keep what was typed, and own-approval is disabled
+    with the reason;
+  - messages use plain words, and errors on long forms scroll into
+    view;
+  - readiness says "Not yet" when there is no stock;
+  - documents warn when the warehouse address is missing;
+  - pick and pack scans name the item;
+  - the Overview shows approvals waiting for you and dispatch counts.
+- **AO-D5 (option B) and AO-D6 (strip metadata)** were *recommended* by
+  the Product Owner's reviewer, explicitly not approved. Both stay
+  `DECISION_REQUIRED`, and nothing is built for them.
+- **Reported, not built:** a staff management screen (W-23), and the
+  delivery-area list (W-11, which comes with the courier, LR-008).
+
+Next as asked, once approved: the handover change (AO-D5), the courier
+(LR-008), then promotion templates, basket simulation and campaign
+configuration. Not self-certified; no go-live claimed.
+
+**Status as of 2026-10-05 (second admin review): `INDEPENDENT APPROVAL
+QUEUE AND DISPATCH STAGES BUILT, CODE REVIEW FIXES APPLIED ON
+claude/admin-ops-phase1 — AWAITING IMPLEMENTATION REVIEW; AO-D5 AND AO-D6
+DECISION_REQUIRED.`** The Product Owner verified CI green on `3e1149a`
+and named two incomplete controls plus a pre-merge code review. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Second review"), `docs/admin/APPROVALS.md`,
+`docs/admin/DISPATCH.md`, `docs/admin/BOOKING_TO_HANDOVER_REVIEW.md`.
+
+- **Approval requests.** Naming another approver for an adjustment,
+  receipt QC sign-off or pick shortfall now queues a request; nothing is
+  applied until that person approves it from their own login, and the
+  action is re-checked then. Owner self-approval stays a separate,
+  immediate path. The service refuses an independent approval given on
+  someone else's behalf.
+- **Dispatch stages.** The admin shows "Booked — awaiting collection" and
+  "Handed over". **AO-D5 is partial:** the package still becomes SHIPPED
+  and stock still leaves the ledger at booking. The consequences review
+  recommends option B and needs the Product Owner's decision.
+- **Code review fixes:** confirmation-limit race, nested password/code log
+  redaction, shipped/delivered messages sent only after commit,
+  simultaneous handover, handover list total, decode concurrency limit,
+  rotated-photo dimensions. Open: authenticator code reuse within its
+  window (existing sign-in behaviour); photo camera metadata (AO-D6).
+- **Test record correction:** `3e1149a`'s final run was 950/950
+  integration (64 files), 86 + 21 unit, 88/88 browser; the earlier
+  944/1-failed run stays in the defect history.
+
+Next as asked: the AO-D5 decision; a courier adapter once a courier is
+chosen (LR-008, not chosen — nothing built speculatively); then promotion
+templates, basket simulation and campaign configuration. Not
+self-certified; no go-live claimed.
+
+**Status as of 2026-10-05 (admin review follow-up): `ADMIN OPS PHASE 1
+REVIEW ITEMS CLOSED AND NEXT DISPATCH STEPS BUILT ON
+claude/admin-ops-phase1 — AWAITING IMPLEMENTATION REVIEW.`** The
+Product Owner's review of `e88aab9` asked for three items to be closed
+before acceptance, decided AO-D1..D5, and asked for barcode verification,
+parcel weight/dimensions and dispatch documents next. Record:
+`docs/admin/ADMIN_OPS_PHASE1.md` ("Review follow-up"),
+`docs/admin/APPROVALS.md`, `docs/admin/DISPATCH.md`, and
+`blueprint/DECISION_REGISTER.md` → "AO — Admin operations".
+
+- **Green CI on the combined branch.** `main` was merged in. The home
+  page now links only to published collections, the link audit uses the
+  launch categories, and two AA contrast defects are fixed (C-3). The
+  previously skipped bulk spec `search-deep-pages` could never pass (it
+  wrote to the wrong search index); it now uses the test index and
+  refuses the demo's.
+- **Image validation.** Every upload is decoded in full (sharp/libvips).
+  Corrupt, truncated, animated and oversized images are refused before
+  anything is stored. The pixel limits are checked from the header
+  before any pixel is decoded.
+- **Import.** Each product is saved in one transaction under a
+  per-product lock. Simultaneous imports run one after the other, an
+  interrupted batch is safe to resend (search is repaired), and prices
+  are append-only per colour.
+- **AO-D4 approvals.** There is one policy for POs, stock adjustments,
+  receiving QC sign-off and pick shortfalls. Owner self-approval is off
+  by default; when on, it needs a named owner, a reason and a password,
+  and every approval is recorded. The pick co-approver gap is closed,
+  and receiving no longer accepts the receiver as their own sign-off.
+- **AO-D1/D2/D3.** Unpublished products republish through the QA check.
+  Shoe, belt and perfume attributes show in the product page's details.
+  The Business & warehouse admin screen covers the legal entity, GST
+  registrations, warehouse address and dispatch checks.
+- **Dispatch (AO-D5 in part).** Barcode checks at pick and pack, parcel
+  weight and dimensions sent with the booking, a printable packing slip
+  and address label (not a courier label), and a courier-handover
+  manifest. Handover is recorded separately from booking. **The stock
+  SALE is still posted at booking**: moving it waits for the consequences
+  review the Product Owner asked for. Scans and measurements are only
+  required if the owner turns that on (B-2/B-3 are left to the owner).
+
+Still open: a courier (LR-008) for real labels, pickup and cancellation;
+moving the sale point (AO-D5 review); and the other items listed under
+"Still open" below. Not self-certified; no go-live claimed.
+
+**Status as of 2026-10-04 (admin): `DESKTOP-FIRST ADMIN OPERATIONS
+PHASE 1 IMPLEMENTED ON claude/admin-ops-phase1 — AWAITING
+IMPLEMENTATION REVIEW.`** Authorized by the Product Owner ("START BUILD —
+DESKTOP-FIRST ADMIN OPERATIONS, PHASE 1"). Built on its own branch from
+`1195f48` so the catalogue/image/storefront work continues separately;
+not merged to `main` until reviewed. Full record:
+`docs/admin/ADMIN_OPS_PHASE1.md`.
+
+- Product workspace (Basics → Colours & sizes → Photos → Pricing →
+  Readiness → Preview → Publish) with category product types (apparel,
+  footwear, belt, fragrance), editing of existing products, and readiness
+  that separates published / purchasable / in stock / channels.
+- Photo upload, listing photo, colour, order, replace and remove; public
+  product media store (production requires `PRODUCT_MEDIA_STORAGE=s3`).
+- Spreadsheet import with dry run, change preview, batches of 500, safe
+  retries; never touches stock.
+- Visual footer-menu editor, draft banners, page editing, image library;
+  Setup & health page; channel scope and pause in admin.
+- Research only: `docs/admin/NEXT_PHASES_RESEARCH.md` (buying, dispatch
+  incl. the booking-equals-shipped proposal, promotions, after-sales,
+  solo-owner approval options). Shipping/inventory semantics unchanged.
+- Open decisions AO-D1..D5 (republish, product-page attributes, business
+  details screen, owner mode, dispatch handover) are listed there.
+
 **Status as of 2026-10-04 (latest): `LAUNCH ASSORTMENT REPLACED THROUGHOUT
 THE CATALOGUE AND STOREFRONT — AWAITING PRODUCT OWNER REVIEW ON THE LOCAL
 DEMO.`** The Product Owner (Suraj) authorized replacing the earlier

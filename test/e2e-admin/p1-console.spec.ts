@@ -48,75 +48,83 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+const PNG_FILE = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+
 test.describe('P1 Commerce Operations Console', () => {
   test.beforeEach(() => {
     test.setTimeout(120_000);
   });
 
-  test('P1-01 style is created and completed through the product workbench', async ({ page }) => {
+  test('P1-01 product is created and completed through the product workspace', async ({ page }) => {
+    // Admin Ops Phase 1: the workbench became a step-by-step workspace
+    // (Basics -> Colours & sizes -> Photos -> Pricing -> ... -> Publish);
+    // this flow covers the same outcome, now with a photo uploaded from disk.
     const code = `P1-NEW-${RUN}`;
     await loginAs(page, 'MERCHANDISING');
-    await page.getByRole('link', { name: 'Products' }).click();
-    await page.getByRole('link', { name: 'New style' }).click();
+    await page.getByRole('link', { name: 'Products', exact: true }).click();
+    await page.getByRole('link', { name: 'New product' }).click();
 
     await page.getByLabel('Style code').fill(code);
-    await page.getByLabel('Name', { exact: true }).fill('P1 Workbench Shirt');
-    await page.getByLabel('Brand', { exact: true }).selectOption({ label: `${fx.brand.name} (${fx.brand.code})` });
+    await page.getByLabel('Product name').fill('P1 Workbench Shirt');
     await page.getByLabel('Category', { exact: true }).selectOption({ label: 'E2E P1 Category' });
+    await page.getByLabel('Department').selectOption('Men');
+    await page.getByLabel('Brand', { exact: true }).selectOption({ label: fx.brand.name });
     await page.getByLabel('Season', { exact: true }).fill('AW26');
     await page.getByLabel('Collection', { exact: true }).fill('Console');
-    await page.getByRole('button', { name: 'Create style' }).click();
-    await expect(page.getByText('Style created in DRAFT')).toBeVisible();
+    await page.getByRole('button', { name: 'Save draft and continue' }).click();
+    await expect(page.getByText('Draft saved.')).toBeVisible();
 
     // The shop page is opened before publication, so the storefront caches a 404.
     const storefront = await playwrightRequest.newContext({ baseURL: STOREFRONT_URL });
     const draft = await prisma.style.findUniqueOrThrow({ where: { styleCode: code } });
     expect((await storefront.get(`/product/${draft.id}`)).status()).toBe(404);
 
-    await page.getByLabel('Colour name').fill('Navy');
-    await page.getByLabel('Colour code').fill('NVY');
+    await page.getByLabel('New colour').fill('Navy');
+    await page.getByLabel('Code', { exact: true }).fill('NVY');
     await page.getByRole('button', { name: 'Add colour' }).click();
-    await expect(page.getByText('Colour added.')).toBeVisible();
+    await expect(page.getByText('Navy added.')).toBeVisible();
 
+    await page.getByRole('button', { name: 'Show all sizes' }).click();
     await page.getByLabel('P1-S').check();
     await page.getByLabel('P1-M').check();
-    await page.getByRole('button', { name: 'Generate SKUs' }).click();
-    await expect(page.getByText('SKU matrix generated')).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Colours & SKUs (2)' })).toBeVisible();
+    await page.getByRole('button', { name: 'Add 2 sizes (2 SKUs)' }).click();
+    await expect(page.getByText('Added 2 sizes.')).toBeVisible();
 
-    await page.getByRole('tab', { name: /Media/ }).click();
-    await page.getByLabel('Media URL').fill(`${process.env.STOREFRONT_BASE_URL ?? 'http://localhost:3000'}/e2e-fixture.png`);
-    await page.getByRole('button', { name: 'Add media' }).click();
-    await expect(page.getByText('Media added.')).toBeVisible();
+    const step = (name: RegExp) => page.getByRole('navigation', { name: 'Product steps' }).getByRole('button', { name });
+    await step(/Photos/).click();
+    await page.getByLabel('Choose photos to upload').setInputFiles({ name: 'front.png', mimeType: 'image/png', buffer: PNG_FILE });
+    await expect(page.getByText('1 of 1 uploaded.')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Mark ready for enrichment' }).click();
-    await expect(page.getByText('Mark ready for enrichment: done.')).toBeVisible();
-    await page.getByRole('button', { name: 'Run QA check' }).click();
-    await expect(page.getByText('QA check passed')).toBeVisible();
-    await page.getByRole('button', { name: 'Publish', exact: true }).click();
-    await confirmDialog(page, 'Publish');
-    await expect(page.getByText('Publish: done.')).toBeVisible();
-
-    await page.getByRole('tab', { name: 'Pricing' }).click();
-    await page.getByLabel('MRP (INR)').fill('1799');
-    await page.getByLabel('Selling price (INR)').fill('1499');
+    await step(/Pricing/).click();
+    await page.getByLabel('MRP (₹)').fill('1799');
+    await page.getByLabel('Selling price (₹)').fill('1499');
     await page.getByRole('button', { name: 'Save price' }).click();
-    await expect(page.getByText('Price saved.')).toBeVisible();
+    await expect(page.getByText(/Price saved\./)).toBeVisible();
+
+    await step(/Publish/).click();
+    await page.getByRole('region', { name: 'Publishing' }).getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect(page.getByText(/^Published\./)).toBeVisible();
 
     const style = await prisma.style.findUniqueOrThrow({ where: { styleCode: code }, include: { skus: true, colours: true, media: true, prices: true } });
     expect(style.lifecycleState).toBe('PUBLISHED');
     expect(style.skus).toHaveLength(2);
     expect(style.colours.map((c) => c.colourCode)).toEqual(['NVY']);
     expect(style.media).toHaveLength(1);
+    expect(style.media[0]!.url).toMatch(/^\/media\/products\/[0-9a-f-]{36}\.png$/);
     expect(style.prices.map((p) => Number(p.sellingPrice))).toEqual([1499]);
-    await expect(page.getByRole('heading', { name: `${code} · P1 Workbench Shirt` })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'P1 Workbench Shirt' })).toBeVisible();
 
     // Publishing and pricing in the console reach the shop at once, not after
-    // the storefront's 30-second page cache expires.
+    // the storefront's 30-second page cache expires, and the uploaded photo
+    // is served through the storefront's own address.
     await expect.poll(async () => (await storefront.get(`/product/${style.id}`)).status(), { timeout: 5_000 }).toBe(200);
     const shopPage = await (await storefront.get(`/product/${style.id}`)).text();
     expect(shopPage).toContain('P1 Workbench Shirt');
     expect(shopPage).toContain('1499');
+    expect(shopPage).toContain(style.media[0]!.url);
+    const photo = await storefront.get(style.media[0]!.url);
+    expect(photo.status()).toBe(200);
+    expect(photo.headers()['content-type']).toBe('image/png');
     await storefront.dispose();
   });
 
@@ -146,7 +154,7 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await page.getByRole('button', { name: 'Submit for approval' }).click();
     await confirmDialog(page, 'Submit for approval');
-    await expect(page.getByText('Submit for approval: done.')).toBeVisible();
+    await expect(page.getByText('Submitted for approval. Once it is approved, receive the goods on this page.')).toBeVisible();
 
     // Segregation of duties: a different person (Finance) approves.
     await loginAs(page, 'FINANCE');
@@ -155,7 +163,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await page.getByRole('button', { name: 'Approve', exact: true }).click();
     await page.getByRole('dialog').getByLabel('Comment (optional)').fill('Within budget');
     await confirmDialog(page, 'Approve');
-    await expect(page.getByText('Approve: done.')).toBeVisible();
+    await expect(page.getByText('Approved. Receive the goods below as they arrive.')).toBeVisible();
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
     await page.goto('/dashboard/receiving');
@@ -215,7 +223,8 @@ test.describe('P1 Commerce Operations Console', () => {
     const beforeA = (await balance(fx.locationA.id))!;
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
-    await page.getByRole('link', { name: 'Transfers' }).click();
+    // exact: the Overview's KPI tiles ("Transfers ...") are links too, once they load.
+    await page.getByRole('link', { name: 'Transfers', exact: true }).click();
     await chooseSku(page, sku.skuCode);
     await page.getByLabel('From location').selectOption({ label: `${fx.locationA.name} (${fx.locationA.code})` });
     await page.getByLabel('To location').selectOption({ label: `${fx.locationB.name} (${fx.locationB.code})` });
@@ -270,11 +279,11 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
     await page.getByRole('link', { name: 'Pack & ship' }).click();
-    await page.getByLabel('Status').selectOption({ label: 'ready to ship' });
+    await page.getByLabel('Status').selectOption({ label: 'Ready to ship' });
     await page.getByRole('row').filter({ hasText: order.orderNumber }).getByRole('button', { name: 'Open' }).click();
     await page.getByRole('button', { name: 'Book shipment with carrier' }).click();
     await confirmDialog(page, 'Book shipment with carrier');
-    await expect(page.getByText(`Package for ${order.orderNumber} updated.`)).toBeVisible();
+    await expect(page.getByText(`${order.orderNumber}: Booked with the courier. When they collect it, confirm the handover on the Courier handover page.`)).toBeVisible();
 
     const shipment = await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } });
     expect(shipment.provider).toBe('MOCK');
@@ -283,6 +292,14 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await openOrder(page, order.orderNumber);
     await expect(page.getByText(shipment.trackingRef!).first()).toBeVisible();
+    // AO-D5 option B: booked, not collected - nothing to deliver yet, and no stock has left.
+    await expect(page.getByText('Booked with the courier, waiting for collection.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Mark delivered', exact: true })).toHaveCount(0);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(0);
+    await confirmHandover(page, order.orderNumber);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(1);
+
+    await openOrder(page, order.orderNumber);
     await fulfilmentStep(page, 'Mark delivered');
     expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('DELIVERED');
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } })).status).toBe('DELIVERED');
@@ -302,7 +319,8 @@ test.describe('P1 Commerce Operations Console', () => {
     const ret = await prisma.return.findFirstOrThrow({ where: { orderId: order.orderId }, include: { lines: true } });
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
-    await page.getByRole('link', { name: 'Returns' }).click();
+    // exact: the Overview's KPI tiles ("Returns ...") are links too, once they load.
+    await page.getByRole('link', { name: 'Returns', exact: true }).click();
     await page.getByRole('link', { name: ret.returnNumber }).click();
     await page.getByRole('button', { name: 'Mark received at warehouse' }).click();
     await confirmDialog(page, 'Mark received at warehouse');
@@ -331,7 +349,7 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(line).toMatchObject({ qcResult: 'PASS', disposition: 'RESTOCK_SELLABLE', refundEligible: true });
   });
 
-  test('P1-08 exchange ships its replacement through the normal fulfilment pipeline', async ({ page }) => {
+  test('P1-08 exchange ships its replacement through the normal fulfilment pipeline, after a mistaken booking is cancelled and rebooked', async ({ page }) => {
     const [small, medium] = tee.skus;
     const order = await placeCodOrder(fx, small!.skuId, nextMobile());
     await deliverLine(fx, order.orderId, order.lineId);
@@ -348,6 +366,8 @@ test.describe('P1 Commerce Operations Console', () => {
 
     await loginAs(page, 'WAREHOUSE_MANAGER');
     await page.goto(`/dashboard/exchanges/${exchange.id}`);
+    // The replacement item cannot be changed here; the page says what can be done instead (AO-D8).
+    await expect(page.getByText(/Until the original item is received, you can cancel this exchange/)).toBeVisible();
     await page.getByRole('button', { name: 'Mark received' }).click();
     await confirmDialog(page, 'Mark received');
     await expect(page.getByText('Mark received: done.')).toBeVisible();
@@ -355,6 +375,7 @@ test.describe('P1 Commerce Operations Console', () => {
     await confirmDialog(page, 'Record QC');
     await expect(page.getByText('QC recorded.')).toBeVisible();
     await expect(page.getByText('Replacement allocated').first()).toBeVisible();
+    await expect(page.getByText(/the exchange can only go ahead with this replacement/)).toBeVisible();
 
     // The replacement's pick task appears in the normal pick queue.
     await page.goto(`/dashboard/warehouse/picks?locationId=${fx.locationA.id}`);
@@ -370,6 +391,31 @@ test.describe('P1 Commerce Operations Console', () => {
     await fulfilmentStep(page, 'Mark packed');
     await fulfilmentStep(page, 'Ready to ship');
     await fulfilmentStep(page, 'Book shipment with carrier');
+    // AO-D5 option B: the replacement leaves stock at the courier handover.
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(0);
+
+    // Booked by mistake: cancel the booking from the exchange. The exchange carries on and a new package is booked.
+    await page.getByRole('button', { name: 'Cancel booking', exact: true }).click();
+    const cancelDialog = page.getByRole('dialog').last();
+    await expect(cancelDialog).toContainText('The exchange is not cancelled');
+    await expect(cancelDialog.getByRole('button', { name: 'Cancel booking', exact: true })).toBeDisabled();
+    await cancelDialog.getByLabel('I have cancelled this booking with the courier').check();
+    await cancelDialog.getByLabel('Reason (required)').fill('Booked with the wrong parcel size');
+    await confirmDialog(page, 'Cancel booking');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page.getByText('Booking cancelled. The replacement is still allocated: create a new package for it and book it again.')).toBeVisible();
+    await expect(page.getByText(/Earlier packages whose courier booking was cancelled/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create replacement package' })).toBeVisible();
+    expect((await prisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } })).status).toBe('REPLACEMENT_ALLOCATED');
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(0);
+    await page.getByRole('button', { name: 'Create replacement package' }).click();
+    await confirmDialog(page, 'Create replacement package');
+    await expect(page.getByText('Create replacement package: done.')).toBeVisible();
+    await fulfilmentStep(page, 'Mark packed');
+    await fulfilmentStep(page, 'Ready to ship');
+    await fulfilmentStep(page, 'Book shipment with carrier');
+    await confirmHandover(page, exchange.exchangeNumber);
+    await page.goto(`/dashboard/exchanges/${exchange.id}`);
     await fulfilmentStep(page, 'Mark delivered');
     // Delivery of the replacement package completes the exchange automatically (EXC-004 Option 2).
     await expect(page.locator('.page-header .badge').first()).toHaveText('Completed');
@@ -378,6 +424,7 @@ test.describe('P1 Commerce Operations Console', () => {
     expect(done.status).toBe('COMPLETED');
     const fulfilment = await prisma.orderFulfilment.findUniqueOrThrow({ where: { exchangeId: exchange.id }, include: { shipment: true, lines: true } });
     expect(fulfilment).toMatchObject({ status: 'DELIVERED', lines: [], orderId: order.orderId });
+    expect(await prisma.orderFulfilment.findMany({ where: { cancelledExchangeId: exchange.id }, select: { status: true } })).toEqual([{ status: 'CANCELLED' }]);
     expect(fulfilment.shipment?.provider).toBe('MOCK');
     expect(await prisma.inventoryTransaction.count({ where: { type: 'EXCHANGE_DISPATCH', referenceId: exchange.id } })).toBe(1);
     // No second order or order line was created for the replacement.
@@ -549,6 +596,239 @@ test.describe('P1 Commerce Operations Console', () => {
     // No raw JSON dump remains.
     await expect(page.locator('pre')).toHaveCount(0);
   });
+
+  test('AO-11 approval queue: a large adjustment waits until the named approver approves it from their own login', async ({ page }) => {
+    const sku = tee.skus[0]!;
+    const balance = async () => (await prisma.inventoryBalance.findUniqueOrThrow({ where: { skuId_locationId: { skuId: sku.skuId, locationId: fx.locationA.id } } })).onHand;
+    const before = await balance();
+    const reason = `AO-11 found a carton ${RUN}`;
+
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    await page.getByRole('link', { name: 'Stock' }).click();
+    await page.getByLabel('Search').fill(sku.skuCode);
+    await page.getByRole('row').filter({ hasText: sku.skuCode }).filter({ hasText: fx.locationA.name }).getByRole('link', { name: 'Adjust' }).click();
+    await page.getByLabel('Quantity delta').fill('60');
+    await page.getByLabel('Justification (required by the server)').fill(reason);
+    await page.getByLabel('Finance co-approver (required above threshold)').selectOption({ label: 'E2E P1 finance' });
+    await page.getByRole('button', { name: 'Submit adjustment' }).click();
+    await confirmDialog(page, 'Record adjustment');
+    await expect(page.locator('form').getByRole('status')).toContainText('Sent to E2E P1 finance for approval');
+    // Nothing has moved yet.
+    expect(await balance()).toBe(before);
+    const request = await prisma.approvalRequest.findFirstOrThrow({ where: { kind: 'STOCK_ADJUSTMENT', status: 'PENDING', summary: { path: ['reason'], equals: reason } } });
+
+    // The approver sees it on their own Approvals page and approves it.
+    await loginAs(page, 'FINANCE');
+    await page.goto('/dashboard/approvals');
+    const waiting = page.getByRole('table', { name: 'Requests waiting for your approval' }).getByRole('row').filter({ hasText: reason });
+    await expect(waiting).toContainText(sku.skuCode);
+    await expect(waiting).toContainText('add 60');
+    await waiting.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByText('Approved: the stock adjustment has been carried out.')).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Requests waiting for your approval' }).getByRole('row').filter({ hasText: reason })).toHaveCount(0);
+
+    expect(await balance()).toBe(before + 60);
+    const approved = await prisma.approvalRequest.findUniqueOrThrow({ where: { id: request.id } });
+    expect(approved.status).toBe('APPROVED');
+    const finance = await prisma.staffUser.findUniqueOrThrow({ where: { email: 'e2e-p1-finance@example.com' } });
+    const txn = await prisma.inventoryTransaction.findUniqueOrThrow({ where: { id: approved.resultEntityId! } });
+    expect(txn).toMatchObject({ coApproverStaffId: finance.id, quantity: 60, type: 'ADJUSTMENT_IN' });
+
+    // The requester sees the outcome among the requests they sent.
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    await page.goto('/dashboard/approvals');
+    await expect(page.getByRole('table', { name: 'Requests you sent' }).getByRole('row').filter({ hasText: reason })).toContainText('Approved');
+  });
+
+  test('AO-10 dispatch: pick scan, pack scans with parcel measurements, documents, booking and courier handover', async ({ page }) => {
+    // Barcodes on the tee's sizes (scanners read these).
+    const sku = tee.skus[0]!;
+    const barcode = `89${String(Date.now()).slice(-10)}`;
+    await prisma.sku.update({ where: { id: sku.skuId }, data: { barcode } });
+    const order = await placeCodOrder(fx, sku.skuId, nextMobile());
+    const saleBefore = await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } });
+
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    // Pick: a wrong scan is refused, the right one is accepted.
+    await page.getByRole('link', { name: 'Pick queue' }).click();
+    await page.getByLabel('Location', { exact: true }).selectOption({ label: `${fx.locationA.name} (${fx.locationA.code})` });
+    await page.getByRole('row').filter({ hasText: order.orderNumber }).getByRole('button', { name: 'Record pick' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Record pick' });
+    await drawer.getByLabel("Scan the item's barcode").fill('0000000000000');
+    await drawer.getByRole('button', { name: 'Record pick' }).click();
+    await expect(drawer.getByText(/does not match/)).toBeVisible();
+    await drawer.getByLabel("Scan the item's barcode").fill(barcode);
+    await drawer.getByRole('button', { name: 'Record pick' }).click();
+    await expect(drawer).toBeHidden();
+    expect((await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } })).scannedBarcode).toBe(barcode);
+
+    // The picked order waits on Pack & ship for its package (walkthrough W-14).
+    await page.goto('/dashboard/fulfilments');
+    const waiting = page.getByRole('table', { name: 'Picked orders waiting for a package' }).getByRole('row').filter({ hasText: order.orderNumber });
+    await waiting.getByRole('button', { name: 'Create package' }).click();
+    await expect(page.getByText(`Package created for ${order.orderNumber}. Pack it below.`)).toBeVisible();
+    await expect(waiting).toHaveCount(0);
+
+    // Pack: scan the unit and record the parcel.
+    await openOrder(page, order.orderNumber);
+    await page.getByRole('button', { name: 'Mark packed', exact: true }).first().click();
+    const pack = page.getByRole('dialog').last();
+    const scan = pack.getByLabel(/Scan item barcode/);
+    // A unit that does not belong in the parcel is named as such and can be undone.
+    await scan.fill('0000000000000');
+    await scan.press('Enter');
+    await expect(pack.getByText(/Not in this package: 0000000000000/)).toBeVisible();
+    await pack.getByRole('button', { name: 'Undo last scan' }).click();
+    await expect(pack.getByText(/Not in this package/)).toHaveCount(0);
+    await scan.fill(barcode);
+    await scan.press('Enter');
+    await expect(pack.getByRole('list', { name: 'Items in this package' })).toContainText(`${tee.name}`);
+    await expect(pack.getByRole('list', { name: 'Items in this package' })).toContainText('1 of 1 scanned');
+    await pack.getByLabel(/Parcel weight/).fill('420');
+    await pack.getByLabel('Length (cm)').fill('30');
+    await pack.getByLabel('Width (cm)').fill('22');
+    await pack.getByLabel('Height (cm)').fill('4');
+    await confirmDialog(page, 'Mark packed');
+    await expect(page.getByRole('dialog')).toBeHidden();
+    const fulfilment = await prisma.orderFulfilment.findFirstOrThrow({ where: { orderId: order.orderId } });
+    expect(fulfilment).toMatchObject({ status: 'PACKED', parcelWeightGrams: 420, parcelLengthCm: 30, parcelWidthCm: 22, parcelHeightCm: 4 });
+    expect(fulfilment.packScanVerifiedAt).not.toBeNull();
+
+    // Packing slip and address label.
+    await page.goto(`/dashboard/fulfilments/${fulfilment.id}/documents?doc=slip`);
+    const slip = page.getByRole('article', { name: 'Packing slip' });
+    await expect(slip.getByText(sku.skuCode)).toBeVisible();
+    await expect(slip.getByText(barcode)).toBeVisible();
+    await expect(slip.getByText(/Parcel weight 420 g/)).toBeVisible();
+    await page.getByRole('link', { name: 'Address label' }).click();
+    await expect(page.getByRole('article', { name: 'Address label' }).getByText('9 Console Road')).toBeVisible();
+    // The warehouse's own address is the return address.
+    await expect(page.getByRole('article', { name: 'Address label' }).getByText('4 Dispatch Yard')).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Address label' }).getByText(/Cash on delivery/)).toBeVisible();
+
+    // Book: no stock leaves at booking (AO-D5 option B); the handover posts the sale.
+    await openOrder(page, order.orderNumber);
+    await fulfilmentStep(page, 'Ready to ship');
+    await fulfilmentStep(page, 'Book shipment with carrier');
+    const shipment = await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: fulfilment.id } });
+    expect(shipment.status).toBe('BOOKED');
+    expect(shipment.handedOverAt).toBeNull();
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilment.id } })).status).toBe('BOOKED');
+    expect(await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } })).toBe(saleBefore);
+
+    // Handover manifest: tick the parcel and confirm.
+    await page.getByRole('link', { name: 'Courier handover' }).click();
+    await page.getByLabel(`Handed over: ${order.orderNumber}`).check();
+    await page.getByLabel(/manifest or pickup reference/).fill(`PICKUP-${RUN}`);
+    await page.getByRole('button', { name: /Confirm handover of 1 parcel/ }).click();
+    await expect(page.getByText('1 parcel recorded as handed over and marked shipped.')).toBeVisible();
+    const handed = await prisma.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
+    expect(handed.handedOverAt).not.toBeNull();
+    expect(handed.handoverReference).toBe(`PICKUP-${RUN}`);
+    await expect(page.getByLabel(`Handed over: ${order.orderNumber}`)).toHaveCount(0);
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: fulfilment.id } })).status).toBe('SHIPPED');
+    expect(await prisma.inventoryTransaction.count({ where: { skuId: sku.skuId, type: 'SALE' } })).toBe(saleBefore + 1);
+  });
+
+  test('AO-11 a package booked with the courier is cancelled with its items from the screen; no stock leaves', async ({ page }) => {
+    const order = await placeCodOrder(fx, tee.skus[1]!.skuId, nextMobile());
+    const task = await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } });
+    await expectOk(
+      await fx.api.post(`/api/v1/warehouse/pick-tasks/${task.id}/pick`, { headers: fx.auth, data: { idempotencyKey: `ao-11-${task.id}`, outcome: 'FULL', pickedQuantity: 1 } }),
+      'Pick',
+    );
+    const f = await expectOk<{ id: string }>(await fx.api.post(`/api/v1/orders/${order.orderId}/fulfilments`, { headers: fx.auth, data: { lineIds: [order.lineId] } }), 'Fulfilment');
+    for (const step of ['pack', 'ready-to-ship']) await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/${step}`, { headers: fx.auth }), step);
+    await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/shipment`, { headers: fx.auth, data: { idempotencyKey: `ao-11-book-${f.id}` } }), 'Book');
+
+    await loginAs(page, 'CUSTOMER_SERVICE');
+    await openOrder(page, order.orderNumber);
+    // The line cannot be cancelled on its own while the courier has a booking.
+    await expect(page.getByText('Booked with the courier: to cancel it or book it again, use the buttons on its package below')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+    // Customer Service can cancel items (order:cancel) but not rebook (that needs the booking permission).
+    await expect(page.getByRole('button', { name: 'Cancel booking and rebook' })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Cancel booking and items', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Cancel booking and items' });
+    const confirm = dialog.getByRole('button', { name: 'Cancel booking and items' });
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel('Reason (required)').fill('Customer called before collection');
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel('I have cancelled this booking with the courier').check();
+    await confirm.click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('Booking cancelled. The items are cancelled and their stock released.').first()).toBeVisible();
+
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).status).toBe('CANCELLED');
+    expect((await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } })).status).toBe('CANCELLED');
+    expect((await prisma.orderLine.findUniqueOrThrow({ where: { id: order.lineId } })).status).toBe('CANCELLED');
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(0);
+  });
+
+  test('AO-13 a booking made by mistake is cancelled and booked again from the screen; the order and its reserved stock are kept', async ({ page }) => {
+    const skuId = tee.skus[1]!.skuId;
+    const order = await placeCodOrder(fx, skuId, nextMobile());
+    const task = await prisma.pickTask.findUniqueOrThrow({ where: { orderLineId: order.lineId } });
+    await expectOk(
+      await fx.api.post(`/api/v1/warehouse/pick-tasks/${task.id}/pick`, { headers: fx.auth, data: { idempotencyKey: `ao-13-${task.id}`, outcome: 'FULL', pickedQuantity: 1 } }),
+      'Pick',
+    );
+    const f = await expectOk<{ id: string }>(await fx.api.post(`/api/v1/orders/${order.orderId}/fulfilments`, { headers: fx.auth, data: { lineIds: [order.lineId] } }), 'Fulfilment');
+    for (const step of ['pack', 'ready-to-ship']) await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/${step}`, { headers: fx.auth }), step);
+    await expectOk(await fx.api.post(`/api/v1/orders/fulfilments/${f.id}/shipment`, { headers: fx.auth, data: { idempotencyKey: `ao-13-book-${f.id}` } }), 'Book');
+    const stock = async () => {
+      const rows = await prisma.inventoryBalance.findMany({ where: { skuId } });
+      return { onHand: rows.reduce((n, r) => n + r.onHand, 0), reserved: rows.reduce((n, r) => n + r.reserved, 0) };
+    };
+    const booked = await stock();
+
+    await loginAs(page, 'WAREHOUSE_MANAGER');
+    await openOrder(page, order.orderNumber);
+    // The warehouse can rebook (shipping:manage) but not cancel items (order:cancel).
+    await expect(page.getByRole('button', { name: 'Cancel booking and items' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Cancel booking and rebook', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Cancel booking and rebook' });
+    await expect(dialog).toContainText('The order is kept');
+    const confirm = dialog.getByRole('button', { name: 'Cancel booking and rebook' });
+    await dialog.getByLabel('Reason (required)').fill('Booked with the wrong parcel size');
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel('I have cancelled this booking with the courier').check();
+    await dialog.getByLabel('Courier cancellation reference (optional)').fill(`CXL-${RUN}`);
+    await confirm.click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(/Booking cancelled; the order is kept/).first()).toBeVisible();
+    await expect(page.getByText('Booking cancelled - items kept, to be packed and booked again')).toBeVisible();
+
+    expect(await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: f.id } })).toMatchObject({ status: 'CANCELLED', releasedForRebook: true });
+    expect((await prisma.shipment.findUniqueOrThrow({ where: { fulfilmentId: f.id } })).bookingCancellationReference).toBe(`CXL-${RUN}`);
+    expect(await prisma.orderLine.findUniqueOrThrow({ where: { id: order.lineId } })).toMatchObject({ status: 'PICKED', fulfilmentId: null });
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.orderId } })).status).toBe('PROCESSING');
+    expect(await stock()).toEqual(booked);
+
+    // Pack & ship lists the order as picked and waiting for a package.
+    await page.getByRole('link', { name: 'Pack & ship' }).click();
+    await expect(page.getByRole('region', { name: 'Picked, waiting for a package' }).getByRole('link', { name: order.orderNumber })).toBeVisible();
+
+    // A new package, packed, ready and booked from the order page; still nothing leaves stock until the handover.
+    await openOrder(page, order.orderNumber);
+    await page.getByLabel(new RegExp(`^Select ${escape(tee.name)}`)).check();
+    await page.getByRole('button', { name: 'Create fulfilment from selected' }).click();
+    await confirmDialog(page, 'Create fulfilment');
+    await expect(page.getByText('Fulfilment created.')).toBeVisible();
+    await fulfilmentStep(page, 'Mark packed');
+    await fulfilmentStep(page, 'Ready to ship');
+    await fulfilmentStep(page, 'Book shipment with carrier');
+    const second = await prisma.orderFulfilment.findFirstOrThrow({ where: { orderId: order.orderId, status: 'BOOKED' } });
+    expect(second.id).not.toBe(f.id);
+    expect(await stock()).toEqual(booked);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(0);
+
+    await confirmHandover(page, order.orderNumber);
+    expect(await prisma.inventoryTransaction.count({ where: { type: 'SALE', referenceId: order.lineId } })).toBe(1);
+    expect(await stock()).toEqual({ onHand: booked.onHand - 1, reserved: booked.reserved - 1 });
+    expect((await prisma.orderFulfilment.findUniqueOrThrow({ where: { id: second.id } })).status).toBe('SHIPPED');
+  });
 });
 
 // ---------------------------------------------------------------- helpers
@@ -575,6 +855,14 @@ async function pickFromQueue(page: Page, orderNumber: string) {
 }
 
 /** Runs one package transition (button + confirmation) and waits for the confirmation text. */
+/** Confirms on the Courier handover page that the courier collected this parcel (AO-D5). */
+async function confirmHandover(page: Page, reference: string) {
+  await page.goto('/dashboard/fulfilments/handover');
+  await page.getByLabel(`Handed over: ${reference}`).check();
+  await page.getByRole('button', { name: /Confirm handover of 1 parcel/ }).click();
+  await expect(page.getByText('1 parcel recorded as handed over and marked shipped.')).toBeVisible();
+}
+
 async function fulfilmentStep(page: Page, label: string) {
   await page.getByRole('button', { name: label, exact: true }).first().click();
   await confirmDialog(page, label);

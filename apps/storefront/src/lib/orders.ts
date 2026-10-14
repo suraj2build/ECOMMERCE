@@ -53,6 +53,7 @@ export interface OrderLineView {
   unitPriceInclusive: number;
   lineTotalInclusive: number;
   status: 'ALLOCATED' | 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'EXCEPTION';
+  fulfilmentId?: string | null;
   cancelledAt: string | null;
   cancelledReason: string | null;
 }
@@ -88,7 +89,8 @@ export interface ShipmentView {
 
 export interface OrderFulfilmentView {
   id: string;
-  status: 'PENDING' | 'PACKED' | 'READY_TO_SHIP' | 'SHIPPED' | 'DELIVERED';
+  // BOOKED: booked with the courier, not collected yet (AO-D5 option B).
+  status: 'PENDING' | 'PACKED' | 'READY_TO_SHIP' | 'BOOKED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
   carrierName: string | null;
   trackingRef: string | null;
   shippedAt: string | null;

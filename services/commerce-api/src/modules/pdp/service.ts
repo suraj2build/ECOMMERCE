@@ -7,7 +7,7 @@ import { ReviewService } from './review-service.js';
 import { CrossSellService } from './cross-sell-service.js';
 import { loadEnv } from '@fcp/config';
 import { resolveStyleReturnPolicy } from '../returns/policy.js';
-import { productCopy } from '../product/copy.js';
+import { productAttributes, productCopy, resolveProductType } from '../product/copy.js';
 
 /**
  * Public PDP aggregate read (M11, specs/10-pdp.md). Composes Style/
@@ -153,6 +153,8 @@ export class PdpService {
       washCare: style.washCare,
       countryOfOrigin: style.countryOfOrigin,
       copy: productCopy(style.customAttributes),
+      productType: resolveProductType(style.customAttributes, style.category.productType),
+      attributes: productAttributes(resolveProductType(style.customAttributes, style.category.productType), style),
       mrp: Number(activePrice!.mrp),
       sellingPrice: Number(activePrice!.sellingPrice),
       currency: activePrice!.currency,

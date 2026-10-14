@@ -1,7 +1,12 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
+  Settings,
+  Landmark,
+  ShieldCheck,
+  UserCog,
   Shirt,
+  Upload,
   FolderKanban,
   Building2,
   ClipboardList,
@@ -13,6 +18,7 @@ import {
   ShoppingCart,
   ListChecks,
   Truck,
+  Handshake,
   Undo2,
   Repeat,
   Receipt,
@@ -58,13 +64,26 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Dashboard',
     icon: LayoutDashboard,
-    items: [{ href: '/dashboard', label: 'Overview', anyOf: [], icon: LayoutDashboard }],
+    items: [
+      { href: '/dashboard', label: 'Overview', anyOf: [], icon: LayoutDashboard },
+      { href: '/dashboard/setup', label: 'Setup & health', anyOf: ['org:manage'], icon: Settings },
+      { href: '/dashboard/business', label: 'Business & warehouse', anyOf: ['org:manage', 'tax:read', 'tax:manage'], icon: Landmark },
+      // Anyone who can send or be sent an approval request, plus the log readers.
+      {
+        href: '/dashboard/approvals',
+        label: 'Approvals',
+        anyOf: ['org:manage', 'audit:read', 'inventory:adjust', 'inventory:adjust:coapprove', 'grn:create', 'grn:qc:manager_signoff', 'warehouse:pick'],
+        icon: ShieldCheck,
+      },
+      { href: '/dashboard/staff', label: 'Staff', anyOf: ['rbac:manage'], icon: UserCog },
+    ],
   },
   {
     title: 'Merchandise',
     icon: Shirt,
     items: [
       { href: '/dashboard/products', label: 'Products', anyOf: ['product:read'], icon: Shirt },
+      { href: '/dashboard/products/import', label: 'Import products', anyOf: ['product:write'], icon: Upload },
       { href: '/dashboard/collections', label: 'Collections', anyOf: ['product:read'], icon: FolderKanban },
     ],
   },
@@ -94,6 +113,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard/orders', label: 'Orders', anyOf: ['order:read'], icon: ShoppingCart },
       { href: '/dashboard/warehouse/picks', label: 'Pick queue', anyOf: ['warehouse:read'], icon: ListChecks },
       { href: '/dashboard/fulfilments', label: 'Pack & ship', anyOf: ['order:read'], icon: Truck },
+      { href: '/dashboard/fulfilments/handover', label: 'Courier handover', anyOf: ['shipping:manage'], icon: Handshake },
     ],
   },
   {

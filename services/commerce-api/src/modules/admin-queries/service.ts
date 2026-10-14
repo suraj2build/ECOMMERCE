@@ -1,6 +1,9 @@
+import { dispatchStage } from '../dispatch/service.js';
 import type { Prisma, PrismaClient } from '@fcp/db';
 import type { PermissionKey } from '@fcp/shared';
 import { availableAtLocation } from '../inventory/service.js';
+import { THUMBNAIL_MEDIA } from '../catalog/service.js';
+import { ApprovalPolicyService } from '../approvals/service.js';
 
 /**
  * Read models for the P1 Commerce Operations Console (apps/admin).
@@ -73,10 +76,13 @@ export class AdminQueryService {
   }
 
   /** Paginated style list with the brand/category names and counts a list screen needs. */
-  async listStyles(params: { q?: string; lifecycleState?: string; take?: number; skip?: number }) {
+  async listStyles(params: { q?: string; lifecycleState?: string; categoryId?: string; gender?: string; take?: number; skip?: number }) {
     const term = params.q?.trim();
     const where: Prisma.StyleWhereInput = {
       ...(params.lifecycleState ? { lifecycleState: params.lifecycleState as never } : {}),
+      // Admin Ops Phase 1: owner filters.
+      ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+      ...(params.gender ? { gender: params.gender } : {}),
       ...(term
         ? { OR: [{ styleCode: { contains: term, mode: 'insensitive' } }, { name: { contains: term, mode: 'insensitive' } }] }
         : {}),
@@ -93,7 +99,10 @@ export class AdminQueryService {
           publishedAt: true,
           updatedAt: true,
           brand: { select: { name: true } },
+          gender: true,
           category: { select: { name: true } },
+          // The listing photo, chosen exactly as the storefront chooses it.
+          media: { ...THUMBNAIL_MEDIA, select: { url: true } },
           _count: { select: { colours: true, skus: true, media: true } },
         },
         orderBy: { updatedAt: 'desc' },
@@ -225,7 +234,22 @@ export class AdminQueryService {
 
   /** Fulfilment queue (pack / ready-to-ship / ship / deliver work), order- and exchange-sourced alike. */
   async listFulfilments(params: { status?: string; take?: number; skip?: number }) {
-    const where: Prisma.OrderFulfilmentWhereInput = params.status ? { status: params.status as never } : {};
+    // AO-D5 option B: a package booked with the courier is BOOKED until the
+    // handover. A package booked before option B was built was marked
+    // SHIPPED at booking, so for those the recorded handover decides.
+    // IN_PROGRESS: everything that still needs someone to act - not yet
+    // with the courier.
+    const legacyAwaiting: Prisma.OrderFulfilmentWhereInput = { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } };
+    const where: Prisma.OrderFulfilmentWhereInput =
+      params.status === 'IN_PROGRESS'
+        ? { OR: [{ status: { in: ['PENDING', 'PACKED', 'READY_TO_SHIP', 'BOOKED'] } }, legacyAwaiting] }
+        : params.status === 'BOOKED_AWAITING_COLLECTION'
+        ? { OR: [{ status: 'BOOKED' }, legacyAwaiting] }
+        : params.status === 'HANDED_OVER'
+          ? { status: 'SHIPPED', shipment: { is: { handedOverAt: { not: null } } } }
+          : params.status
+            ? { status: params.status as never }
+            : {};
     const [items, total] = await Promise.all([
       this.prisma.orderFulfilment.findMany({
         where,
@@ -242,7 +266,10 @@ export class AdminQueryService {
           createdAt: true,
           order: { select: { orderNumber: true } },
           exchange: { select: { exchangeNumber: true } },
-          shipment: { select: { id: true, provider: true, status: true, trackingRef: true, deliveryAttempts: true, maxDeliveryAttempts: true } },
+          cancelledExchangeId: true,
+          cancelledExchange: { select: { exchangeNumber: true } },
+          releasedForRebook: true,
+          shipment: { select: { id: true, provider: true, status: true, trackingRef: true, deliveryAttempts: true, maxDeliveryAttempts: true, bookedAt: true, handedOverAt: true, handoverSource: true } },
           _count: { select: { lines: true } },
         },
         orderBy: { createdAt: 'asc' },
@@ -251,21 +278,68 @@ export class AdminQueryService {
       }),
       this.prisma.orderFulfilment.count({ where }),
     ]);
-    return { items, total };
+    return { items: items.map((f) => ({ ...f, dispatchStage: dispatchStage(f.status, f.shipment) })), total };
+  }
+
+  /**
+   * Orders with picked lines that are not in a package yet: the step
+   * between the pick queue and Pack & ship. A package is made from the
+   * picked lines (POST /orders/:id/fulfilments).
+   */
+  async readyToPack(params: { take?: number }) {
+    const lines = await this.prisma.orderLine.findMany({
+      where: { status: 'PICKED', fulfilmentId: null },
+      select: { id: true, orderId: true, order: { select: { orderNumber: true, createdAt: true } } },
+      orderBy: { order: { createdAt: 'asc' } },
+      take: 2000,
+    });
+    const byOrder = new Map<string, { orderId: string; orderNumber: string; placedAt: Date; lineIds: string[] }>();
+    for (const l of lines) {
+      const entry = byOrder.get(l.orderId) ?? { orderId: l.orderId, orderNumber: l.order.orderNumber, placedAt: l.order.createdAt, lineIds: [] };
+      entry.lineIds.push(l.id);
+      byOrder.set(l.orderId, entry);
+    }
+    const orders = [...byOrder.values()];
+    // The total counts every order waiting, not only those in the lines read above.
+    const total =
+      lines.length < 2000
+        ? orders.length
+        : (await this.prisma.orderLine.groupBy({ by: ['orderId'], where: { status: 'PICKED', fulfilmentId: null } })).length;
+    // Lines of the same order still waiting to be picked: packing now would
+    // split the order into more than one parcel.
+    const stillToPick = orders.length
+      ? await this.prisma.orderLine.groupBy({ by: ['orderId'], where: { orderId: { in: orders.map((o) => o.orderId) }, status: 'ALLOCATED' }, _count: { _all: true } })
+      : [];
+    const waiting = new Map(stillToPick.map((g) => [g.orderId, g._count._all]));
+    const take = boundedTake(params.take, MAX_PAGE, 50);
+    return {
+      total,
+      orders: orders.slice(0, take).map((o) => ({ ...o, pickedLines: o.lineIds.length, linesStillToPick: waiting.get(o.orderId) ?? 0 })),
+    };
   }
 
   /** Staff who hold `holds`, for the co-approver / sign-off pickers. Identity only - never credentials. */
-  async lookupStaffWithPermission(holds: PermissionKey, excludeStaffId: string) {
-    return this.prisma.staffUser.findMany({
+  /**
+   * Staff who may approve the caller's action: everyone else holding the
+   * approving permission, plus the caller themselves (marked `self`) only
+   * while owner approval is on, they are a named owner and they hold the
+   * permission (AO-D4). The API re-checks all of this on submit.
+   */
+  async lookupStaffWithPermission(holds: PermissionKey, callerStaffId: string) {
+    const holders = await this.prisma.staffUser.findMany({
       where: {
         isActive: true,
-        id: { not: excludeStaffId },
         roles: { some: { role: { permissions: { some: { permission: { key: holds } } } } } },
       },
       select: { id: true, fullName: true },
       orderBy: { fullName: 'asc' },
-      take: MAX_LOOKUP,
+      take: MAX_LOOKUP + 1,
     });
+    const callerIsHolder = holders.some((h) => h.id === callerStaffId);
+    const selfAllowed = callerIsHolder && (await new ApprovalPolicyService(this.prisma).ownerApprovalAllowedFor(callerStaffId));
+    const others = holders.filter((h) => h.id !== callerStaffId).slice(0, MAX_LOOKUP).map((h) => ({ ...h, self: false }));
+    const me = holders.find((h) => h.id === callerStaffId);
+    return selfAllowed && me ? [{ ...me, self: true }, ...others] : others;
   }
 
   async listPurchaseOrders(params: { q?: string; status?: string; supplierId?: string; take?: number; skip?: number }) {
@@ -540,7 +614,7 @@ export class AdminQueryService {
    * Workload counts for the dashboard. Only sections the caller may read
    * are computed; each count is a plain COUNT over existing statuses.
    */
-  async workload(permissions: Set<PermissionKey>) {
+  async workload(permissions: Set<PermissionKey>, staffUserId?: string) {
     const out: Record<string, Record<string, number>> = {};
     const p = this.prisma;
     const tasks: Promise<void>[] = [];
@@ -563,6 +637,22 @@ export class AdminQueryService {
       pendingPicks: p.pickTask.count({ where: { status: 'PENDING' } }),
       pickExceptions: p.pickTask.count({ where: { status: { in: ['EXCEPTION', 'SHORT_PICKED'] } } }),
     });
+    section('dispatch', 'order:read', {
+      readyToPack: p.orderLine
+        .findMany({ where: { status: 'PICKED', fulfilmentId: null }, distinct: ['orderId'], select: { orderId: true } })
+        .then((rows) => rows.length),
+      toPackOrShip: p.orderFulfilment.count({ where: { status: { in: ['PENDING', 'PACKED', 'READY_TO_SHIP'] } } }),
+      awaitingCollection: p.orderFulfilment.count({ where: { OR: [{ status: 'BOOKED' }, { status: 'SHIPPED', shipment: { is: { handedOverAt: null } } }] } }),
+    });
+    if (staffUserId && (permissions.has('inventory:adjust:coapprove') || permissions.has('grn:qc:manager_signoff'))) {
+      // Approval requests waiting for this person (only people who can be
+      // named as an approver get the tile).
+      tasks.push(
+        (async () => {
+          out.approvals = { waitingForYou: await p.approvalRequest.count({ where: { approverStaffId: staffUserId, status: 'PENDING' } }) };
+        })(),
+      );
+    }
     section('returns', 'return:read', {
       requested: p.return.count({ where: { status: 'REQUESTED' } }),
       inTransit: p.return.count({ where: { status: { in: ['PICKUP_SCHEDULED', 'PICKED_UP'] } } }),

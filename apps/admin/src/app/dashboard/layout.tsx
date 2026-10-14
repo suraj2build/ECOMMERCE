@@ -67,6 +67,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.replace('/login');
       return;
     }
+    if (s.mustChangePassword) {
+      router.replace('/change-password');
+      return;
+    }
     setSession(s);
   }, [router]);
 
@@ -200,6 +204,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </span>
                   ))}
                 </div>
+                <Link href="/change-password" className="link-button" style={{ display: 'inline-block', marginTop: '0.375rem' }}>
+                  Change password
+                </Link>
               </div>
               <button
                 type="button"

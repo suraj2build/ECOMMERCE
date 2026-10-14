@@ -222,6 +222,9 @@ test.describe('Consent-aware analytics (LR-003)', () => {
     expect(current.subjectId).toBeTruthy();
     expect(current.subjectId).not.toBe(order.consentSubjectId);
     await expect.poll(async () => prisma.order.findUniqueOrThrow({ where: { id: order.id } }).then((o) => [o.analyticsConsent, o.marketingConsent, o.analyticsClientId, o.metaBrowserId])).toEqual([false, false, null, null]);
-    expect(await page.evaluate(() => localStorage.getItem('vanya_consent_withdrawal_pending'))).toBeNull();
+    // The server commits before it answers; the browser forgets the pending
+    // withdrawal only once that answer arrives, so wait for it rather than
+    // reading straight after the database check.
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('vanya_consent_withdrawal_pending'))).toBeNull();
   });
 });

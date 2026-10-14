@@ -1,4 +1,6 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { PrismaClient } from '@fcp/db';
+import { acquireFooterMenuLock } from './footer-menu-lock';
 
 const API_URL = process.env.E2E_BASE_URL ?? 'http://localhost:4000';
 const ADMIN_EMAIL = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'admin@example.com';
@@ -18,11 +20,15 @@ async function expectOk(res: APIResponse, label: string): Promise<unknown> {
 test.describe('CMS content pages and footer menus', () => {
   let api: APIRequestContext;
   let auth: Record<string, string>;
+  const prisma = new PrismaClient();
+  let releaseMenus: (() => Promise<void>) | undefined;
   const stamp = `${Date.now()}`;
   const slug = `e2e-our-story-${stamp}`;
   const draftSlug = `e2e-draft-${stamp}`;
 
   test.beforeAll(async () => {
+    // The admin AO-05 test rewrites the same footer menus.
+    releaseMenus = await acquireFooterMenuLock(prisma);
     api = await playwrightRequest.newContext({ baseURL: API_URL });
     const { token } = (await expectOk(await api.post('/api/v1/auth/staff/login', { data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } }), 'Staff login')) as { token: string };
     auth = { authorization: `Bearer ${token}` };
@@ -45,12 +51,17 @@ test.describe('CMS content pages and footer menus', () => {
       data: { slug: draftSlug, title: 'Not yet approved', blockKeys: [] },
     }), 'Create draft landing page');
 
+    // Admin Ops Phase 1: the server refuses a link the storefront would
+    // drop, naming the item (the storefront's own filter stays as a second
+    // line of defence, covered by apps/storefront/test/cms-links.test.ts).
+    const unsafe = await api.put('/api/v1/cms/navigation-menus/footer-about', {
+      headers: auth,
+      data: { items: [{ label: 'Our Story', url: `/pages/${slug}`, sortOrder: 1 }, { label: 'Unsafe link', url: 'javascript:alert(1)', sortOrder: 2 }] },
+    });
+    expect(unsafe.status()).toBe(400);
     await expectOk(await api.put('/api/v1/cms/navigation-menus/footer-about', {
       headers: auth,
-      data: { items: [
-        { label: 'Our Story', url: `/pages/${slug}`, sortOrder: 1 },
-        { label: 'Unsafe link', url: 'javascript:alert(1)', sortOrder: 2 },
-      ] },
+      data: { items: [{ label: 'Our Story', url: `/pages/${slug}`, sortOrder: 1 }] },
     }), 'Set footer-about menu');
     await expectOk(await api.put('/api/v1/cms/navigation-menus/footer-social', {
       headers: auth,
@@ -65,6 +76,8 @@ test.describe('CMS content pages and footer menus', () => {
       await api.put(`/api/v1/cms/navigation-menus/${key}`, { headers: auth, data: { items: [] } });
     }
     await api.dispose();
+    await releaseMenus?.();
+    await prisma.$disconnect();
   });
 
   test('the footer shows the published About and social links, and the page renders as plain text', async ({ page }) => {

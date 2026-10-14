@@ -24,8 +24,8 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await staffLogin(email, password, needsMfa ? mfaCode : undefined);
-      router.replace('/dashboard');
+      const session = await staffLogin(email, password, needsMfa ? mfaCode : undefined);
+      router.replace(session.mustChangePassword ? '/change-password' : '/dashboard');
     } catch (err) {
       if (err instanceof MfaRequiredError) {
         setNeedsMfa(true);

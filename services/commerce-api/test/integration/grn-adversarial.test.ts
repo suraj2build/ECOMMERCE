@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
-import { resetDatabase, seedRbac, seedBrandAndLocation, testPrisma } from '../helpers/db.js';
+import { resetDatabase, seedRbac, seedBrandAndLocation, testPrisma, createPoApprover } from '../helpers/db.js';
 import { GrnService } from '../../src/modules/grn/service.js';
 import { ProcurementService } from '../../src/modules/procurement/service.js';
 import { InventoryService } from '../../src/modules/inventory/service.js';
@@ -52,9 +52,7 @@ describe('Procurement/GRN adversarial certification', () => {
       actorStaffId,
     );
     await procurement.submitPurchaseOrder(po.id, actorStaffId);
-    const approver = await testPrisma.staffUser.create({
-      data: { email: `grna-approver-${Date.now()}@example.com`, passwordHash: 'x', fullName: 'Approver' },
-    });
+    const approver = await createPoApprover();
     await procurement.approvePurchaseOrder(po.id, approver.id);
     return { poId: po.id, poLineId: po.lines[0]!.id };
   }
@@ -119,7 +117,7 @@ describe('Procurement/GRN adversarial certification', () => {
         { poId: po.id, locationId, lines: [{ poLineId: po.lines[0]!.id, skuId, receivedQty: 10, acceptedQty: 10, damagedQty: 0, rejectedQty: 0 }] },
         actorStaffId,
       ),
-    ).rejects.toThrow(/status 'DRAFT'/i);
+    ).rejects.toThrow(/approved purchase order; this one is still a draft/i);
   });
 
   it('rejects recording a GRN against a SUBMITTED (not yet approved) purchase order', async () => {
@@ -136,7 +134,7 @@ describe('Procurement/GRN adversarial certification', () => {
         { poId: po.id, locationId, lines: [{ poLineId: po.lines[0]!.id, skuId, receivedQty: 10, acceptedQty: 10, damagedQty: 0, rejectedQty: 0 }] },
         actorStaffId,
       ),
-    ).rejects.toThrow(/status 'SUBMITTED'/i);
+    ).rejects.toThrow(/approved purchase order; this one is waiting for approval/i);
   });
 
   it('rejects recording a GRN against a CANCELLED purchase order', async () => {
@@ -153,7 +151,7 @@ describe('Procurement/GRN adversarial certification', () => {
         { poId: po.id, locationId, lines: [{ poLineId: po.lines[0]!.id, skuId, receivedQty: 10, acceptedQty: 10, damagedQty: 0, rejectedQty: 0 }] },
         actorStaffId,
       ),
-    ).rejects.toThrow(/status 'CANCELLED'/i);
+    ).rejects.toThrow(/approved purchase order; this one is cancelled/i);
   });
 
   it('rejects recording a GRN against a REJECTED purchase order', async () => {
@@ -171,7 +169,7 @@ describe('Procurement/GRN adversarial certification', () => {
         { poId: po.id, locationId, lines: [{ poLineId: po.lines[0]!.id, skuId, receivedQty: 10, acceptedQty: 10, damagedQty: 0, rejectedQty: 0 }] },
         actorStaffId,
       ),
-    ).rejects.toThrow(/status 'REJECTED'/i);
+    ).rejects.toThrow(/approved purchase order; this one is rejected/i);
   });
 
   it('rejects a duplicate poLineId within a single GRN request before touching the database', async () => {
@@ -240,7 +238,7 @@ describe('Procurement/GRN adversarial certification', () => {
       actorStaffId,
     );
     await procurement.submitPurchaseOrder(po.id, actorStaffId);
-    const approver = await testPrisma.staffUser.create({ data: { email: `grna-approver2-${Date.now()}@example.com`, passwordHash: 'x', fullName: 'Approver 2' } });
+    const approver = await createPoApprover('Approver 2');
     await procurement.approvePurchaseOrder(po.id, approver.id);
 
     await grn.createGoodsReceipt(

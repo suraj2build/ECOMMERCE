@@ -52,6 +52,7 @@ function emptyProduct(id: string): Product {
     reviewCount: 0,
     modelInfo: { height: '', wearingSize: '' },
     details: [],
+    attributes: [],
     fitNotes: '',
     styleNotes: '',
     manufacturing: { origin: '', artisanCluster: '', sustainableNote: '' },
@@ -128,7 +129,9 @@ export function detailToProduct(detail: ProductDetail): Product {
     colors,
     sizes,
     fit: detail.fit ?? '',
-    fabric: detail.fabric ?? '',
+    // For shoes, belts and perfume the material is shown with the other
+    // attributes in Product Details, not as a textile composition.
+    fabric: !detail.productType || detail.productType === 'APPAREL' ? (detail.fabric ?? '') : '',
     care: (detail.washCare ?? '').split(/\.\s+|\n/).map((line) => line.replace(/\.$/, '').trim()).filter(Boolean),
     occasion: detail.occasion ?? '',
     badges: badges(detail.badges.map((b) => b.type)),
@@ -139,6 +142,7 @@ export function detailToProduct(detail: ProductDetail): Product {
       wearingSize: typeof model?.wearingSize === 'string' ? model.wearingSize : '',
     },
     details: copy.details ?? [],
+    attributes: detail.attributes ?? [],
     fitNotes: copy.fitNotes ?? '',
     styleNotes: copy.styleNotes ?? '',
     manufacturing: {

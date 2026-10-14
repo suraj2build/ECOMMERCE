@@ -1,116 +1,209 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { PageHeader } from '@/components/ui';
-import { apiFetch } from '@/lib/api';
+import { useState } from 'react';
+import { ActionMessage, Can, ConfirmDialog, DataState, DataTable, DateText, Drawer, Notice, PageHeader, Section, StatusBadge, TextArea, TextField } from '@/components/ui';
+import { ImagePicker } from '@/components/content/ImagePicker';
+import { apiSend } from '@/lib/api';
+import { storefrontUrl } from '@/lib/media';
+import { useAction, useApi } from '@/lib/session';
 
 interface LandingPage {
   id: string;
   slug: string;
   title: string;
+  metaDescription: string | null;
+  heroImageUrl: string | null;
+  blockKeys: string[];
   isPublished: boolean;
+  publishedAt: string | null;
+  updatedAt: string;
+}
+interface Block {
+  id: string;
+  key: string;
+  title: string;
+  isActive: boolean;
 }
 
+const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Content pages (e.g. Our Story) shown at /pages/<name> on the storefront.
+ * A page is a draft until published; a published page changes on the
+ * storefront as soon as it is saved. Text is shown as plain paragraphs -
+ * the storefront never renders HTML from here.
+ */
 export default function LandingPagesPage() {
-  const [pages, setPages] = useState<LandingPage[]>([]);
-  const [slug, setSlug] = useState('');
-  const [title, setTitle] = useState('');
-  const [blockKeys, setBlockKeys] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  async function load() {
-    try {
-      setPages(await apiFetch<LandingPage[]>('/cms/landing-pages'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load landing pages.');
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function onCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await apiFetch('/cms/landing-pages', {
-        method: 'POST',
-        body: JSON.stringify({
-          slug,
-          title,
-          blockKeys: blockKeys
-            .split(',')
-            .map((k) => k.trim())
-            .filter(Boolean),
-        }),
-      });
-      setSlug('');
-      setTitle('');
-      setBlockKeys('');
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create landing page.');
-    }
-  }
-
-  async function togglePublish(page: LandingPage) {
-    setError(null);
-    try {
-      await apiFetch(`/cms/landing-pages/${page.id}/${page.isPublished ? 'unpublish' : 'publish'}`, { method: 'POST' });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update landing page.');
-    }
-  }
+  const pages = useApi<LandingPage[]>('/cms/landing-pages');
+  const blocks = useApi<Block[]>('/cms/content-blocks');
+  const action = useAction();
+  const [editing, setEditing] = useState<LandingPage | 'new' | null>(null);
+  const [confirm, setConfirm] = useState<LandingPage | null>(null);
 
   return (
     <div>
-      <PageHeader title="Landing pages" breadcrumbs={[{ label: 'Content' }, { label: 'Landing pages' }]} description="Campaign landing pages; only published pages are visible on the storefront." />
-      {error && <p className="error-banner" role="alert">{error}</p>}
-      <form onSubmit={onCreate} className="card" style={{ maxWidth: 480, marginBottom: '1.5rem' }}>
-        <div className="field">
-          <label htmlFor="slug">Slug</label>
-          <input id="slug" required value={slug} onChange={(e) => setSlug(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="title">Title</label>
-          <input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="blockKeys">Content block keys (comma-separated)</label>
-          <input id="blockKeys" value={blockKeys} onChange={(e) => setBlockKeys(e.target.value)} />
-        </div>
-        <button className="primary" type="submit">
-          Create landing page
-        </button>
-      </form>
-      <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Slug</th>
-            <th>Title</th>
-            <th>Published</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {pages.map((p) => (
-            <tr key={p.id}>
-              <td>{p.slug}</td>
-              <td>{p.title}</td>
-              <td>{p.isPublished ? 'Yes' : 'No'}</td>
-              <td>
-                <button type="button" onClick={() => togglePublish(p)}>
-                  {p.isPublished ? 'Unpublish' : 'Publish'}
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
+      <PageHeader
+        title="Content pages"
+        breadcrumbs={[{ label: 'Content' }, { label: 'Content pages' }]}
+        description="Pages such as Our Story. Link them from the footer in Navigation menus. Legal pages use their own fixed addresses."
+        actions={
+          <Can anyOf={['cms:manage']}>
+            <button type="button" className="btn primary" onClick={() => setEditing('new')}>
+              New page
+            </button>
+          </Can>
+        }
+      />
+      <ActionMessage message={action.message} />
+      <Section title="Pages">
+        <DataState state={pages}>
+          {(rows) => (
+            <DataTable
+              caption="Content pages"
+              rows={rows}
+              rowKey={(r) => r.id}
+              empty="No pages yet."
+              columns={[
+                { header: 'Title', cell: (r) => r.title },
+                { header: 'Address', cell: (r) => <span className="mono">{r.slug.startsWith('legal-') ? `/legal/${r.slug.slice(6)}` : `/pages/${r.slug}`}</span> },
+                { header: 'Status', cell: (r) => <StatusBadge status={r.isPublished ? 'PUBLISHED' : 'DRAFT'} /> },
+                { header: 'Updated', cell: (r) => <DateText value={r.updatedAt} withTime /> },
+                {
+                  header: 'Actions',
+                  cell: (r) => (
+                    <span className="row">
+                      {r.isPublished && (
+                        <a className="btn small" href={storefrontUrl(r.slug.startsWith('legal-') ? `/legal/${r.slug.slice(6)}` : `/pages/${r.slug}`)} target="_blank" rel="noopener noreferrer">
+                          View
+                        </a>
+                      )}
+                      <Can anyOf={['cms:manage']}>
+                        <button type="button" className="btn small" onClick={() => setEditing(r)}>
+                          Edit
+                        </button>
+                        <button type="button" className="btn small" disabled={action.busy} onClick={() => setConfirm(r)}>
+                          {r.isPublished ? 'Unpublish' : 'Publish'}
+                        </button>
+                      </Can>
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </DataState>
+      </Section>
+      <ConfirmDialog
+        open={confirm !== null}
+        title={confirm?.isPublished ? `Unpublish "${confirm?.title}"?` : `Publish "${confirm?.title}"?`}
+        confirmLabel={confirm?.isPublished ? 'Unpublish' : 'Publish'}
+        danger={confirm?.isPublished}
+        busy={action.busy}
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          const page = confirm!;
+          const ok = await action.run(() => apiSend('POST', `/cms/landing-pages/${page.id}/${page.isPublished ? 'unpublish' : 'publish'}`), page.isPublished ? 'Unpublished: shoppers now get "not found".' : 'Published.');
+          setConfirm(null);
+          if (ok) pages.reload();
+        }}
+      >
+        <p>{confirm?.isPublished ? 'Footer links to it will lead to a "not found" page until it is published again.' : 'Shoppers can open it straight away.'}</p>
+      </ConfirmDialog>
+      <Drawer open={editing !== null} title={editing === 'new' ? 'New page' : 'Edit page'} onClose={() => setEditing(null)}>
+        {editing && (
+          <PageForm
+            page={editing === 'new' ? null : editing}
+            blocks={blocks.data ?? []}
+            onDone={() => {
+              setEditing(null);
+              pages.reload();
+            }}
+          />
+        )}
+      </Drawer>
     </div>
+  );
+}
+
+function PageForm({ page, blocks, onDone }: { page: LandingPage | null; blocks: Block[]; onDone: () => void }) {
+  const [form, setForm] = useState({ slug: page?.slug ?? '', title: page?.title ?? '', metaDescription: page?.metaDescription ?? '', heroImageUrl: page?.heroImageUrl ?? '' });
+  const [keys, setKeys] = useState<string[]>(Array.isArray(page?.blockKeys) ? page!.blockKeys : []);
+  const action = useAction();
+  const slugOk = page !== null || SLUG.test(form.slug);
+  const available = blocks.filter((b) => !keys.includes(b.key));
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!slugOk) return;
+        const ok = await action.run(
+          () =>
+            page
+              ? apiSend('PATCH', `/cms/landing-pages/${page.id}`, { title: form.title, metaDescription: form.metaDescription || null, heroImageUrl: form.heroImageUrl || null, blockKeys: keys })
+              : apiSend('POST', '/cms/landing-pages', { slug: form.slug, title: form.title, metaDescription: form.metaDescription || undefined, heroImageUrl: form.heroImageUrl || undefined, blockKeys: keys }),
+          'Saved.',
+        );
+        if (ok) onDone();
+      }}
+    >
+      <ActionMessage message={action.message} />
+      {page?.isPublished && <Notice kind="warning">This page is live: saving changes it on the storefront straight away.</Notice>}
+      {page ? (
+        <p>
+          Address: <span className="mono">/pages/{page.slug}</span> (cannot be changed)
+        </p>
+      ) : (
+        <TextField
+          label="Address name"
+          required
+          value={form.slug}
+          placeholder="our-story"
+          onChange={(v) => setForm((f) => ({ ...f, slug: v.toLowerCase() }))}
+          hint={slugOk ? `The page will be at /pages/${form.slug || '…'}` : <span className="field-error">Lower-case letters, digits and single dashes, e.g. our-story.</span>}
+        />
+      )}
+      <TextField label="Title" required value={form.title} onChange={(v) => setForm((f) => ({ ...f, title: v }))} />
+      <TextArea label="Search description" value={form.metaDescription} onChange={(v) => setForm((f) => ({ ...f, metaDescription: v }))} hint="One or two sentences shown by search engines." />
+      <ImagePicker label="Top image (optional)" value={form.heroImageUrl} onChange={(url) => setForm((f) => ({ ...f, heroImageUrl: url }))} />
+      <fieldset className="fieldset">
+        <legend>Sections (content blocks), in order</legend>
+        <ol>
+          {keys.map((k, i) => {
+            const b = blocks.find((x) => x.key === k);
+            return (
+              <li key={k} className="row" style={{ marginBottom: '0.35rem' }}>
+                <span>{b ? b.title : <span className="muted">{k} (missing)</span>}</span>
+                {b && !b.isActive && <span className="badge warning">hidden</span>}
+                <button type="button" className="btn small" aria-label={`Move ${b?.title ?? k} up`} disabled={i === 0} onClick={() => setKeys((l) => { const n = [...l]; n.splice(i - 1, 0, n.splice(i, 1)[0]!); return n; })}>
+                  ↑
+                </button>
+                <button type="button" className="btn small" aria-label={`Remove ${b?.title ?? k}`} onClick={() => setKeys((l) => l.filter((x) => x !== k))}>
+                  Remove
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        {available.length > 0 ? (
+          <div className="field">
+            <label htmlFor="add-block">Add a section</label>
+            <select id="add-block" value="" onChange={(e) => e.target.value && setKeys((l) => [...l, e.target.value])}>
+              <option value="">Choose a content block</option>
+              {available.map((b) => (
+                <option key={b.key} value={b.key}>
+                  {b.title}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <p className="muted small">Write sections under Content → Content blocks.</p>
+        )}
+      </fieldset>
+      <button className="primary" type="submit" disabled={action.busy || !form.title.trim() || !slugOk}>
+        {action.busy ? 'Saving…' : page ? 'Save page' : 'Save as draft'}
+      </button>
+    </form>
   );
 }

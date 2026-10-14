@@ -58,7 +58,10 @@ export interface ShipmentBookingInput {
   orderNumber: string;
   fulfilmentId: string;
   destinationPincode: string;
+  /** Parcel gross weight measured at pack (docs/admin/DISPATCH.md). */
   weightGrams?: number;
+  /** Parcel dimensions measured at pack, whole centimetres. */
+  dimensionsCm?: { length: number; width: number; height: number };
 }
 
 export interface ShipmentBookingResult {

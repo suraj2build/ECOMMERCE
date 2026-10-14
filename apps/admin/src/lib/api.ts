@@ -23,6 +23,14 @@ export class ApiError extends Error {
  * proving rejection is server-side, not a client-side guess about what
  * the UI should or shouldn't render.
  */
+/**
+ * Shown when the server no longer accepts this login: it expired, or an
+ * administrator reset the password, changed the roles or deactivated the
+ * account (AO-D7). Screens show a "Sign in again" link with it instead of
+ * Retry, and keep what was typed on the page.
+ */
+export const SESSION_ENDED_MESSAGE = 'You are signed out: your session expired or an administrator changed your account.';
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const session = getStoredSession();
   const headers: Record<string, string> = {
@@ -35,10 +43,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (res.status === 401) {
     clearSession();
-    throw new ApiError(401, 'Your session has expired. Please sign in again.');
+    throw new ApiError(401, SESSION_ENDED_MESSAGE);
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: { message?: string; code?: string } } | null;
+    // AO-D7: a temporary password must be replaced before anything else.
+    if (body?.error?.code === 'PASSWORD_CHANGE_REQUIRED' && typeof window !== 'undefined') window.location.assign('/change-password');
     throw new ApiError(res.status, body?.error?.message ?? `Request failed (${res.status})`, body?.error?.code);
   }
   if (res.status === 204) return undefined as T;
@@ -48,6 +58,17 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 /** POST/PATCH/PUT helper: the body is always JSON, and an empty body is sent as `{}`. */
 export function apiSend<T>(method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
   return apiFetch<T>(path, { method, ...(method === 'DELETE' && body === undefined ? {} : { body: JSON.stringify(body ?? {}) }) });
+}
+
+/**
+ * Multipart upload (a photo from the owner's computer). Fields go before the
+ * file so the server can read them; the browser sets the boundary itself.
+ */
+export function apiUpload<T>(method: 'POST' | 'PUT', path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  form.append('file', file);
+  return apiFetch<T>(path, { method, body: form });
 }
 
 /** Query string from a params object, dropping empty values. */

@@ -70,6 +70,8 @@ export interface Product {
     wearingSize: string;
   };
   details: string[];
+  /** Type-specific attributes (shoe closure, belt buckle, fragrance notes...) shown in Product Details (AO-D2). */
+  attributes: Array<{ label: string; value: string }>;
   fitNotes: string;
   styleNotes: string;
   manufacturing: {
