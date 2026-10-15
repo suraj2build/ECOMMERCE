@@ -1,5 +1,5 @@
 import { expect, request as playwrightRequest, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
-import { PrismaClient } from '@fcp/db';
+import { Prisma, PrismaClient } from '@fcp/db';
 import { hashPassword } from '@fcp/shared';
 
 /**
@@ -63,11 +63,24 @@ export async function ensureStaff(email: string, roleKey: string, fullName: stri
     update: { passwordHash, isActive: true, fullName },
     create: { email, passwordHash, fullName, isActive: true },
   });
-  await prisma.staffUserRole.upsert({
-    where: { staffUserId_roleId: { staffUserId: staff.id, roleId: role.id } },
-    update: {},
-    create: { staffUserId: staff.id, roleId: role.id },
-  });
+  try {
+    await prisma.staffUserRole.upsert({
+      where: { staffUserId_roleId: { staffUserId: staff.id, roleId: role.id } },
+      update: {},
+      create: { staffUserId: staff.id, roleId: role.id },
+    });
+  } catch (err) {
+    // Prisma's upsert() on a composite unique key is not guaranteed atomic
+    // against a genuinely concurrent duplicate (a SELECT-then-INSERT race,
+    // not a native ON CONFLICT) - multiple spec files' beforeAll hooks call
+    // ensureStaff() for the SAME role in parallel workers against a freshly
+    // seeded database, where no prior row exists for either racer to UPDATE
+    // into. A P2002 here means the row this call wants already exists
+    // (created by the other racer an instant earlier) - the desired end
+    // state is reached either way, so this is a safe no-op, not a real
+    // failure.
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+  }
 }
 
 export async function setUpFixture(): Promise<Fixture> {

@@ -307,7 +307,18 @@ test.describe('Admin Ops Phase 1: owner workflows', () => {
     });
     await page.route('**/api/v1/cms/navigation-menus', async (route) => {
       if (route.request().method() === 'GET') await new Promise((r) => setTimeout(r, 1500));
-      await route.continue();
+      try {
+        await route.continue();
+      } catch (err) {
+        // The menu switch below can issue its own GET to this same list
+        // endpoint while this handler is still sleeping; depending on how
+        // the browser coalesces the two in-flight requests, Playwright can
+        // occasionally report this specific route as already resolved by
+        // the time this continue() runs. That's a quirk of this delayed,
+        // overlapping interception, not a real product behaviour this test
+        // is checking - the request still reaches the server either way.
+        if (!/already handled/i.test(String(err))) throw err;
+      }
     });
     await page.getByRole('button', { name: 'Save menu' }).click();
     await expect(page.getByText(/^Saved\. The storefront footer shows the change/)).toBeVisible();
