@@ -2888,3 +2888,274 @@ so and nothing is invented.
   leaves the bag; a repeated webhook or creation finds the existing order
   and removes nothing again. Tests: `checkout.test.ts` "Bag after a COD
   order (LR-011)", `payment.test.ts` "Bag after an order (LR-011)".
+
+---
+
+## AO — Admin operations (2026-10-05)
+
+Decided by the Product Owner in the review of Admin Ops Phase 1
+(`docs/admin/ADMIN_OPS_PHASE1.md`, branch `claude/admin-ops-phase1`),
+2026-10-05. The open questions were AO-D1..AO-D5 in that document.
+
+#### AO-D1 — Republishing an unpublished product
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** an UNPUBLISHED product may be republished, but only
+  through the readiness and QA checks again. Archived products stay
+  separate (no way back).
+- **Engineering:** unpublishing clears the earlier QA pass; the QA check
+  now runs from UNPUBLISHED and, when it passes, returns the product to
+  READY_FOR_QA, from which the normal publish applies. The workspace shows
+  "Republish" with the same blocking issues as a first publish.
+
+#### AO-D2 — Footwear, belt and fragrance attributes on the product page
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** show the relevant shoe, belt and perfume attributes
+  within the existing product-details section of the product page (no new
+  section, no design change beyond that).
+
+#### AO-D3 — Business and warehouse setup
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** provide admin screens. Routine operational
+  configuration should not require server access.
+- **Engineering:** "Business & warehouse" screen for the legal business
+  details, GST registrations (add, change status) and warehouse addresses
+  with the GST registration each ships under. Values are entered by the
+  owner; nothing is pre-filled or validated against a government service.
+  Secrets and provider credentials remain server settings by design.
+
+#### AO-D4 — Approvals for a solo owner
+- **Status:** DECIDED (Product Owner, 2026-10-05)
+- **Final decision:** an explicit owner policy with reasons, audit
+  history and stronger confirmation for sensitive actions; independent
+  approval stays available for future staff; one consistent policy across
+  PO approval, stock adjustments, receiving and picking, with no
+  accidental self-approval left in any route.
+- **Engineering:** `docs/admin/APPROVALS.md`.
+- **Follow-up (Product Owner, after `3e1149a`):** naming another person
+  recorded attribution but did not prove their approval. Adjustments,
+  receiving and picking now queue an approval request that the named
+  person approves from their own login; the action is applied, and
+  re-checked, only then. Owner self-approval remains a distinct,
+  immediate path. Purchase orders already worked this way.
+
+#### Product Owner instruction of 2026-10-06 (AO-D5, AO-D6, AO-D7)
+
+Given after the review of `ced9f2b`, recorded verbatim:
+
+> Proceed with AO-D5 option B, AO-D6 metadata removal, and staff
+> management option (a). At courier handover, post the stock sale, mark
+> shipped and send the customer message. Cover cancellation before
+> handover, duplicate events, split shipments, booking failures and
+> existing shipments without double-posting stock. Strip camera/GPS
+> metadata from public photos while preserving displayed orientation and
+> colour fidelity. Keep private return evidence separate. Build staff
+> management with temporary passwords shown once and mandatory password
+> change before further access. Revoke sessions after password reset,
+> deactivation or role changes. Protect the last Super Admin and
+> configured owner. Validate, push and report CI for the exact final
+> commit, with accurate test totals. Courier selection remains a
+> separate business decision. The operational controls can proceed while
+> that choice is made. Green CI alone does not establish go-live
+> readiness.
+
+Engineering read this as the Product Owner's authorization for AO-D5
+option B, AO-D6 option (a) and the staff screen as proposed (AO-D7). The
+courier (LR-008) stays `DECISION_REQUIRED`; nothing was built for it.
+
+#### AO-D5 — Dispatch: booking vs handover
+- **Status:** DECIDED — option B (Product Owner, 2026-10-06; instruction
+  above). Earlier: decided in part on 2026-10-05.
+- **Final decision:** separate courier booking from the actual handover to
+  the courier. Review the stock and accounting consequences **before**
+  moving the sale-posting point.
+- **Engineering:** handover is recorded as its own event (staff
+  confirmation on a handover manifest, or the carrier's first in-transit
+  event), separately from booking. The `SALE` / `EXCHANGE_DISPATCH`
+  posting point is **unchanged** (still at booking); moving it remains
+  open pending the consequences review listed in
+  `docs/admin/NEXT_PHASES_RESEARCH.md` ("Proposal: move shipped from
+  carrier booking to handover").
+- **Partly implemented.** The admin shows "Booked — awaiting collection"
+  and "Handed over" as distinct stages. The package still becomes
+  `SHIPPED`, and stock still leaves the ledger, at booking.
+- **Consequences review:** `docs/admin/BOOKING_TO_HANDOVER_REVIEW.md`
+  (complete). It recommends option B: post the sale, the shipped status
+  and the customer's shipped message at handover (staff confirmation or
+  the carrier's first movement, once), with a new "booked, awaiting
+  collection" package status and a rule for cancelling a booked parcel. **DECISION_REQUIRED** — the
+  Product Owner chooses A, B or C before the posting point moves. Any tax
+  consequence stays TAX/COMPLIANCE REVIEW REQUIRED.
+- **Recommendation received (2026-10-05, after `57f0f53`), not an
+  approval:** the Product Owner's reviewer recommends option B — booking
+  only reserves the parcel; the actual handover posts the stock sale,
+  marks the package shipped and sends the customer's message; staff may
+  cancel a booked parcel before handover after confirming the courier
+  cancellation. The reviewer stated this is a recommendation, not an
+  approval recorded on the owner's behalf, so the status stays
+  **DECISION_REQUIRED** and nothing has been built for it yet.
+- **Implemented (option B, 2026-10-06):** booking moves the package
+  `READY_TO_SHIP -> BOOKED` with no stock movement and no message. The
+  handover (staff confirmation on the Courier handover page, or the
+  carrier's first movement event, whichever comes first) posts the `SALE`
+  (or `EXCHANGE_DISPATCH`), marks the package `SHIPPED` and sends
+  `ORDER_SHIPPED` after commit; the second report changes nothing.
+  Packages booked before this change are already `SHIPPED`: their
+  handover is recorded and nothing is posted again. A booked package is
+  cancelled whole, by staff (`order:cancel`), after confirming the courier
+  booking was cancelled; its lines are cancelled through the normal path
+  and its stock released. Line cancellation (staff or shopper) and line
+  exceptions are refused while the package is booked. An exchange
+  replacement package cannot be cancelled this way. Details:
+  `docs/admin/DISPATCH.md`. Tax consequences stay TAX/COMPLIANCE REVIEW
+  REQUIRED.
+- **Replacement booked by mistake (2026-10-06, after `a807ef6`; the
+  Product Owner asked for "a clear recovery path for a replacement booked
+  incorrectly before operational acceptance"):** staff with
+  `exchange:fulfil` cancel the replacement's booking from the exchange,
+  after confirming the courier cancellation, with a reason. The shipment
+  and package become `CANCELLED`, the package is detached from the
+  exchange, and nothing else changes: no stock moves, the exchange stays
+  `REPLACEMENT_ALLOCATED` with its pick and reservation. Staff then create
+  a new package and book it; its handover posts the dispatch once.
+  Engineering chose this shape as the minimal recovery that changes no
+  business rule (no refund, no cancellation of the exchange). Changing the
+  replacement *item* after allocation is not covered and has no path
+  today (reported, not built). `docs/admin/DISPATCH.md` → "A replacement
+  booked by mistake".
+- **Order package booked by mistake (2026-10-06, after `71230f9`; Product
+  Owner instruction below):** staff with `shipping:manage` use **Cancel
+  booking and rebook**, after confirming the courier cancellation, with a
+  reason. The shipment and package become `CANCELLED` (the package marked
+  `releasedForRebook`), the items go back to picked with no package, and
+  nothing else changes: the order and its lines stay open, the stock stays
+  reserved, no refund, credit note, loyalty or customer message. The new
+  package's handover posts the sale once. Whole-package cancellation of
+  the items stays a separate action (`order:cancel`, now labelled **Cancel
+  booking and items**). Engineering chose `shipping:manage` because
+  rebooking is part of booking; the people who cancel items keep
+  `order:cancel`. `docs/admin/DISPATCH.md` → "A package booked by
+  mistake".
+- **Still open (business):** B-2 (scan required at pick, pack or both) and
+  B-3 (measured parcel weight vs product weights) are left to the owner as
+  admin settings, off by default, rather than decided by engineering.
+
+#### AO-D6 — Camera metadata on public product photos
+- **Status:** DECIDED — option (a) (Product Owner, 2026-10-06; instruction
+  above). Found in the code review after `3e1149a`.
+- **Question:** should uploaded product and content photos have their
+  camera metadata (EXIF, which can include GPS location and device) removed
+  before they are served publicly?
+- **Why it matters:** photos taken on a phone in the warehouse or at home
+  can reveal that location to anyone who downloads them. Removing it means
+  re-encoding each upload, so the stored file is no longer the exact file
+  uploaded (slight quality change for JPEG; colour profile must be kept).
+- **Options:** (a) strip metadata on upload, keeping orientation and
+  colour profile; (b) keep files as uploaded and tell staff to remove
+  location before upload; (c) strip GPS only.
+- **Engineering:** nothing changed; uploads are stored as uploaded.
+- **Recommendation received (2026-10-05, after `57f0f53`), not an
+  approval:** option (a) — strip camera metadata from public product and
+  content uploads automatically, keeping orientation and the colour
+  profile; private return-evidence photos are handled separately.
+- **Implemented (2026-10-06):** product photos (upload and replace) and
+  banner/page images are re-encoded before storage: the EXIF orientation
+  is applied to the pixels, the ICC colour profile is kept, and EXIF
+  (camera, GPS), XMP and IPTC are dropped. PNG stays lossless; JPEG and
+  WebP are re-encoded at quality 95 (JPEG without chroma subsampling).
+  Return evidence is stored exactly as uploaded, in its private store.
+
+#### AO-D7 — Staff management screen
+- **Status:** DECIDED — option (a) of the proposal in
+  `docs/admin/ADMIN_OPS_PHASE1.md` (Product Owner, 2026-10-06; instruction
+  above).
+- **Implemented:** Staff page (`rbac:manage`): list with roles, status,
+  last sign-in and approval-owner flag; add a person; change roles;
+  reset a password; deactivate and reactivate. Temporary passwords are
+  random, shown once and never stored or logged; the person must choose
+  their own before any other route answers. A password reset,
+  deactivation or role change ends every session of that person (checked
+  in the database on every request, not only by deleting Redis keys).
+  The last active Super Admin and configured approval owners cannot be
+  deactivated or lose their roles; nobody changes their own roles or
+  deactivates themselves. Details: `docs/admin/STAFF.md`.
+
+#### Product Owner instruction of 2026-10-06 (after `71230f9`)
+
+Given after the report on `71230f9`, recorded verbatim:
+
+> The reported results close the previous review items: corrected
+> documentation, the desktop walkthrough, and recovery from an incorrect
+> exchange booking. 71230f9 is reported green; I haven’t independently
+> verified it.
+>
+> Before expanding features, I recommend these next steps:
+>
+> Add “cancel booking and rebook” for ordinary orders. A courier-booking
+> mistake should preserve the order and reserved stock. Keep whole-order
+> cancellation as a separate action. Require courier-cancellation
+> confirmation and a reason, and test races with handover.
+>
+> Upload Playwright artifacts on CI failure: traces, screenshots and the
+> HTML report. The link-audit timeout’s cause remains unconfirmed; the
+> latest green run doesn’t establish it.
+>
+> Select the courier, then validate real labels, pickup, tracking,
+> cancellation and duplicate events.
+>
+> Changing an allocated exchange item can remain deferred if the screen
+> clearly explains the available recovery path. The favicon is a minor
+> polish item.
+>
+> This is a stronger UAT candidate, with live courier operation still
+> pending.
+
+Engineering read the first two steps as the Product Owner's go-ahead and
+built them (cancel booking and rebook, AO-D5 above; Playwright artifacts
+on CI failure). The third needs the courier choice (LR-008, still
+`DECISION_REQUIRED`); nothing was built for it. The fourth is AO-D8 below.
+The favicon was not changed, since no icon has been supplied.
+
+#### Product Owner clarification of 2026-10-07 (retries of a booking cancellation)
+
+Given after the report on `c26e0cb`, recorded verbatim:
+
+> One specification detail: allowing the same key with a different
+> reason is intentional here. Document that the first successful
+> request’s reason and result remain authoritative, so retries cannot
+> alter the audit record.
+
+Recorded as the rule for both **Cancel booking and rebook** and an
+exchange replacement's booking cancellation: a same-key retry is
+accepted whatever its body, changes nothing, and returns the first
+successful request's result; the first request's reason, courier
+reference and staff member stay in the audit log and on the shipment.
+`docs/admin/DISPATCH.md` states it; integration tests check it for both
+paths.
+
+#### AO-D8 — Changing an allocated exchange's replacement item
+- **Status:** DEFERRED by the Product Owner (2026-10-06, instruction
+  above), on condition that the screen explains the available recovery
+  path. **DECISION_REQUIRED** before anything is built.
+- **Question:** once an exchange's replacement has been allocated (after
+  the original item is received and passes QC), should staff be able to
+  change it, for example when the customer now wants another size?
+- **Today:** the replacement is fixed when the exchange is requested. An
+  exchange can be cancelled only before its original item is received,
+  and an order line can have only one exchange, so a cancelled exchange
+  cannot be replaced by a new one; a return (refund) can be started
+  instead. After receipt the exchange can only go ahead with its
+  allocated replacement. Recording a pick shortage to escape it would
+  write the stock off as missing, so it is not a recovery path.
+- **Screen:** the exchange page now says this in plain words, with the
+  pre- and post-receipt cases, and warns against the pick-shortage
+  workaround (browser test P1-08 checks it).
+- **Options for later:** (A) let staff cancel an allocated exchange
+  before its replacement is booked: release the replacement's
+  reservation and pick, settle any price difference already paid, and
+  allow one new exchange on the line; (B) let staff change the
+  replacement SKU while it is allocated and not booked: release the old
+  reservation, reserve the new item, re-price, and settle any new
+  difference; (C) keep it as it is. A and B both touch payment settlement
+  and stock, so each needs the Product Owner's rule for price differences
+  before it is built.
+

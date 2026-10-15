@@ -499,7 +499,7 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-1.5 text-[10px] text-[#A0978A]">
+                  <p className="mt-1.5 text-[10px] text-[#756A5E]">
                     Estimated if this is the only item in your bag — confirmed at checkout.
                   </p>
                 </div>
@@ -743,9 +743,14 @@ export function PdpView({ initial, similar }: { initial: ProductDetail; similar:
 
             {/* Progressive Disclosure Accordions */}
             <div className="border-t border-[#EAE3D7] divide-y divide-[#EAE3D7] text-xs">
-              {product.details.length > 0 && (
+              {(product.details.length > 0 || product.attributes.length > 0) && (
                 <Accordion id="details" title="Product Details" open={Boolean(openAccordions.details)} onToggle={toggleAccordion}>
                   <ul className="space-y-1.5 text-[#5C5146] pl-4 list-disc">
+                    {product.attributes.map((a) => (
+                      <li key={a.label}>
+                        <strong>{a.label}:</strong> {a.value}
+                      </li>
+                    ))}
                     {product.details.map((d, i) => <li key={i}>{d}</li>)}
                   </ul>
                 </Accordion>

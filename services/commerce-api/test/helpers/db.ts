@@ -56,9 +56,28 @@ export async function grantPermissions(roleKey: string, permKeys: string[]): Pro
 export async function seedBrandAndLocation() {
   const brand = await testPrisma.brand.create({ data: { code: 'TESTBR', name: 'Test Brand' } });
   const location = await testPrisma.location.create({
-    data: { code: 'TEST-WH-01', name: 'Test Warehouse', type: 'WAREHOUSE' },
+    // A full address: a courier booking needs it as the sender address.
+    data: { code: 'TEST-WH-01', name: 'Test Warehouse', type: 'WAREHOUSE', addressLine1: '1 Test Dock Road', city: 'New Delhi', state: 'Delhi', pinCode: '110001' },
   });
   const category = await testPrisma.category.create({ data: { name: 'Test Category', slug: 'test-category' } });
   const size = await testPrisma.size.create({ data: { label: 'M', sortOrder: 0 } });
   return { brand, location, category, size };
+}
+
+/**
+ * A staff member who may approve purchase orders (holds po:approve through
+ * the FINANCE role). Approvals check the approver's permission in the
+ * service as well as the route (AO-D4 approval policy).
+ */
+export async function createPoApprover(label = 'Approver') {
+  await grantPermissions('FINANCE', ['po:approve']);
+  const role = await testPrisma.role.findUniqueOrThrow({ where: { key: 'FINANCE' } });
+  return testPrisma.staffUser.create({
+    data: {
+      email: `po-approver-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`,
+      passwordHash: 'x',
+      fullName: label,
+      roles: { create: { roleId: role.id } },
+    },
+  });
 }

@@ -28,9 +28,15 @@ const MEILI_HEADERS: Record<string, string> = {
  * hypothetical: every CI run checked while diagnosing this test's page-42
  * failure (e.g. runs 38417291656, 38287481980, 38279437011) had
  * NODE_ENV=test in effect for the whole job, confirmed directly from each
- * run's own printed step environment.
+ * run's own printed step environment. E2E_SEARCH_INDEX is an explicit
+ * override for a caller who genuinely needs something else. The hard
+ * guard below exists independently of how the index was computed - this
+ * test bulk-writes/deletes 1005 throwaway documents directly against
+ * Meilisearch, bypassing every normal safeguard, and must never be able
+ * to touch the real 'styles' index a demo depends on.
  */
-const STYLES_INDEX = process.env.NODE_ENV === 'test' ? 'styles_test' : 'styles';
+const STYLES_INDEX = process.env.E2E_SEARCH_INDEX ?? (process.env.NODE_ENV === 'test' ? 'styles_test' : 'styles');
+if (STYLES_INDEX === 'styles') throw new Error("search-deep-pages refuses to write fixtures into the real 'styles' index");
 const TOTAL = 1005;
 const PAGE_SIZE = 24;
 const LAST_PAGE = Math.ceil(TOTAL / PAGE_SIZE); // 42, holding items 985..1005

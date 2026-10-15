@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { OrderService } from './service.js';
 import { CodCollectionService } from './cod-collection-service.js';
 import { resolveCartIdentity } from '../cart/identity.js';
+import { DispatchService } from '../dispatch/service.js';
 
 const assignFulfilmentSchema = z.object({ lineIds: z.array(z.string().uuid()).min(1) });
 const shipSchema = z.object({ carrierName: z.string().optional(), trackingRef: z.string().optional() });
@@ -30,6 +31,9 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
   const cancelAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:cancel')];
   const exceptionAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:exception:manage')];
   const rtoAuth = [fastify.requireStaffAuth, fastify.requirePermission('order:rto')];
+  // Cancelling a courier booking to book again is part of booking, so it
+  // needs the booking permission; cancelling the items needs order:cancel.
+  const rebookAuth = [fastify.requireStaffAuth, fastify.requirePermission('shipping:manage')];
   // invoice:create - same permission FINANCE already holds for the M08
   // HTTP invoice-issuance entry point; retrying a failed invoice is the
   // same operation, just re-triggered (independent-review finding #2).
@@ -114,7 +118,21 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/orders/fulfilments/:fulfilmentId/pack', { preHandler: fulfilAuth }, async (request, reply) => {
     const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
-    reply.status(200).send(await orderService.markFulfilmentPacked(fulfilmentId, request.staffUser!.id));
+    const positive = z.number().int().positive().max(1_000_000).optional();
+    const body = z
+      .object({
+        scannedBarcodes: z.array(z.string().trim().min(1).max(64)).max(1000).optional(),
+        parcel: z.object({ weightGrams: positive, lengthCm: positive, widthCm: positive, heightCm: positive }).strict().optional(),
+      })
+      .strict()
+      .parse(request.body ?? {});
+    reply.status(200).send(await orderService.markFulfilmentPacked(fulfilmentId, request.staffUser!.id, body));
+  });
+
+  // Packing slip / address label data (docs/admin/DISPATCH.md).
+  fastify.get('/orders/fulfilments/:fulfilmentId/documents', { preHandler: readAuth }, async (request) => {
+    const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
+    return new DispatchService(fastify.prisma).documents(fulfilmentId);
   });
 
   // M16: the explicit warehouse/shipping hand-off boundary between
@@ -141,6 +159,39 @@ const orderRoutes: FastifyPluginAsync = async (fastify) => {
     reply
       .status(200)
       .send(await orderService.cancelOrderLine(id, lineId, request.staffUser!.id, body.reason, body.idempotencyKey));
+  });
+
+  // AO-D5 option B: cancel a package that is booked with the courier but
+  // not collected yet, after the courier booking itself was cancelled.
+  fastify.post('/orders/fulfilments/:fulfilmentId/cancel-booking', { preHandler: cancelAuth }, async (request, reply) => {
+    const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({
+        reason: z.string().trim().min(1).max(2000),
+        courierCancellationConfirmed: z.literal(true),
+        courierReference: z.string().trim().max(120).optional(),
+        idempotencyKey: z.string().min(1).max(200),
+      })
+      .strict()
+      .parse(request.body);
+    reply.status(200).send(await orderService.cancelBookedPackage(fulfilmentId, request.staffUser!.id, body));
+  });
+
+  // Cancel the courier booking of an order package booked by mistake and
+  // keep the order: the items go back to "Picked, waiting for a package"
+  // with their stock still reserved, to be packed and booked again.
+  fastify.post('/orders/fulfilments/:fulfilmentId/cancel-booking-rebook', { preHandler: rebookAuth }, async (request, reply) => {
+    const { fulfilmentId } = z.object({ fulfilmentId: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({
+        reason: z.string().trim().min(1).max(2000),
+        courierCancellationConfirmed: z.literal(true),
+        courierReference: z.string().trim().max(120).optional(),
+        idempotencyKey: z.string().min(1).max(200),
+      })
+      .strict()
+      .parse(request.body);
+    reply.status(200).send(await orderService.cancelBookingForRebook(fulfilmentId, request.staffUser!.id, body));
   });
 
   fastify.post('/orders/:id/lines/:lineId/exception', { preHandler: exceptionAuth }, async (request, reply) => {

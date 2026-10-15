@@ -147,6 +147,23 @@ const exchangeRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(201).send(await exchanges.assignReplacementToFulfilment(id, request.staffUser!.id));
   });
 
+  // AO-D5 option B follow-up: a replacement booked by mistake, before the
+  // courier collects it. The exchange stays allocated; staff create a new
+  // replacement package and book it again.
+  fastify.post('/exchanges/:id/fulfilment/cancel-booking', { preHandler: fulfilAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({
+        reason: z.string().trim().min(1).max(2000),
+        courierCancellationConfirmed: z.literal(true),
+        courierReference: z.string().trim().max(120).optional(),
+        idempotencyKey: z.string().min(1).max(200),
+      })
+      .strict()
+      .parse(request.body);
+    reply.status(200).send(await exchanges.cancelReplacementBooking(id, request.staffUser!.id, body));
+  });
+
   // Independent-review repair (finding 3, 2026-09-26): the only route
   // that can move an exchange from REPLACEMENT_ALLOCATED to COMPLETED -
   // see ExchangeService.markReplacementFulfilled's own docblock.

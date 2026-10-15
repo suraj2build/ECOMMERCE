@@ -33,6 +33,16 @@ export function createLogger(
         // depth for the day something does.
         '*.giftCardCode',
         '*.codeHash',
+        // Step-up confirmations nest the password and authenticator code
+        // one level down (selfApproval.password, confirmation.password);
+        // '*.password' only matches one level.
+        '*.*.password',
+        '*.mfaCode',
+        // Staff management (AO-D7): temporary and changed passwords.
+        '*.temporaryPassword',
+        '*.currentPassword',
+        '*.newPassword',
+        '*.*.mfaCode',
       ],
       censor: '[REDACTED]',
     },

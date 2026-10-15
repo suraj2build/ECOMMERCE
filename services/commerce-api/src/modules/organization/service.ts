@@ -10,6 +10,8 @@ export interface UpdateBrandInput {
 
 export interface UpdateLocationInput {
   name?: string;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
   city?: string;
   state?: string;
   pinCode?: string;
@@ -25,6 +27,8 @@ export interface CreateLocationInput {
   code: string;
   name: string;
   type?: 'WAREHOUSE' | 'STORE';
+  addressLine1?: string;
+  addressLine2?: string;
   city?: string;
   state?: string;
   pinCode?: string;
@@ -117,7 +121,15 @@ export class OrganizationService {
       action: 'location.update',
       entityType: 'Location',
       entityId: id,
-      oldValue: { name: existing.name, isActive: existing.isActive },
+      oldValue: {
+        name: existing.name,
+        isActive: existing.isActive,
+        addressLine1: existing.addressLine1,
+        addressLine2: existing.addressLine2,
+        city: existing.city,
+        state: existing.state,
+        pinCode: existing.pinCode,
+      },
       newValue: input,
     });
     return updated;

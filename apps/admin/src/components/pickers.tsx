@@ -332,7 +332,7 @@ export function StaffSelect({
   // Only staff who may perform the action can list its approvers (the API
   // enforces the same rule); others get no picker and no denied request.
   const allowed = useCan(CAPABILITY_REQUIRES[capability]);
-  const staff = useApi<Array<{ id: string; fullName: string }>>(allowed ? `/admin/lookup/staff${qs({ capability })}` : null);
+  const staff = useApi<Array<{ id: string; fullName: string; self?: boolean }>>(allowed ? `/admin/lookup/staff${qs({ capability })}` : null);
   if (!allowed) return null;
   if (staff.error) return <p className="error-banner">{staff.error}</p>;
   return (
@@ -342,7 +342,7 @@ export function StaffSelect({
       onChange={onChange}
       hint={hint}
       placeholder="None"
-      options={(staff.data ?? []).map((s) => ({ value: s.id, label: s.fullName }))}
+      options={(staff.data ?? []).map((s) => ({ value: s.id, label: s.self ? `${s.fullName} (me, owner approval)` : s.fullName }))}
     />
   );
 }

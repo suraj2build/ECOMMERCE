@@ -94,6 +94,34 @@ const taxRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // --- GST registrations ---
+  fastify.patch('/tax/legal-entities/:id', { preHandler: manageAuth }, async (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const optional = z.string().max(300).nullable().optional();
+    const body = z
+      .object({
+        legalName: z.string().min(1).max(300).optional(),
+        pan: optional,
+        cin: optional,
+        registeredAddressLine1: optional,
+        registeredAddressLine2: optional,
+        registeredCity: optional,
+        registeredState: optional,
+        registeredPinCode: z.string().trim().regex(/^\d{6}$/, 'PIN code must be 6 digits').nullable().optional(),
+      })
+      .strict()
+      .parse(request.body);
+    return configService.updateLegalEntity(id, body, request.staffUser!.id);
+  });
+
+  fastify.patch('/tax/gst-registrations/:id', { preHandler: manageAuth }, async (request) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({ status: z.enum(['PENDING', 'ACTIVE', 'SUSPENDED', 'CANCELLED']).optional(), effectiveTo: z.coerce.date().nullable().optional() })
+      .strict()
+      .parse(request.body);
+    return configService.updateGstRegistration(id, body, request.staffUser!.id);
+  });
+
   fastify.post('/tax/gst-registrations', { preHandler: manageAuth }, async (request, reply) => {
     const body = gstRegistrationSchema.parse(request.body);
     reply.status(201).send(await configService.createGstRegistration(body, request.staffUser!.id));

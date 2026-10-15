@@ -51,3 +51,38 @@ processes untrusted input in CI.
 critical finding and stays contained to tests. The Next 16, eslint-config-next 16
 and Tailwind 4 upgrades belong together in one later UI-platform upgrade.
 Visual regression review of the approved VANYA UI is part of that upgrade.
+
+## 2026-10-06: source-map-js (GHSA-68fv-2mgg-jv7q)
+
+CI's production audit (`npm audit --omit=dev --audit-level=high`) failed
+on `b2c1a58` with a newly published high-severity advisory:
+`source-map-js` 1.0.0 - 1.2.1 allows an event-loop denial of service
+through indexed source-map section offsets. It reaches production
+dependencies through `postcss` (overridden to 8.5.28 for Next) and
+`@tailwindcss/node`; both use it at build time on the project's own CSS.
+No package file had changed, so the base commit would fail the same way.
+
+Fixed by moving the lockfile to `source-map-js` 1.2.2, the patched release
+(a 3-line `package-lock.json` change; no `package.json` change). The
+production audit then reports 0 vulnerabilities. Builds, unit,
+integration and browser suites were rerun on the new lockfile.
+
+## 2026-10-06: sharp / librsvg (GHSA-wq5f-xc86-pv6w, CVE-2026-96889)
+
+CI's production audit failed on `0862606` with a newly published
+high-severity advisory: sharp before 0.35.5 bundles a vulnerable librsvg
+(the SVG decoder in its prebuilt libvips). sharp is a production
+dependency: `commerce-api` decodes and re-encodes every product and
+content upload with it (image validation, AO-D6), and Next.js lists it
+as an optional dependency for image optimisation. No package file had
+changed in that push, so `71230f9` would fail the same way today.
+
+Fixed by moving `commerce-api`'s exact pin from 0.35.4 to 0.35.5 and
+adding a root `overrides` entry (`"sharp": "0.35.5"`) so Next resolves to
+the same single copy (without it npm kept a second, vulnerable 0.35.4
+under Next). The lockfile change is limited to sharp and its `@img/*`
+platform packages (libvips 1.3.3 -> 1.3.4; librsvg 2.63.2 reported at
+runtime). The production audit then reports 0 vulnerabilities. Unit
+tests, the 33 integration files that use images, media or storage
+(621 tests), the builds and the full browser suite (92) were rerun on
+the new version.

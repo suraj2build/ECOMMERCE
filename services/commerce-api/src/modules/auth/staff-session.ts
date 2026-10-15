@@ -20,6 +20,13 @@ function hashToken(token: string): string {
 
 export interface StaffSessionPayload {
   staffUserId: string;
+  /**
+   * When the session was issued (ms since epoch). A session issued before
+   * the user's `sessionsRevokedAt` is refused (staff management, AO-D7).
+   * Sessions created before this field existed have none and are treated
+   * as issued at 0.
+   */
+  issuedAt?: number;
 }
 
 export class StaffSessionStore {
@@ -28,9 +35,15 @@ export class StaffSessionStore {
     private readonly prisma: PrismaClient,
   ) {}
 
+  /**
+   * `issuedAt` defaults to now. Login passes the moment it read the
+   * password, so a password reset that commits between that check and
+   * this call still ends the new session (AO-D7).
+   */
   async create(
     staffUserId: string,
     meta: { ipAddress?: string; userAgent?: string },
+    issuedAt: number = Date.now(),
   ): Promise<{ token: string; expiresAt: Date }> {
     const env = loadEnv();
     const token = randomBytes(32).toString('hex');
@@ -49,7 +62,7 @@ export class StaffSessionStore {
 
     await this.redis.set(
       `${SESSION_KEY_PREFIX}${tokenHash}`,
-      JSON.stringify({ staffUserId } satisfies StaffSessionPayload),
+      JSON.stringify({ staffUserId, issuedAt } satisfies StaffSessionPayload),
       'EX',
       env.STAFF_SESSION_TTL_SECONDS,
     );

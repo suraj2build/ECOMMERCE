@@ -91,7 +91,9 @@ const LINE_STATUS_LABEL: Record<string, string> = {
  */
 const SHIPMENT_STATUS_LABEL: Record<string, string> = {
   CREATED: 'Preparing to ship',
-  BOOKED: 'Booked with carrier',
+  // Shown only for a package that has left (a staff-confirmed handover keeps
+  // the carrier's own status at BOOKED until the carrier reports movement).
+  BOOKED: 'With the courier',
   IN_TRANSIT: 'In transit',
   OUT_FOR_DELIVERY: 'Out for delivery',
   DELIVERY_FAILED: 'Delivery attempt failed - retrying',
@@ -339,6 +341,10 @@ export default function OrderDetailPage() {
     );
   }
 
+  // AO-D5 option B: once a package is booked with the courier its items can
+  // no longer be cancelled online (staff cancel the booking instead).
+  const bookedFulfilmentIds = new Set(order.fulfilments.filter((f) => f.status === 'BOOKED').map((f) => f.id));
+
   return (
     <Container className="py-10 sm:py-14">
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--color-primary)]">Order details</p>
@@ -367,7 +373,7 @@ export default function OrderDetailPage() {
 
               {/* M18 (CAN-001): convenience gating only - the server is
                   the sole authoritative eligibility check. */}
-              {CANCELLABLE_LINE_STATUSES.has(line.status) && cancellingLineId !== line.id && (
+              {CANCELLABLE_LINE_STATUSES.has(line.status) && !bookedFulfilmentIds.has(line.fulfilmentId ?? '') && cancellingLineId !== line.id && (
                 <button
                   type="button"
                   onClick={() => {
@@ -727,14 +733,24 @@ export default function OrderDetailPage() {
             <p className="text-sm font-medium text-[#181716]">Shipments</p>
             {order.fulfilments.map((f) => (
               <p key={f.id} className="text-sm text-[#6e6359]">
-                {f.status === 'DELIVERED' ? 'Delivered' : f.status === 'SHIPPED' ? 'Shipped' : f.status === 'PACKED' ? 'Packed' : 'Preparing'}
+                {f.status === 'DELIVERED'
+                  ? 'Delivered'
+                  : f.status === 'SHIPPED'
+                    ? 'Shipped'
+                    : f.status === 'BOOKED'
+                      ? 'Packed, waiting for the courier to collect it'
+                      : f.status === 'CANCELLED'
+                        ? 'Cancelled'
+                        : f.status === 'PACKED' || f.status === 'READY_TO_SHIP'
+                          ? 'Packed'
+                          : 'Preparing'}
                 {f.carrierName ? ` via ${f.carrierName}` : ''}
                 {f.trackingRef ? ` (${f.trackingRef})` : ''}
                 {/* M17: last-known platform tracking status - shown only
                     once a shipment exists; gracefully omitted otherwise
                     rather than showing an error (acceptance negative
                     scenario #1). */}
-                {f.shipment ? ` — ${SHIPMENT_STATUS_LABEL[f.shipment.status] ?? f.shipment.status}` : ''}
+                {f.shipment && f.status === 'SHIPPED' ? ` — ${SHIPMENT_STATUS_LABEL[f.shipment.status] ?? f.shipment.status}` : ''}
               </p>
             ))}
           </div>

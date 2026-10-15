@@ -10,7 +10,7 @@ import type { HomeEditorial } from '../views/HomeView';
 
 export type Department = 'men' | 'women';
 
-export async function loadEditorial(department: Department): Promise<{ gateway: string | null; home: HomeEditorial }> {
+export async function loadEditorial(department: Department, collectionSlugs: string[]): Promise<{ gateway: string | null; home: HomeEditorial }> {
   const [gateway, hero, feature, categories, occasions, tastemakers] = await Promise.all(
     ['gateway', 'home-hero', 'home-feature', 'home-category', 'home-occasion', 'home-tastemakers'].map((key) =>
       getBanners(`${key}-${department}`),
@@ -24,6 +24,7 @@ export async function loadEditorial(department: Department): Promise<{ gateway: 
       categories: categories!.map((b) => ({ id: b.id, title: b.title, image: b.imageUrl, href: b.linkUrl ?? `/category/${department}` })),
       occasions: occasions!.map((b) => ({ image: b.imageUrl, href: b.linkUrl })),
       tastemakers: tastemakers!.map((b) => ({ id: b.id, image: b.imageUrl, caption: b.title })),
+      collectionSlugs,
     },
   };
 }

@@ -3,6 +3,8 @@ import { Prisma, type PrismaClient, type PickTaskStatus, type PickExceptionType 
 import { NotFoundError, ValidationError, ConflictError, InventoryIntegrityError } from '@fcp/shared';
 import { InventoryService } from '../inventory/service.js';
 import { recordAudit } from '../audit/service.js';
+import type { ApprovalDecision } from '../approvals/service.js';
+import { checkPickScan } from '../dispatch/service.js';
 
 export interface PickTaskLineSnapshot {
   id: string;
@@ -20,6 +22,10 @@ export interface RecordPickOutcomeParams {
   exceptionType?: PickExceptionType;
   exceptionReason?: string;
   coApproverStaffId?: string;
+  /** Approval-policy decision for the co-approver (AO-D4), made by the caller. */
+  approval?: ApprovalDecision;
+  /** Barcode scanned at pick (docs/admin/DISPATCH.md); checked against the SKU. */
+  scannedBarcode?: string;
 }
 
 /**
@@ -151,7 +157,8 @@ export class WarehouseService {
       include: { sku: { include: { style: true, colour: true, size: true } }, location: true, order: true },
     });
     if (!task) throw new NotFoundError('PickTask', id);
-    return this.toView(task);
+    const waiting = await this.waitingApprovals([task.id]);
+    return { ...this.toView(task), pendingApproval: waiting.get(task.id) ?? null };
   }
 
   /**
@@ -176,7 +183,18 @@ export class WarehouseService {
       }),
       this.prisma.pickTask.count({ where }),
     ]);
-    return { items: items.map((t) => this.toView(t)), total };
+    const waiting = await this.waitingApprovals(items.map((t) => t.id));
+    return { items: items.map((t) => ({ ...this.toView(t), pendingApproval: waiting.get(t.id) ?? null })), total };
+  }
+
+  /** Open shortfall approval requests for these tasks: who each one is waiting for. */
+  private async waitingApprovals(taskIds: string[]) {
+    if (taskIds.length === 0) return new Map<string, { id: string; approver: string }>();
+    const rows = await this.prisma.approvalRequest.findMany({
+      where: { kind: 'PICK_SHORTFALL', status: 'PENDING', subjectKey: { in: taskIds.map((id) => `pick:${id}`) } },
+      select: { id: true, subjectKey: true, approverStaff: { select: { fullName: true } } },
+    });
+    return new Map(rows.map((r) => [r.subjectKey!.slice('pick:'.length), { id: r.id, approver: r.approverStaff.fullName }]));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,6 +205,9 @@ export class WarehouseService {
       orderLineId: task.orderLineId,
       exchangeId: task.exchangeId,
       skuId: task.skuId,
+      skuCode: task.sku?.skuCode,
+      barcode: task.sku?.barcode ?? null,
+      scannedBarcode: task.scannedBarcode,
       styleName: task.sku?.style?.name,
       colourName: task.sku?.colour?.name,
       sizeLabel: task.sku?.size?.label,
@@ -264,6 +285,18 @@ export class WarehouseService {
         );
       }
 
+      // A shortfall waiting for someone's approval holds the task: only
+      // that approval may record its outcome (approvals/queue.ts).
+      const waiting = await tx.approvalRequest.findFirst({
+        where: { kind: 'PICK_SHORTFALL', subjectKey: `pick:${task.id}`, status: 'PENDING' },
+        select: { id: true, approverStaff: { select: { fullName: true } } },
+      });
+      if (waiting && waiting.id !== params.approval?.requestId) {
+        throw new ConflictError(
+          `This pick is waiting for ${waiting.approverStaff.fullName} to approve the shortfall. They approve or reject it on their Approvals page; the person who sent it can withdraw it there.`,
+        );
+      }
+
       // EXC-004 Option 2 repair (2026-09-26): an exchange-anchored task
       // (task.orderLineId === null, task.exchangeId set) has no
       // OrderLine to re-verify against - and no equivalent race exists:
@@ -319,6 +352,12 @@ export class WarehouseService {
         }
       }
 
+      // Dispatch scan check: a scan must be this size's barcode; whether one
+      // is required is the owner's setting (docs/admin/DISPATCH.md). An
+      // EXCEPTION, or a SHORT pick of nothing, picks no unit to scan.
+      const picksNothing = params.outcome === 'EXCEPTION' || (params.outcome === 'SHORT' && params.pickedQuantity === 0);
+      const scannedBarcode = picksNothing ? null : await checkPickScan(tx, task.skuId, params.scannedBarcode);
+
       let status: PickTaskStatus;
       let pickedQuantity = 0;
       let shortfall = 0;
@@ -360,6 +399,7 @@ export class WarehouseService {
           pickedByStaffId: params.staffId,
           pickedAt: new Date(),
           idempotencyKey: params.idempotencyKey,
+          scannedBarcode,
         },
       });
 
@@ -426,6 +466,7 @@ export class WarehouseService {
             reason: adjustmentReason,
             actorStaffId: params.staffId,
             coApproverStaffId: params.coApproverStaffId,
+            approval: params.approval,
             idempotencyKey: `pick-adjust:${task.id}:${params.idempotencyKey}`,
           },
           tx,

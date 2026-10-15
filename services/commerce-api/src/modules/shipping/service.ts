@@ -4,6 +4,7 @@ import { loadEnv } from '@fcp/config';
 import { NotFoundError, ValidationError, ConflictError } from '@fcp/shared';
 import { recordAudit } from '../audit/service.js';
 import { OrderService } from '../order/service.js';
+import { assertSenderAddress } from '../dispatch/service.js';
 import {
   resolveShippingProvider,
   type ShippingProvider,
@@ -37,6 +38,8 @@ const ALLOWED_TRANSITIONS: Record<ShipmentTrackingStatus, NormalizedTrackingStat
   RTO_INITIATED: ['RTO_DELIVERED'],
   DELIVERED: [],
   RTO_DELIVERED: [],
+  // AO-D5 option B: a booking cancelled by staff before handover is final.
+  CANCELLED: [],
 };
 
 /**
@@ -103,10 +106,16 @@ export class ShippingService {
    * once the carrier has genuinely responded does the final transaction
    * claim the CREATED->BOOKED transition (guarded by a conditional
    * `updateMany` so a genuinely concurrent duplicate request loses the
-   * race harmlessly) and reuse `OrderService.markFulfilmentShipped`
-   * (via `externalTx`) so the SALE-posting/status transition commits
-   * atomically alongside the booking - still the one authoritative SALE
-   * posting point (M16 certification invariant), never duplicated here.
+   * race harmlessly) and moves the package READY_TO_SHIP -> BOOKED via
+   * `OrderService.markFulfilmentBooked` in the same transaction.
+   *
+   * AO-D5 option B (Product Owner, 2026-10-06): booking posts NO stock
+   * movement and sends no message. The sale (or exchange dispatch), the
+   * SHIPPED status and the customer's "shipped" message come at courier
+   * handover - staff confirmation (`DispatchService.recordHandover`) or
+   * the carrier's first movement event (`applyTrackingUpdate`), whichever
+   * comes first - through `OrderService.markFulfilmentShipped`, still the
+   * one authoritative SALE posting point (M16 certification invariant).
    */
   async createShipment(fulfilmentId: string, staffId: string, idempotencyKey: string): Promise<Shipment> {
     const fulfilment = await this.prisma.orderFulfilment.findUnique({ where: { id: fulfilmentId } });
@@ -127,6 +136,10 @@ export class ShippingService {
       orderNumber: order.orderNumber,
       fulfilmentId,
       destinationPincode: address?.pincode ?? '',
+      ...(fulfilment.parcelWeightGrams ? { weightGrams: fulfilment.parcelWeightGrams } : {}),
+      ...(fulfilment.parcelLengthCm && fulfilment.parcelWidthCm && fulfilment.parcelHeightCm
+        ? { dimensionsCm: { length: fulfilment.parcelLengthCm, width: fulfilment.parcelWidthCm, height: fulfilment.parcelHeightCm } }
+        : {}),
     });
 
     if (booking.status === 'UNAVAILABLE') {
@@ -134,7 +147,7 @@ export class ShippingService {
       throw new ValidationError(booking.message ?? `Carrier '${this.provider.name}' is currently unavailable - please retry`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const booked = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.shipment.updateMany({
         where: { id: shipment.id, status: 'CREATED' },
         data: {
@@ -146,12 +159,11 @@ export class ShippingService {
       });
 
       if (claimed.count > 0) {
-        await this.order.markFulfilmentShipped(
-          fulfilmentId,
-          staffId,
-          { carrierName: this.provider.name, trackingRef: booking.trackingRef },
-          tx,
-        );
+        // AO-D5 option B: booking only reserves the parcel with the
+        // courier. The sale, SHIPPED and the customer's message come at
+        // handover (DispatchService.recordHandover or the carrier's first
+        // movement event below).
+        await this.order.markFulfilmentBooked(fulfilmentId, staffId, { carrierName: this.provider.name, trackingRef: booking.trackingRef ?? null }, tx);
       }
       // claimed.count === 0: a concurrent request already won this exact
       // transition (both had already called the idempotent carrier booking
@@ -159,6 +171,7 @@ export class ShippingService {
 
       return tx.shipment.findUniqueOrThrow({ where: { id: shipment.id } });
     });
+    return booked;
   }
 
   private async resolveOrCreateShipmentIntent(
@@ -179,11 +192,11 @@ export class ShippingService {
     // method runs, never re-read under a lock. Two genuinely concurrent
     // createShipment calls using DIFFERENT idempotency keys can race such
     // that the FIRST one completes its entire flow - including
-    // OrderService.markFulfilmentShipped, which moves the real
-    // OrderFulfilment row to SHIPPED - before the SECOND one even reaches
+    // OrderService.markFulfilmentBooked, which moves the real
+    // OrderFulfilment row to BOOKED - before the SECOND one even reaches
     // this method. The second call's own snapshot may then already be
     // stale-but-accurate (genuinely READY_TO_SHIP at the moment it was
-    // read, genuinely SHIPPED by now) and would otherwise fail the status
+    // read, genuinely BOOKED by now) and would otherwise fail the status
     // check below with a false "not READY_TO_SHIP" rejection, even though
     // a Shipment for this fulfilment already legitimately exists. Check
     // for that FIRST and converge to it - the same idempotent-no-op path
@@ -193,9 +206,12 @@ export class ShippingService {
 
     if (fulfilment.status !== 'READY_TO_SHIP') {
       throw new ValidationError(
-        `Cannot create a shipment for a fulfilment in status '${fulfilment.status}' - it must be READY_TO_SHIP first`,
+        `Mark the package ready to ship before booking it with a courier; it is ${fulfilment.status.toLowerCase().replace(/_/g, ' ')} now.`,
       );
     }
+    // Checked only for a new booking: a replay of one already made still
+    // converges above, whatever the address is now.
+    await assertSenderAddress(this.prisma, fulfilment.id);
 
     const env = loadEnv();
     try {
@@ -440,6 +456,8 @@ export class ShippingService {
    * COMPLETED.
    */
   private async applyTrackingUpdate(shipmentId: string, normalizedStatus: NormalizedTrackingStatus, occurredAt: Date): Promise<void> {
+    let deliveredFulfilmentId: string | null = null;
+    let shippedFulfilment: { id: string; trackingRef: string | null } | null = null;
     await this.prisma.$transaction(async (tx) => {
       const shipment = await this.lockShipment(tx, shipmentId);
       if (!shipment) throw new NotFoundError('Shipment', shipmentId);
@@ -472,6 +490,14 @@ export class ShippingService {
           finalStatus = 'RTO_INITIATED';
         }
       }
+      // AO-D5: the carrier's first movement event records the handover when
+      // staff have not confirmed it on the handover manifest first.
+      const movement = ['IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'DELIVERY_FAILED'].includes(normalizedStatus);
+      const firstMovement = !shipment.handedOverAt && movement;
+      if (firstMovement) {
+        data.handedOverAt = occurredAt;
+        data.handoverSource = 'CARRIER_EVENT';
+      }
       if (normalizedStatus === 'DELIVERED') data.deliveredAt = occurredAt;
       if (finalStatus === 'RTO_INITIATED') data.rtoInitiatedAt = occurredAt;
       if (normalizedStatus === 'RTO_DELIVERED') data.rtoDeliveredAt = occurredAt;
@@ -479,8 +505,22 @@ export class ShippingService {
 
       await tx.shipment.update({ where: { id: shipmentId }, data });
 
+      // AO-D5 option B: the handover posts the sale (or exchange dispatch)
+      // and marks the package shipped - once. A package booked before this
+      // change is already SHIPPED (its sale was posted at booking) and is
+      // left as it is. Checked on every movement event, not only the first,
+      // so a package is never left BOOKED once the courier has it.
+      if (movement) {
+        const pkg = await tx.orderFulfilment.findUniqueOrThrow({ where: { id: shipment.fulfilmentId }, select: { status: true } });
+        if (pkg.status === 'BOOKED') {
+          await this.order.markFulfilmentShipped(shipment.fulfilmentId, null, undefined, tx, 'BOOKED');
+          shippedFulfilment = { id: shipment.fulfilmentId, trackingRef: shipment.trackingRef };
+        }
+      }
+
       if (normalizedStatus === 'DELIVERED') {
         await this.order.markFulfilmentDelivered(shipment.fulfilmentId, null, tx);
+        deliveredFulfilmentId = shipment.fulfilmentId;
       }
 
       if (normalizedStatus === 'RTO_DELIVERED') {
@@ -518,6 +558,11 @@ export class ShippingService {
         }
       }
     });
+    // Sent only after the change has committed.
+    // (TypeScript cannot see the assignment inside the transaction callback.)
+    const shipped = shippedFulfilment as { id: string; trackingRef: string | null } | null;
+    if (shipped) await this.order.notifyFulfilmentShipped(shipped.id, shipped.trackingRef);
+    if (deliveredFulfilmentId) await this.order.notifyFulfilmentDelivered(deliveredFulfilmentId);
   }
 
   /**

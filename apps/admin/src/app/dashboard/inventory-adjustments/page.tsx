@@ -5,7 +5,8 @@ import { LocationSelect, SkuPicker, StaffSelect, type SkuOption } from '@/compon
 import { BalanceCard, useSkuLocationFromUrl } from '@/components/sku-location';
 import { ConfirmDialog, PageHeader, TextField } from '@/components/ui';
 import { apiSend, errorMessage } from '@/lib/api';
-import { useCan } from '@/lib/session';
+import { useCan, useSession } from '@/lib/session';
+import { SelfApprovalFields, useSelfApproval } from '@/components/self-approval';
 import { randomUuid } from '@/lib/random-id';
 
 /**
@@ -30,6 +31,9 @@ export default function InventoryAdjustmentsPage() {
   const [quantityDelta, setQuantityDelta] = useState('');
   const [reason, setReason] = useState('');
   const [coApproverStaffId, setCoApproverStaffId] = useState('');
+  const session = useSession();
+  const selfApproval = useSelfApproval();
+  const approvingOwn = coApproverStaffId !== '' && coApproverStaffId === session.staffUserId;
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -48,20 +52,30 @@ export default function InventoryAdjustmentsPage() {
     const idempotencyKey = idempotencyKeyRef.current ?? randomUuid();
     idempotencyKeyRef.current = idempotencyKey;
     try {
-      await apiSend('POST', '/inventory/adjustments', {
+      const res = await apiSend<{ pendingApproval?: { approver: string } }>('POST', '/inventory/adjustments', {
         skuId: sku?.id,
         locationId,
         quantityDelta: Number(quantityDelta),
         reason: reason || undefined,
         coApproverStaffId: coApproverStaffId || undefined,
+        ...(approvingOwn ? { selfApproval: selfApproval.value } : {}),
         idempotencyKey,
       });
+      selfApproval.reset();
       idempotencyKeyRef.current = null;
-      setMessage({ kind: 'success', text: `Adjustment recorded for ${sku?.skuCode}.` });
+      setMessage(
+        res.pendingApproval
+          ? {
+              kind: 'success',
+              text: `Sent to ${res.pendingApproval.approver} for approval. Stock does not change until they approve it on their Approvals page.`,
+            }
+          : { kind: 'success', text: `Adjustment recorded for ${sku?.skuCode}.` },
+      );
       setQuantityDelta('');
       setReason('');
       setVersion((v) => v + 1);
     } catch (err) {
+      selfApproval.clearSecrets();
       setMessage({ kind: 'error', text: errorMessage(err, 'Adjustment failed.') });
     } finally {
       setSubmitting(false);
@@ -129,12 +143,14 @@ export default function InventoryAdjustmentsPage() {
           <StaffSelect
             label="Finance co-approver (required above threshold)"
             capability="inventory-coapprover"
+            hint="Someone else approves it from their own login before stock changes."
             value={coApproverStaffId}
             onChange={(value) => {
               startNewAdjustment();
               setCoApproverStaffId(value);
             }}
           />
+          {approvingOwn && <SelfApprovalFields what="stock adjustment" state={selfApproval} />}
           <button className="primary" type="submit" disabled={submitting || !sku || !locationId}>
             {submitting ? 'Submitting...' : 'Submit adjustment'}
           </button>

@@ -1,5 +1,5 @@
 import { expect, request as playwrightRequest, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
-import { PrismaClient } from '@fcp/db';
+import { Prisma, PrismaClient } from '@fcp/db';
 import { hashPassword } from '@fcp/shared';
 
 /**
@@ -55,7 +55,7 @@ export interface ProvisionedStyle {
   skus: Array<{ skuId: string; skuCode: string; sizeLabel: string }>;
 }
 
-async function ensureStaff(email: string, roleKey: string, fullName: string) {
+export async function ensureStaff(email: string, roleKey: string, fullName: string) {
   const role = await prisma.role.findUniqueOrThrow({ where: { key: roleKey } });
   const passwordHash = await hashPassword(STAFF_PASSWORD);
   const staff = await prisma.staffUser.upsert({
@@ -63,11 +63,24 @@ async function ensureStaff(email: string, roleKey: string, fullName: string) {
     update: { passwordHash, isActive: true, fullName },
     create: { email, passwordHash, fullName, isActive: true },
   });
-  await prisma.staffUserRole.upsert({
-    where: { staffUserId_roleId: { staffUserId: staff.id, roleId: role.id } },
-    update: {},
-    create: { staffUserId: staff.id, roleId: role.id },
-  });
+  try {
+    await prisma.staffUserRole.upsert({
+      where: { staffUserId_roleId: { staffUserId: staff.id, roleId: role.id } },
+      update: {},
+      create: { staffUserId: staff.id, roleId: role.id },
+    });
+  } catch (err) {
+    // Prisma's upsert() on a composite unique key is not guaranteed atomic
+    // against a genuinely concurrent duplicate (a SELECT-then-INSERT race,
+    // not a native ON CONFLICT) - multiple spec files' beforeAll hooks call
+    // ensureStaff() for the SAME role in parallel workers against a freshly
+    // seeded database, where no prior row exists for either racer to UPDATE
+    // into. A P2002 here means the row this call wants already exists
+    // (created by the other racer an instant earlier) - the desired end
+    // state is reached either way, so this is a safe no-op, not a real
+    // failure.
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+  }
 }
 
 export async function setUpFixture(): Promise<Fixture> {
@@ -112,7 +125,11 @@ export async function setUpFixture(): Promise<Fixture> {
     'Brand',
   );
   const locationA = await expectOk<{ id: string; code: string; name: string }>(
-    await api.post('/api/v1/organization/locations', { headers: auth, data: { code: `P1A${RUN}`, name: `P1 Warehouse A ${RUN}`, type: 'WAREHOUSE' } }),
+    await api.post('/api/v1/organization/locations', {
+      headers: auth,
+      // A full address: courier booking needs it as the sender and return address.
+      data: { code: `P1A${RUN}`, name: `P1 Warehouse A ${RUN}`, type: 'WAREHOUSE', addressLine1: '4 Dispatch Yard', city: 'New Delhi', state: 'Delhi', pinCode: '110020' },
+    }),
     'Location A',
   );
   const locationB = await expectOk<{ id: string; code: string; name: string }>(

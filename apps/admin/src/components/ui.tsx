@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatDate, formatDateTime, formatMoney, humanize } from '@/lib/format';
+import { SESSION_ENDED_MESSAGE } from '@/lib/api';
 import { useCan } from '@/lib/session';
 
 // ---------------------------------------------------------------- layout
@@ -60,10 +61,26 @@ export function Section({ title, actions, children }: { title: string; actions?:
 
 // ---------------------------------------------------------------- states
 
-export function Notice({ kind, children }: { kind: 'success' | 'error' | 'info' | 'warning'; children: ReactNode }) {
+export function Notice({
+  kind,
+  children,
+  reveal,
+}: {
+  kind: 'success' | 'error' | 'info' | 'warning';
+  children: ReactNode;
+  /** For errors: scroll the notice into view when it appears and whenever this value changes (pass the new message or result). */
+  reveal?: unknown;
+}) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  // On a long form the notice can sit far above the button that was pressed; an error the
+  // operator never sees reads as "nothing happened". 'nearest' leaves the page alone when the
+  // notice is already visible.
+  useEffect(() => {
+    if (kind === 'error') ref.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [kind, reveal]);
   // Errors interrupt (alert); everything else is announced politely (status).
   return (
-    <p className={`${kind}-banner`} role={kind === 'error' ? 'alert' : 'status'}>
+    <p ref={ref} className={`${kind}-banner`} role={kind === 'error' ? 'alert' : 'status'}>
       {children}
     </p>
   );
@@ -71,7 +88,25 @@ export function Notice({ kind, children }: { kind: 'success' | 'error' | 'info' 
 
 export function ActionMessage({ message }: { message: { kind: 'success' | 'error'; text: string } | null }) {
   if (!message) return null;
-  return <Notice kind={message.kind}>{message.text}</Notice>;
+  return (
+    <Notice kind={message.kind} reveal={message}>
+      {message.text}
+      {message.text === SESSION_ENDED_MESSAGE && <SignInAgain />}
+    </Notice>
+  );
+}
+
+/** Opens the sign-in page in a new tab, so what was typed here is kept. */
+function SignInAgain() {
+  return (
+    <>
+      {' '}
+      <a href="/login" target="_blank" rel="noopener">
+        Sign in again in a new tab
+      </a>
+      , then come back: this page keeps what you typed.
+    </>
+  );
 }
 
 export function LoadingState({ label = 'Loading…' }: { label?: string }) {
@@ -90,7 +125,8 @@ export function EmptyState({ children }: { children: ReactNode }) {
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="error-banner" role="alert">
-      {message}{' '}
+      {message}
+      {message === SESSION_ENDED_MESSAGE && <SignInAgain />}{' '}
       {onRetry && (
         <button type="button" className="link-button" onClick={onRetry}>
           Retry
@@ -153,6 +189,9 @@ const STATUS_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 
   PACKED: 'info',
   READY_TO_SHIP: 'info',
   SHIPPED: 'info',
+  BOOKED: 'warning',
+  BOOKED_AWAITING_COLLECTION: 'warning',
+  HANDED_OVER: 'info',
   IN_TRANSIT: 'info',
   OUT_FOR_DELIVERY: 'info',
   DELIVERED: 'success',
@@ -181,9 +220,15 @@ const STATUS_TONES: Record<string, 'neutral' | 'info' | 'success' | 'warning' | 
   SUCCESS: 'success',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  BOOKED: 'Booked — awaiting collection',
+  BOOKED_AWAITING_COLLECTION: 'Booked — awaiting collection',
+  HANDED_OVER: 'Handed over',
+};
+
 export function StatusBadge({ status }: { status: string | null | undefined }) {
   if (!status) return <span className="muted">—</span>;
-  return <span className={`badge ${STATUS_TONES[status] ?? 'neutral'}`}>{humanize(status)}</span>;
+  return <span className={`badge ${STATUS_TONES[status] ?? 'neutral'}`}>{STATUS_LABELS[status] ?? humanize(status)}</span>;
 }
 
 export function YesNo({ value }: { value: boolean }) {
@@ -318,6 +363,7 @@ export function TextField({
   min,
   step,
   autoComplete,
+  onEnter,
 }: {
   label: string;
   value: string;
@@ -329,6 +375,8 @@ export function TextField({
   min?: number;
   step?: string;
   autoComplete?: string;
+  /** Called on Enter instead of submitting the form (barcode scanners end each scan with Enter). */
+  onEnter?: () => void;
 }) {
   const id = useId();
   return (
@@ -344,6 +392,16 @@ export function TextField({
         autoComplete={autoComplete}
         aria-describedby={hint ? `${id}-hint` : undefined}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={
+          onEnter
+            ? (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onEnter();
+                }
+              }
+            : undefined
+        }
       />
     </Field>
   );
@@ -434,6 +492,7 @@ export function ConfirmDialog({
   danger,
   busy,
   requireText,
+  confirmDisabled,
   onConfirm,
   onCancel,
 }: {
@@ -444,6 +503,8 @@ export function ConfirmDialog({
   danger?: boolean;
   busy?: boolean;
   requireText?: string;
+  /** Keeps the confirm button disabled (the dialog explains why). */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -479,7 +540,7 @@ export function ConfirmDialog({
         <button type="button" className="btn" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <button type="button" className={danger ? 'btn danger' : 'primary'} onClick={onConfirm} disabled={busy || !ready}>
+        <button type="button" className={danger ? 'btn danger' : 'primary'} onClick={onConfirm} disabled={busy || !ready || confirmDisabled}>
           {busy ? 'Working…' : confirmLabel}
         </button>
       </div>

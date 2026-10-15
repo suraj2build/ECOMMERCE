@@ -280,8 +280,15 @@ async function main() {
     // Shared
     ['denims', 'Denims'], ['dresses', 'Dresses'], ['trousers', 'Trousers'], ['shirts', 'Shirts'],
   ];
+  // Admin Ops Phase 1: the product workspace offers shoe sizes, belt sizes
+  // and fragrance volumes for these; every other category is apparel.
+  const nonApparel: Record<string, 'FOOTWEAR' | 'BELT' | 'FRAGRANCE'> = {
+    'business-casual-shoes': 'FOOTWEAR',
+    'business-casual-belts': 'BELT',
+    perfume: 'FRAGRANCE',
+  };
   for (const [slug, name] of navigationCategories) {
-    await prisma.category.upsert({ where: { slug }, update: {}, create: { name, slug, parentId: apparel.id } });
+    await prisma.category.upsert({ where: { slug }, update: {}, create: { name, slug, parentId: apparel.id, productType: nonApparel[slug] ?? 'APPAREL' } });
   }
 
   // --- Sizes ---
