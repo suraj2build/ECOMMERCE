@@ -300,25 +300,22 @@ test.describe('Admin Ops Phase 1: owner workflows', () => {
     await second.getByRole('button', { name: 'Move Journal up' }).click();
     // Hold back the menu reload that follows the save, so switching menus straight after saving
     // happens before fresh data arrives: it must not ask to discard changes that were just saved.
+    // Only the FIRST matching GET (the save-triggered reload) is delayed; the switch below fires
+    // its own, later GET to the same URL, which continues immediately. Delaying every match let
+    // two overlapping continue() calls race the same underlying request and occasionally throw
+    // "Route is already handled!"; delaying exactly one removes that overlap by construction.
     const prompts: string[] = [];
     page.on('dialog', (d) => {
       prompts.push(d.message());
       void d.dismiss();
     });
+    let delayedReloadOnce = false;
     await page.route('**/api/v1/cms/navigation-menus', async (route) => {
-      if (route.request().method() === 'GET') await new Promise((r) => setTimeout(r, 1500));
-      try {
-        await route.continue();
-      } catch (err) {
-        // The menu switch below can issue its own GET to this same list
-        // endpoint while this handler is still sleeping; depending on how
-        // the browser coalesces the two in-flight requests, Playwright can
-        // occasionally report this specific route as already resolved by
-        // the time this continue() runs. That's a quirk of this delayed,
-        // overlapping interception, not a real product behaviour this test
-        // is checking - the request still reaches the server either way.
-        if (!/already handled/i.test(String(err))) throw err;
+      if (route.request().method() === 'GET' && !delayedReloadOnce) {
+        delayedReloadOnce = true;
+        await new Promise((r) => setTimeout(r, 1500));
       }
+      await route.continue();
     });
     await page.getByRole('button', { name: 'Save menu' }).click();
     await expect(page.getByText(/^Saved\. The storefront footer shows the change/)).toBeVisible();

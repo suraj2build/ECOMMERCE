@@ -124,10 +124,19 @@ test.describe('Loyalty (M23)', () => {
     await prisma.$disconnect();
   });
 
+  async function dismissConsentBannerIfPresent(page: import('@playwright/test').Page) {
+    const acceptAll = page.getByRole('button', { name: 'Accept all' });
+    if (await acceptAll.isVisible().catch(() => false)) await acceptAll.click();
+  }
+
   async function signIn(page: import('@playwright/test').Page, mobile: string) {
     await page.goto('/account');
+    // Clearing localStorage also wipes the consent banner's recorded choice,
+    // so it reappears on reload and can then intercept clicks on later pages
+    // (e.g. the PDP's Size buttons in buyOneUnitViaCod) unless dismissed again here.
     await page.evaluate(() => localStorage.clear());
     await page.reload();
+    await dismissConsentBannerIfPresent(page);
     await page.getByLabel('Mobile number').fill(mobile);
     await page.getByRole('button', { name: 'Send code' }).click();
     await expect(page.getByLabel('Enter the 6-digit code')).toBeVisible({ timeout: 10_000 });

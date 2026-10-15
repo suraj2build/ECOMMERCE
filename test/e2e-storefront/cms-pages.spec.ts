@@ -83,15 +83,19 @@ test.describe('CMS content pages and footer menus', () => {
   test('the footer shows the published About and social links, and the page renders as plain text', async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('vanya_department', 'women'));
     const footer = page.locator('footer');
-    // CMS changes purge the storefront cache; allow for the purge to land.
+    const instagram = footer.getByRole('link', { name: 'Instagram (opens in a new tab)' });
+    // CMS changes purge the storefront cache; allow for the purge to land. footer-about and
+    // footer-social are two separate cache entries behind one best-effort purge call, so both
+    // must be checked in the same retry - only the first showing fresh content doesn't prove
+    // the second has too, and under contention (e.g. a concurrently running suite) they can
+    // catch up at slightly different times.
     await expect(async () => {
       await page.goto('/');
       await expect(footer.getByRole('link', { name: 'Our Story' })).toBeVisible({ timeout: 1000 });
+      await expect(instagram).toHaveText('IG', { timeout: 1000 });
     }).toPass({ timeout: 30_000 });
 
     await expect(footer.getByRole('link', { name: 'Unsafe link' })).toHaveCount(0);
-    const instagram = footer.getByRole('link', { name: 'Instagram (opens in a new tab)' });
-    await expect(instagram).toHaveText('IG');
     await expect(instagram).toHaveAttribute('href', 'https://instagram.com/vanya-e2e');
     await expect(instagram).toHaveAttribute('rel', 'noopener noreferrer');
 
