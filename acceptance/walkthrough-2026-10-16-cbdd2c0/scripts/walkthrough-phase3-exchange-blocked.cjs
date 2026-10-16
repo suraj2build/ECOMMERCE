@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 'use strict';
+// PROVENANCE: this file is a RECONSTRUCTION, not the preserved original. The
+// worktree this script actually ran from was deleted (`git worktree remove
+// --force`) before it was copied into this acceptance record, so this copy
+// was retyped afterward from the session's own conversation record. It has
+// NOT been re-executed since reconstruction - treat it as a faithful record
+// of what ran, not as a verified-working script, until someone reruns it and
+// confirms it reproduces the results in ../evidence/ and ../report.html. The
+// evidence JSON, screenshots and video in this directory ARE the original,
+// unmodified outputs of the actual run (see ../CHECKSUMS.sha256).
+//
 // Acceptance walkthrough, phase 3: customer-initiated exchange on the SAME
 // discounted order from phase 1-2 (facts.json). This run demonstrates that
 // the exchange service correctly computes a CUSTOMER_PAYS settlement here

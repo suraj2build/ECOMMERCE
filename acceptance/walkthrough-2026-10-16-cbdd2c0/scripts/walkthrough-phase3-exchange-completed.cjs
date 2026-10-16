@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 'use strict';
+// PROVENANCE: this file is a RECONSTRUCTION, not the preserved original. The
+// worktree this script actually ran from was deleted (`git worktree remove
+// --force`) before it was copied into this acceptance record, so this copy
+// was retyped afterward from the session's own conversation record. It has
+// NOT been re-executed since reconstruction - treat it as a faithful record
+// of what ran, not as a verified-working script, until someone reruns it and
+// confirms it reproduces the results in ../evidence/ and ../report.html. The
+// evidence JSON, screenshots and video in this directory ARE the original,
+// unmodified outputs of the actual run (see ../CHECKSUMS.sha256).
+//
 // Acceptance walkthrough, supplementary run: a plain COD order with NO
 // discounts, so its later exchange settles EVEN and the full replacement
 // dispatch pipeline (pick -> package -> pack -> ready -> book -> handover ->

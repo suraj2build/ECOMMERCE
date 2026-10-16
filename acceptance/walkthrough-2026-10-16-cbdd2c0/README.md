@@ -10,6 +10,35 @@ Accepted by the Product Owner as the reported scoped outcome, based on
 `report.html` — **without independent inspection of these underlying
 artifacts.** This is not a production certification.
 
+## Provenance corrections (2026-10-16, after initial preservation)
+
+Two corrections to how this record was first assembled, both recorded
+here rather than silently fixed:
+
+1. **The three scripts in `scripts/` are reconstructions, not preserved
+   originals.** The git worktree they actually ran from was deleted
+   (`git worktree remove --force`) before anyone thought to copy them
+   out, so these copies were retyped afterward from the session's own
+   conversation record, not recovered from disk. They have **not been
+   re-executed** since reconstruction. Treat them as a faithful record
+   of the logic that produced the results below, not as verified-working
+   code — don't assume a fresh run would reproduce `evidence/` or
+   `report.html` exactly until someone actually reruns them and checks.
+   Each script's own header carries the same notice.
+2. **`evidence/`, `screenshots/` and `video/` are the real, unmodified
+   outputs of the actual run** — these were copied from disk before the
+   worktree was deleted, not reconstructed. `CHECKSUMS.sha256` (SHA-256,
+   generated the same day) lets anyone verify in the future that these
+   62 files haven't been altered since: `shasum -a 256 -c CHECKSUMS.sha256`
+   from this directory should report every line `OK`.
+
+(A third, process-only correction from the same review: pushing a
+commit built on a stale local `main` would have been rejected outright
+by git as a non-fast-forward push, not silently accepted in a way that
+dropped the PR #6 merge from history — rebasing onto the correct
+`origin/main` before pushing was still the right fix, just not an
+averted-disaster the way it was first described.)
+
 ## What this proves
 
 Run against a real UI (customer storefront + staff admin console), on an
@@ -67,18 +96,22 @@ answered by a real Razorpay sandbox run, not inferred from this result.
 | Path | What it is |
 |---|---|
 | `report.html` | The full report — results table, ledger-check tables, references, and the screenshot gallery. Open directly in a browser. |
-| `scripts/walkthrough-phase1-2.cjs` | Customer sign-in → saved address → PDP → bag → checkout (coupon + loyalty + store credit) → COD order → admin pick/pack/ready/BOOK/HANDOVER/deliver. Screenshots 01–37. |
-| `scripts/walkthrough-phase3-exchange-blocked.cjs` | The discounted order's exchange request → admin receive/QC → correctly computed `CUSTOMER_PAYS`, blocked there. Screenshots 38–45. |
-| `scripts/walkthrough-phase3-exchange-completed.cjs` | A supplementary discount-free order, fulfilled, then exchanged (EVEN settlement) through to `COMPLETED`. Screenshots 46–59. |
-| `evidence/walkthrough-facts.json` | Raw identifiers and figures captured during the run (order/exchange IDs and numbers, SKU IDs, SALE/EXCHANGE_DISPATCH counts at each checkpoint, payable amounts). |
-| `evidence/walkthrough-results-final.json` | The complete stage-by-stage expected-vs-actual log with PASS/BLOCKED/FAIL status for all 25 recorded checks. |
-| `screenshots/` | All 59 numbered PNG screenshots referenced by `report.html`. |
-| `video/vanya-acceptance-walkthrough.mp4` | The concatenated walkthrough video (~40s), covering all phases. |
+| `scripts/walkthrough-phase1-2.cjs` | **Reconstructed, not re-run** (see Provenance corrections above). Documents customer sign-in → saved address → PDP → bag → checkout (coupon + loyalty + store credit) → COD order → admin pick/pack/ready/BOOK/HANDOVER/deliver. Screenshots 01–37. |
+| `scripts/walkthrough-phase3-exchange-blocked.cjs` | **Reconstructed, not re-run.** Documents the discounted order's exchange request → admin receive/QC → correctly computed `CUSTOMER_PAYS`, blocked there. Screenshots 38–45. |
+| `scripts/walkthrough-phase3-exchange-completed.cjs` | **Reconstructed, not re-run.** Documents a supplementary discount-free order, fulfilled, then exchanged (EVEN settlement) through to `COMPLETED`. Screenshots 46–59. |
+| `evidence/walkthrough-facts.json` | Original, unmodified. Raw identifiers and figures captured during the run (order/exchange IDs and numbers, SKU IDs, SALE/EXCHANGE_DISPATCH counts at each checkpoint, payable amounts). |
+| `evidence/walkthrough-results-final.json` | Original, unmodified. The complete stage-by-stage expected-vs-actual log with PASS/BLOCKED/FAIL status for all 25 recorded checks. |
+| `screenshots/` | Original, unmodified. All 59 numbered PNG screenshots referenced by `report.html`. |
+| `video/vanya-acceptance-walkthrough.mp4` | Original, unmodified. The concatenated walkthrough video (~40s), covering all phases. |
+| `CHECKSUMS.sha256` | SHA-256 manifest for the 62 original files above (evidence + screenshots + video) — run `shasum -a 256 -c CHECKSUMS.sha256` from this directory to verify none have changed. |
 
 ## Running it again
 
-The scripts assume a dedicated, isolated stack already running — never
-point them at the live demo. They were originally run against:
+These scripts are reconstructions (see Provenance corrections above),
+not re-verified against a live stack. Before relying on them, rerun and
+confirm they still reproduce the results in `evidence/` and
+`report.html`. They assume a dedicated, isolated stack already running
+— never point them at the live demo. The original run used:
 
 - API on `http://127.0.0.1:4077`, `NODE_ENV=test`, `SHIPPING_PROVIDER`
   left at its `MOCK` default, no Razorpay credentials set (so COD is the

@@ -64,13 +64,17 @@ remain open:**
 3. The Product Owner's production release decision.
 
 The full report (stage-by-stage log, ledger-check tables, 59 numbered
-screenshots), the three orchestration scripts, raw ledger evidence
-(JSON), the screenshots themselves, and the walkthrough video are
-preserved as durable acceptance records at
-`acceptance/walkthrough-2026-10-16-cbdd2c0/` in this repository. The
-Product Owner accepted this as the reported scoped outcome based on
-that report, **without independently inspecting the underlying
-artifacts** — this is not a production certification.
+screenshots), raw ledger evidence (JSON), the screenshots themselves,
+and the walkthrough video are preserved, original and unmodified, as
+durable acceptance records at `acceptance/walkthrough-2026-10-16-cbdd2c0/`
+in this repository, with a SHA-256 checksum manifest
+(`CHECKSUMS.sha256`). The three orchestration scripts there are
+reconstructions written after the fact (the worktree they actually ran
+from was deleted before anyone copied them out) and have not been
+re-executed — see that directory's README for the full provenance
+note. The Product Owner accepted this as the reported scoped outcome
+based on that report, **without independently inspecting the
+underlying artifacts** — this is not a production certification.
 
 **Status as of 2026-10-06 (after `71230f9`): `CANCEL BOOKING AND REBOOK
 FOR ORDER PACKAGES, PLAYWRIGHT ARTIFACTS ON CI FAILURE AND AN EXCHANGE
