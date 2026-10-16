@@ -1,0 +1,363 @@
+<title>Vanya Acceptance Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #faf6ef;
+    --bg-raised: #ffffff;
+    --ink: #221d17;
+    --ink-soft: #5b5248;
+    --border: #e6ddcd;
+    --accent: #2f4f43;
+    --accent-soft: #e7efe9;
+    --pass: #276b43;
+    --pass-bg: #e3f1e7;
+    --blocked: #93590f;
+    --blocked-bg: #faf0dd;
+    --fail: #a3251f;
+    --fail-bg: #fbe8e6;
+    --mono-bg: #f1ece1;
+    --shadow-sm: 0 1px 2px rgba(34, 29, 23, 0.06);
+    --shadow-md: 0 6px 20px rgba(34, 29, 23, 0.08);
+    --serif: "Source Serif 4", Georgia, serif;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1713; --bg-raised: #232019; --ink: #efe8dc; --ink-soft: #b7ac9c;
+      --border: #3a342a; --accent: #8fc3ab; --accent-soft: #263a32;
+      --pass: #7fd9a0; --pass-bg: #1d3327; --blocked: #e8b765; --blocked-bg: #3a2f15;
+      --fail: #f2948f; --fail-bg: #3a2220; --mono-bg: #2a261e;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 6px 24px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1713; --bg-raised: #232019; --ink: #efe8dc; --ink-soft: #b7ac9c;
+    --border: #3a342a; --accent: #8fc3ab; --accent-soft: #263a32;
+    --pass: #7fd9a0; --pass-bg: #1d3327; --blocked: #e8b765; --blocked-bg: #3a2f15;
+    --fail: #f2948f; --fail-bg: #3a2220; --mono-bg: #2a261e;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --shadow-md: 0 6px 24px rgba(0,0,0,0.4);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15.5px; line-height: 1.6; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 28px 96px; }
+
+  header.hero { border-bottom: 1px solid var(--border); padding-bottom: 32px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(2rem, 4vw, 2.7rem); line-height: 1.12; margin: 0 0 14px; text-wrap: balance; }
+  .lede { color: var(--ink-soft); font-size: 1.05rem; max-width: 64ch; margin: 0 0 20px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .meta-chip { font-family: var(--mono); font-size: 12.5px; background: var(--mono-bg); border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; color: var(--ink-soft); }
+  .meta-chip b { color: var(--ink); font-weight: 600; }
+
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 1.5rem; margin: 56px 0 18px; padding-top: 4px; }
+  h3 { font-family: var(--sans); font-weight: 600; font-size: 1.02rem; color: var(--accent); margin: 32px 0 14px; }
+  p { margin: 0 0 14px; }
+  .section-intro { color: var(--ink-soft); max-width: 70ch; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 24px 0 8px; }
+  .stat-card { background: var(--bg-raised); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow-sm); }
+  .stat-card .num { font-family: var(--serif); font-size: 2.2rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+  .stat-card .label { font-size: 12.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 6px; }
+  .stat-card.pass .num { color: var(--pass); }
+  .stat-card.blocked .num { color: var(--blocked); }
+  .stat-card.fail .num { color: var(--fail); }
+
+  .callout { background: var(--accent-soft); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 16px 20px; margin: 20px 0; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout.warn { border-left-color: var(--blocked); background: var(--blocked-bg); }
+  .callout.accept { border-left-color: var(--ink-soft); background: var(--mono-bg); }
+
+  table { width: 100%; }
+  .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); box-shadow: var(--shadow-sm); }
+
+  table.invariant-table, table.refs-table, table.gates-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.invariant-table th, table.invariant-table td,
+  table.refs-table th, table.refs-table td,
+  table.gates-table th, table.gates-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  table.invariant-table th, table.refs-table th, table.gates-table th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); background: var(--mono-bg); white-space: nowrap; }
+  table.invariant-table td.mono, table.refs-table td.mono { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  table.invariant-table tr:last-child td, table.refs-table tr:last-child td, table.gates-table tr:last-child td { border-bottom: none; }
+
+  .results-table { border-collapse: collapse; width: 100%; font-size: 13.8px; min-width: 820px; }
+  .results-table th, .results-table td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .results-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); background: var(--mono-bg); position: sticky; top: 0; }
+  .results-table td.num { font-family: var(--mono); color: var(--ink-soft); width: 28px; }
+  .results-table tr:last-child td { border-bottom: none; }
+  .results-table tr:hover { background: var(--accent-soft); }
+
+  .badge { display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.03em; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .status-pass { background: var(--pass-bg); color: var(--pass); }
+  .status-blocked { background: var(--blocked-bg); color: var(--blocked); }
+  .status-fail { background: var(--fail-bg); color: var(--fail); }
+
+  .gallery-group { margin-bottom: 36px; }
+  .gallery-group h3 { margin-bottom: 16px; }
+  .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  figure { margin: 0; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  figure img { width: 100%; display: block; aspect-ratio: 16/11; object-fit: cover; object-position: top; background: var(--mono-bg); }
+  figcaption { padding: 9px 12px; font-size: 12.3px; color: var(--ink-soft); border-top: 1px solid var(--border); }
+  .shot-num { display: inline-block; font-family: var(--mono); font-size: 10.5px; background: var(--accent); color: var(--bg-raised); border-radius: 5px; padding: 1px 6px; margin-right: 7px; }
+
+  footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--ink-soft); font-size: 13px; }
+  ul.plain-list, ol.plain-list { margin: 0 0 14px; padding-left: 22px; }
+  ul.plain-list li, ol.plain-list li { margin-bottom: 6px; }
+  code.inline { font-family: var(--mono); background: var(--mono-bg); padding: 1px 6px; border-radius: 5px; font-size: 0.9em; }
+
+  @media (max-width: 640px) { .wrap { padding: 36px 16px 64px; } }
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <p class="eyebrow">Acceptance run · scoped mock-provider walkthrough · closed 2026-10-16</p>
+    <h1>Customer &amp; admin walkthrough on merged <code class="inline">main</code></h1>
+    <p class="lede">A real, UI-driven customer purchase and admin fulfilment run against the exact commit that merged <code class="inline">admin-ops-phase1</code> into <code class="inline">main</code> — verifying the booking-vs-handover stock invariant and payable-amount parity, with mock providers and isolated demo data. This record is the Product Owner's accepted scoped outcome, not an independent inspection of the artifacts and not a production certification.</p>
+    <div class="meta-row">
+      <span class="meta-chip">Commit <b>cbdd2c0970a9a567c13dec1f2aa4621a72bb1d07</b></span>
+      <span class="meta-chip">PR <b>#6</b> merged</span>
+      <span class="meta-chip">Result <b>24 passed · 1 blocked · 0 failed</b></span>
+      <span class="meta-chip">Run date <b>2026-10-16</b></span>
+      <span class="meta-chip">Stack <b>isolated — fresh DB, mock shipping, COD only</b></span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Result</h2>
+    <div class="stat-row">
+      <div class="stat-card pass"><div class="num">24</div><div class="label">Passed</div></div>
+      <div class="stat-card blocked"><div class="num">1</div><div class="label">Blocked (open gate)</div></div>
+      <div class="stat-card fail"><div class="num">0</div><div class="label">Failed</div></div>
+    </div>
+    <p class="section-intro" style="margin-top:20px;">This closes the scoped mock-provider acceptance walkthrough. No further general fix round is needed on its account. Every stage of the requested journey — sign-in, saved address, PDP, bag, checkout with a coupon/loyalty/credit stacked together, COD order, admin picking/packing/booking/handover/delivery, and a discount-free exchange — ran against the real UI and passed. One item is explicitly left open, not failed: see below.</p>
+  </section>
+
+  <section>
+    <h2>The two invariants this run exists to prove</h2>
+    <h3>1 · Booking moves no stock; handover posts it exactly once</h3>
+    <div class="table-scroll">
+      <table class="invariant-table">
+        <thead><tr><th>Checkpoint</th><th>SALE transactions (order SKU)</th><th>Shipment status</th><th>Fulfilment status</th><th>handedOverAt</th></tr></thead>
+        <tbody>
+          <tr><td>Before booking</td><td class="mono">1</td><td class="mono">—</td><td class="mono">READY_TO_SHIP</td><td class="mono">—</td></tr>
+          <tr><td>After <b>Book shipment with carrier</b></td><td class="mono">1 <span style="color:var(--pass)">(unchanged)</span></td><td class="mono">BOOKED</td><td class="mono">BOOKED</td><td class="mono">null</td></tr>
+          <tr><td>After <b>Confirm handover</b></td><td class="mono">2 <span style="color:var(--pass)">(+1 exactly)</span></td><td class="mono">BOOKED</td><td class="mono">SHIPPED</td><td class="mono">set</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:10px; color:var(--ink-soft); font-size:13.5px;">Baseline starts at 1, not 0 — an earlier verification order on this same SKU in this session's database. What matters is the delta: booking changed it by zero, handover by exactly one. Confirmed a second time on the discount-free exchange's own replacement dispatch below, using the dedicated <code class="inline">EXCHANGE_DISPATCH</code> transaction type.</p>
+    <div class="table-scroll" style="margin-top:14px;">
+      <table class="invariant-table">
+        <thead><tr><th>Checkpoint (exchange replacement)</th><th>EXCHANGE_DISPATCH transactions</th><th>Shipment status</th></tr></thead>
+        <tbody>
+          <tr><td>After replacement booked</td><td class="mono">0 <span style="color:var(--pass)">(unchanged)</span></td><td class="mono">BOOKED</td></tr>
+          <tr><td>After replacement handover</td><td class="mono">1 <span style="color:var(--pass)">(+1 exactly)</span></td><td class="mono">BOOKED, handedOverAt set</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2 · Customer-side and admin-side payable amounts agree</h3>
+    <div class="table-scroll">
+      <table class="invariant-table">
+        <thead><tr><th>Source</th><th>Figure shown</th><th>Amount</th></tr></thead>
+        <tbody>
+          <tr><td>Customer — checkout page, before loyalty/credit redemption</td><td class="mono">Total (tax incl.)</td><td class="mono">₹798</td></tr>
+          <tr><td>Customer — order-placed confirmation, after coupon + 100 points + ₹100 credit</td><td class="mono">Amount payable</td><td class="mono">₹673</td></tr>
+          <tr><td>Admin — order detail page</td><td class="mono">Amount payable</td><td class="mono">₹673.00</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:10px; color:var(--ink-soft); font-size:13.5px;">₹899 MRP → ₹699 after a standing 25% markdown → ₹798 with ₹99 shipping and no coupon yet → <b>₹673</b> final, after the ₹200 flat coupon, 100 loyalty points (₹25) and ₹100 store credit. Both sides of the counter show the same final number.</p>
+  </section>
+
+  <section>
+    <h2>References</h2>
+    <div class="table-scroll">
+      <table class="refs-table">
+        <thead><tr><th>Entity</th><th>Reference</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Main order</td><td class="mono">ORD-2026-000005</td><td>COD, coupon + loyalty + store credit stacked, fulfilled end to end</td></tr>
+          <tr><td>Exchange attempt #1</td><td class="mono">EXC-2026-000002</td><td>Correctly computed CUSTOMER_PAYS — left at RECEIVED/QC-PASSED, payment and completion unverified (see below)</td></tr>
+          <tr><td>Supplementary order</td><td class="mono">ORD-2026-000006</td><td>Plain COD, no discounts — created to let a second exchange settle EVEN</td></tr>
+          <tr><td>Exchange attempt #2</td><td class="mono">EXC-2026-000003</td><td>EVEN settlement, full replacement pipeline, reached COMPLETED</td></tr>
+          <tr><td>Customer</td><td class="mono">two fresh mobile numbers</td><td>Isolated test customers created for this run</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What remains open — read this precisely</h2>
+    <div class="callout warn">
+      <p><b>The blocked discounted exchange (EXC-2026-000002) remains unverified through payment and completion.</b> Its replacement priced the same as the original at catalogue rate, but the order's own ₹200 coupon had reduced the <i>original line's</i> frozen value below the replacement's full catalogue price — so the exchange service correctly computed a <code class="inline">CUSTOMER_PAYS</code> settlement of ₹200, not <code class="inline">EVEN</code>. Collecting that difference goes through the real Razorpay payment provider; this codebase has no mock Razorpay implementation the way it has a MOCK shipping carrier, and no Razorpay test credentials are configured in this isolated stack, so the payment correctly failed safe with no network call and no fabricated success.</p>
+      <p><b>The second order (EXC-2026-000003) proves the EVEN-settlement path only — it does not replace the missing payment test.</b> It is a different order, with a different settlement direction, exercising a different code path (no payment collection step at all). Whether a CUSTOMER_PAYS exchange can actually collect its price difference and reach COMPLETED is still an open question, to be answered by a real Razorpay sandbox run, not inferred from this result.</p>
+    </div>
+
+    <h3>Release gates still open</h3>
+    <div class="table-scroll">
+      <table class="gates-table">
+        <thead><tr><th>#</th><th>Gate</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>Razorpay sandbox payment and recovery validation</td></tr>
+          <tr><td class="mono">2</td><td>Real courier sandbox booking, tracking, cancellation and duplicate-event validation</td></tr>
+          <tr><td class="mono">3</td><td>Production release decision</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Full stage-by-stage log</h2>
+    <p class="section-intro">Every recorded expectation versus what actually happened, in the order it occurred.</p>
+    <div class="table-scroll">
+      <table class="results-table">
+<thead><tr><th>#</th><th>Stage</th><th>Expected</th><th>Actual</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td>Customer sign-in (real mobile OTP)</td><td>Customer reaches the signed-in Profile page</td><td>Reached Profile page</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">2</td><td>Pre-provision loyalty + store credit (test setup, not UI-driven)</td><td>150 loyalty points + ₹150 store credit available to this customer</td><td>Granted via /loyalty/adjust (real staff route) and a direct StoreCreditAccount/Entry (same method account.spec.ts uses — no staff store-credit-issuance route exists in this codebase)</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">3</td><td>Save a customer address</td><td>Address saved and shown as Default</td><td>Address saved, visible on /account/addresses</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">4</td><td>Browse PDP, select size M, add to bag</td><td>Size M added to bag</td><td>"Added to bag." confirmation shown</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">5</td><td>Place COD order with coupon + loyalty points + store credit stacked</td><td>Order placed; coupon (-₹200), 100 loyalty points (-₹25), and ₹100 store credit all applied together</td><td>Order ORD-2026-000005 placed, customer-visible final "Amount payable" ₹673</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">6</td><td>Admin staff sign-in</td><td>Staff reaches the dashboard</td><td>Reached /dashboard</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">7</td><td>Admin: pick the order line</td><td>Pick recorded (FULL outcome)</td><td>Pick recorded, drawer closed</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">8</td><td>Admin: pack the order</td><td>Fulfilment status PACKED with recorded parcel dimensions</td><td>(status checked in DB below)</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">9</td><td>Booking must move no stock (AO-D5 option B)</td><td>SALE transaction count unchanged at 1; shipment BOOKED; fulfilment BOOKED; shipment.handedOverAt null</td><td>SALE count 1 -&gt; 1; shipment.status=BOOKED; fulfilment.status=BOOKED; handedOverAt=null</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">10</td><td>Handover must post the sale exactly once</td><td>SALE transaction count increases by exactly 1 (from 1 to 2); fulfilment -&gt; SHIPPED; shipment.handedOverAt set</td><td>SALE count 1 -&gt; 2; fulfilment.status=SHIPPED; handedOverAt=Fri Oct 16 2026 21:42:06 GMT+0530 (India Standard Time)</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">11</td><td>Admin: mark delivered</td><td>Order line and fulfilment status DELIVERED</td><td>Fulfilment marked delivered via the confirm dialog</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">12</td><td>Customer-side and admin-side payable amounts must agree</td><td>Both equal ₹673</td><td>Customer order-confirmation "Amount payable" ₹673; admin order-detail "Amount payable" "₹673.00"</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">13</td><td>Customer signs back in to request an exchange</td><td>Reaches signed-in Profile page</td><td>Reached Profile page</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">14</td><td>Customer: request a size exchange (Black M -&gt; Black S) via the real order-detail page</td><td>Exchange requested, replacement = Black/S, same price (EVEN settlement)</td><td>Exchange EXC-2026-000002 requested, status=REQUESTED, paymentDirection=CUSTOMER_PAYS</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">15</td><td>Admin: receive + QC-pass the original item</td><td>QC result recorded; settlement direction computed from priceDifference</td><td>status=RECEIVED; paymentDirection=CUSTOMER_PAYS (priceDifference ₹200); paymentStatus=FAILED</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">16</td><td>Exchange reaches REPLACEMENT_ALLOCATED and completes delivery (full replacement pipeline)</td><td>Blocked on collecting the CUSTOMER_PAYS price difference via the real Razorpay payment provider - explicitly out of this walkthrough's scope ("real courier/payment validation remains separate"); no mock Razorpay provider exists in this codebase to simulate it safely</td><td>Exchange remains at status=RECEIVED, paymentStatus=FAILED</td><td><span class="badge status-blocked">BLOCKED</span></td></tr>
+<tr><td class="num">17</td><td>Supplementary plain COD order (no discounts) to carry the exchange through to COMPLETED</td><td>Order placed</td><td>Order ORD-2026-000006 placed</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">18</td><td>Fulfil the supplementary order (pick/pack/ready/book/handover/deliver)</td><td>Order reaches DELIVERED</td><td>Delivered via the proven pipeline (not re-screenshotted - identical to the main order's own run above)</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">19</td><td>Customer: request a size exchange on the discount-free order (Black M -&gt; Black S)</td><td>Exchange requested; EVEN settlement expected (no coupon on this order)</td><td>Exchange EXC-2026-000003 requested, paymentDirection=EVEN, priceDifference=₹0</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">20</td><td>Admin: receive + QC-pass -&gt; replacement allocated (EVEN settlement needs no payment step)</td><td>status REPLACEMENT_ALLOCATED, replacementAllocatedAt set</td><td>status=REPLACEMENT_ALLOCATED; replacementAllocatedAt=Fri Oct 16 2026 21:43:56 GMT+0530 (India Standard Time)</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">21</td><td>Admin: pick the replacement unit (generalized Pick queue)</td><td>Replacement pick recorded</td><td>Pick recorded</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">22</td><td>Exchange-replacement booking must move no stock</td><td>EXCHANGE_DISPATCH count unchanged at 0; shipment BOOKED; handedOverAt null</td><td>EXCHANGE_DISPATCH 0 -&gt; 0; shipment.status=BOOKED; handedOverAt=null</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">23</td><td>Exchange-replacement handover must post EXCHANGE_DISPATCH exactly once</td><td>EXCHANGE_DISPATCH count increases by exactly 1 (from 0 to 1)</td><td>EXCHANGE_DISPATCH 0 -&gt; 1; handedOverAt=Fri Oct 16 2026 21:43:58 GMT+0530 (India Standard Time)</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">24</td><td>Exchange auto-completes the instant the replacement shipment is DELIVERED</td><td>Exchange status COMPLETED, replacementFulfilledAt set</td><td>status=COMPLETED; replacementFulfilledAt=Fri Oct 16 2026 21:43:58 GMT+0530 (India Standard Time)</td><td><span class="badge status-pass">PASS</span></td></tr>
+<tr><td class="num">25</td><td>Customer sees the exchange as completed on their own order page</td><td>"Exchange completed" shown</td><td>"Exchange completed" visible</td><td><span class="badge status-pass">PASS</span></td></tr>
+</tbody>
+</table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Screenshots</h2>
+    <p class="section-intro">59 numbered screenshots across six stages of the run. The companion video and this report's own source scripts, raw ledger evidence (JSON), and screenshot files are preserved alongside this page in <code class="inline">acceptance/walkthrough-2026-10-16-cbdd2c0/</code> in the repository.</p>
+    <section class="gallery-group">
+<h3>Customer — sign-in, saved details, browse, bag</h3>
+<div class="gallery-grid">
+<figure><img src="screenshots/01-storefront-home.png" loading="lazy" alt="Storefront home"><figcaption><span class="shot-num">1</span>Storefront home</figcaption></figure>
+<figure><img src="screenshots/02-signin-mobile-entry.png" loading="lazy" alt="Signin mobile entry"><figcaption><span class="shot-num">2</span>Signin mobile entry</figcaption></figure>
+<figure><img src="screenshots/03-signin-otp-entry.png" loading="lazy" alt="Signin otp entry"><figcaption><span class="shot-num">3</span>Signin otp entry</figcaption></figure>
+<figure><img src="screenshots/04-signed-in-profile.png" loading="lazy" alt="Signed in profile"><figcaption><span class="shot-num">4</span>Signed in profile</figcaption></figure>
+<figure><img src="screenshots/05-saved-address-form.png" loading="lazy" alt="Saved address form"><figcaption><span class="shot-num">5</span>Saved address form</figcaption></figure>
+<figure><img src="screenshots/06-saved-address-confirmed.png" loading="lazy" alt="Saved address confirmed"><figcaption><span class="shot-num">6</span>Saved address confirmed</figcaption></figure>
+<figure><img src="screenshots/07-plp-category-women.png" loading="lazy" alt="Plp category women"><figcaption><span class="shot-num">7</span>Plp category women</figcaption></figure>
+<figure><img src="screenshots/08-pdp-gallery.png" loading="lazy" alt="Pdp gallery"><figcaption><span class="shot-num">8</span>Pdp gallery</figcaption></figure>
+<figure><img src="screenshots/09-pdp-size-m-selected.png" loading="lazy" alt="Pdp size m selected"><figcaption><span class="shot-num">9</span>Pdp size m selected</figcaption></figure>
+<figure><img src="screenshots/10-added-to-bag-confirmation.png" loading="lazy" alt="Added to bag confirmation"><figcaption><span class="shot-num">10</span>Added to bag confirmation</figcaption></figure>
+<figure><img src="screenshots/11-bag-page.png" loading="lazy" alt="Bag page"><figcaption><span class="shot-num">11</span>Bag page</figcaption></figure>
+</div>
+</section>
+<section class="gallery-group">
+<h3>Checkout — coupon, loyalty points, store credit, COD</h3>
+<div class="gallery-grid">
+<figure><img src="screenshots/12-checkout-address-filled.png" loading="lazy" alt="Checkout address filled"><figcaption><span class="shot-num">12</span>Checkout address filled</figcaption></figure>
+<figure><img src="screenshots/13-checkout-coupon-applied.png" loading="lazy" alt="Checkout coupon applied"><figcaption><span class="shot-num">13</span>Checkout coupon applied</figcaption></figure>
+<figure><img src="screenshots/14-checkout-points-applied.png" loading="lazy" alt="Checkout points applied"><figcaption><span class="shot-num">14</span>Checkout points applied</figcaption></figure>
+<figure><img src="screenshots/15-checkout-credit-applied.png" loading="lazy" alt="Checkout credit applied"><figcaption><span class="shot-num">15</span>Checkout credit applied</figcaption></figure>
+<figure><img src="screenshots/16-checkout-cod-selected.png" loading="lazy" alt="Checkout cod selected"><figcaption><span class="shot-num">16</span>Checkout cod selected</figcaption></figure>
+<figure><img src="screenshots/17-order-placed-confirmation.png" loading="lazy" alt="Order placed confirmation"><figcaption><span class="shot-num">17</span>Order placed confirmation</figcaption></figure>
+</div>
+</section>
+<section class="gallery-group">
+<h3>Admin — sign-in, pick, pack</h3>
+<div class="gallery-grid">
+<figure><img src="screenshots/18-admin-login-form.png" loading="lazy" alt="Admin login form"><figcaption><span class="shot-num">18</span>Admin login form</figcaption></figure>
+<figure><img src="screenshots/19-admin-dashboard.png" loading="lazy" alt="Admin dashboard"><figcaption><span class="shot-num">19</span>Admin dashboard</figcaption></figure>
+<figure><img src="screenshots/20-admin-pick-queue.png" loading="lazy" alt="Admin pick queue"><figcaption><span class="shot-num">20</span>Admin pick queue</figcaption></figure>
+<figure><img src="screenshots/21-admin-pick-drawer.png" loading="lazy" alt="Admin pick drawer"><figcaption><span class="shot-num">21</span>Admin pick drawer</figcaption></figure>
+<figure><img src="screenshots/22-admin-pick-recorded.png" loading="lazy" alt="Admin pick recorded"><figcaption><span class="shot-num">22</span>Admin pick recorded</figcaption></figure>
+<figure><img src="screenshots/23-admin-pack-ship-waiting.png" loading="lazy" alt="Admin pack ship waiting"><figcaption><span class="shot-num">23</span>Admin pack ship waiting</figcaption></figure>
+<figure><img src="screenshots/24-admin-package-created.png" loading="lazy" alt="Admin package created"><figcaption><span class="shot-num">24</span>Admin package created</figcaption></figure>
+<figure><img src="screenshots/25-admin-order-detail-before-pack.png" loading="lazy" alt="Admin order detail before pack"><figcaption><span class="shot-num">25</span>Admin order detail before pack</figcaption></figure>
+<figure><img src="screenshots/26-admin-pack-dialog-filled.png" loading="lazy" alt="Admin pack dialog filled"><figcaption><span class="shot-num">26</span>Admin pack dialog filled</figcaption></figure>
+<figure><img src="screenshots/27-admin-marked-packed.png" loading="lazy" alt="Admin marked packed"><figcaption><span class="shot-num">27</span>Admin marked packed</figcaption></figure>
+</div>
+</section>
+<section class="gallery-group">
+<h3>Admin — ready to ship, BOOK (no stock moves), HANDOVER (stock posts once), deliver</h3>
+<div class="gallery-grid">
+<figure><img src="screenshots/28-admin-ready-to-ship-dialog.png" loading="lazy" alt="Admin ready to ship dialog"><figcaption><span class="shot-num">28</span>Admin ready to ship dialog</figcaption></figure>
+<figure><img src="screenshots/29-admin-ready-to-ship-done.png" loading="lazy" alt="Admin ready to ship done"><figcaption><span class="shot-num">29</span>Admin ready to ship done</figcaption></figure>
+<figure><img src="screenshots/30-admin-book-shipment-dialog.png" loading="lazy" alt="Admin book shipment dialog"><figcaption><span class="shot-num">30</span>Admin book shipment dialog</figcaption></figure>
+<figure><img src="screenshots/31-admin-shipment-booked.png" loading="lazy" alt="Admin shipment booked"><figcaption><span class="shot-num">31</span>Admin shipment booked</figcaption></figure>
+<figure><img src="screenshots/32-admin-handover-page-before.png" loading="lazy" alt="Admin handover page before"><figcaption><span class="shot-num">32</span>Admin handover page before</figcaption></figure>
+<figure><img src="screenshots/33-admin-handover-checked.png" loading="lazy" alt="Admin handover checked"><figcaption><span class="shot-num">33</span>Admin handover checked</figcaption></figure>
+<figure><img src="screenshots/34-admin-handover-confirmed.png" loading="lazy" alt="Admin handover confirmed"><figcaption><span class="shot-num">34</span>Admin handover confirmed</figcaption></figure>
+<figure><img src="screenshots/35-admin-order-detail-shipped.png" loading="lazy" alt="Admin order detail shipped"><figcaption><span class="shot-num">35</span>Admin order detail shipped</figcaption></figure>
+<figure><img src="screenshots/36-admin-mark-delivered-dialog.png" loading="lazy" alt="Admin mark delivered dialog"><figcaption><span class="shot-num">36</span>Admin mark delivered dialog</figcaption></figure>
+<figure><img src="screenshots/37-admin-order-delivered.png" loading="lazy" alt="Admin order delivered"><figcaption><span class="shot-num">37</span>Admin order delivered</figcaption></figure>
+</div>
+</section>
+<section class="gallery-group">
+<h3>Exchange attempt #1 — customer request, admin QC (CUSTOMER_PAYS, correctly blocked)</h3>
+<div class="gallery-grid">
+<figure><img src="screenshots/38-customer-order-detail-delivered.png" loading="lazy" alt="Customer order detail delivered"><figcaption><span class="shot-num">38</span>Customer order detail delivered</figcaption></figure>
+<figure><img src="screenshots/39-customer-exchange-form-open.png" loading="lazy" alt="Customer exchange form open"><figcaption><span class="shot-num">39</span>Customer exchange form open</figcaption></figure>
+<figure><img src="screenshots/40-customer-exchange-form-filled.png" loading="lazy" alt="Customer exchange form filled"><figcaption><span class="shot-num">40</span>Customer exchange form filled</figcaption></figure>
+<figure><img src="screenshots/41-customer-exchange-requested.png" loading="lazy" alt="Customer exchange requested"><figcaption><span class="shot-num">41</span>Customer exchange requested</figcaption></figure>
+<figure><img src="screenshots/42-admin-exchange-detail-requested.png" loading="lazy" alt="Admin exchange detail requested"><figcaption><span class="shot-num">42</span>Admin exchange detail requested</figcaption></figure>
+<figure><img src="screenshots/43-admin-exchange-received.png" loading="lazy" alt="Admin exchange received"><figcaption><span class="shot-num">43</span>Admin exchange received</figcaption></figure>
+<figure><img src="screenshots/44-admin-exchange-qc-dialog.png" loading="lazy" alt="Admin exchange qc dialog"><figcaption><span class="shot-num">44</span>Admin exchange qc dialog</figcaption></figure>
+<figure><img src="screenshots/45-admin-exchange-qc-passed.png" loading="lazy" alt="Admin exchange qc passed"><figcaption><span class="shot-num">45</span>Admin exchange qc passed</figcaption></figure>
+</div>
+</section>
+<section class="gallery-group">
+<h3>Exchange attempt #2 — discount-free order, full replacement pipeline to completion</h3>
+<div class="gallery-grid">
+<figure><img src="screenshots/46-exc2-customer-order-detail-delivered.png" loading="lazy" alt="Exchange #2 customer order detail delivered"><figcaption><span class="shot-num">46</span>Exchange #2 customer order detail delivered</figcaption></figure>
+<figure><img src="screenshots/47-exc2-customer-exchange-form-filled.png" loading="lazy" alt="Exchange #2 customer exchange form filled"><figcaption><span class="shot-num">47</span>Exchange #2 customer exchange form filled</figcaption></figure>
+<figure><img src="screenshots/48-exc2-customer-exchange-requested.png" loading="lazy" alt="Exchange #2 customer exchange requested"><figcaption><span class="shot-num">48</span>Exchange #2 customer exchange requested</figcaption></figure>
+<figure><img src="screenshots/49-exc2-admin-exchange-detail.png" loading="lazy" alt="Exchange #2 admin exchange detail"><figcaption><span class="shot-num">49</span>Exchange #2 admin exchange detail</figcaption></figure>
+<figure><img src="screenshots/50-exc2-admin-qc-passed.png" loading="lazy" alt="Exchange #2 admin qc passed"><figcaption><span class="shot-num">50</span>Exchange #2 admin qc passed</figcaption></figure>
+<figure><img src="screenshots/51-exc2-admin-pick-queue-replacement.png" loading="lazy" alt="Exchange #2 admin pick queue replacement"><figcaption><span class="shot-num">51</span>Exchange #2 admin pick queue replacement</figcaption></figure>
+<figure><img src="screenshots/52-exc2-admin-replacement-picked.png" loading="lazy" alt="Exchange #2 admin replacement picked"><figcaption><span class="shot-num">52</span>Exchange #2 admin replacement picked</figcaption></figure>
+<figure><img src="screenshots/53-exc2-admin-replacement-package-created.png" loading="lazy" alt="Exchange #2 admin replacement package created"><figcaption><span class="shot-num">53</span>Exchange #2 admin replacement package created</figcaption></figure>
+<figure><img src="screenshots/54-exc2-admin-replacement-ready-to-ship.png" loading="lazy" alt="Exchange #2 admin replacement ready to ship"><figcaption><span class="shot-num">54</span>Exchange #2 admin replacement ready to ship</figcaption></figure>
+<figure><img src="screenshots/55-exc2-admin-replacement-booked.png" loading="lazy" alt="Exchange #2 admin replacement booked"><figcaption><span class="shot-num">55</span>Exchange #2 admin replacement booked</figcaption></figure>
+<figure><img src="screenshots/56-exc2-admin-handover-before.png" loading="lazy" alt="Exchange #2 admin handover before"><figcaption><span class="shot-num">56</span>Exchange #2 admin handover before</figcaption></figure>
+<figure><img src="screenshots/57-exc2-admin-handover-confirmed.png" loading="lazy" alt="Exchange #2 admin handover confirmed"><figcaption><span class="shot-num">57</span>Exchange #2 admin handover confirmed</figcaption></figure>
+<figure><img src="screenshots/58-exc2-admin-replacement-delivered.png" loading="lazy" alt="Exchange #2 admin replacement delivered"><figcaption><span class="shot-num">58</span>Exchange #2 admin replacement delivered</figcaption></figure>
+<figure><img src="screenshots/59-exc2-customer-exchange-completed-final.png" loading="lazy" alt="Exchange #2 customer exchange completed final"><figcaption><span class="shot-num">59</span>Exchange #2 customer exchange completed final</figcaption></figure>
+</div>
+</section>
+
+  </section>
+
+  <section>
+    <h2>Setup notes</h2>
+    <p class="section-intro">What this run needed that the demo catalogue doesn't ship with by default — none of it a product defect, all of it legitimate operator configuration:</p>
+    <ul class="plain-list">
+      <li>A serviceable PIN code (110011) and a warehouse return address, both set via the real staff API — a fresh database has neither, and a real launch would configure both before taking orders.</li>
+      <li>150 loyalty points and ₹150 store credit granted to the test customer directly — via the real <code class="inline">/loyalty/adjust</code> staff route for points, and a direct ledger entry for credit (account.spec.ts uses the same method; no staff store-credit-issuance route exists in this codebase to exercise instead).</li>
+      <li>A coupon (<code class="inline">WALKTHRU200</code>, ₹200 flat, compatible with loyalty and store credit) created via the real staff promotions API.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Acceptance record</h2>
+    <div class="callout accept">
+      <p>Accepted by the Product Owner as the reported scoped outcome of this mock-provider acceptance walkthrough, based on this report — without independent inspection of the underlying scripts, ledger evidence, screenshots or video. This is not a production certification. The engineering fix round that preceded this walkthrough is complete; the three release gates above remain the only open items before a production release decision.</p>
+    </div>
+  </section>
+
+  <footer>
+    Durable records preserved in the repository at <code class="inline">acceptance/walkthrough-2026-10-16-cbdd2c0/</code>: this report, the three orchestration scripts, raw ledger evidence (JSON), all 59 screenshots, and the walkthrough video.
+  </footer>
+</div>

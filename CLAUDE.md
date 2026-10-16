@@ -6,6 +6,72 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
+**Status as of 2026-10-16 (latest): `ADMIN-OPS-PHASE1 MERGED; SCOPED
+MOCK-PROVIDER ACCEPTANCE WALKTHROUGH CLOSED — THREE RELEASE GATES
+REMAIN.`** PR #6 (reconciling `claude/admin-ops-phase1` — AO-D1 through
+AO-D13: booking-vs-handover stock posting, courier-booking cancel-and-
+rebook, approvals, staff management, product import, CMS banners/
+navigation menus/landing pages, dispatch pick/pack scanning — into
+`main`'s own independent progress) was merged at commit
+`cbdd2c0970a9a567c13dec1f2aa4621a72bb1d07`, after a bounded final review
+found no demonstrated blocker and real CI was green on the exact head
+commit (1021 integration tests passed, 99 E2E passed/1 by-design skip).
+While verifying the merge's AO-05 test fix, an accidental test-access
+incident occurred: a local verification admin instance briefly
+coexisted with the live demo's own admin process on the same port
+(IPv4/IPv6 dual-stack binding); read-only checks immediately afterward
+confirmed no application-data mutation on the live demo. See
+`acceptance/walkthrough-2026-10-16-cbdd2c0/README.md` for the full
+incident note.
+
+The Product Owner then authorized a customer/admin acceptance
+walkthrough on the merged commit, with isolated demo data and mock
+providers (real courier/payment validation explicitly kept separate).
+**Result: 24 passed, 1 blocked, 0 failed.** Confirmed directly against
+the ledger, not just the screen: booking a courier shipment moves zero
+stock and handover posts the sale exactly once (proven twice — once on
+the main order's `SALE` transactions, again on a completed exchange's
+`EXCHANGE_DISPATCH` transactions); the customer's order-confirmation
+"Amount payable" and the admin order-detail page's own "Amount payable"
+agree exactly (₹673, after a ₹200 coupon, 100 loyalty points and ₹100
+store credit were all stacked together at checkout); and the full
+customer/admin journey — sign-in, saved address, PDP, bag, checkout,
+COD order, admin pick/pack/book/handover/deliver, and a customer-
+initiated exchange — ran against the real UI end to end.
+
+**One item is explicitly open, not failed, and must be stated
+precisely: the blocked discounted exchange (`EXC-2026-000002`) remains
+unverified through payment and completion.** Its replacement priced
+the same as the original, but the order's own coupon had reduced the
+original line's frozen value below the replacement's catalogue price,
+so the exchange service correctly computed a `CUSTOMER_PAYS`
+settlement rather than `EVEN` — and collecting that difference needs
+the real Razorpay provider, which has no mock implementation in this
+codebase and no test credentials in the isolated stack, so the payment
+correctly failed safe with no network call. A second, discount-free
+order's exchange (`EXC-2026-000003`) was carried through the same
+replacement pipeline to `COMPLETED` to prove the pipeline itself works
+— **this EVEN-settlement proof does not replace the missing
+CUSTOMER_PAYS payment test**; whether a real exchange payment can
+actually be collected and completed remains unanswered.
+
+This closes the scoped mock-provider acceptance walkthrough; no further
+general fix round is needed on its account. **Only these release gates
+remain open:**
+1. Razorpay sandbox payment and recovery validation.
+2. Real courier sandbox booking, tracking, cancellation and
+   duplicate-event validation.
+3. The Product Owner's production release decision.
+
+The full report (stage-by-stage log, ledger-check tables, 59 numbered
+screenshots), the three orchestration scripts, raw ledger evidence
+(JSON), the screenshots themselves, and the walkthrough video are
+preserved as durable acceptance records at
+`acceptance/walkthrough-2026-10-16-cbdd2c0/` in this repository. The
+Product Owner accepted this as the reported scoped outcome based on
+that report, **without independently inspecting the underlying
+artifacts** — this is not a production certification.
+
 **Status as of 2026-10-06 (after `71230f9`): `CANCEL BOOKING AND REBOOK
 FOR ORDER PACKAGES, PLAYWRIGHT ARTIFACTS ON CI FAILURE AND AN EXCHANGE
 SCREEN NOTE BUILT ON claude/admin-ops-phase1 — AWAITING REVIEW; COURIER

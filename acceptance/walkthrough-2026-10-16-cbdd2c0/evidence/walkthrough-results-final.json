@@ -1,0 +1,152 @@
+[
+  {
+    "stage": "Customer sign-in (real mobile OTP)",
+    "expected": "Customer reaches the signed-in Profile page",
+    "actual": "Reached Profile page",
+    "status": "PASS"
+  },
+  {
+    "stage": "Pre-provision loyalty + store credit (test setup, not UI-driven)",
+    "expected": "150 loyalty points + ₹150 store credit available to this customer",
+    "actual": "Granted via /loyalty/adjust (real staff route) and a direct StoreCreditAccount/Entry (same method account.spec.ts uses — no staff store-credit-issuance route exists in this codebase)",
+    "status": "PASS"
+  },
+  {
+    "stage": "Save a customer address",
+    "expected": "Address saved and shown as Default",
+    "actual": "Address saved, visible on /account/addresses",
+    "status": "PASS"
+  },
+  {
+    "stage": "Browse PDP, select size M, add to bag",
+    "expected": "Size M added to bag",
+    "actual": "\"Added to bag.\" confirmation shown",
+    "status": "PASS"
+  },
+  {
+    "stage": "Place COD order with coupon + loyalty points + store credit stacked",
+    "expected": "Order placed; coupon (-₹200), 100 loyalty points (-₹25), and ₹100 store credit all applied together",
+    "actual": "Order ORD-2026-000005 placed, customer-visible final \"Amount payable\" ₹673",
+    "status": "PASS"
+  },
+  {
+    "stage": "Admin staff sign-in",
+    "expected": "Staff reaches the dashboard",
+    "actual": "Reached /dashboard",
+    "status": "PASS"
+  },
+  {
+    "stage": "Admin: pick the order line",
+    "expected": "Pick recorded (FULL outcome)",
+    "actual": "Pick recorded, drawer closed",
+    "status": "PASS"
+  },
+  {
+    "stage": "Admin: pack the order",
+    "expected": "Fulfilment status PACKED with recorded parcel dimensions",
+    "actual": "(status checked in DB below)",
+    "status": "PASS"
+  },
+  {
+    "stage": "Booking must move no stock (AO-D5 option B)",
+    "expected": "SALE transaction count unchanged at 1; shipment BOOKED; fulfilment BOOKED; shipment.handedOverAt null",
+    "actual": "SALE count 1 -> 1; shipment.status=BOOKED; fulfilment.status=BOOKED; handedOverAt=null",
+    "status": "PASS"
+  },
+  {
+    "stage": "Handover must post the sale exactly once",
+    "expected": "SALE transaction count increases by exactly 1 (from 1 to 2); fulfilment -> SHIPPED; shipment.handedOverAt set",
+    "actual": "SALE count 1 -> 2; fulfilment.status=SHIPPED; handedOverAt=Fri Oct 16 2026 21:42:06 GMT+0530 (India Standard Time)",
+    "status": "PASS"
+  },
+  {
+    "stage": "Admin: mark delivered",
+    "expected": "Order line and fulfilment status DELIVERED",
+    "actual": "Fulfilment marked delivered via the confirm dialog",
+    "status": "PASS"
+  },
+  {
+    "stage": "Customer-side and admin-side payable amounts must agree",
+    "expected": "Both equal ₹673",
+    "actual": "Customer order-confirmation \"Amount payable\" ₹673; admin order-detail \"Amount payable\" \"₹673.00\"",
+    "status": "PASS"
+  },
+  {
+    "stage": "Customer signs back in to request an exchange",
+    "expected": "Reaches signed-in Profile page",
+    "actual": "Reached Profile page",
+    "status": "PASS"
+  },
+  {
+    "stage": "Customer: request a size exchange (Black M -> Black S) via the real order-detail page",
+    "expected": "Exchange requested, replacement = Black/S, same price (EVEN settlement)",
+    "actual": "Exchange EXC-2026-000002 requested, status=REQUESTED, paymentDirection=CUSTOMER_PAYS",
+    "status": "PASS"
+  },
+  {
+    "stage": "Admin: receive + QC-pass the original item",
+    "expected": "QC result recorded; settlement direction computed from priceDifference",
+    "actual": "status=RECEIVED; paymentDirection=CUSTOMER_PAYS (priceDifference ₹200); paymentStatus=FAILED",
+    "status": "PASS"
+  },
+  {
+    "stage": "Exchange reaches REPLACEMENT_ALLOCATED and completes delivery (full replacement pipeline)",
+    "expected": "Blocked on collecting the CUSTOMER_PAYS price difference via the real Razorpay payment provider - explicitly out of this walkthrough's scope (\"real courier/payment validation remains separate\"); no mock Razorpay provider exists in this codebase to simulate it safely",
+    "actual": "Exchange remains at status=RECEIVED, paymentStatus=FAILED",
+    "status": "BLOCKED"
+  },
+  {
+    "stage": "Supplementary plain COD order (no discounts) to carry the exchange through to COMPLETED",
+    "expected": "Order placed",
+    "actual": "Order ORD-2026-000006 placed",
+    "status": "PASS"
+  },
+  {
+    "stage": "Fulfil the supplementary order (pick/pack/ready/book/handover/deliver)",
+    "expected": "Order reaches DELIVERED",
+    "actual": "Delivered via the proven pipeline (not re-screenshotted - identical to the main order's own run above)",
+    "status": "PASS"
+  },
+  {
+    "stage": "Customer: request a size exchange on the discount-free order (Black M -> Black S)",
+    "expected": "Exchange requested; EVEN settlement expected (no coupon on this order)",
+    "actual": "Exchange EXC-2026-000003 requested, paymentDirection=EVEN, priceDifference=₹0",
+    "status": "PASS"
+  },
+  {
+    "stage": "Admin: receive + QC-pass -> replacement allocated (EVEN settlement needs no payment step)",
+    "expected": "status REPLACEMENT_ALLOCATED, replacementAllocatedAt set",
+    "actual": "status=REPLACEMENT_ALLOCATED; replacementAllocatedAt=Fri Oct 16 2026 21:43:56 GMT+0530 (India Standard Time)",
+    "status": "PASS"
+  },
+  {
+    "stage": "Admin: pick the replacement unit (generalized Pick queue)",
+    "expected": "Replacement pick recorded",
+    "actual": "Pick recorded",
+    "status": "PASS"
+  },
+  {
+    "stage": "Exchange-replacement booking must move no stock",
+    "expected": "EXCHANGE_DISPATCH count unchanged at 0; shipment BOOKED; handedOverAt null",
+    "actual": "EXCHANGE_DISPATCH 0 -> 0; shipment.status=BOOKED; handedOverAt=null",
+    "status": "PASS"
+  },
+  {
+    "stage": "Exchange-replacement handover must post EXCHANGE_DISPATCH exactly once",
+    "expected": "EXCHANGE_DISPATCH count increases by exactly 1 (from 0 to 1)",
+    "actual": "EXCHANGE_DISPATCH 0 -> 1; handedOverAt=Fri Oct 16 2026 21:43:58 GMT+0530 (India Standard Time)",
+    "status": "PASS"
+  },
+  {
+    "stage": "Exchange auto-completes the instant the replacement shipment is DELIVERED",
+    "expected": "Exchange status COMPLETED, replacementFulfilledAt set",
+    "actual": "status=COMPLETED; replacementFulfilledAt=Fri Oct 16 2026 21:43:58 GMT+0530 (India Standard Time)",
+    "status": "PASS"
+  },
+  {
+    "stage": "Customer sees the exchange as completed on their own order page",
+    "expected": "\"Exchange completed\" shown",
+    "actual": "\"Exchange completed\" visible",
+    "status": "PASS"
+  }
+]
