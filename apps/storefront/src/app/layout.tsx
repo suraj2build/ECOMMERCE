@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   description: 'Modern Indian menswear and womenswear. Timeless silhouettes, contemporary craftsmanship.',
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children, modal }: { children: React.ReactNode; modal: React.ReactNode }) {
   const [categories, terms, aboutItems, socialItems] = await Promise.all([
     getStorefrontCategories(),
     getStorefrontPolicies(),
@@ -46,6 +46,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <ShopProvider categories={categories.filter((c) => c.slug)} policies={policies} footerMenus={footerMenus}>
             <PreviewBanner />
             <StoreShell>{children}</StoreShell>
+            {modal}
             <ConsentBanner />
           </ShopProvider>
         </DepartmentProvider>
