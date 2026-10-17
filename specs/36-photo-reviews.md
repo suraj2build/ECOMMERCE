@@ -1,8 +1,12 @@
 # 36. Photo Reviews & "What Our Customers Say"
 
-**Status:** DRAFT — awaiting Product Owner approval. Reference: a
+**Status:** APPROVED (Product Owner, 2026-10-17). Reference: a
 competitor site's ("Littlebox India") "What Our Customers Say?"
 shoppable-testimonial carousel, shared by the Product Owner 2026-10-17.
+Approved for implementation scope only when a separate build
+authorization is given — spec approval and implementation
+authorization remain distinct, per this project's own §3/§5 discipline
+(`CLAUDE.md`).
 
 ## Purpose
 
@@ -80,8 +84,8 @@ homepage surface for a staff-chosen subset of them.
 - Multiple photos per review, or video testimonials — a photo-review
   gallery is a materially bigger feature; not requested.
 - Customer-facing moderation status/feedback ("your photo was
-  rejected") — out of scope until a moderation policy decision (see
-  Open question below) actually requires it.
+  rejected") — moot: photos auto-publish, same as text reviews (see
+  RESOLUTION below), so there is no rejection state to surface.
 - Fabricated or cross-posted social engagement numbers on a card
   (likes, shares) — same "no fake engagement" discipline as `specs/35`.
 - A generic customer-generated-content/UGC platform, rights-management
