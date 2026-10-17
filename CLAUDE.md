@@ -6,7 +6,82 @@ including future sessions that have no memory of this one.
 
 ## 0. Current project stage — READ FIRST
 
-**Status as of 2026-10-16 (latest): `ADMIN-OPS-PHASE1 MERGED; SCOPED
+**Status as of 2026-10-17 (latest): `PHOTO REVIEWS + "WHAT OUR CUSTOMERS
+SAY" HOMEPAGE CAROUSEL IMPLEMENTED (specs/36) — AWAITING PRODUCT OWNER
+REVIEW ON THE LOCAL DEMO.`** The Product Owner shared a competitor
+("Littlebox India") reference screenshot and asked for the equivalent
+capability; a separate influencer/creator-program page the Product
+Owner also shared was confirmed as visual reference only, not a request
+to build an affiliate program. `specs/36-photo-reviews.md` went through
+the full draft → decide (`auto-publish immediately, same as text
+reviews`) → approve → build sequence in one session.
+
+- **One optional photo per review**, reusing the EXISTING M11
+  `Review` model (`photoKey`/`photoConsentAt`/`featuredOnHome`/
+  `featuredSortOrder` added; migration `20261017120000_photo_reviews`) —
+  never a second review system. A photo auto-publishes with its review,
+  exactly like review text; consent (`photoConsentAt`) must be set in
+  the SAME request a photo is stored, enforced server-side, never just
+  hidden client-side.
+- **Storage**: a new `ReviewPhotoStore` abstraction
+  (`services/commerce-api/src/modules/pdp/review-photo-storage.ts`)
+  structurally mirrors the existing product-media pattern exactly
+  (local-disk/S3, server-generated keys, magic-byte MIME validation via
+  the existing `preparePublicImage`) — its own directory/bucket/prefix,
+  never shared with product media or return evidence.
+- **Homepage featuring is always an explicit staff action.** A photo
+  existing never implies homepage placement; `featuredOnHome` can only
+  be set true by staff on a review that has a photo and is not
+  `HIDDEN` — rejected outright otherwise, proven directly (not just
+  described) against a live API. Hiding a review immediately pulls its
+  photo from being served and removes it from the carousel even if
+  still marked featured, since the carousel's own query checks both
+  fields.
+- **Correction to the spec's own text, made transparently during the
+  build**: `specs/36`'s Scope section cited `content:moderate` as "the
+  same permission that already gates hiding a review." Direct code
+  inspection (`pdp/routes.ts`) showed the real gate is `review:moderate`
+  — a distinct permission. The spec's intent (reuse the existing review-
+  moderation gate) was unambiguous, so the build uses the correct
+  permission; the spec itself now carries this correction inline rather
+  than silently diverging from its own written text.
+- **New surfaces**: a public `GET /storefront/reviews/featured` (price
+  composed live from `CatalogService`, never cached/stale, matching the
+  pattern every other public listing already uses); a review-id-keyed
+  public photo route that 404s identically for "no photo" and "hidden"
+  (never leaks a hidden review's existence); a customer-only photo-
+  attach route (`POST /pdp/reviews/:id/photo`, multipart, separate from
+  the existing JSON-only review-submission route rather than inventing
+  dual content-type handling on one route); a staff curation list and
+  featured-toggle route (`review:moderate`). Storefront: a new
+  `/review-media/[id]` same-origin proxy route, mirroring the existing,
+  already-established `/lookbook-media/[id]` convention exactly (so an
+  `<img>` never needs a cross-origin request to the API host); a photo
+  picker + explicit consent checkbox added to the existing review form;
+  a new homepage section rendered between the Watch & Shop reels and
+  the occasion banners. Admin: a new "Photo reviews" screen
+  (`/dashboard/reviews`, nav entry under Content) mirroring the existing
+  Banners page's list/toggle pattern.
+- **Verified directly against a running stack**, not just by reading the
+  code: a disposable verification instance of the API (a different port
+  and a different local database from the always-running local demo,
+  which was never touched) proved, via real HTTP calls, every
+  acceptance criterion in the spec — photo attach with consent,
+  server-side consent rejection, staff-only featuring gated on
+  photo-presence and not-hidden, the public carousel excluding a hidden
+  review's photo, and 404s matching for "no photo" vs "hidden." The
+  storefront's new homepage section and the admin curation screen were
+  then exercised in a real browser against that same verification
+  instance (department-home rendering, the review-photo proxy route
+  actually serving bytes, the admin "Feature on homepage" / "Remove
+  from homepage" toggle actually changing the public carousel).
+  Lint/typecheck are clean across `services/commerce-api`,
+  `apps/storefront`, and `apps/admin`.
+
+Not self-certified; no go-live claimed. Awaiting the Product Owner's own
+review on the local demo, per this project's established practice.
+
+**Status as of 2026-10-16: `ADMIN-OPS-PHASE1 MERGED; SCOPED
 MOCK-PROVIDER ACCEPTANCE WALKTHROUGH CLOSED — THREE RELEASE GATES
 REMAIN.`** PR #6 (reconciling `claude/admin-ops-phase1` — AO-D1 through
 AO-D13: booking-vs-handover stock posting, courier-booking cancel-and-

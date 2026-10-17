@@ -106,6 +106,16 @@ export interface ProductReview {
   body: string;
   createdAt: string;
   customerName: string;
+  photoUrl: string | null;
+}
+
+export interface FeaturedReview {
+  id: string;
+  rating: number;
+  body: string;
+  photoUrl: string;
+  customerFirstName: string;
+  product: { styleId: string; name: string; thumbnailUrl: string | null; sellingPrice: number; mrp: number; currency: string };
 }
 
 export interface CrossSellItem {
@@ -246,6 +256,28 @@ export async function submitReview(
     throw new Error(body?.error?.message ?? `Review submission failed (${res.status})`);
   }
   return res.json() as Promise<ProductReview>;
+}
+
+/** specs/36: attach one photo (with consent) to the caller's own review. */
+export async function attachReviewPhoto(reviewId: string, token: string, file: File, consent: boolean): Promise<void> {
+  const form = new FormData();
+  form.set('consent', consent ? 'true' : 'false');
+  form.set('photo', file);
+  const res = await fetch(`${API_URL}/api/v1/pdp/reviews/${reviewId}/photo`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+    throw new Error(body?.error?.message ?? `Photo upload failed (${res.status})`);
+  }
+}
+
+/** specs/36: "What Our Customers Say" homepage carousel data. */
+export async function getFeaturedReviews(): Promise<FeaturedReview[]> {
+  const body = await apiGet<{ reviews: FeaturedReview[] }>('/api/v1/storefront/reviews/featured', 60);
+  return body.reviews;
 }
 
 export async function getPublicStyles(take = 12, skip = 0): Promise<PublicStyleSummary[]> {

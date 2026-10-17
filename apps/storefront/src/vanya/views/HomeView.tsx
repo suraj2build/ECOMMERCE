@@ -14,11 +14,13 @@ import {
   Gem,
   Ruler,
   Package,
+  Star,
 } from 'lucide-react';
 import { Product, ShoppableReel, StyledLook, Gender } from '../types';
 import { ProductCard } from '../components/ProductCard';
 import { StoryBubbles, type StoryBubble } from '../components/StoryBubbles';
 import { formatPrice } from '../utils/format';
+import type { FeaturedReview } from '@/lib/api';
 
 /** Editorial photographs placed in the CMS (see bridge/editorial.ts). */
 export interface HomeEditorial {
@@ -52,6 +54,7 @@ interface HomeViewProps {
   recentlyViewedIds: string[];
   editorial: HomeEditorial;
   policies: HomePolicies;
+  featuredReviews: FeaturedReview[];
   hrefFor: (route: string, params?: { gender?: Gender; category?: string; productId?: string; reelId?: string }) => string;
 }
 
@@ -66,6 +69,7 @@ export function HomeView({
   onInstantAddSize,
   editorial,
   policies,
+  featuredReviews,
   hrefFor,
 }: HomeViewProps) {
   const isMen = activeGender === 'men';
@@ -405,6 +409,63 @@ export function HomeView({
           </div>
         </div>
       </section>
+
+      {featuredReviews.length > 0 && (
+        <>
+          {/* ======================================================== */}
+          {/* 6.5. WHAT OUR CUSTOMERS SAY (Staff-Curated Photo Reviews) */}
+          {/* ======================================================== */}
+          <section className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-xl mx-auto mb-8 space-y-2">
+              <span className="text-[10px] tracking-[0.28em] uppercase font-light text-[#876448] block">
+                Real Customers, Real Style
+              </span>
+              <h3 className="font-editorial text-3xl sm:text-4xl text-[#181716] font-normal">
+                What Our Customers Say
+              </h3>
+            </div>
+            <div className="flex gap-5 overflow-x-auto pb-2 snap-x snap-mandatory [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {featuredReviews.map((review) => (
+                <div
+                  key={review.id}
+                  className="snap-start shrink-0 w-[260px] sm:w-[280px] bg-white border border-[#EAE3D7] rounded-2xl overflow-hidden shadow-xs flex flex-col"
+                >
+                  <img src={review.photoUrl} alt="" className="w-full h-64 object-cover" />
+                  <div className="p-4 space-y-2.5 flex-1 flex flex-col">
+                    <div className="flex items-center gap-1 text-[#D4AF37]" aria-hidden="true">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star key={star} className={`w-3 h-3 ${star <= review.rating ? 'fill-[#D4AF37] text-[#D4AF37]' : 'text-[#DDD4C6]'}`} />
+                      ))}
+                      <span className="sr-only">{review.rating} out of 5</span>
+                    </div>
+                    <p className="text-xs text-[#52473D] leading-relaxed font-light line-clamp-3">
+                      &ldquo;{review.body}&rdquo;
+                    </p>
+                    <span className="text-[11px] font-semibold text-[#1A1816]">— {review.customerFirstName}</span>
+                    <Link
+                      href={hrefFor('pdp', { productId: review.product.styleId })}
+                      className="mt-auto flex items-center gap-2.5 pt-2.5 border-t border-[#EAE3D7] group"
+                    >
+                      {review.product.thumbnailUrl && (
+                        <img src={review.product.thumbnailUrl} alt="" className="w-10 h-12 object-cover rounded-lg shrink-0" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[11px] text-[#38312A] font-medium truncate group-hover:underline">
+                          {review.product.name}
+                        </span>
+                        <span className="block text-[11px] text-[#756A5E] font-mono">
+                          {formatPrice(review.product.sellingPrice)}
+                        </span>
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-[#756A5E] shrink-0 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
 
       {/* ======================================================== */}
       {/* 7. OCCASION TRIO BANNERS (3 Columns) */}

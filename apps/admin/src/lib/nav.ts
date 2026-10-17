@@ -37,6 +37,7 @@ import {
   RotateCcw,
   Tag,
   Users,
+  Star,
 } from 'lucide-react';
 
 /**
@@ -149,6 +150,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard/cms/content-blocks', label: 'Content blocks', anyOf: ['cms:read'], icon: LayoutTemplate },
       { href: '/dashboard/cms/landing-pages', label: 'Landing pages', anyOf: ['cms:read'], icon: FileText },
       { href: '/dashboard/cms/navigation-menus', label: 'Navigation menus', anyOf: ['cms:read'], icon: Menu },
+      { href: '/dashboard/reviews', label: 'Photo reviews', anyOf: ['review:moderate'], icon: Star },
     ],
   },
   {

@@ -1,12 +1,36 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { loadEnv } from '@fcp/config';
+import { ValidationError } from '@fcp/shared';
 import { PdpService } from './service.js';
 import { ReviewService } from './review-service.js';
 import { ServiceabilityService } from './serviceability-service.js';
 import { CrossSellService } from './cross-sell-service.js';
 import { CatalogService } from '../catalog/service.js';
 import { PromotionService } from '../promotions/service.js';
+
+/** One multipart file (fields before the file), size-limited by REVIEW_PHOTO_MAX_FILE_SIZE_BYTES. */
+async function readPhotoUpload(request: FastifyRequest) {
+  const max = loadEnv().REVIEW_PHOTO_MAX_FILE_SIZE_BYTES;
+  let part;
+  try {
+    part = await request.file({ limits: { fileSize: max, files: 1 } });
+  } catch {
+    throw new ValidationError('Send the photo as a file upload (multipart/form-data)');
+  }
+  if (!part) throw new ValidationError('Choose a photo to upload');
+  let buffer: Buffer;
+  try {
+    buffer = await part.toBuffer();
+  } catch {
+    throw new ValidationError(`The photo is larger than ${Math.round(max / 1048576)} MB`);
+  }
+  const field = (name: string) => {
+    const f = (part.fields as Record<string, unknown>)[name] as { value?: unknown } | undefined;
+    return typeof f?.value === 'string' ? f.value : undefined;
+  };
+  return { file: { buffer, filename: part.filename }, field };
+}
 
 const reviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -90,6 +114,24 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
     reply.status(200).send(await serviceabilityService.checkServiceability(pincode));
   });
 
+  // specs/36: "What Our Customers Say" homepage carousel data.
+  fastify.get('/storefront/reviews/featured', async (_request, reply) => {
+    reply.status(200).send({ reviews: await pdpService.getFeaturedReviews() });
+  });
+
+  // specs/36: public photo bytes, served by review id so a hidden review's
+  // photo 404s identically to one that never had a photo - never leaked.
+  fastify.get('/storefront/reviews/:id/photo', async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { buffer, mimeType } = await reviewService.getPhotoForPublicServe(id);
+    reply
+      .status(200)
+      .header('Content-Type', mimeType)
+      .header('Cache-Control', 'public, max-age=31536000, immutable')
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(buffer);
+  });
+
   // --- Customer-authenticated write ---
 
   fastify.post(
@@ -102,6 +144,21 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
       // Listing cards show the rating from the search index.
       await fastify.searchIndex.indexStyle(styleId);
       reply.status(201).send(review);
+    },
+  );
+
+  // specs/36: attach one photo to the caller's own review. A separate
+  // request from submitReview - always JSON there, always multipart here.
+  fastify.post(
+    '/pdp/reviews/:id/photo',
+    { preHandler: fastify.requireCustomerAuth },
+    async (request, reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const { file, field } = await readPhotoUpload(request);
+      const consent = field('consent') === 'true';
+      const review = await reviewService.attachPhoto(id, request.customer!.id, file, consent);
+      await fastify.searchIndex.indexStyle(review.styleId);
+      reply.status(200).send(review);
     },
   );
 
@@ -119,6 +176,38 @@ const pdpRoutes: FastifyPluginAsync = async (fastify) => {
     const review = await reviewService.unhideReview(id, request.staffUser!.id);
     await fastify.searchIndex.indexStyle(review.styleId);
     reply.status(200).send(review);
+  });
+
+  // specs/36: staff curation list - every review that has a photo.
+  fastify.get('/pdp/reviews', { preHandler: moderateAuth }, async (request, reply) => {
+    const { take, skip } = z
+      .object({ take: z.coerce.number().int().positive().max(200).optional(), skip: z.coerce.number().int().nonnegative().optional() })
+      .parse(request.query);
+    const { reviews, total } = await reviewService.listReviewsForCuration({ take, skip });
+    reply.status(200).send({
+      total,
+      reviews: reviews.map((r) => ({
+        id: r.id,
+        rating: r.rating,
+        title: r.title,
+        body: r.body,
+        status: r.status,
+        createdAt: r.createdAt,
+        customerName: r.customer.fullName ?? 'Anonymous',
+        photoUrl: `/review-media/${r.id}`,
+        featuredOnHome: r.featuredOnHome,
+        featuredSortOrder: r.featuredSortOrder,
+        style: r.style,
+      })),
+    });
+  });
+
+  fastify.patch('/pdp/reviews/:id/featured', { preHandler: moderateAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const body = z
+      .object({ featuredOnHome: z.boolean(), featuredSortOrder: z.number().int().nullable().optional() })
+      .parse(request.body);
+    reply.status(200).send(await reviewService.setFeatured(id, request.staffUser!.id, body));
   });
 
   fastify.post('/pdp/pincodes', { preHandler: pincodeAuth }, async (request, reply) => {

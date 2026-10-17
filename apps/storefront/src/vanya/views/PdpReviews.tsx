@@ -9,8 +9,8 @@
  * "96% say true to size" consensus line.
  */
 import React, { useState } from 'react';
-import { Star, Sparkles, Check, X } from 'lucide-react';
-import { submitReview, type ProductReview } from '@/lib/api';
+import { Star, Sparkles, Check, X, Camera } from 'lucide-react';
+import { submitReview, attachReviewPhoto, type ProductReview } from '@/lib/api';
 import { getStoredSession, requestOtp, verifyOtp, type CustomerSession } from '@/lib/customer-auth';
 
 const RATING_WORDS: Record<number, string> = {
@@ -62,6 +62,8 @@ export function PdpReviews({
   const [hoverRating, setHoverRating] = useState(0);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoConsent, setPhotoConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +123,16 @@ export function PdpReviews({
     setSubmitting(true);
     try {
       const review = await submitReview(styleId, session.accessToken, { rating, body, ...(title.trim() ? { title: title.trim() } : {}) });
-      setReviews((prev) => [review, ...prev]);
+      let photoUrl: string | null = null;
+      if (photo && photoConsent) {
+        try {
+          await attachReviewPhoto(review.id, session.accessToken, photo, true);
+          photoUrl = URL.createObjectURL(photo);
+        } catch {
+          // The review itself is already submitted - a photo failure shouldn't undo that.
+        }
+      }
+      setReviews((prev) => [{ ...review, photoUrl }, ...prev]);
       setSummary((prev) => ({
         averageRating: ((prev.averageRating ?? 0) * prev.reviewCount + rating) / (prev.reviewCount + 1),
         reviewCount: prev.reviewCount + 1,
@@ -130,6 +141,8 @@ export function PdpReviews({
       setTitle('');
       setBody('');
       setRating(5);
+      setPhoto(null);
+      setPhotoConsent(false);
       setTimeout(() => { setSubmitted(false); setFormOpen(false); }, 1600);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not submit your review.');
@@ -303,13 +316,43 @@ export function PdpReviews({
                     />
                   </div>
 
+                  <div>
+                    <label htmlFor="review-photo" className={labelClass}>Add a photo (optional)</label>
+                    <label
+                      htmlFor="review-photo"
+                      className="flex items-center gap-2 px-3 py-2.5 bg-white border border-dashed border-[#DDD5C7] rounded-xl text-xs text-[#6E6358] cursor-pointer hover:border-[#B2593E]"
+                    >
+                      <Camera className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{photo ? photo.name : 'Show how it looks on you'}</span>
+                    </label>
+                    <input
+                      id="review-photo"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                    />
+                    {photo && (
+                      <label className="flex items-start gap-2 mt-2 text-[11px] text-[#6E6358]">
+                        <input
+                          type="checkbox"
+                          required
+                          checked={photoConsent}
+                          onChange={(e) => setPhotoConsent(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <span>I agree this photo may be shown publicly on VANYA&apos;s website and marketing.</span>
+                      </label>
+                    )}
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                     <span className="text-[10px] text-[#756A5E]">Shown with the name on your account.</span>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => setFormOpen(false)} className="px-4 py-2.5 border border-[#DDD5C7] text-[#5C5146] hover:bg-[#F2ECE1] uppercase tracking-wider text-xs font-semibold rounded-full transition-colors">
                         Cancel
                       </button>
-                      <button type="submit" disabled={submitting} className="px-6 py-2.5 bg-[#1A1816] hover:bg-black text-[#FAF8F5] uppercase tracking-wider text-xs font-semibold rounded-full transition-colors cursor-pointer shadow-xs disabled:opacity-60">
+                      <button type="submit" disabled={submitting || (photo !== null && !photoConsent)} className="px-6 py-2.5 bg-[#1A1816] hover:bg-black text-[#FAF8F5] uppercase tracking-wider text-xs font-semibold rounded-full transition-colors cursor-pointer shadow-xs disabled:opacity-60">
                         {submitting ? 'Submitting…' : 'Submit Review'}
                       </button>
                     </div>
@@ -397,6 +440,9 @@ export function PdpReviews({
                         <span className="sr-only">{rev.rating} out of 5</span>
                         {rev.title && <span className="text-xs font-semibold text-[#1A1816]">{rev.title}</span>}
                       </div>
+                      {rev.photoUrl && (
+                        <img src={rev.photoUrl} alt="" className="w-20 h-20 object-cover rounded-xl border border-[#EAE3D7]" />
+                      )}
                       <p className="text-xs text-[#52473D] leading-relaxed font-light">{rev.body}</p>
                     </li>
                   ))}

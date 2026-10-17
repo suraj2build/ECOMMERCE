@@ -1435,6 +1435,17 @@ model Review {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
+  // specs/36: one optional customer photo per review. Auto-published with
+  // the review itself (same discipline as review text - see RESOLUTION in
+  // the spec); photoConsentAt must be set in the same request a photo is
+  // stored, never backfilled separately. featuredOnHome/featuredSortOrder
+  // are staff-set only (review:moderate) - a photo existing never implies
+  // homepage placement.
+  photoKey          String?
+  photoConsentAt    DateTime?
+  featuredOnHome    Boolean   @default(false)
+  featuredSortOrder Int?
+
   style       Style      @relation(fields: [styleId], references: [id], onDelete: Cascade)
   customer    Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
   moderatedBy StaffUser? @relation("ReviewModeratedBy", fields: [moderatedByStaffId], references: [id], onDelete: Restrict)
@@ -1442,6 +1453,7 @@ model Review {
   // One review per customer per style - prevents review-count inflation.
   @@unique([styleId, customerId])
   @@index([styleId, status])
+  @@index([featuredOnHome, featuredSortOrder])
   @@map("reviews")
 }
 

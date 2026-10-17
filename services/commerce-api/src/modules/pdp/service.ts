@@ -178,6 +178,7 @@ export class PdpService {
         body: r.body,
         createdAt: r.createdAt,
         customerName: r.customer.fullName ?? 'Anonymous',
+        photoUrl: r.photoKey ? reviewPhotoPath(r.id) : null,
       })),
       reviewsTotal: reviewsPage.total,
       crossSell,
@@ -186,4 +187,48 @@ export class PdpService {
       publishedAt: style.publishedAt,
     };
   }
+
+  /**
+   * specs/36: "What Our Customers Say" homepage carousel. Price is composed
+   * here from CatalogService - the single source of price truth - never a
+   * cached/stale value on the review or style row.
+   */
+  async getFeaturedReviews() {
+    const reviews = await this.reviews.listFeaturedReviews();
+    if (reviews.length === 0) return [];
+    const priceByStyleId = await this.catalog.getActivePricesByStyleIds(reviews.map((r) => r.styleId));
+    return reviews
+      .map((r) => {
+        const price = priceByStyleId.get(r.styleId);
+        if (!price) return null; // style has no active price right now - never show a stale/guessed one
+        return {
+          id: r.id,
+          rating: r.rating,
+          body: r.body,
+          photoUrl: reviewPhotoPath(r.id),
+          customerFirstName: firstName(r.customer.fullName),
+          product: {
+            styleId: r.styleId,
+            name: r.style.name,
+            thumbnailUrl: r.style.media[0]?.url ?? null,
+            sellingPrice: Number(price.sellingPrice),
+            mrp: Number(price.mrp),
+            currency: price.currency,
+          },
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+  }
+}
+
+// A storefront-relative path - the storefront's own /review-media/[id]
+// route proxies this to the real API, mirroring the existing
+// /lookbook-media/[id] convention (same-origin <img src>, no CORS).
+function reviewPhotoPath(reviewId: string): string {
+  return `/review-media/${reviewId}`;
+}
+
+function firstName(fullName: string | null): string {
+  if (!fullName?.trim()) return 'Anonymous';
+  return fullName.trim().split(/\s+/)[0] ?? 'Anonymous';
 }

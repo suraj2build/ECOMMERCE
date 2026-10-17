@@ -232,6 +232,15 @@ const envSchema = z.object({
   PRODUCT_MEDIA_S3_BUCKET: z.string().min(3).default('product-media'),
   PRODUCT_MEDIA_S3_PREFIX: z.string().default('product-media/'),
   PRODUCT_MEDIA_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10_485_760), // 10 MiB
+  // specs/36: customer review photos. A separate store/prefix from both
+  // product media and the private return-evidence store - a review photo
+  // key can never name either of those, and neither of their read routes
+  // ever reads here.
+  REVIEW_PHOTO_STORAGE: z.enum(['local', 's3']).default('local'),
+  REVIEW_PHOTO_STORAGE_DIR: z.string().default('var/review-photos'),
+  REVIEW_PHOTO_S3_BUCKET: z.string().min(3).default('review-photos'),
+  REVIEW_PHOTO_S3_PREFIX: z.string().default('review-photos/'),
+  REVIEW_PHOTO_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(10_485_760), // 10 MiB
   // Every uploaded image (product photos, banner/page images, return
   // evidence) is fully decoded before it is stored. These are engineering
   // safety limits against oversized or decompression-bomb files, not a

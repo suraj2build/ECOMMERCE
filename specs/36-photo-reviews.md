@@ -1,12 +1,22 @@
 # 36. Photo Reviews & "What Our Customers Say"
 
-**Status:** APPROVED (Product Owner, 2026-10-17). Reference: a
-competitor site's ("Littlebox India") "What Our Customers Say?"
-shoppable-testimonial carousel, shared by the Product Owner 2026-10-17.
-Approved for implementation scope only when a separate build
-authorization is given — spec approval and implementation
-authorization remain distinct, per this project's own §3/§5 discipline
-(`CLAUDE.md`).
+**Status:** IMPLEMENTED (2026-10-17). Reference: a competitor site's
+("Littlebox India") "What Our Customers Say?" shoppable-testimonial
+carousel, shared by the Product Owner 2026-10-17. Approved, then build
+separately authorized ("Start building it") the same day — spec
+approval and implementation authorization remain distinct, per this
+project's own §3/§5 discipline (`CLAUDE.md`).
+
+**Implementation note:** this spec's own text (Scope, "Homepage
+featuring is always an explicit staff action") cited `content:moderate`
+as "the same permission that already gates hiding a review." That
+citation was wrong: direct inspection of
+`services/commerce-api/src/modules/pdp/routes.ts` confirms review
+hide/unhide is gated by `review:moderate`, a distinct permission from
+`content:moderate` (which gates Watch & Shop/CMS content). The spec's
+actual *intent* — reuse whatever already gates review moderation — was
+unambiguous, so the build uses the correct permission, `review:moderate`,
+for `featuredOnHome`/the staff curation list, not `content:moderate`.
 
 ## Purpose
 

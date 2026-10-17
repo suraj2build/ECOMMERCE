@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getAllPublicCollections, getWatchAndShopFeed, searchStorefront } from '@/lib/api';
+import { getAllPublicCollections, getFeaturedReviews, getWatchAndShopFeed, searchStorefront } from '@/lib/api';
 import { absoluteUrl, sharing } from '@/lib/seo';
 import { loadEditorial, reelsForDepartment, type Department } from '@/vanya/bridge/editorial';
 import { HomeExperience, type DepartmentHome } from '@/vanya/bridge/HomeExperience';
@@ -25,8 +25,12 @@ async function departmentHome(department: Department, feed: Awaited<ReturnType<t
 }
 
 export default async function HomePage() {
-  const [feed, collections] = await Promise.all([getWatchAndShopFeed().catch(() => []), getAllPublicCollections().catch(() => [])]);
+  const [feed, collections, featuredReviews] = await Promise.all([
+    getWatchAndShopFeed().catch(() => []),
+    getAllPublicCollections().catch(() => []),
+    getFeaturedReviews().catch(() => []),
+  ]);
   const slugs = collections.map((c) => c.slug);
   const [men, women] = await Promise.all([departmentHome('men', feed, slugs), departmentHome('women', feed, slugs)]);
-  return <HomeExperience men={men} women={women} />;
+  return <HomeExperience men={men} women={women} featuredReviews={featuredReviews} />;
 }

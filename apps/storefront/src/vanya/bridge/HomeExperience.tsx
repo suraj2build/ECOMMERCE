@@ -7,7 +7,7 @@
  */
 import { LookbookTeaser } from '../views/LookbookView';
 import { useMemo } from 'react';
-import type { ShoppableMediaSummary, StorefrontSearchHit } from '@/lib/api';
+import type { FeaturedReview, ShoppableMediaSummary, StorefrontSearchHit } from '@/lib/api';
 import { useDepartment } from '@/components/layout/DepartmentContext';
 import { LandingGatewayView } from '../views/LandingGatewayView';
 import { HomeView, type HomeEditorial } from '../views/HomeView';
@@ -21,7 +21,15 @@ export interface DepartmentHome {
   editorial: HomeEditorial;
 }
 
-export function HomeExperience({ men, women }: { men: DepartmentHome; women: DepartmentHome }) {
+export function HomeExperience({
+  men,
+  women,
+  featuredReviews,
+}: {
+  men: DepartmentHome;
+  women: DepartmentHome;
+  featuredReviews: FeaturedReview[];
+}) {
   const { department, hydrated, chooseDepartment } = useDepartment();
   const shop = useShop();
   const home = department === 'men' ? men : women;
@@ -65,6 +73,7 @@ export function HomeExperience({ men, women }: { men: DepartmentHome; women: Dep
       recentlyViewedIds={[]}
       editorial={home.editorial}
       policies={shop.policies}
+      featuredReviews={featuredReviews}
       hrefFor={shop.hrefFor}
     />
     <LookbookTeaser department={department} />
