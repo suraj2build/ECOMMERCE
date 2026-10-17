@@ -134,3 +134,112 @@ references), `specs/06-inventory.md` (availability), `specs/07-catalog-merchandi
 actions). Explicitly does not depend on
 `specs/25-social-channel-publishing.md` (no real social platform
 integration at V1).
+
+---
+
+## ADDENDUM (2026-10-17): reel-viewing interaction — modal +
+## horizontal navigation
+
+**Status: APPROVED (Product Owner, 2026-10-17).** Does not change the
+`APPROVED` status or any already-built requirement above. This
+addendum **supersedes W-1's page-navigation and vertical-arrow
+specifics only** (`docs/design/VANYA_VISUAL_PARITY.md`) — W-1's
+underlying visual design (colours, typography, card/rack content) is
+not otherwise affected. Approved for implementation scope only when a
+separate build authorization is given — this spec approval and
+implementation authorization remain distinct, per this file's own §3/§5
+discipline.
+
+### Why
+
+The Product Owner shared screenshots of a competitor site's ("Kisah")
+"Seen on Real People" shoppable-reel experience (reviewed 2026-10-17)
+as a reference for how reel viewing should work. Comparing it against
+the current implementation
+(`apps/storefront/src/vanya/views/ReelsView.tsx`,
+`apps/storefront/src/vanya/views/HomeView.tsx:324-407`) found most of
+the underlying capability already matches or exceeds the reference —
+multiple tagged products per reel, mute toggle, live price/Add to
+Bag/Full Details are all already built per this spec's "Approved
+requirements" above. Two concrete interaction differences remain:
+
+1. Today, clicking a reel thumbnail on Home navigates to a separate
+   full page (`<Link href="/watch-and-shop?reel=<id>">`,
+   `HomeView.tsx:364`). The reference opens a full-screen **modal**
+   overlaying the current page instead.
+2. Today, moving between reels uses vertical `ChevronUp`/`ChevronDown`
+   controls layered on the video itself (`ReelsView.tsx:162-182`). The
+   reference uses large **left/right** arrow controls outside the
+   video frame.
+
+### Decision requested
+
+Approve changing (1) and (2) only, as scoped below.
+
+### What changes
+
+- **Desktop/tablet**: opening a reel (from the Home carousel, or from
+  the `/watch-and-shop` grid itself) opens a full-screen modal over the
+  current page — no full page navigation, no loss of scroll position
+  on the page underneath. The modal shows the same content the current
+  `ReelsView` right-hand rack shows today (tagged garments list, price,
+  Quick Buy, Full Details), next to the video.
+- **Reel-to-reel paging**: replace the vertical chevrons with large
+  circular left/right arrow buttons positioned at the outer edges of
+  the modal frame (matching the reference's placement, not overlaid on
+  the video itself). Same ordering as today
+  (`merchandisingPosition`-ordered `reels` array, unchanged), same
+  disabled-at-the-ends behavior as today's chevrons.
+- **Mobile**: the modal renders full-viewport (no visible page behind
+  it) — this is not a new requirement, it is the existing "Mobile: an
+  immersive, vertical, full-viewport feed" line under "Storefront
+  experience" above, unchanged. Only the desktop windowed-modal-vs-
+  full-page distinction is new.
+- **Deep-linking is preserved, not dropped.** `/watch-and-shop?reel=<id>`
+  must keep working as a directly-loadable, shareable URL that renders
+  the reel's real content server-side (for SEO/link-preview parity with
+  today — no empty client-only shell). Recommended implementation:
+  Next.js intercepting + parallel routes (the same pattern Instagram's
+  own web app uses for this exact behavior) — a click from elsewhere on
+  the site intercepts the navigation and opens the modal with a shallow
+  URL update; a hard load or shared link to that same URL renders the
+  full, non-modal page. This is an implementation recommendation, not
+  a new product requirement — an equivalent client-side approach that
+  meets the same "shareable, SEO-renderable, no full reload from
+  in-app clicks" bar is also acceptable.
+- **Close affordance**: an explicit close (✕) control, plus Escape-key
+  and backdrop-click dismissal, consistent with this codebase's other
+  modals (reuse `useModalFocus`, already imported in
+  `ReelsView.tsx:12`, for focus trapping).
+- The `/watch-and-shop` standalone grid page (browsing all reels,
+  today's "Explore All Shoppable Reels" section) continues to exist as
+  a real destination page for browsing/SEO; the modal is the viewing
+  mechanism for one reel at a time, opened from that grid, from Home,
+  or from a direct link — it does not replace the grid page itself.
+
+### Explicitly not addressed by this addendum (separate, undecided — do not conflate)
+
+- Branding/copy (e.g. "Seen on Real People" vs. today's "VANYA ON
+  INSTAGRAM" / "Watch & Shop Cinema") — unaffected, unchanged.
+- Real Instagram-embed video sources — remains explicitly out of scope
+  per this spec's "Explicitly out of scope" section above; unaffected.
+- View/engagement counts — remains the existing open item tracked in
+  `docs/design/VANYA_VISUAL_PARITY.md`'s Decision list; unaffected.
+
+### Acceptance criteria to add
+
+- Clicking a reel thumbnail on Home opens the modal without a full
+  page navigation (verified by a route-change/network check, not
+  visual inspection alone); the page underneath keeps its scroll
+  position when the modal closes.
+- A fresh/hard-loaded or shared `/watch-and-shop?reel=<id>` URL renders
+  that reel's real content server-side, not an empty shell awaiting
+  client JS.
+- Left/right arrows page through reels in the same
+  `merchandisingPosition` order the vertical chevrons use today;
+  disabled correctly at the first/last reel.
+- Multi-product tagging strip, mute toggle, Add to Bag, Quick Buy, and
+  Full Details all continue to work unchanged inside the modal.
+- Mobile continues to render full-viewport, matching the pre-existing
+  requirement — not a new behavior to verify, a regression check that
+  this change didn't alter it.
