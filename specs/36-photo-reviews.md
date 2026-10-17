@@ -93,31 +93,25 @@ homepage surface for a staff-chosen subset of them.
   every 5-star photo review") — featuring is always a specific staff
   action on a specific review, never a rule-based auto-promotion.
 
-## Open question — DECISION_REQUIRED
+## RESOLUTION (Product Owner, 2026-10-17): photo moderation policy
 
-**Question**: should attaching a photo to a review be auto-published
-immediately (matching today's existing text-review policy — "auto-
-published on submission... staff can hide after the fact via
-`content:moderate`"), or held behind a staff pre-moderation step
-*before the photo itself is shown anywhere* (including the product's
-own PDP, not just the homepage carousel)?
+**Decided: auto-publish immediately, same as text reviews.** A photo
+attached to a review follows the exact existing text-review discipline
+("auto-published on submission... staff can hide after the fact via
+`content:moderate`") — no new pre-moderation gate, no second
+publish-state machine. A photo appears on the product's own PDP
+review list the instant it's attached, exactly like review text does
+today; staff moderation remains the existing after-the-fact
+`status = HIDDEN` action, now also hiding the photo (a hidden review's
+photo is never served, independent of `featuredOnHome`).
 
-**Why it matters**: a photo carries materially more moderation risk
-than review text — it could show something unrelated to the purchase,
-be low-quality, or otherwise be unsuitable for public display in a way
-plain text rarely is, and today's auto-publish policy for reviews was
-decided (PDP-001) before any photo capability existed. Guessing either
-answer risks either inventing an unapproved new moderation workflow
-(if the Product Owner actually wants auto-publish-and-hide to stay
-consistent) or shipping an auto-published photo surface the Product
-Owner did not actually intend (if a pre-moderation gate is the real
-expectation).
-
-**This does not block the homepage-featuring design above** — featuring
-is already explicitly staff-gated either way, so the homepage carousel
-is safe to build regardless of how this question resolves. It only
-affects whether a photo appears on the product's *own* PDP review list
-immediately on attachment, or waits for a staff review first.
+This keeps the review system as ONE discipline, not two — the thing
+`specs/35`'s own `ShoppableMedia` pre-moderation step exists for
+(deliberately-curated brand content, never auto-published) is already
+handled separately by this spec's own `featuredOnHome` staff gate,
+which was never in question: a photo being visible on its own review
+is independent from a photo being chosen for the high-visibility
+homepage carousel, and only the latter ever required staff action.
 
 ## Requirements (data model)
 
