@@ -140,13 +140,13 @@ integration at V1).
 ## ADDENDUM (2026-10-17): reel-viewing interaction — modal +
 ## horizontal navigation
 
-**Status: APPROVED (Product Owner, 2026-10-17).** Does not change the
-`APPROVED` status or any already-built requirement above. This
-addendum **supersedes W-1's page-navigation and vertical-arrow
+**Status: IMPLEMENTED (built 2026-10-17, commit `e24f4e0`).** Does not
+change the `APPROVED` status or any already-built requirement above.
+This addendum **supersedes W-1's page-navigation and vertical-arrow
 specifics only** (`docs/design/VANYA_VISUAL_PARITY.md`) — W-1's
 underlying visual design (colours, typography, card/rack content) is
-not otherwise affected. Approved for implementation scope only when a
-separate build authorization is given — this spec approval and
+not otherwise affected. Built under a separate, explicit build
+authorization given after approval — this spec approval and
 implementation authorization remain distinct, per this file's own §3/§5
 discipline.
 

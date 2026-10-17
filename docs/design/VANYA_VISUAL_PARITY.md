@@ -113,7 +113,7 @@ Status key:
 
 | # | Difference | Status |
 |---|---|---|
-| W-1 | "WATCH & SHOP CINEMA / Live Fashion in Motion" header; 9:16 player with creator chip, up/down arrows and caption; right rack "Tagged garments in this reel" with Quick Buy and Full Details; "Explore all shoppable reels" thumbnails. Current uses a different layout. | **Fix**, with real shoppable media and tags. |
+| W-1 | "WATCH & SHOP CINEMA / Live Fashion in Motion" header; 9:16 player with creator chip, up/down arrows and caption; right rack "Tagged garments in this reel" with Quick Buy and Full Details; "Explore all shoppable reels" thumbnails. Current uses a different layout. | **Fixed**, with real shoppable media and tags. Superseded 2026-10-17 (`specs/35-watch-and-shop.md` addendum, Product Owner-approved): up/down arrows → left/right; reel opened from elsewhere on the site now shows as a modal, not a full-page navigation. Everything else in this row is unchanged. |
 | W-2 | View counts ("128K"). | **Blocked**: no view data; not shown. |
 
 ## Wishlist, bag, checkout
